@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   },
   description: 'Find verified dentists in Mumbai by area and treatment. Compare fees, read reviews, and book appointments online.',
 verification: {
-    google: 'w9MKNd4YeW-EMv0TpbUPPTuqUJyg3vaPOv9maU2A_ns',
+    google: '1T1WaA-nRtq8w-GycybOoricYbjTqql3D-au0VzFm98',
   },
   keywords: ['dentist in mumbai', 'dental clinic mumbai', 'best dentist mumbai', 'dental implants mumbai', 'teeth whitening mumbai'],
   metadataBase: new URL('https://dentistinmumbai.in'),
