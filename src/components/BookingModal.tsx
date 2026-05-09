@@ -279,7 +279,7 @@ export default function BookingModal({ isOpen, onClose, dentist, treatments }: B
                           fontFamily: 'var(--font-body)', cursor: disabled ? 'not-allowed' : 'pointer',
                           background: isSelected ? 'var(--blue)' : isToday ? 'var(--blue-light)' : 'transparent',
                           color: isSelected ? '#fff' : disabled ? '#CBD5E1' : isToday ? 'var(--blue)' : 'var(--text)',
-                          fontWeight: isSelected || isToday ? 700 : 500,
+                         
                           transition: 'all 0.15s',
                         }}
                       >{i + 1}</button>
