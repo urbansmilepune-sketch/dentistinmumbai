@@ -7,6 +7,9 @@ export const metadata: Metadata = {
     template: '%s | DentistInMumbai.in',
   },
   description: 'Find verified dentists in Mumbai by area and treatment. Compare fees, read reviews, and book appointments online.',
+verification: {
+    google: 'w9MKNd4YeW-EMv0TpbUPPTuqUJyg3vaPOv9maU2A_ns',
+  },
   keywords: ['dentist in mumbai', 'dental clinic mumbai', 'best dentist mumbai', 'dental implants mumbai', 'teeth whitening mumbai'],
   metadataBase: new URL('https://dentistinmumbai.in'),
   openGraph: {
