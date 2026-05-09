@@ -88,7 +88,7 @@ export default async function ForDentistsPage() {
         <div aria-hidden="true" style={{ position: 'absolute', top: -100, right: -100, width: 500, height: 500, background: 'rgba(255,255,255,0.03)', borderRadius: '50%' }} />
         <div aria-hidden="true" style={{ position: 'absolute', bottom: -80, left: '5%', width: 300, height: 300, background: 'rgba(255,255,255,0.03)', borderRadius: '50%' }} />
 
-        <div className="container" style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+        <div className="container" style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', textalignItems: 'center' }}>
           {/* Founding badge */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 20px', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 40, marginBottom: 28 }}>
             <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#FBBF24', animation: 'pulse 2s infinite' }} />
@@ -128,7 +128,7 @@ export default async function ForDentistsPage() {
       {/* WHY LIST */}
       <section style={{ padding: '80px 20px', background: '#fff' }}>
         <div className="container">
-          <div style={{ textAlign: 'center', marginBottom: 52 }}>
+          <div style={{ textalignItems: 'center', marginBottom: 52 }}>
             <p style={{ color: 'var(--blue)', fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Why List on DentistInMumbai</p>
             <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(1.6rem, 3vw, 2.25rem)', maxWidth: 560, margin: '0 auto' }}>
               Patients in Mumbai are searching. Make sure they find you.
@@ -149,7 +149,7 @@ export default async function ForDentistsPage() {
       {/* FOUNDING PERKS */}
       <section style={{ padding: '80px 20px', background: 'linear-gradient(135deg, #0A1628 0%, #003F7A 100%)' }}>
         <div className="container">
-          <div style={{ textAlign: 'center', marginBottom: 52 }}>
+          <div style={{ textalignItems: 'center', marginBottom: 52 }}>
             <p style={{ color: '#FBBF24', fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Founding Member Exclusive</p>
             <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(1.6rem, 3vw, 2.25rem)', color: '#fff', maxWidth: 500, margin: '0 auto' }}>
               Why List Now — Not Later
@@ -188,7 +188,7 @@ export default async function ForDentistsPage() {
       {/* WHAT'S INCLUDED */}
       <section style={{ padding: '80px 20px', background: 'var(--bg)' }}>
         <div className="container">
-          <div style={{ textAlign: 'center', marginBottom: 52 }}>
+          <div style={{ textalignItems: 'center', marginBottom: 52 }}>
             <p style={{ color: 'var(--blue)', fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>What's Included</p>
             <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(1.6rem, 3vw, 2.25rem)', marginBottom: 12 }}>Everything in Your Free Profile</h2>
             <p style={{ color: 'var(--muted)', fontSize: 16, maxWidth: 480, margin: '0 auto' }}>No stripped-down free tier. Full profile. All features. No credit card.</p>
@@ -210,7 +210,7 @@ export default async function ForDentistsPage() {
       {/* HOW IT WORKS */}
       <section style={{ padding: '80px 20px', background: '#fff' }}>
         <div className="container" style={{ maxWidth: 680 }}>
-          <div style={{ textAlign: 'center', marginBottom: 52 }}>
+          <div style={{ textalignItems: 'center', marginBottom: 52 }}>
             <p style={{ color: 'var(--blue)', fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>How It Works</p>
             <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(1.6rem, 3vw, 2.25rem)' }}>Listed in Under 10 Minutes</h2>
           </div>
@@ -241,7 +241,7 @@ export default async function ForDentistsPage() {
       {/* TESTIMONIALS */}
       <section style={{ padding: '80px 20px', background: 'var(--bg)' }}>
         <div className="container">
-          <div style={{ textAlign: 'center', marginBottom: 52 }}>
+          <div style={{ textalignItems: 'center', marginBottom: 52 }}>
             <p style={{ color: 'var(--blue)', fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Dentists Love It</p>
             <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(1.6rem, 3vw, 2.25rem)' }}>What Founding Members Say</h2>
           </div>
@@ -250,7 +250,7 @@ export default async function ForDentistsPage() {
               <div key={t.name} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '24px' }}>
                 <div style={{ color: '#F59E0B', fontSize: 18, marginBottom: 12 }}>★★★★★</div>
                 <p style={{ fontSize: 15, color: 'var(--text-secondary)', lineHeight: 1.7, marginBottom: 20, fontStyle: 'italic' }}>"{t.text}"</p>
-                <div style={{ display: 'flex', align: 'center', gap: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--blue-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>👨‍⚕️</div>
                   <div>
                     <div style={{ fontWeight: 700, fontSize: 14, fontFamily: 'var(--font-heading)' }}>{t.name}</div>
@@ -264,7 +264,7 @@ export default async function ForDentistsPage() {
       </section>
 
       {/* BOTTOM CTA */}
-      <section style={{ padding: '80px 20px', background: 'linear-gradient(135deg, #003F7A, #0057A8)', textAlign: 'center' }}>
+      <section style={{ padding: '80px 20px', background: 'linear-gradient(135deg, #003F7A, #0057A8)', textalignItems: 'center' }}>
         <div className="container" style={{ maxWidth: 600 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 20 }}>
             <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#FBBF24', animation: 'pulse 2s infinite' }} />
