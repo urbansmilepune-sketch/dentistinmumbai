@@ -44,7 +44,7 @@ export default async function DentistProfilePage({ params }: Props) {
 
  const { data: dentist } = await supabase
     .from('dentists')
-    .select('*, areas(name, slug), dentist_treatments(fee_from, fee_to, treatments(id, name, slug, icon))')
+    .select('*, areas(name, slug), dentist_treatments(fee_from, fee_to, treatments(id, name, slug, icon)), gallery_photos(id, url, caption, category), reviews(id, patient_name, rating, review_text, treatment, created_at, status)')
     .eq('slug', slug)
     .eq('is_active', true)
     .single()
@@ -163,7 +163,7 @@ export default async function DentistProfilePage({ params }: Props) {
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
                     {(dentist.gallery_photos || []).length > 0 ? (dentist.gallery_photos || []).map((photo: any) => (
                       <div key={photo.id} style={{ borderRadius: 10, overflow: 'hidden', aspectRatio: '1', background: 'var(--bg)', border: '1px solid var(--border)' }}>
-                        <img src={photo.image_url} alt={photo.caption || 'Clinic photo'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        <img src={photo.url} alt={photo.caption || 'Clinic photo'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                       </div>
                     )) : <p style={{ color: 'var(--muted)', fontSize: 14, padding: 20 }}>No photos uploaded yet.</p>}
                   </div>
@@ -228,6 +228,9 @@ export default async function DentistProfilePage({ params }: Props) {
     </>
   )
 }
+
+
+
 
 
 
