@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import TickerBar from './TickerBar'
+import ExpoPricingSection from './ExpoPricingSection'
 import ProgressBar from './ProgressBar'
 import HeroButtons from './HeroButtons'
 
@@ -284,3 +285,4 @@ export default async function ForDentistsPage() {
     </>
   )
 }
+

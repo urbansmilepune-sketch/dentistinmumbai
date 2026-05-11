@@ -1,74 +1,76 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient } from '@supabase/supabase-js'
 
-function generateReference(): string {
+function generateRef(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
   let ref = 'DIM'
   for (let i = 0; i < 6; i++) ref += chars[Math.floor(Math.random() * chars.length)]
   return ref
 }
 
+async function notifyDentist(phone: string, message: string) {
+  if (!process.env.MSG91_AUTH_KEY) {
+    console.log('[MSG91 not configured] Would send to', phone, ':', message)
+    return
+  }
+  try {
+    await fetch('https://api.msg91.com/api/v5/flow/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'authkey': process.env.MSG91_AUTH_KEY },
+      body: JSON.stringify({
+        template_id: process.env.MSG91_BOOKING_TEMPLATE_ID,
+        recipients: [{ mobiles: `91${phone.replace(/\D/g, '')}`, message }],
+      }),
+    })
+  } catch (err) { console.error('[MSG91 Error]', err) }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const {
-      dentist_id, treatment_id, appt_date, time_slot,
-      patient_name, patient_phone, patient_email, notes, consent,
-    } = body
+    const { dentist_id, patient_name, patient_phone, appt_date, time_slot, treatment_id, notes } = body
 
-    if (!dentist_id || !appt_date || !time_slot || !patient_name || !patient_phone || !consent) {
+    if (!dentist_id || !patient_name || !patient_phone || !appt_date || !time_slot) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    const supabase = await createClient()
+    const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+    const reference_no = generateRef()
 
-    // Check slot not already booked
-    const { data: existing } = await supabase
-      .from('appointments')
-      .select('id')
-      .eq('dentist_id', dentist_id)
-      .eq('appt_date', appt_date)
-      .eq('time_slot', time_slot)
-      .neq('status', 'cancelled')
-      .single()
+    const { data: dentist } = await supabase.from('dentists').select('name, phone, whatsapp, clinic_name').eq('id', dentist_id).single()
 
-    if (existing) {
-      return NextResponse.json({ error: 'This slot is already booked' }, { status: 409 })
+    let treatmentName = 'General Consultation'
+    if (treatment_id) {
+      const { data: treatment } = await supabase.from('treatments').select('name').eq('id', treatment_id).single()
+      if (treatment) treatmentName = treatment.name
     }
 
-    // Generate unique reference
-    let reference_no = generateReference()
-    let attempts = 0
-    while (attempts < 5) {
-      const { data: refCheck } = await supabase.from('appointments').select('id').eq('reference_no', reference_no).single()
-      if (!refCheck) break
-      reference_no = generateReference()
-      attempts++
-    }
-
-    const { data, error } = await supabase
-      .from('appointments')
-      .insert({
-        reference_no,
-        dentist_id,
-        treatment_id: treatment_id === 'general' ? null : treatment_id,
-        appt_date,
-        time_slot,
-        patient_name,
-        patient_phone,
-        patient_email: patient_email || null,
-        notes: notes || null,
-        consent,
-        status: 'pending',
-      })
-      .select('reference_no')
-      .single()
+    const { data, error } = await supabase.from('appointments')
+      .insert({ dentist_id, patient_name, patient_phone, appt_date, time_slot, treatment_id: treatment_id || null, notes: notes || null, status: 'pending', reference_no })
+      .select('id, reference_no').single()
 
     if (error) throw error
 
-    return NextResponse.json({ reference_no: data.reference_no, success: true })
-  } catch (error) {
+    if (dentist) {
+      const dentistPhone = dentist.whatsapp || dentist.phone
+      const formattedDate = new Date(appt_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+      const message = `🦷 New Appointment — dentistinmumbai.in\n\nRef: ${reference_no}\nPatient: ${patient_name}\nPhone: ${patient_phone}\nTreatment: ${treatmentName}\nDate: ${formattedDate} at ${time_slot}${notes ? `\nNote: ${notes}` : ''}\n\nManage: dentistinmumbai.in/for-dentists/dashboard`
+      if (dentistPhone) await notifyDentist(dentistPhone, message)
+    }
+
+    return NextResponse.json({ success: true, reference_no: data.reference_no, id: data.id })
+  } catch (error: any) {
     console.error('Booking error:', error)
     return NextResponse.json({ error: 'Failed to create booking' }, { status: 500 })
   }
+}
+
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url)
+  const dentist_id = searchParams.get('dentist_id')
+  const date = searchParams.get('date')
+  if (!dentist_id || !date) return NextResponse.json({ error: 'Missing params' }, { status: 400 })
+  const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+  const { data } = await supabase.from('appointments').select('time_slot').eq('dentist_id', dentist_id).eq('appt_date', date).neq('status', 'cancelled')
+  return NextResponse.json({ booked_slots: (data || []).map((a: any) => a.time_slot) })
 }
