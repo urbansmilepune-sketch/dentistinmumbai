@@ -139,7 +139,54 @@ export default async function DentistProfilePage({ params }: Props) {
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 20, alignItems: 'start' }} className="profile-grid">
             <div>
-              <ProfileTabs dentist={dentist} treatments={dentist.dentist_treatments || []} photos={dentist.gallery_photos || []} reviews={approvedReviews} />
+              <ProfileTabs
+                reviewCount={approvedReviews.length}
+                overview={
+                  <div style={{ padding: '20px', background: '#fff', borderRadius: 12, border: '1px solid var(--border)' }}>
+                    {dentist.bio ? <p style={{ fontSize: 15, lineHeight: 1.8, color: 'var(--text-secondary)' }}>{dentist.bio}</p> : <p style={{ color: 'var(--muted)', fontSize: 14 }}>No bio added yet.</p>}
+                  </div>
+                }
+                treatments={
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {(dentist.dentist_treatments || []).length > 0 ? (dentist.dentist_treatments || []).map((dt: any) => (
+                      <div key={dt.treatments?.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', background: '#fff', border: '1px solid var(--border)', borderRadius: 12 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <span style={{ fontSize: 22 }}>{dt.treatments?.icon}</span>
+                          <span style={{ fontWeight: 600, fontSize: 15 }}>{dt.treatments?.name}</span>
+                        </div>
+                        {(dt.fee_from || dt.fee_to) && <span style={{ fontSize: 14, color: 'var(--blue)', fontWeight: 700 }}>{dt.fee_from && dt.fee_to ? `₹${dt.fee_from}–₹${dt.fee_to}` : dt.fee_from ? `From ₹${dt.fee_from}` : ''}</span>}
+                      </div>
+                    )) : <p style={{ color: 'var(--muted)', fontSize: 14, padding: 20 }}>No treatments listed yet.</p>}
+                  </div>
+                }
+                gallery={
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
+                    {(dentist.gallery_photos || []).length > 0 ? (dentist.gallery_photos || []).map((photo: any) => (
+                      <div key={photo.id} style={{ borderRadius: 10, overflow: 'hidden', aspectRatio: '1', background: 'var(--bg)', border: '1px solid var(--border)' }}>
+                        <img src={photo.image_url} alt={photo.caption || 'Clinic photo'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      </div>
+                    )) : <p style={{ color: 'var(--muted)', fontSize: 14, padding: 20 }}>No photos uploaded yet.</p>}
+                  </div>
+                }
+                reviews={
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {approvedReviews.length > 0 ? approvedReviews.map((r: any) => (
+                      <div key={r.id} style={{ padding: '16px 20px', background: '#fff', border: '1px solid var(--border)', borderRadius: 12 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                          <span style={{ fontWeight: 700 }}>{r.patient_name}</span>
+                          <span style={{ color: '#F59E0B' }}>{'★'.repeat(r.rating)}</span>
+                        </div>
+                        <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.7 }}>{r.review_text}</p>
+                      </div>
+                    )) : <p style={{ color: 'var(--muted)', fontSize: 14, padding: 20 }}>No reviews yet.</p>}
+                  </div>
+                }
+                location={
+                  <div style={{ padding: '20px', background: '#fff', borderRadius: 12, border: '1px solid var(--border)' }}>
+                    <p style={{ fontSize: 14, color: 'var(--text-secondary)' }}>{dentist.address || 'Address not added yet.'}</p>
+                  </div>
+                }
+              />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '20px' }}>
