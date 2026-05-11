@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import ProfileTabs from './ProfileTabs'
 import BookingTrigger from '@/components/BookingTrigger'
 
-export const revalidate = 3600
+export const dynamic = 'force-dynamic'
 
 interface Props { params: Promise<{ slug: string }> }
 
@@ -228,3 +228,4 @@ export default async function DentistProfilePage({ params }: Props) {
     </>
   )
 }
+
