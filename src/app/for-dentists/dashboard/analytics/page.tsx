@@ -1,0 +1,110 @@
+import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
+
+export const dynamic = 'force-dynamic'
+
+export default async function AnalyticsPage() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/for-dentists/login')
+
+  const { data: dentist } = await supabase.from('dentists').select('id, name, tier').eq('email', user.email).single()
+  if (!dentist) redirect('/for-dentists/login')
+
+  // Fetch stats
+  const [
+    { count: totalAppts },
+    { count: pendingAppts },
+    { count: completedAppts },
+    { count: totalEnquiries },
+    { count: totalReviews },
+    { data: recentAppts },
+  ] = await Promise.all([
+    supabase.from('appointments').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id),
+    supabase.from('appointments').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id).eq('status', 'pending'),
+    supabase.from('appointments').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id).eq('status', 'completed'),
+    supabase.from('enquiries').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id),
+    supabase.from('reviews').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id).eq('status', 'approved'),
+    supabase.from('appointments').select('appt_date, status').eq('dentist_id', dentist.id).order('appt_date', { ascending: false }).limit(30),
+  ])
+
+  // Group appointments by week
+  const weeklyData: Record<string, number> = {}
+  ;(recentAppts || []).forEach(a => {
+    const week = new Date(a.appt_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+    weeklyData[week] = (weeklyData[week] || 0) + 1
+  })
+  const chartData = Object.entries(weeklyData).slice(0, 7).reverse()
+  const maxVal = Math.max(...chartData.map(([, v]) => v), 1)
+
+  const STATS = [
+    { icon: '📅', label: 'Total Appointments', value: totalAppts || 0, color: 'var(--blue)' },
+    { icon: '⏳', label: 'Pending', value: pendingAppts || 0, color: '#F59E0B' },
+    { icon: '✅', label: 'Completed', value: completedAppts || 0, color: '#00A878' },
+    { icon: '💬', label: 'Total Enquiries', value: totalEnquiries || 0, color: 'var(--orange)' },
+    { icon: '⭐', label: 'Reviews', value: totalReviews || 0, color: '#F59E0B' },
+  ]
+
+  return (
+    <div>
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 4 }}>Analytics</h1>
+        <p style={{ fontSize: 14, color: 'var(--muted)' }}>Your profile performance overview</p>
+      </div>
+
+      {dentist.tier === 'free' || dentist.tier === 'silver' ? (
+        <div style={{ background: 'linear-gradient(135deg, #003F7A, #0057A8)', borderRadius: 16, padding: '32px', marginBottom: 24, textAlign: 'center', color: '#fff' }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>📊</div>
+          <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 20, marginBottom: 8 }}>Full Analytics on Gold Plan</h3>
+          <p style={{ color: 'rgba(255,255,255,0.8)', marginBottom: 20 }}>See profile views, WhatsApp clicks, call tracking, and weekly graphs.</p>
+          <a href="/for-dentists/dashboard/upgrade" style={{ padding: '12px 24px', background: '#FF6135', color: '#fff', borderRadius: 10, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>Upgrade to Gold →</a>
+        </div>
+      ) : null}
+
+      {/* Stats grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 16, marginBottom: 28 }}>
+        {STATS.map(stat => (
+          <div key={stat.label} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '20px' }}>
+            <div style={{ fontSize: 28, marginBottom: 8 }}>{stat.icon}</div>
+            <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 28, color: stat.color }}>{stat.value}</div>
+            <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 2 }}>{stat.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Bar chart */}
+      {chartData.length > 0 && (
+        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '24px', marginBottom: 24 }}>
+          <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16, marginBottom: 20 }}>Appointments — Last 30 Days</h3>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 120 }}>
+            {chartData.map(([label, value]) => (
+              <div key={label} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--blue)' }}>{value}</span>
+                <div style={{ width: '100%', background: 'var(--blue)', borderRadius: '4px 4px 0 0', height: `${(value / maxVal) * 80}px`, minHeight: 4 }} />
+                <span style={{ fontSize: 9, color: 'var(--muted)', textAlign: 'center', lineHeight: 1.2 }}>{label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Tips */}
+      <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 16, padding: '24px' }}>
+        <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16, marginBottom: 16 }}>💡 Tips to Get More Patients</h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {[
+            { tip: 'Complete your profile to 100%', action: 'Edit Profile', href: '/for-dentists/dashboard/profile' },
+            { tip: 'Add at least 5 clinic photos', action: 'Upload Photos', href: '/for-dentists/dashboard/photos' },
+            { tip: 'Add your WhatsApp number for direct leads', action: 'Add WhatsApp', href: '/for-dentists/dashboard/profile' },
+            { tip: 'List all treatments with fees to show in search', action: 'Add Treatments', href: '/for-dentists/dashboard/treatments' },
+          ].map(item => (
+            <div key={item.tip} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <span style={{ fontSize: 14, color: 'var(--text-secondary)' }}>→ {item.tip}</span>
+              <a href={item.href} style={{ fontSize: 13, color: 'var(--blue)', fontWeight: 600, textDecoration: 'none', flexShrink: 0 }}>{item.action}</a>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
