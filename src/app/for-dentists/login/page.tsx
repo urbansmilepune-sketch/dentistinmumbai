@@ -33,7 +33,7 @@ export default function DentistLoginPage() {
     setError(''); setGLoading(true)
     const { error: authError } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/for-dentists/dashboard` },
+      options: { redirectTo: `\$\{window.location.origin\}/auth/callback?next=/for-dentists/dashboard` },
     })
     if (authError) { setError('Google sign-in failed. Try email instead.'); setGLoading(false) }
   }
@@ -153,3 +153,4 @@ export default function DentistLoginPage() {
     </div>
   )
 }
+
