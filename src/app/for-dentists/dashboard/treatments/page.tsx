@@ -4,28 +4,12 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
-interface Treatment {
-  id: string
-  name: string
-  slug: string
-  icon: string
-}
-
-interface DentistTreatment {
-  id: string
-  treatment_id: string
-  fee_from: number | null
-  fee_to: number | null
-  duration_mins: number | null
-  treatments: Treatment
-}
-
 export default function TreatmentsPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [dentistId, setDentistId] = useState('')
-  const [allTreatments, setAllTreatments] = useState<Treatment[]>([])
-  const [dentistTreatments, setDentistTreatments] = useState<DentistTreatment[]>([])
+  const [allTreatments, setAllTreatments] = useState<any[]>([])
+  const [dentistTreatments, setDentistTreatments] = useState<any[]>([])
   const [adding, setAdding] = useState<string | null>(null)
   const [removing, setRemoving] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -49,15 +33,15 @@ export default function TreatmentsPage() {
       ])
 
       setAllTreatments(all || [])
-      setDentistTreatments((mine || []) as unknown as unknown as DentistTreatment[])
+      setDentistTreatments(mine || [])
       setLoading(false)
     }
     load()
   }, [])
 
-  const myTreatmentIds = dentistTreatments.map(dt => dt.treatment_id)
+  const myTreatmentIds = dentistTreatments.map((dt: any) => dt.treatment_id)
 
-  async function addTreatment(treatment: Treatment) {
+  async function addTreatment(treatment: any) {
     setAdding(treatment.id)
     const supabase = createClient()
     const { data } = await supabase
@@ -65,7 +49,7 @@ export default function TreatmentsPage() {
       .insert({ dentist_id: dentistId, treatment_id: treatment.id, fee_from: null, fee_to: null })
       .select('id, treatment_id, fee_from, fee_to, duration_mins, treatments(id, name, slug, icon)')
       .single()
-    if (data) setDentistTreatments(prev => [...prev, data as unknown as DentistTreatment])
+    if (data) setDentistTreatments((prev: any[]) => [...prev, data])
     setAdding(null)
   }
 
@@ -73,7 +57,7 @@ export default function TreatmentsPage() {
     setRemoving(dtId)
     const supabase = createClient()
     await supabase.from('dentist_treatments').delete().eq('id', dtId)
-    setDentistTreatments(prev => prev.filter(dt => dt.id !== dtId))
+    setDentistTreatments((prev: any[]) => prev.filter((dt: any) => dt.id !== dtId))
     setRemoving(null)
   }
 
@@ -85,7 +69,7 @@ export default function TreatmentsPage() {
       fee_to: editForm.fee_to ? parseInt(editForm.fee_to) : null,
       duration_mins: editForm.duration_mins ? parseInt(editForm.duration_mins) : null,
     }).eq('id', dtId)
-    setDentistTreatments(prev => prev.map(dt => dt.id === dtId ? {
+    setDentistTreatments((prev: any[]) => prev.map((dt: any) => dt.id === dtId ? {
       ...dt,
       fee_from: editForm.fee_from ? parseInt(editForm.fee_from) : null,
       fee_to: editForm.fee_to ? parseInt(editForm.fee_to) : null,
@@ -94,7 +78,7 @@ export default function TreatmentsPage() {
     setSaving(false); setEditingId(null)
   }
 
-  function startEdit(dt: DentistTreatment) {
+  function startEdit(dt: any) {
     setEditingId(dt.id)
     setEditForm({ fee_from: dt.fee_from?.toString() || '', fee_to: dt.fee_to?.toString() || '', duration_mins: dt.duration_mins?.toString() || '' })
   }
@@ -107,7 +91,7 @@ export default function TreatmentsPage() {
     <div style={{ maxWidth: 720 }}>
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 4 }}>Treatments & Fees</h1>
-        <p style={{ fontSize: 14, color: 'var(--muted)' }}>Add your treatments and set fee ranges. Patients search by treatment — more treatments = more visibility.</p>
+        <p style={{ fontSize: 14, color: 'var(--muted)' }}>Add your treatments and set fee ranges. More treatments = more visibility in search.</p>
       </div>
 
       {/* Your treatments */}
@@ -123,7 +107,7 @@ export default function TreatmentsPage() {
             <p>No treatments added yet. Add from the list below.</p>
           </div>
         ) : (
-          dentistTreatments.map(dt => (
+          dentistTreatments.map((dt: any) => (
             <div key={dt.id} style={{ borderBottom: '1px solid var(--border)', padding: '14px 20px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 22, flexShrink: 0 }}>{dt.treatments?.icon}</span>
@@ -133,11 +117,11 @@ export default function TreatmentsPage() {
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                     <div style={{ width: 90 }}>
                       <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 2 }}>Fee from (₹)</div>
-                      <input type="number" value={editForm.fee_from} onChange={e => setEditForm(f => ({ ...f, fee_from: e.target.value }))} placeholder="e.g. 5000" style={inputStyle} />
+                      <input type="number" value={editForm.fee_from} onChange={e => setEditForm(f => ({ ...f, fee_from: e.target.value }))} placeholder="5000" style={inputStyle} />
                     </div>
                     <div style={{ width: 90 }}>
                       <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 2 }}>Fee to (₹)</div>
-                      <input type="number" value={editForm.fee_to} onChange={e => setEditForm(f => ({ ...f, fee_to: e.target.value }))} placeholder="e.g. 15000" style={inputStyle} />
+                      <input type="number" value={editForm.fee_to} onChange={e => setEditForm(f => ({ ...f, fee_to: e.target.value }))} placeholder="15000" style={inputStyle} />
                     </div>
                     <div style={{ width: 80 }}>
                       <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 2 }}>Duration (min)</div>
@@ -172,19 +156,19 @@ export default function TreatmentsPage() {
           <p style={{ fontSize: 13, color: 'var(--muted)', marginTop: 2 }}>Click + to add to your profile</p>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 1, background: 'var(--border)' }}>
-          {allTreatments.filter(t => !myTreatmentIds.includes(t.id)).map(t => (
+          {allTreatments.filter((t: any) => !myTreatmentIds.includes(t.id)).map((t: any) => (
             <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: '#fff', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 18 }}>{t.icon}</span>
                 <span style={{ fontSize: 13, fontWeight: 500 }}>{t.name}</span>
               </div>
-              <button
-                onClick={() => addTreatment(t)} disabled={adding === t.id}
-                style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--blue)', color: '#fff', border: 'none', cursor: adding === t.id ? 'not-allowed' : 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-              >{adding === t.id ? '…' : '+'}</button>
+              <button onClick={() => addTreatment(t)} disabled={adding === t.id}
+                style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--blue)', color: '#fff', border: 'none', cursor: adding === t.id ? 'not-allowed' : 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                {adding === t.id ? '…' : '+'}
+              </button>
             </div>
           ))}
-          {allTreatments.filter(t => !myTreatmentIds.includes(t.id)).length === 0 && (
+          {allTreatments.filter((t: any) => !myTreatmentIds.includes(t.id)).length === 0 && (
             <div style={{ padding: '30px', textAlign: 'center', color: 'var(--muted)', gridColumn: '1/-1', background: '#fff' }}>
               ✅ All available treatments added!
             </div>
@@ -194,5 +178,3 @@ export default function TreatmentsPage() {
     </div>
   )
 }
-
-
