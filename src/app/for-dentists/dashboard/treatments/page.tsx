@@ -65,7 +65,7 @@ export default function TreatmentsPage() {
       .insert({ dentist_id: dentistId, treatment_id: treatment.id, fee_from: null, fee_to: null })
       .select('id, treatment_id, fee_from, fee_to, duration_mins, treatments(id, name, slug, icon)')
       .single()
-    if (data) setDentistTreatments(prev => [...prev, data as DentistTreatment])
+    if (data) setDentistTreatments(prev => [...prev, data as unknown as DentistTreatment])
     setAdding(null)
   }
 
