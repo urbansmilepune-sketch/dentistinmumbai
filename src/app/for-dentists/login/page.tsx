@@ -29,14 +29,17 @@ export default function DentistLoginPage() {
     router.refresh()
   }
 
-  async function handleGoogle() {
-    setError(''); setGLoading(true)
-    const { error: authError } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: 'https://www.dentistinmumbai.in/auth/callback' },
-    })
-    if (authError) { setError('Google sign-in failed. Try email instead.'); setGLoading(false) }
-  }
+async function handleGoogle() {
+  setError(''); setGLoading(true)
+  const { error: authError } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: 'https://www.dentistinmumbai.in/auth/callback',
+      queryParams: { access_type: 'offline', prompt: 'consent' }
+    },
+  })
+  if (authError) { setError('Google sign-in failed.'); setGLoading(false) }
+}
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex' }}>
