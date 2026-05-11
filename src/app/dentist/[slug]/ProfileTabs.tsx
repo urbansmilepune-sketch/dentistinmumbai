@@ -129,3 +129,4 @@ export default function ProfileTabs({ overview, treatments, gallery, reviews, lo
     </div>
   )
 }
+
