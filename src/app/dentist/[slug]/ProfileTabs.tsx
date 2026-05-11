@@ -2,18 +2,12 @@
 
 import { useState } from 'react'
 
-interface Tab {
-  id: string
-  label: string
-  icon: string
-}
-
-const TABS: Tab[] = [
-  { id: 'overview', label: 'Overview', icon: '👤' },
-  { id: 'treatments', label: 'Treatments & Fees', icon: '💉' },
-  { id: 'gallery', label: 'Gallery', icon: '🖼️' },
-  { id: 'reviews', label: 'Reviews', icon: '⭐' },
-  { id: 'location', label: 'Location', icon: '📍' },
+const TABS = [
+  { id: 'overview', label: 'Overview', icon: '??' },
+  { id: 'treatments', label: 'Treatments', icon: '??' },
+  { id: 'gallery', label: 'Gallery', icon: '???' },
+  { id: 'reviews', label: 'Reviews', icon: '?' },
+  { id: 'location', label: 'Location', icon: '??' },
 ]
 
 interface ProfileTabsProps {
@@ -27,106 +21,20 @@ interface ProfileTabsProps {
 
 export default function ProfileTabs({ overview, treatments, gallery, reviews, location, reviewCount }: ProfileTabsProps) {
   const [active, setActive] = useState('overview')
-
   const content: Record<string, React.ReactNode> = { overview, treatments, gallery, reviews, location }
-
   return (
     <div>
-      {/* Tab bar */}
-      <div style={{ background: '#fff', borderBottom: '1px solid var(--border)', position: 'sticky', top: 68, zIndex: 10, overflowX: 'auto' }}>
-        <div style={{ display: 'flex', minWidth: 'max-content' }}>
-          {TABS.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActive(tab.id)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '16px 24px', background: 'none', border: 'none',
-                borderBottom: active === tab.id ? '3px solid var(--blue)' : '3px solid transparent',
-                color: active === tab.id ? 'var(--blue)' : 'var(--muted)',
-                fontFamily: 'var(--font-body)', fontWeight: active === tab.id ? 700 : 500,
-                fontSize: 14, cursor: 'pointer', whiteSpace: 'nowrap',
-                transition: 'color 0.15s',
-              }}
-            >
-              <span>{tab.icon}</span>
-              <span>{tab.label}{tab.id === 'reviews' && reviewCount > 0 ? ` (${reviewCount})` : ''}</span>
-            </button>
-          ))}
-        </div>
+      <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', background: '#fff', borderRadius: '12px 12px 0 0', overflow: 'hidden', marginBottom: 16 }}>
+        {TABS.map(tab => (
+          <button key={tab.id} onClick={() => setActive(tab.id)} style={{ flex: 1, padding: '14px 8px', border: 'none', background: active === tab.id ? 'var(--blue-light)' : '#fff', color: active === tab.id ? 'var(--blue)' : 'var(--muted)', fontWeight: active === tab.id ? 700 : 400, fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-body)', borderBottom: active === tab.id ? '2px solid var(--blue)' : '2px solid transparent', transition: 'all 0.15s' }}>
+            <div>{tab.icon}</div>
+            <div style={{ marginTop: 2 }}>{tab.id === 'reviews' && reviewCount > 0 ? tab.label + ' (' + reviewCount + ')' : tab.label}</div>
+          </button>
+        ))}
       </div>
-
-      {/* Tab content */}
-      <div style={{ padding: '32px 0' }}>
+      <div style={{ background: '#fff', borderRadius: '0 0 12px 12px', border: '1px solid var(--border)', borderTop: 'none', padding: '20px' }}>
         {content[active]}
       </div>
     </div>
   )
 }
-
-'use client'
-
-import { useState } from 'react'
-
-interface Tab {
-  id: string
-  label: string
-  icon: string
-}
-
-const TABS: Tab[] = [
-  { id: 'overview', label: 'Overview', icon: '👤' },
-  { id: 'treatments', label: 'Treatments & Fees', icon: '💉' },
-  { id: 'gallery', label: 'Gallery', icon: '🖼️' },
-  { id: 'reviews', label: 'Reviews', icon: '⭐' },
-  { id: 'location', label: 'Location', icon: '📍' },
-]
-
-interface ProfileTabsProps {
-  overview: React.ReactNode
-  treatments: React.ReactNode
-  gallery: React.ReactNode
-  reviews: React.ReactNode
-  location: React.ReactNode
-  reviewCount: number
-}
-
-export default function ProfileTabs({ overview, treatments, gallery, reviews, location, reviewCount }: ProfileTabsProps) {
-  const [active, setActive] = useState('overview')
-
-  const content: Record<string, React.ReactNode> = { overview, treatments, gallery, reviews, location }
-
-  return (
-    <div>
-      {/* Tab bar */}
-      <div style={{ background: '#fff', borderBottom: '1px solid var(--border)', position: 'sticky', top: 68, zIndex: 10, overflowX: 'auto' }}>
-        <div style={{ display: 'flex', minWidth: 'max-content' }}>
-          {TABS.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActive(tab.id)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '16px 24px', background: 'none', border: 'none',
-                borderBottom: active === tab.id ? '3px solid var(--blue)' : '3px solid transparent',
-                color: active === tab.id ? 'var(--blue)' : 'var(--muted)',
-                fontFamily: 'var(--font-body)', fontWeight: active === tab.id ? 700 : 500,
-                fontSize: 14, cursor: 'pointer', whiteSpace: 'nowrap',
-                transition: 'color 0.15s',
-              }}
-            >
-              <span>{tab.icon}</span>
-              <span>{tab.label}{tab.id === 'reviews' && reviewCount > 0 ? ` (${reviewCount})` : ''}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Tab content */}
-      <div style={{ padding: '32px 0' }}>
-        {content[active]}
-      </div>
-    </div>
-  )
-}
-
