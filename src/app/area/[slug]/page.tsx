@@ -12,10 +12,9 @@ import DentistCard from '@/components/DentistCard'
 export const revalidate = 21600
 
 export async function generateStaticParams() {
-  const { createClient: sb } = await import('@supabase/supabase-js')
-  const supabase = sb(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
+  const supabase = await createClient()
   const { data } = await supabase.from('areas').select('slug')
-  return (data || []).map((a: any) => ({ slug: a.slug }))
+  return (data || []).map(a => ({ slug: a.slug }))
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
@@ -441,4 +440,3 @@ export default async function AreaPage({ params }: { params: Promise<{ slug: str
     </>
   )
 }
-
