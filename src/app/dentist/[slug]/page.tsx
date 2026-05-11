@@ -44,7 +44,7 @@ export default async function DentistProfilePage({ params }: Props) {
 
  const { data: dentist } = await supabase
     .from('dentists')
-    .select('*, areas(name, slug), dentist_treatments(fee_from, fee_to, treatments(id, name, slug, icon))')
+    .select('*, areas(name, slug), dentist_treatments(fee_from, fee_to, treatments(id, name, slug, icon)), gallery_photos(id, image_url, caption, category), reviews(id, patient_name, rating, review_text, treatment, created_at, status)')
     .eq('slug', slug)
     .eq('is_active', true)
     .single()
@@ -228,6 +228,7 @@ export default async function DentistProfilePage({ params }: Props) {
     </>
   )
 }
+
 
 
 
