@@ -44,7 +44,7 @@ export default async function DentistProfilePage({ params }: Props) {
 
  const { data: dentist } = await supabase
     .from('dentists')
-    .select('*')
+    .select('*, areas(name, slug)')
     .eq('slug', slug)
     .eq('is_active', true)
     .single()
@@ -228,4 +228,5 @@ export default async function DentistProfilePage({ params }: Props) {
     </>
   )
 }
+
 
