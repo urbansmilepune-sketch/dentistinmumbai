@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { sendRegistrationEmailToAdmin, sendRegistrationEmailToDentist } from '@/lib/email'
 
 function generateRef(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
@@ -18,11 +19,10 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
 
-    // Check for duplicate phone/email
     const { data: existing } = await supabase
       .from('dentist_registrations')
       .select('id')
@@ -33,7 +33,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'A registration with this phone or email already exists.' }, { status: 409 })
     }
 
-    // Generate unique ref
     let ref_no = generateRef()
     for (let i = 0; i < 5; i++) {
       const { data: refCheck } = await supabase.from('dentist_registrations').select('id').eq('ref_no', ref_no).single()
@@ -48,6 +47,11 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (error) throw error
+
+    Promise.all([
+      sendRegistrationEmailToAdmin({ name, clinic_name, area, phone, email, qualification, ref_no }),
+      sendRegistrationEmailToDentist({ name, clinic_name, area, phone, ref_no, to_email: email }),
+    ]).catch(err => console.error('Email sending failed:', err))
 
     return NextResponse.json({ ref_no: data.ref_no, success: true })
   } catch (error: any) {
