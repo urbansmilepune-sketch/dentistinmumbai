@@ -49,7 +49,7 @@ export default function TreatmentsPage() {
       ])
 
       setAllTreatments(all || [])
-      setDentistTreatments((mine || []) as DentistTreatment[])
+      setDentistTreatments((mine || []) as unknown as DentistTreatment[])
       setLoading(false)
     }
     load()
