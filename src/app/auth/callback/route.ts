@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
     if (!error) {
       return NextResponse.redirect(`${origin}/for-dentists/dashboard`)
     }
+    console.error('[auth/callback] exchangeCodeForSession failed', { message: error.message, code })
   }
 
   return NextResponse.redirect(`${origin}/for-dentists/login?error=oauth_failed`)
