@@ -79,8 +79,27 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
   }
 
   async function approveReg(id: string) {
-    await adminAction('/api/admin/registrations', { id, status: 'approved' }, id)
-    setRegList(prev => prev.map(r => r.id === id ? { ...r, status: 'approved' } : r))
+    setActionLoading(id)
+    try {
+      const res = await fetch('/api/admin/registrations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registration_id: id, action: 'approve' }) })
+      const data = await res.json()
+      if (data.success) { setRegList(prev => prev.map(r => r.id === id ? { ...r, status: 'approved' } : r)); alert('Approved! Profile: /dentist/' + data.slug) }
+      else alert('Error: ' + (data.error || 'Unknown'))
+    } catch { alert('Network error') }
+    setActionLoading(null)
+  }
+
+  async function declineReg(id: string) {
+    const reason = prompt('Reason for declining (emailed to dentist):')
+    if (reason === null) return
+    setActionLoading(id)
+    try {
+      const res = await fetch('/api/admin/registrations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registration_id: id, action: 'decline', reason }) })
+      const data = await res.json()
+      if (data.success) { setRegList(prev => prev.map(r => r.id === id ? { ...r, status: 'declined' } : r)); alert('Declined. Email sent.') }
+      else alert('Error: ' + (data.error || 'Unknown'))
+    } catch { alert('Network error') }
+    setActionLoading(null)
   }
 
   const inputStyle = { padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, fontFamily: 'var(--font-body)', outline: 'none', background: '#fff' }
@@ -202,7 +221,8 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
                       <td style={tableCellStyle}>
                         {r.status === 'pending' && (
                           <div style={{ display: 'flex', gap: 6 }}>
-                            <button onClick={() => approveReg(r.id)} disabled={actionLoading === r.id} style={{ padding: '5px 10px', background: '#DCFCE7', color: '#166534', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>Approve</button>
+                            <button onClick={() => approveReg(r.id)} disabled={actionLoading === r.id} style={{ padding: '5px 10px', background: '#DCFCE7', color: '#166534', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>✓ Approve</button>
+                            <button onClick={() => declineReg(r.id)} disabled={actionLoading === r.id} style={{ padding: '5px 10px', background: '#FEE2E2', color: '#991B1B', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>✕ Decline</button>
                           </div>
                         )}
                       </td>

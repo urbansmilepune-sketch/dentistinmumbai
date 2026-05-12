@@ -1,9 +1,11 @@
+
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import ProfileTabs from './ProfileTabs'
 import BookingTrigger from '@/components/BookingTrigger'
+import ReviewForm from '@/components/ReviewForm'
 
 export const dynamic = 'force-dynamic'
 
@@ -178,7 +180,8 @@ export default async function DentistProfilePage({ params }: Props) {
                         </div>
                         <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.7 }}>{r.review_text}</p>
                       </div>
-                    )) : <p style={{ color: 'var(--muted)', fontSize: 14, padding: 20 }}>No reviews yet.</p>}
+                   )) : <p style={{ color: 'var(--muted)', fontSize: 14, padding: 20 }}>No reviews yet.</p>}
+                    <div style={{ marginTop: 20 }}><ReviewForm dentistId={dentist.id} dentistName={dentist.name} /></div>
                   </div>
                 }
                 location={

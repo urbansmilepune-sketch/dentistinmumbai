@@ -4,12 +4,14 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
+import DentalChart from '@/components/DentalChart'
 
 const TABS = [
   { id: 'overview', label: 'Overview', icon: '👤' },
   { id: 'visits', label: 'Visit Notes', icon: '📋' },
   { id: 'prescriptions', label: 'Prescriptions', icon: '💊' },
   { id: 'plans', label: 'Treatment Plans', icon: '🦷' },
+{ id: 'chart', label: 'Dental Chart', icon: '🦷' },
   { id: 'xrays', label: 'X-Ray Vault', icon: '🩻' },
 ]
 
@@ -445,6 +447,9 @@ export default function PatientDetailPage() {
       )}
 
       {/* X-RAY VAULT */}
+{activeTab === 'chart' && (
+  <DentalChart patientId={patientId} dentistId={dentistId} />
+)}
       {activeTab === 'xrays' && (
         <div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
