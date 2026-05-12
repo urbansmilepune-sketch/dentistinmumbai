@@ -34,7 +34,7 @@ async function handleGoogle() {
   const { error: authError } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo: 'https://www.dentistinmumbai.in/auth/callback',
+      redirectTo: `${window.location.origin}/auth/callback`,
       queryParams: { access_type: 'offline', prompt: 'consent' }
     },
   })
