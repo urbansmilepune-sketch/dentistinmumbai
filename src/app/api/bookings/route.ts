@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { data, error } = await supabase.from('appointments')
-      .insert({ dentist_id, patient_name, patient_phone, appt_date, time_slot, treatment_id: treatment_id || null, notes: notes || null, status: 'pending', reference_no })
+      .insert({ dentist_id, patient_name, patient_phone, appt_date, time_slot, treatment_id: treatment_id || null, notes: notes || null, status: 'scheduled', reference_no })
       .select('id, reference_no').single()
 
     if (error) throw error
