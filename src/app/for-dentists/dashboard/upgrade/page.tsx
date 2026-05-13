@@ -1,7 +1,20 @@
-import Link from 'next/link'
+import GoldCheckoutButton from './GoldCheckoutButton'
+
+type Plan = {
+  name: string
+  price: string
+  period: string
+  color: string
+  bg: string
+  badge?: string
+  features: string[]
+  cta: string
+  disabled?: boolean
+  payment?: 'razorpay' | 'whatsapp'
+}
 
 export default function UpgradePage() {
-  const PLANS = [
+  const PLANS: Plan[] = [
     {
       name: 'Free', price: '₹0', period: 'forever', color: '#6B7280', bg: '#F9FAFB',
       features: ['Full clinic profile', 'Booking system', 'Patient reviews', 'Google Maps', 'WhatsApp button', 'Basic analytics'],
@@ -11,13 +24,13 @@ export default function UpgradePage() {
       name: 'Gold', price: '₹999', period: '/month', color: '#92400E', bg: '#FEF3C7',
       badge: '⭐ Most Popular',
       features: ['Everything in Free', 'Priority placement in search', 'Full analytics dashboard', 'Profile views tracking', 'WhatsApp click tracking', 'Call tracking', 'Leaderboard access', 'Featured badge on listing'],
-      cta: 'Upgrade to Gold', disabled: false,
+      cta: 'Upgrade to Gold', payment: 'razorpay',
     },
     {
       name: 'Featured', price: '₹2,499', period: '/month', color: '#C2410C', bg: '#FFF7ED',
       badge: '🔥 Maximum Visibility',
       features: ['Everything in Gold', 'Top of search results', 'Homepage featured slot', 'Dedicated account manager', 'Custom profile URL', 'Social media promotion', 'Priority support'],
-      cta: 'Get Featured', disabled: false,
+      cta: 'Get Featured', payment: 'whatsapp',
     },
   ]
 
@@ -51,6 +64,8 @@ export default function UpgradePage() {
             </div>
             {plan.disabled ? (
               <div style={{ width: '100%', padding: '12px', background: 'var(--bg)', color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 10, textAlign: 'center', fontSize: 14, fontWeight: 600 }}>Current Plan</div>
+            ) : plan.payment === 'razorpay' ? (
+              <GoldCheckoutButton color={plan.color} />
             ) : (
               <a href={`https://wa.me/917719903232?text=Hi, I want to upgrade my dentistinmumbai.in listing to the ${plan.name} plan. My clinic is listed on the platform.`}
                 target="_blank" rel="noopener noreferrer"
