@@ -8,8 +8,14 @@ export default async function AnalyticsPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/for-dentists/login')
 
-  const { data: dentist } = await supabase.from('dentists').select('id, name, tier').eq('email', user.email).single()
+  const { data: dentist } = await supabase
+    .from('dentists')
+    .select('id, name, tier, profile_views, whatsapp_clicks, call_clicks, booking_clicks')
+    .eq('email', user.email)
+    .single()
   if (!dentist) redirect('/for-dentists/login')
+
+  const sevenDaysAgoIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
 
   // Fetch stats
   const [
@@ -19,6 +25,7 @@ export default async function AnalyticsPage() {
     { count: totalEnquiries },
     { count: totalReviews },
     { data: recentAppts },
+    { data: recentEvents },
   ] = await Promise.all([
     supabase.from('appointments').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id),
     supabase.from('appointments').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id).eq('status', 'pending'),
@@ -26,7 +33,26 @@ export default async function AnalyticsPage() {
     supabase.from('enquiries').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id),
     supabase.from('reviews').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id).eq('status', 'approved'),
     supabase.from('appointments').select('appt_date, status').eq('dentist_id', dentist.id).order('appt_date', { ascending: false }).limit(30),
+    supabase.from('analytics_events').select('event_type, created_at').eq('dentist_id', dentist.id).gte('created_at', sevenDaysAgoIso),
   ])
+
+  // Build last-7-days matrix [{ dayLabel, profile_view, whatsapp_click, call_click, booking_click }]
+  const EVENT_TYPES = ['profile_view', 'whatsapp_click', 'call_click', 'booking_click'] as const
+  type EventType = (typeof EVENT_TYPES)[number]
+  const dayBuckets: { key: string; label: string; counts: Record<EventType, number> }[] = []
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000)
+    const key = d.toISOString().slice(0, 10)
+    const label = d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric' })
+    dayBuckets.push({ key, label, counts: { profile_view: 0, whatsapp_click: 0, call_click: 0, booking_click: 0 } })
+  }
+  ;(recentEvents || []).forEach(ev => {
+    const key = ev.created_at.slice(0, 10)
+    const bucket = dayBuckets.find(b => b.key === key)
+    if (bucket && EVENT_TYPES.includes(ev.event_type as EventType)) {
+      bucket.counts[ev.event_type as EventType]++
+    }
+  })
 
   // Group appointments by week
   const weeklyData: Record<string, number> = {}
@@ -43,7 +69,19 @@ export default async function AnalyticsPage() {
     { icon: '✅', label: 'Completed', value: completedAppts || 0, color: '#00A878' },
     { icon: '💬', label: 'Total Enquiries', value: totalEnquiries || 0, color: 'var(--orange)' },
     { icon: '⭐', label: 'Reviews', value: totalReviews || 0, color: '#F59E0B' },
+    { icon: '👁️', label: 'Profile Views', value: dentist.profile_views || 0, color: 'var(--blue)' },
+    { icon: '💚', label: 'WhatsApp Clicks', value: dentist.whatsapp_clicks || 0, color: '#25D366' },
+    { icon: '📞', label: 'Call Clicks', value: dentist.call_clicks || 0, color: '#0EA5E9' },
+    { icon: '📅', label: 'Booking Clicks', value: dentist.booking_clicks || 0, color: '#92400E' },
   ]
+
+  const EVENT_META: Record<EventType, { label: string; color: string }> = {
+    profile_view:   { label: 'Views',     color: 'var(--blue)' },
+    whatsapp_click: { label: 'WhatsApp',  color: '#25D366' },
+    call_click:     { label: 'Calls',     color: '#0EA5E9' },
+    booking_click:  { label: 'Bookings',  color: '#92400E' },
+  }
+  const hasAnyEvents = dayBuckets.some(b => EVENT_TYPES.some(t => b.counts[t] > 0))
 
   return (
     <div>
@@ -87,6 +125,44 @@ export default async function AnalyticsPage() {
           </div>
         </div>
       )}
+
+      {/* Weekly engagement breakdown */}
+      <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '24px', marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
+          <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16 }}>Engagement — Last 7 Days</h3>
+          <span style={{ fontSize: 12, color: 'var(--muted)' }}>profile views, WhatsApp / call / booking clicks</span>
+        </div>
+        {!hasAnyEvents ? (
+          <p style={{ fontSize: 13, color: 'var(--muted)', padding: '16px 0' }}>No engagement events recorded in the last 7 days yet.</p>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: 'var(--bg)' }}>
+                  <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: 'var(--muted)' }}>Day</th>
+                  {EVENT_TYPES.map(t => (
+                    <th key={t} style={{ padding: '8px 12px', textAlign: 'right', fontSize: 11, fontWeight: 600, color: EVENT_META[t].color }}>
+                      {EVENT_META[t].label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {dayBuckets.map(b => (
+                  <tr key={b.key} style={{ borderTop: '1px solid var(--border)' }}>
+                    <td style={{ padding: '8px 12px', color: 'var(--text-secondary)' }}>{b.label}</td>
+                    {EVENT_TYPES.map(t => (
+                      <td key={t} style={{ padding: '8px 12px', textAlign: 'right', fontWeight: b.counts[t] > 0 ? 600 : 400, color: b.counts[t] > 0 ? EVENT_META[t].color : 'var(--muted)' }}>
+                        {b.counts[t]}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       {/* Tips */}
       <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 16, padding: '24px' }}>
