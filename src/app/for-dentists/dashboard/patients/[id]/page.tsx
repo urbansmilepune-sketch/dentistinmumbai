@@ -11,7 +11,7 @@ const TABS = [
   { id: 'visits', label: 'Visit Notes', icon: '📋' },
   { id: 'prescriptions', label: 'Prescriptions', icon: '💊' },
   { id: 'plans', label: 'Treatment Plans', icon: '🦷' },
-{ id: 'chart', label: 'Dental Chart', icon: '🦷' },
+  { id: 'chart', label: 'Dental Chart', icon: '🦷' },
   { id: 'xrays', label: 'X-Ray Vault', icon: '🩻' },
 ]
 
@@ -446,10 +446,12 @@ export default function PatientDetailPage() {
         </div>
       )}
 
+      {/* DENTAL CHART */}
+      {activeTab === 'chart' && (
+        <DentalChart patientId={patientId} dentistId={dentistId} />
+      )}
+
       {/* X-RAY VAULT */}
-{activeTab === 'chart' && (
-  <DentalChart patientId={patientId} dentistId={dentistId} />
-)}
       {activeTab === 'xrays' && (
         <div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
