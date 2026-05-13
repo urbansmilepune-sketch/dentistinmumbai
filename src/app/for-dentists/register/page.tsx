@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 
 const AREAS = ['Andheri', 'Bandra', 'Borivali', 'Chembur', 'Colaba', 'Dadar', 'Ghatkopar', 'Goregaon', 'Juhu', 'Kandivali', 'Kharghar', 'Kurla', 'Lower Parel', 'Malad', 'Mulund', 'Navi Mumbai', 'Powai', 'Santacruz', 'South Mumbai', 'Thane', 'Vashi', 'Vile Parle', 'Worli', 'Belapur']
@@ -22,6 +22,16 @@ export default function RegisterPage() {
   const [success, setSuccess] = useState(false)
   const [refNo, setRefNo] = useState('')
   const [error, setError] = useState('')
+  const [prefilledFromLogin, setPrefilledFromLogin] = useState(false)
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const emailParam = params.get('email')
+    if (emailParam) {
+      setForm(f => ({ ...f, email: emailParam }))
+      setPrefilledFromLogin(true)
+    }
+  }, [])
 
   function update(key: string, value: string) {
     setForm(f => ({ ...f, [key]: value }))
@@ -79,6 +89,11 @@ export default function RegisterPage() {
         <div style={{ maxWidth: 600, margin: '0 auto' }}>
           {!success ? (
             <>
+              {prefilledFromLogin && (
+                <div style={{ padding: '14px 18px', background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: 12, fontSize: 14, color: '#92400E', marginBottom: 24, lineHeight: 1.5 }}>
+                  <strong>No account found for {form.email}.</strong> Please complete the registration below to claim your free listing — your profile will be activated within 24 hours.
+                </div>
+              )}
               {/* Hero */}
               <div style={{ textAlign: 'center', marginBottom: 36 }}>
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 16px', background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: 40, marginBottom: 16 }}>

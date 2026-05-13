@@ -14,7 +14,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
     .eq('email', user.email)
     .single()
 
-  if (!dentist) redirect('/for-dentists/login')
+  if (!dentist) {
+    const email = user.email ?? ''
+    redirect(`/for-dentists/register?email=${encodeURIComponent(email)}`)
+  }
   if (!dentist.is_active) redirect('/for-dentists/pending')
 
   // Profile completion
