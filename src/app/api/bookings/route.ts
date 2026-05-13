@@ -3,6 +3,7 @@
 //   SUPABASE_SERVICE_ROLE_KEY      — service-role key (server-only)
 //   MSG91_AUTH_KEY                 — MSG91 auth key; without it notifyDentist() logs to stdout instead of sending
 //   MSG91_BOOKING_TEMPLATE_ID      — MSG91 flow template id for the booking-notification message
+//   MSG91_SENDER_ID                — DLT-registered 6-char header passed as `sender` in the flow body
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -18,15 +19,24 @@ async function notifyDentist(phone: string, message: string) {
     console.log('[MSG91 not configured] Would send to', phone, ':', message)
     return
   }
+  // NOTE: MSG91 Flow templates render PRE-REGISTERED text using named variables
+  // passed per recipient (e.g. { mobiles, patient_name, date, ... }). The
+  // `message` field below is ignored by Flow and exists only so the function
+  // signature still carries the human-readable text for logging/fallback.
+  // To make the dentist actually receive a useful SMS, edit your MSG91 flow
+  // template to accept the booking fields and pass them by name here.
   try {
-    await fetch('https://api.msg91.com/api/v5/flow/', {
+    const res = await fetch('https://control.msg91.com/api/v5/flow/', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'authkey': process.env.MSG91_AUTH_KEY },
+      headers: { 'Content-Type': 'application/json', authkey: process.env.MSG91_AUTH_KEY },
       body: JSON.stringify({
         template_id: process.env.MSG91_BOOKING_TEMPLATE_ID,
+        sender: process.env.MSG91_SENDER_ID,
+        short_url: '0',
         recipients: [{ mobiles: `91${phone.replace(/\D/g, '')}`, message }],
       }),
     })
+    if (!res.ok) console.error('[MSG91 Flow]', res.status, await res.text().catch(() => ''))
   } catch (err) { console.error('[MSG91 Error]', err) }
 }
 

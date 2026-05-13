@@ -6,16 +6,31 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-// Send OTP via MSG91
+// Send OTP via MSG91 OTP API v5.
+// Required env: MSG91_AUTH_KEY, MSG91_OTP_TEMPLATE_ID. Optional: MSG91_SENDER_ID
+// (DLT-registered header; overrides the template default if set).
 async function sendOTP(phone: string, otp: string) {
   if (!process.env.MSG91_AUTH_KEY) {
     console.log('[OTP Dev Mode] OTP for', phone, ':', otp)
     return true
   }
+  const params = new URLSearchParams({
+    template_id: process.env.MSG91_OTP_TEMPLATE_ID || '',
+    mobile: `91${phone}`,
+    otp,
+  })
+  if (process.env.MSG91_SENDER_ID) params.set('sender', process.env.MSG91_SENDER_ID)
   try {
-    const res = await fetch(`https://api.msg91.com/api/v5/otp?template_id=${process.env.MSG91_OTP_TEMPLATE_ID}&mobile=91${phone}&authkey=${process.env.MSG91_AUTH_KEY}&otp=${otp}`, { method: 'POST' })
+    const res = await fetch(`https://control.msg91.com/api/v5/otp?${params.toString()}`, {
+      method: 'POST',
+      headers: { authkey: process.env.MSG91_AUTH_KEY, 'Content-Type': 'application/json' },
+    })
+    if (!res.ok) console.error('[MSG91 OTP]', res.status, await res.text().catch(() => ''))
     return res.ok
-  } catch { return false }
+  } catch (err) {
+    console.error('[MSG91 OTP] network error', err)
+    return false
+  }
 }
 
 // POST /api/reviews — step 1: send OTP, step 2: verify OTP and submit review
