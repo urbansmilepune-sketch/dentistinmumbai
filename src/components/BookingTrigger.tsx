@@ -25,10 +25,20 @@ interface BookingTriggerProps {
 export default function BookingTrigger({ dentist, treatments }: BookingTriggerProps) {
   const [open, setOpen] = useState(false)
 
+  function handleClick() {
+    fetch('/api/analytics/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dentist_id: dentist.id, event_type: 'booking_click' }),
+      keepalive: true,
+    }).catch(() => {})
+    setOpen(true)
+  }
+
   return (
     <>
       <button
-        onClick={() => setOpen(true)}
+        onClick={handleClick}
         style={{
           display: 'flex', alignItems: 'center', gap: 6, padding: '10px 18px',
           background: 'var(--blue)', borderRadius: 10,
