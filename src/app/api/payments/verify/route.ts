@@ -9,6 +9,7 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { createClient as createUserClient } from '@/lib/supabase/server'
 
 const GOLD_PERIOD_DAYS = 30
+const GOLD_PRICE_PAISE = 99900
 
 export async function POST(request: NextRequest) {
   if (!process.env.RAZORPAY_KEY_SECRET) {
@@ -44,6 +45,24 @@ export async function POST(request: NextRequest) {
     .single()
   if (dentistErr || !dentist) {
     return NextResponse.json({ error: 'Dentist profile not found' }, { status: 404 })
+  }
+
+  // Record the payment first. The unique constraint on razorpay_payment_id
+  // is what blocks replay attacks: a second verify call with the same
+  // payment id hits 23505 and we return 409 without re-extending the tier.
+  const { error: paymentErr } = await admin.from('payments').insert({
+    razorpay_payment_id,
+    razorpay_order_id,
+    dentist_id: dentist.id,
+    amount_paise: GOLD_PRICE_PAISE,
+    plan: 'gold',
+  })
+  if (paymentErr) {
+    if (paymentErr.code === '23505') {
+      return NextResponse.json({ error: 'Payment already processed' }, { status: 409 })
+    }
+    console.error('[razorpay verify] payment insert failed', { razorpay_payment_id, error: paymentErr.message })
+    return NextResponse.json({ error: 'Could not record payment — please contact support with payment id ' + razorpay_payment_id }, { status: 500 })
   }
 
   const now = new Date()
