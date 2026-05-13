@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import ProfileTabs from './ProfileTabs'
+import ViewTracker from './ViewTracker'
 import BookingTrigger from '@/components/BookingTrigger'
 import ReviewForm from '@/components/ReviewForm'
 
@@ -70,6 +71,7 @@ export default async function DentistProfilePage({ params }: Props) {
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <ViewTracker dentistId={dentist.id} />
       <header style={{ background: '#fff', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 100 }}>
         <nav className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 64 }}>
           <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

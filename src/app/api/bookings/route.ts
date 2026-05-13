@@ -1,3 +1,8 @@
+// Required environment variables:
+//   NEXT_PUBLIC_SUPABASE_URL       — Supabase project URL
+//   SUPABASE_SERVICE_ROLE_KEY      — service-role key (server-only)
+//   MSG91_AUTH_KEY                 — MSG91 auth key; without it notifyDentist() logs to stdout instead of sending
+//   MSG91_BOOKING_TEMPLATE_ID      — MSG91 flow template id for the booking-notification message
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
