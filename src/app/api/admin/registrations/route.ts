@@ -31,11 +31,23 @@ function slugify(input: string): string {
 }
 
 export async function POST(request: NextRequest) {
-  // Auth: admin must be signed in AND present in admin_users.
+  // Auth: identity comes from the JWT (user client). The admin_users lookup
+  // runs on the service-role client so it bypasses RLS — otherwise an admin
+  // with no self-read policy on admin_users gets a spurious Unauthorized.
   const userClient = await createUserClient()
   const { data: { user } } = await userClient.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const { data: admin } = await userClient.from('admin_users').select('id').eq('email', user.email).single()
+  if (!user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const admin_db = createServiceClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  )
+
+  const { data: admin } = await admin_db
+    .from('admin_users')
+    .select('id')
+    .ilike('email', user.email)
+    .maybeSingle()
   if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await request.json().catch(() => ({} as Record<string, unknown>))
@@ -46,11 +58,6 @@ export async function POST(request: NextRequest) {
   if (!registration_id || !action) {
     return NextResponse.json({ error: 'Missing registration_id or action' }, { status: 400 })
   }
-
-  const admin_db = createServiceClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  )
 
   // Decline path: just flip the status + record the reason.
   if (action === 'decline') {
