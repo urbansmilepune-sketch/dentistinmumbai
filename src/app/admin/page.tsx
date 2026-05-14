@@ -27,7 +27,7 @@ export default async function AdminPage() {
     supabase.from('dentist_registrations').select('*').order('created_at', { ascending: false }).limit(100),
     supabase.from('appointments').select('*, dentists(name), treatments(name)').order('created_at', { ascending: false }).limit(50),
     supabase.from('enquiries').select('*, dentists(name)').order('created_at', { ascending: false }).limit(50),
-    supabase.from('reviews').select('*').order('created_at', { ascending: false }).limit(100),
+    supabase.from('reviews').select('*, dentists(name, clinic_name)').order('created_at', { ascending: false }).limit(100),
     supabase.from('areas').select('*').order('zone').order('name'),
     supabase.from('founding_config').select('*').eq('id', 1).single(),
     supabase.from('reviews').select('id', { count: 'exact', head: false }).eq('status', 'pending'),

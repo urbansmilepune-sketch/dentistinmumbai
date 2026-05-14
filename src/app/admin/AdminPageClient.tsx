@@ -56,6 +56,7 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
   const [regList, setRegList] = useState(registrations)
   const [search, setSearch] = useState('')
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [reviewFilter, setReviewFilter] = useState<'pending' | 'approved' | 'rejected'>('pending')
 
   async function adminAction(endpoint: string, body: any, id: string) {
     setActionLoading(id)
@@ -329,16 +330,46 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
         {/* REVIEWS */}
         {section === 'reviews' && (
           <div>
-            <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 24 }}>Reviews</h1>
+            <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 16 }}>Reviews</h1>
+
+            {/* Status filter pills */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+              {(['pending', 'approved', 'rejected'] as const).map(status => {
+                const count = reviewList.filter(r => r.status === status).length
+                const active = reviewFilter === status
+                return (
+                  <button
+                    key={status}
+                    onClick={() => setReviewFilter(status)}
+                    style={{
+                      padding: '7px 16px', borderRadius: 20, fontSize: 13, fontWeight: 600,
+                      fontFamily: 'var(--font-body)', cursor: 'pointer', transition: 'all 0.15s',
+                      background: active ? 'var(--blue)' : '#fff',
+                      color: active ? '#fff' : 'var(--text)',
+                      border: `1.5px solid ${active ? 'var(--blue)' : 'var(--border)'}`,
+                    }}
+                  >
+                    {status.charAt(0).toUpperCase() + status.slice(1)} <span style={{ opacity: 0.7, marginLeft: 4 }}>{count}</span>
+                  </button>
+                )
+              })}
+            </div>
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {reviewList.map(r => (
+              {reviewList.filter(r => r.status === reviewFilter).map(r => (
                 <div key={r.id} style={{ background: '#fff', border: `1px solid ${r.status === 'pending' ? '#FDE68A' : 'var(--border)'}`, borderRadius: 14, padding: '16px 20px', display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
                   <div style={{ flex: 1, minWidth: 200 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
                       <span style={{ fontWeight: 700, fontSize: 15 }}>{r.patient_name}</span>
                       <span style={{ color: '#F59E0B' }}>{'★'.repeat(r.rating)}</span>
                       <Badge status={r.status} />
                     </div>
+                    {(r as any).dentists?.name && (
+                      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 6 }}>
+                        For <strong style={{ color: 'var(--text-secondary)' }}>{(r as any).dentists.name}</strong>
+                        {(r as any).dentists.clinic_name ? ` · ${(r as any).dentists.clinic_name}` : ''}
+                      </div>
+                    )}
                     <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 6 }}>{r.review_text}</p>
                     <div style={{ fontSize: 12, color: 'var(--muted)' }}>
                       {r.treatment && <span>Treatment: {r.treatment} · </span>}
@@ -353,8 +384,10 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
                   )}
                 </div>
               ))}
-              {reviewList.length === 0 && (
-                <div style={{ textAlign: 'center', padding: '60px', background: '#fff', borderRadius: 16, border: '1px solid var(--border)', color: 'var(--muted)' }}>No reviews yet</div>
+              {reviewList.filter(r => r.status === reviewFilter).length === 0 && (
+                <div style={{ textAlign: 'center', padding: '60px', background: '#fff', borderRadius: 16, border: '1px solid var(--border)', color: 'var(--muted)' }}>
+                  No {reviewFilter} reviews
+                </div>
               )}
             </div>
           </div>
