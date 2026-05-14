@@ -3,7 +3,10 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 
-const AREAS = ['Andheri', 'Bandra', 'Borivali', 'Chembur', 'Colaba', 'Dadar', 'Ghatkopar', 'Goregaon', 'Juhu', 'Kandivali', 'Kharghar', 'Kurla', 'Lower Parel', 'Malad', 'Mulund', 'Navi Mumbai', 'Powai', 'Santacruz', 'South Mumbai', 'Thane', 'Vashi', 'Vile Parle', 'Worli', 'Belapur']
+// Mirrors every row in the public.areas table (audited 2026-05-14). Keep in
+// sync — the admin approval route resolves area_id by exact name match, so
+// any drift here will silently leave new dentists with area_id=NULL.
+const AREAS = ['Ambernath', 'Andheri', 'Andheri East', 'Andheri West', 'Bandra', 'Bandra East', 'Bandra West', 'Belapur', 'Bhandup', 'Bhayandar', 'Borivali', 'Borivali East', 'Borivali West', 'Byculla', 'Charni Road', 'Chembur', 'Chunabhatti', 'Churchgate', 'Colaba', 'Dadar', 'Dahisar', 'Deonar', 'Dombivli', 'Fort', 'Ghatkopar', 'Ghatkopar East', 'Ghatkopar West', 'Goregaon', 'Goregaon East', 'Goregaon West', 'Govandi', 'Grant Road', 'Jogeshwari East', 'Jogeshwari West', 'Juhu', 'Kalyan', 'Kandivali', 'Kandivali East', 'Kandivali West', 'Kanjurmarg', 'Khar Road', 'Kharghar', 'Kurla', 'Kurla East', 'Kurla West', 'Lower Parel', 'Mahalaxmi', 'Mahim', 'Malad', 'Malad East', 'Malad West', 'Mankhurd', 'Marine Lines', 'Matunga', 'Mira Road', 'Mulund', 'Mulund East', 'Mulund West', 'Nahur', 'Navi Mumbai', 'Panvel', 'Parel', 'Powai', 'Prabhadevi', 'Santacruz', 'Santacruz East', 'Santacruz West', 'Sewri', 'Sion', 'South Mumbai', 'Thane', 'Thane East', 'Thane West', 'Tilak Nagar', 'Vashi', 'Vikhroli', 'Vile Parle', 'Vile Parle East', 'Vile Parle West', 'Virar', 'Wadala', 'Worli']
 const QUALIFICATIONS = ['BDS', 'BDS + MDS', 'BDS + Fellowship', 'MDS Specialist', 'BDS + Diploma']
 
 function generateRef(): string {
