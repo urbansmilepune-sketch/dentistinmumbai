@@ -95,6 +95,54 @@ export async function sendRegistrationEmailToDentist(data: {
   })
 }
 
+export async function sendDeclineEmail(data: {
+  name: string
+  clinic_name: string
+  to_email: string
+  reason: string | null
+}) {
+  // Reason is admin free-form text; render in a pre-wrap block so newlines
+  // survive and any stray HTML chars don't break the layout.
+  const safeReason = (data.reason || '').trim()
+  const reasonBlock = safeReason
+    ? `
+          <div style="background: #FEF2F2; border: 1px solid #FECACA; border-radius: 10px; padding: 16px 20px; margin: 20px 0;">
+            <p style="margin: 0 0 6px; color: #991B1B; font-size: 13px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">Reason from our team</p>
+            <p style="margin: 0; color: #7F1D1D; font-size: 14px; line-height: 1.6; white-space: pre-wrap;">${safeReason.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
+          </div>`
+    : ''
+
+  return resend.emails.send({
+    from: FROM_EMAIL,
+    to: data.to_email,
+    subject: 'Update on your DentistInMumbai.in registration',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #475569, #0F1923); padding: 32px 20px; border-radius: 10px 10px 0 0; text-align: center;">
+          <h1 style="color: white; margin: 0; font-size: 24px;">Registration Update</h1>
+          <p style="color: rgba(255,255,255,0.85); margin: 10px 0 0; font-size: 14px;">dentistinmumbai.in</p>
+        </div>
+        <div style="background: #fff; padding: 32px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 10px 10px;">
+          <p style="color: #374151; font-size: 15px;">Dear ${data.name},</p>
+          <p style="color: #374151; font-size: 15px; line-height: 1.6;">Thank you for your interest in listing <strong>${data.clinic_name}</strong> on dentistinmumbai.in. After reviewing your registration, we are unable to approve your application at this time.</p>
+          ${reasonBlock}
+          <p style="color: #374151; font-size: 15px; line-height: 1.6;">If you believe this was a mistake, or if you can address the points raised above, you are welcome to submit a fresh registration. Our team is also happy to discuss your application directly — please reach out and we will help where we can.</p>
+          <div style="background: #f8faff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 18px 20px; margin: 22px 0;">
+            <p style="margin: 0 0 8px; color: #0F1923; font-size: 14px; font-weight: bold;">Next steps</p>
+            <p style="margin: 0 0 6px; color: #374151; font-size: 14px; line-height: 1.6;">• Reapply: <a href="https://www.dentistinmumbai.in/for-dentists/register" style="color: #0057A8;">dentistinmumbai.in/for-dentists/register</a></p>
+            <p style="margin: 0; color: #374151; font-size: 14px; line-height: 1.6;">• Contact us: <a href="mailto:dentistinmumbaiapp@gmail.com" style="color: #0057A8;">dentistinmumbaiapp@gmail.com</a></p>
+          </div>
+          <p style="color: #374151; font-size: 15px; line-height: 1.6;">We appreciate the time you took to apply and wish you the very best with your practice.</p>
+          <p style="color: #374151; font-size: 15px; margin-top: 20px;">Warm regards,<br/><strong>The DentistInMumbai.in team</strong></p>
+          <div style="margin-top: 28px; padding-top: 20px; border-top: 1px solid #e2e8f0; text-align: center;">
+            <p style="color: #94a3b8; font-size: 12px; margin: 0;">© 2026 dentistinmumbai.in · A Dentaura Prime LLP initiative</p>
+          </div>
+        </div>
+      </div>
+    `,
+  })
+}
+
 export async function sendApprovalEmail(data: {
   name: string
   clinic_name: string

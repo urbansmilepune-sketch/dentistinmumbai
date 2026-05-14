@@ -12,7 +12,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { createClient as createUserClient } from '@/lib/supabase/server'
-import { sendApprovalEmail } from '@/lib/email'
+import { sendApprovalEmail, sendDeclineEmail } from '@/lib/email'
 
 type Plan = 'monthly' | 'annual'
 function normalizePlan(v: unknown): Plan | null {
@@ -59,11 +59,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Missing registration_id or action' }, { status: 400 })
   }
 
-  // Decline path: just flip the status + record the reason. The
-  // dentist_registrations.status check constraint allows
-  // 'pending' | 'approved' | 'rejected' — using 'rejected' (not 'declined')
-  // to satisfy it and to line up with the Badge color map in the admin UI.
+  // Decline path: fetch the dentist's contact info, flip the status, then
+  // fire the decline email. The dentist_registrations.status check
+  // constraint allows 'pending' | 'approved' | 'rejected' — using 'rejected'
+  // (not 'declined') to satisfy it and to line up with the Badge color map.
   if (action === 'decline') {
+    const { data: declineReg, error: declineRegErr } = await admin_db
+      .from('dentist_registrations')
+      .select('name, clinic_name, email')
+      .eq('id', registration_id)
+      .single()
+    if (declineRegErr || !declineReg) {
+      console.error('[admin/registrations decline] registration fetch failed', { registration_id, declineRegErr })
+      return NextResponse.json({ error: 'Registration not found', detail: declineRegErr?.message }, { status: 404 })
+    }
+
     const { error } = await admin_db
       .from('dentist_registrations')
       .update({ status: 'rejected', decline_reason: reason })
@@ -72,6 +82,15 @@ export async function POST(request: NextRequest) {
       console.error('[admin/registrations decline] status update failed', error)
       return NextResponse.json({ error: error.message, code: error.code, hint: error.hint }, { status: 500 })
     }
+
+    // Best-effort — don't fail the call if the email provider is down.
+    sendDeclineEmail({
+      name: declineReg.name,
+      clinic_name: declineReg.clinic_name,
+      to_email: declineReg.email,
+      reason,
+    }).catch(err => console.error('[admin/registrations decline] decline email failed', err))
+
     return NextResponse.json({ success: true })
   }
 
