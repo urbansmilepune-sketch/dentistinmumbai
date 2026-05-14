@@ -110,13 +110,15 @@ export async function POST(request: NextRequest) {
     id: reg.id, email: reg.email, area: reg.area, selected_plan: reg.selected_plan,
   })
 
-  // Resolve area_id. The registration form stores the area as a free-form
-  // string from a hard-coded list (see for-dentists/register/page.tsx) — the
-  // matching DB row in `areas` may differ by case or whitespace, so we try
-  // exact → case-insensitive → slug fallback before giving up.
+  // Resolve area_id with auto-create: exact name → case-insensitive name →
+  // create a new areas row. Means dentists can register with any
+  // neighbourhood label without an admin pre-seeding the table; the new
+  // area is filed under zone='Other' so it's visible but flagged for later
+  // curation.
   let area_id: string | null = null
   if (reg.area) {
     const wanted = reg.area.trim()
+
     const { data: areaExact, error: areaExactErr } = await admin_db
       .from('areas').select('id, name').eq('name', wanted).maybeSingle()
     if (areaExactErr) console.error('[admin/registrations approve] area exact lookup error', areaExactErr)
@@ -133,16 +135,23 @@ export async function POST(request: NextRequest) {
         area_id = areaCi.id
         console.error('[admin/registrations approve] area matched (case-insensitive)', { wanted, matched: areaCi.name, area_id })
       } else {
-        const wantedSlug = slugify(wanted)
-        const { data: areaBySlug, error: areaSlugErr } = await admin_db
-          .from('areas').select('id, name, slug').eq('slug', wantedSlug).maybeSingle()
-        if (areaSlugErr) console.error('[admin/registrations approve] area slug lookup error', areaSlugErr)
-
-        if (areaBySlug) {
-          area_id = areaBySlug.id
-          console.error('[admin/registrations approve] area matched (slug)', { wanted, wantedSlug, matched: areaBySlug.name, area_id })
-        } else {
-          console.error('[admin/registrations approve] area NOT matched — inserting with area_id=null', { wanted, wantedSlug })
+        // Not found by either lookup — create it so the dentist still gets a
+        // non-null area_id and the new area starts surfacing in /area pages.
+        const newSlug = slugify(wanted)
+        const newAreaPayload = { name: wanted, slug: newSlug, zone: 'Other', city: 'mumbai' }
+        console.error('[admin/registrations approve] area not found — auto-creating', newAreaPayload)
+        const { data: newArea, error: createErr } = await admin_db
+          .from('areas')
+          .insert(newAreaPayload)
+          .select('id, name')
+          .single()
+        if (createErr) {
+          console.error('[admin/registrations approve] area auto-create failed — proceeding with area_id=null', {
+            wanted, newSlug, message: createErr.message, code: createErr.code, hint: createErr.hint, details: createErr.details,
+          })
+        } else if (newArea) {
+          area_id = newArea.id
+          console.error('[admin/registrations approve] area auto-created', { wanted, newSlug, area_id })
         }
       }
     }
