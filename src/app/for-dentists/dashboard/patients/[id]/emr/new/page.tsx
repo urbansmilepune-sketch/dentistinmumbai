@@ -13,63 +13,13 @@ const COMPLAINT_CHIPS = [
 type MedRow = { name: string; dosage: string; frequency: string; duration: string }
 type ProcRow = { name: string; tooth_number: string; price: string }
 
-// Illustrative defaults — dentists should review medication dosing and procedure pricing
-// for each clinic before relying on them.
-const TEMPLATES: Record<string, { procedures: ProcRow[]; medications: MedRow[] }> = {
-  'Full mouth implant': {
-    procedures: [
-      { name: 'Surgical implant placement', tooth_number: '', price: '25000' },
-      { name: 'Bone grafting',              tooth_number: '', price: '15000' },
-      { name: 'Abutment + crown',           tooth_number: '', price: '20000' },
-    ],
-    medications: [
-      { name: 'Amoxicillin 500mg',         dosage: '500mg', frequency: '1-0-1',       duration: '7 days'  },
-      { name: 'Ibuprofen 400mg',           dosage: '400mg', frequency: '1-1-1',       duration: '5 days'  },
-      { name: 'Chlorhexidine mouthwash',   dosage: '10ml',  frequency: 'Twice daily', duration: '14 days' },
-    ],
-  },
-  'RCT': {
-    procedures: [
-      { name: 'Root canal treatment',  tooth_number: '', price: '5000' },
-      { name: 'Composite restoration', tooth_number: '', price: '1500' },
-    ],
-    medications: [
-      { name: 'Amoxicillin 500mg',   dosage: '500mg', frequency: '1-0-1', duration: '5 days' },
-      { name: 'Ibuprofen 400mg',     dosage: '400mg', frequency: '1-1-1', duration: '3 days' },
-      { name: 'Metronidazole 400mg', dosage: '400mg', frequency: '1-0-1', duration: '5 days' },
-    ],
-  },
-  'Wisdom tooth': {
-    procedures: [
-      { name: 'Surgical extraction (third molar)', tooth_number: '', price: '4500' },
-    ],
-    medications: [
-      { name: 'Amoxicillin 500mg', dosage: '500mg', frequency: '1-0-1',       duration: '5 days' },
-      { name: 'Ibuprofen 400mg',   dosage: '400mg', frequency: '1-1-1',       duration: '3 days' },
-      { name: 'Betadine mouthwash', dosage: '10ml', frequency: 'Twice daily', duration: '5 days' },
-    ],
-  },
-  'Implant': {
-    procedures: [
-      { name: 'Surgical implant placement', tooth_number: '', price: '25000' },
-      { name: 'Abutment + crown',           tooth_number: '', price: '20000' },
-    ],
-    medications: [
-      { name: 'Amoxicillin 500mg',       dosage: '500mg', frequency: '1-0-1',       duration: '7 days'  },
-      { name: 'Ibuprofen 400mg',         dosage: '400mg', frequency: '1-1-1',       duration: '5 days'  },
-      { name: 'Chlorhexidine mouthwash', dosage: '10ml',  frequency: 'Twice daily', duration: '14 days' },
-    ],
-  },
-  'Perio': {
-    procedures: [
-      { name: 'Scaling and root planing (full mouth)', tooth_number: '', price: '3500' },
-    ],
-    medications: [
-      { name: 'Amoxicillin 500mg',       dosage: '500mg', frequency: '1-0-1',       duration: '5 days'  },
-      { name: 'Metronidazole 400mg',     dosage: '400mg', frequency: '1-0-1',       duration: '5 days'  },
-      { name: 'Chlorhexidine mouthwash', dosage: '10ml',  frequency: 'Twice daily', duration: '14 days' },
-    ],
-  },
+type DbTemplate = {
+  id: string
+  name: string
+  procedures: ProcRow[] | null
+  medications: MedRow[] | null
+  advice: string | null
+  times_used: number | null
 }
 
 const inputStyle: React.CSSProperties = {
@@ -99,7 +49,8 @@ export default function NewEmrPage() {
   const [patient, setPatient] = useState<{ id: string; name: string; age: number | null; gender: string | null } | null>(null)
   const [dentistId, setDentistId] = useState('')
 
-  const [template, setTemplate] = useState<string>('')
+  const [templates, setTemplates] = useState<DbTemplate[]>([])
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('')
   const [complaints, setComplaints] = useState<string[]>([])
   const [vitals, setVitals] = useState({ bp: '', pulse: '', spo2: '', weight_kg: '', height_cm: '' })
   const [diagnosis, setDiagnosis] = useState('')
@@ -119,22 +70,36 @@ export default function NewEmrPage() {
       if (!dentist) { router.push('/for-dentists/login'); return }
       setDentistId(dentist.id)
 
-      const { data: p } = await supabase
-        .from('patients').select('id, name, age, gender')
-        .eq('id', patientId).eq('dentist_id', dentist.id).single()
+      const [{ data: p }, { data: tpls }] = await Promise.all([
+        supabase.from('patients').select('id, name, age, gender')
+          .eq('id', patientId).eq('dentist_id', dentist.id).single(),
+        supabase.from('emr_templates').select('id, name, procedures, medications, advice, times_used')
+          .eq('dentist_id', dentist.id).order('times_used', { ascending: false, nullsFirst: false }).order('created_at', { ascending: false }),
+      ])
       if (!p) { router.push('/for-dentists/dashboard/patients'); return }
       setPatient(p)
+      setTemplates((tpls as DbTemplate[]) || [])
       setLoading(false)
     }
     load()
   }, [patientId, router])
 
-  function applyTemplate(name: string) {
-    const t = TEMPLATES[name]
-    if (!t) return
-    setTemplate(name)
-    setProcedures(t.procedures.map(p => ({ ...p })))
-    setMedications(t.medications.map(m => ({ ...m })))
+  function applyTemplate(t: DbTemplate) {
+    setSelectedTemplateId(t.id)
+    if (t.procedures && t.procedures.length > 0) {
+      setProcedures(t.procedures.map(p => ({ name: p.name ?? '', tooth_number: p.tooth_number ?? '', price: p.price ?? '' })))
+    }
+    if (t.medications && t.medications.length > 0) {
+      setMedications(t.medications.map(m => ({ name: m.name ?? '', dosage: m.dosage ?? '', frequency: m.frequency ?? '', duration: m.duration ?? '' })))
+    }
+    if (t.advice && !advice.trim()) setAdvice(t.advice)
+
+    // Track usage (best-effort, non-blocking)
+    const supabase = createClient()
+    supabase.from('emr_templates')
+      .update({ times_used: (t.times_used ?? 0) + 1, last_used_at: new Date().toISOString() })
+      .eq('id', t.id)
+      .then(() => {}, () => {})
   }
 
   function toggleComplaint(c: string) {
@@ -156,10 +121,11 @@ export default function NewEmrPage() {
     //   patient_id, dentist_id, template_used, chief_complaints (jsonb), vitals (jsonb),
     //   diagnosis, medications (jsonb), procedures (jsonb), advice,
     //   follow_up_date, follow_up_notes
+    const selectedTemplateName = templates.find(t => t.id === selectedTemplateId)?.name ?? null
     const payload = {
       patient_id: patientId,
       dentist_id: dentistId,
-      template_used: template || null,
+      template_used: selectedTemplateName,
       chief_complaints: complaints,
       vitals: {
         bp: vitals.bp || null,
@@ -209,25 +175,39 @@ export default function NewEmrPage() {
 
       {/* Templates */}
       <div style={cardStyle}>
-        <div style={sectionTitle}>Quick Templates</div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {Object.keys(TEMPLATES).map(t => (
-            <button key={t} type="button" onClick={() => applyTemplate(t)}
-              style={{
-                padding: '8px 16px', minHeight: 40,
-                background: template === t ? 'var(--blue)' : 'var(--bg)',
-                color: template === t ? '#fff' : 'var(--text)',
-                border: '1px solid var(--border)', borderRadius: 8,
-                fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                fontFamily: 'var(--font-body)',
-              }}>
-              {t}
-            </button>
-          ))}
+        <div style={{ ...sectionTitle, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <span>Quick Templates</span>
+          <Link href="/for-dentists/dashboard/emr-templates"
+            style={{ fontSize: 12, color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>
+            Manage templates →
+          </Link>
         </div>
-        <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 10 }}>
-          Templates pre-fill procedures and medications. Review and adjust before saving.
-        </p>
+        {templates.length === 0 ? (
+          <p style={{ fontSize: 13, color: 'var(--muted)' }}>
+            No templates yet. <Link href="/for-dentists/dashboard/emr-templates" style={{ color: 'var(--blue)', fontWeight: 600 }}>Create one</Link> to speed up future EMR entries.
+          </p>
+        ) : (
+          <>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {templates.map(t => (
+                <button key={t.id} type="button" onClick={() => applyTemplate(t)}
+                  style={{
+                    padding: '8px 16px', minHeight: 40,
+                    background: selectedTemplateId === t.id ? 'var(--blue)' : 'var(--bg)',
+                    color: selectedTemplateId === t.id ? '#fff' : 'var(--text)',
+                    border: '1px solid var(--border)', borderRadius: 8,
+                    fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                    fontFamily: 'var(--font-body)',
+                  }}>
+                  {t.name}
+                </button>
+              ))}
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 10 }}>
+              Templates pre-fill procedures, medications, and advice (if blank). Review and adjust before saving.
+            </p>
+          </>
+        )}
       </div>
 
       {/* Chief Complaints */}

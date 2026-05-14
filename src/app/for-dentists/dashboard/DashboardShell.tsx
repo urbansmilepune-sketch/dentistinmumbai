@@ -15,6 +15,7 @@ const NAV = [
   { href: '/for-dentists/dashboard/enquiries',    icon: '💬', label: 'Enquiries'     },
   { href: '/for-dentists/dashboard/photos',       icon: '📸', label: 'Photos'        },
   { href: '/for-dentists/dashboard/treatments',   icon: '🦷', label: 'Treatments'    },
+  { href: '/for-dentists/dashboard/emr-templates', icon: '📋', label: 'EMR Templates' },
   { href: '/for-dentists/dashboard/analytics',    icon: '📈', label: 'Analytics',    gold: true },
   { href: '/for-dentists/dashboard/upgrade',      icon: '⭐', label: 'Upgrade Plan'  },
 ]
