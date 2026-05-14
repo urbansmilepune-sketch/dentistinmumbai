@@ -90,43 +90,45 @@ export default function ExpoPricingSection() {
             </Link>
           </div>
 
-          {/* Gold Founding */}
+          {/* Gold Monthly */}
+          <div style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 20, padding: '28px' }}>
+            <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 20, color: '#fff', marginBottom: 4 }}>Gold — Monthly</h3>
+            <div style={{ marginBottom: 4 }}>
+              <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 36, color: '#fff' }}>₹999</span>
+              <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>/month</span>
+            </div>
+            <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginBottom: 20 }}>Founding price — locked forever.</p>
+            {['Everything in Free', 'Priority in search results', 'Featured badge on listing', 'Full analytics dashboard', 'Practice management tools', 'Patient records + EMR'].map(f => (
+              <div key={f} style={{ display: 'flex', gap: 8, marginBottom: 10, fontSize: 14, color: 'rgba(255,255,255,0.75)' }}>
+                <span style={{ color: '#FF6135', fontWeight: 700 }}>✓</span> {f}
+              </div>
+            ))}
+            <Link href="/for-dentists/register?plan=monthly" style={{ display: 'block', textAlign: 'center', padding: '13px', background: 'rgba(255,255,255,0.1)', color: '#fff', borderRadius: 10, fontWeight: 700, fontSize: 14, textDecoration: 'none', marginTop: 20, border: '1px solid rgba(255,255,255,0.25)' }}>
+              Choose Monthly →
+            </Link>
+          </div>
+
+          {/* Gold Annual — RECOMMENDED */}
           <div style={{ background: '#fff', border: '3px solid #FF6135', borderRadius: 20, padding: '28px', position: 'relative' }}>
             <div style={{ position: 'absolute', top: -14, left: '50%', transform: 'translateX(-50%)', background: '#FF6135', color: '#fff', padding: '4px 16px', borderRadius: 20, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>
-              🔥 EXPO SPECIAL — ENDS JUNE 12
+              ⭐ RECOMMENDED · BEST VALUE
             </div>
-            <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 20, color: '#0F1923', marginBottom: 4 }}>Gold Founding</h3>
+            <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 20, color: '#0F1923', marginBottom: 4 }}>Gold — Annual</h3>
             <div style={{ marginBottom: 4 }}>
-              <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 36, color: '#FF6135' }}>₹999</span>
-              <span style={{ color: 'var(--muted)', fontSize: 14 }}>/month</span>
+              <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 36, color: '#FF6135' }}>₹9,999</span>
+              <span style={{ color: 'var(--muted)', fontSize: 14 }}>/year</span>
             </div>
-            <p style={{ fontSize: 12, color: '#00A878', fontWeight: 600, marginBottom: 20 }}>Locked forever. Never increases.</p>
-            {['Everything in Free', 'Priority in search results', 'Featured badge on listing', 'Full analytics dashboard', 'Profile views & click tracking', 'WhatsApp lead notifications', 'Practice management tools', 'Patient records system', 'Prescription generator'].map(f => (
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', background: '#DCFCE7', color: '#166534', border: '1px solid #BBF7D0', borderRadius: 20, fontSize: 12, fontWeight: 700, marginBottom: 20 }}>
+              ✓ 2 months FREE · Save ₹1,989
+            </div>
+            {['Everything in Monthly', 'Pay once a year', 'Equivalent to ₹833/month', 'Priority support', 'Locked rate — never increases'].map(f => (
               <div key={f} style={{ display: 'flex', gap: 8, marginBottom: 10, fontSize: 14, color: 'var(--text-secondary)' }}>
                 <span style={{ color: '#FF6135', fontWeight: 700 }}>✓</span> {f}
               </div>
             ))}
-            <Link href="/for-dentists/register" style={{ display: 'block', textAlign: 'center', padding: '13px', background: '#FF6135', color: '#fff', borderRadius: 10, fontWeight: 700, fontSize: 15, textDecoration: 'none', marginTop: 20 }}>
-              Claim Founding Price →
+            <Link href="/for-dentists/register?plan=annual" style={{ display: 'block', textAlign: 'center', padding: '13px', background: '#FF6135', color: '#fff', borderRadius: 10, fontWeight: 700, fontSize: 15, textDecoration: 'none', marginTop: 20 }}>
+              Claim Annual Founding →
             </Link>
-          </div>
-
-          {/* After expo */}
-          <div style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 20, padding: '28px', opacity: 0.7 }}>
-            <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 20, color: 'rgba(255,255,255,0.6)', marginBottom: 4 }}>Gold</h3>
-            <p style={{ fontSize: 12, color: 'rgba(255,97,53,0.8)', marginBottom: 4 }}>After June 12</p>
-            <div style={{ marginBottom: 20 }}>
-              <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 36, color: 'rgba(255,255,255,0.4)' }}>₹2,499</span>
-              <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 14 }}>/month</span>
-            </div>
-            {['Everything in Free', 'Priority placement', 'Analytics dashboard', 'Lead notifications'].map(f => (
-              <div key={f} style={{ display: 'flex', gap: 8, marginBottom: 10, fontSize: 14, color: 'rgba(255,255,255,0.4)' }}>
-                <span>✓</span> {f}
-              </div>
-            ))}
-            <div style={{ textAlign: 'center', padding: '13px', background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.3)', borderRadius: 10, fontSize: 14, marginTop: 20, border: '1px solid rgba(255,255,255,0.1)' }}>
-              Regular Price
-            </div>
           </div>
         </div>
 

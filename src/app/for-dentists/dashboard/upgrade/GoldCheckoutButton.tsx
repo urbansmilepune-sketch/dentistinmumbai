@@ -21,7 +21,13 @@ function loadRazorpay(): Promise<boolean> {
   })
 }
 
-export default function GoldCheckoutButton({ color }: { color: string }) {
+interface Props {
+  color: string
+  plan?: 'monthly' | 'annual'
+  label?: string
+}
+
+export default function GoldCheckoutButton({ color, plan = 'monthly', label }: Props) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -37,7 +43,11 @@ export default function GoldCheckoutButton({ color }: { color: string }) {
       return
     }
 
-    const orderRes = await fetch('/api/payments/create-order', { method: 'POST' })
+    const orderRes = await fetch('/api/payments/create-order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plan }),
+    })
     if (!orderRes.ok) {
       const body = await orderRes.json().catch(() => ({}))
       setError(body.error || 'Could not start payment. Please try again.')
@@ -51,7 +61,7 @@ export default function GoldCheckoutButton({ color }: { color: string }) {
       amount: order.amount,
       currency: order.currency,
       name: 'DentistInMumbai.in',
-      description: 'Gold Plan — 30 days',
+      description: order.plan_label || (plan === 'annual' ? 'Gold Plan — Annual (365 days)' : 'Gold Plan — Monthly (30 days)'),
       order_id: order.order_id,
       prefill: { name: order.dentist_name, email: order.dentist_email },
       theme: { color: '#92400E' },
@@ -91,7 +101,7 @@ export default function GoldCheckoutButton({ color }: { color: string }) {
         disabled={loading}
         style={{ display: 'block', width: '100%', padding: '12px', background: color, color: '#fff', borderRadius: 10, textAlign: 'center', fontSize: 14, fontWeight: 700, border: 'none', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1, fontFamily: 'var(--font-body)' }}
       >
-        {loading ? 'Opening Razorpay…' : 'Upgrade to Gold →'}
+        {loading ? 'Opening Razorpay…' : (label ?? (plan === 'annual' ? 'Upgrade to Gold (Annual) →' : 'Upgrade to Gold (Monthly) →'))}
       </button>
       {error && (
         <p style={{ marginTop: 10, fontSize: 12, color: '#991B1B', background: '#FEE2E2', border: '1px solid #FECACA', borderRadius: 8, padding: '8px 10px' }}>

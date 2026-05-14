@@ -1,18 +1,18 @@
 // Required environment variables:
 //   RAZORPAY_KEY_ID                 — Razorpay key id
-//   RAZORPAY_KEY_SECRET             — Razorpay key secret (used to verify the HMAC signature)
+//   RAZORPAY_KEY_SECRET             — Razorpay key secret (used to verify the HMAC signature and to fetch the order)
 //   NEXT_PUBLIC_SUPABASE_URL        — Supabase project URL
 //   SUPABASE_SERVICE_ROLE_KEY       — service-role key, used to update the dentists.tier column
 import { NextRequest, NextResponse } from 'next/server'
 import { createHmac } from 'crypto'
+import Razorpay from 'razorpay'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { createClient as createUserClient } from '@/lib/supabase/server'
 
-const GOLD_PERIOD_DAYS = 30
-const GOLD_PRICE_PAISE = 99900
+const FALLBACK_PERIOD_DAYS = 30
 
 export async function POST(request: NextRequest) {
-  if (!process.env.RAZORPAY_KEY_SECRET) {
+  if (!process.env.RAZORPAY_KEY_SECRET || !process.env.RAZORPAY_KEY_ID) {
     return NextResponse.json({ error: 'Payments not configured' }, { status: 500 })
   }
 
@@ -31,6 +31,26 @@ export async function POST(request: NextRequest) {
 
   if (expected !== razorpay_signature) {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 400 })
+  }
+
+  // Pull the trusted order from Razorpay so we extend the tier by the period the
+  // dentist actually paid for. We never trust the client to tell us which plan
+  // they bought — a malicious caller could pay monthly and claim annual.
+  const razorpay = new Razorpay({
+    key_id: process.env.RAZORPAY_KEY_ID,
+    key_secret: process.env.RAZORPAY_KEY_SECRET,
+  })
+
+  let amountPaise = 0
+  let periodDays = FALLBACK_PERIOD_DAYS
+  try {
+    const order: any = await razorpay.orders.fetch(razorpay_order_id)
+    amountPaise = Number(order?.amount) || 0
+    const noteDays = Number(order?.notes?.period_days)
+    if (Number.isFinite(noteDays) && noteDays > 0) periodDays = noteDays
+  } catch (err) {
+    console.error('[razorpay verify] order fetch failed', { razorpay_order_id, err })
+    return NextResponse.json({ error: 'Could not verify order — please contact support with payment id ' + razorpay_payment_id }, { status: 500 })
   }
 
   const admin = createServiceClient(
@@ -54,7 +74,7 @@ export async function POST(request: NextRequest) {
     razorpay_payment_id,
     razorpay_order_id,
     dentist_id: dentist.id,
-    amount_paise: GOLD_PRICE_PAISE,
+    amount_paise: amountPaise,
     plan: 'gold',
   })
   if (paymentErr) {
@@ -69,7 +89,7 @@ export async function POST(request: NextRequest) {
   const base = dentist.tier_expires_at && new Date(dentist.tier_expires_at) > now
     ? new Date(dentist.tier_expires_at)
     : now
-  const newExpiry = new Date(base.getTime() + GOLD_PERIOD_DAYS * 24 * 60 * 60 * 1000)
+  const newExpiry = new Date(base.getTime() + periodDays * 24 * 60 * 60 * 1000)
 
   const { error: updateErr } = await admin
     .from('dentists')
@@ -81,5 +101,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Payment verified but upgrade failed — please contact support with payment id ' + razorpay_payment_id }, { status: 500 })
   }
 
-  return NextResponse.json({ success: true, tier: 'gold', tier_expires_at: newExpiry.toISOString() })
+  return NextResponse.json({ success: true, tier: 'gold', tier_expires_at: newExpiry.toISOString(), period_days: periodDays })
 }
