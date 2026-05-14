@@ -23,6 +23,7 @@ export default function BillingPage() {
   const [patients, setPatients] = useState<any[]>([])
   const [showAdd, setShowAdd] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [linkLoading, setLinkLoading] = useState<string | null>(null)
   const [form, setForm] = useState({
     patient_id: '', date: new Date().toISOString().split('T')[0],
     items: [{ description: '', amount: '' }],
@@ -80,6 +81,45 @@ export default function BillingPage() {
     const supabase = createClient()
     await supabase.from('invoices').update({ payment_status: status }).eq('id', id)
     setInvoices(prev => prev.map(inv => inv.id === id ? { ...inv, payment_status: status } : inv))
+  }
+
+  // Create a Razorpay payment link for this invoice, then hand it off via
+  // wa.me. The patient pays, Razorpay fires payment_link.paid, our webhook
+  // (/api/payments/razorpay-webhook) flips payment_status to 'paid'. We
+  // optimistically refetch is skipped here — the dentist sees status update
+  // on next refresh.
+  async function sendPaymentLink(inv: any) {
+    const rawPhone = String(inv.patients?.phone || '').replace(/\D/g, '')
+    if (!rawPhone) { alert('Patient phone is missing — add it before sending a payment link.'); return }
+    setLinkLoading(inv.id)
+    try {
+      const res = await fetch('/api/payments/create-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invoice_id: inv.id }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data?.short_url) {
+        alert('Failed to create payment link: ' + (data?.detail || data?.error || 'Unknown error'))
+        return
+      }
+      const clinic = dentist?.clinic_name || dentist?.name || 'your clinic'
+      const lines = [
+        `Hi ${inv.patients?.name || ''},`.trim(),
+        ``,
+        `Here is the payment link for invoice ${inv.invoice_no} of ₹${Number(inv.total).toLocaleString('en-IN')}:`,
+        data.short_url,
+        ``,
+        `Thank you,`,
+        clinic,
+      ]
+      const waUrl = `https://wa.me/91${rawPhone.slice(-10)}?text=${encodeURIComponent(lines.join('\n'))}`
+      window.open(waUrl, '_blank', 'noopener,noreferrer')
+    } catch {
+      alert('Network error creating payment link')
+    } finally {
+      setLinkLoading(null)
+    }
   }
 
   function downloadPdf(inv: any) {
@@ -394,6 +434,12 @@ export default function BillingPage() {
                           <button onClick={() => updatePaymentStatus(inv.id, 'paid')}
                             style={{ padding: '5px 10px', background: '#DCFCE7', color: '#166534', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
                             Mark Paid
+                          </button>
+                        )}
+                        {inv.payment_status === 'pending' && inv.patients?.phone && (
+                          <button onClick={() => sendPaymentLink(inv)} disabled={linkLoading === inv.id}
+                            style={{ padding: '5px 10px', background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: linkLoading === inv.id ? 'wait' : 'pointer', fontFamily: 'var(--font-body)', opacity: linkLoading === inv.id ? 0.6 : 1 }}>
+                            {linkLoading === inv.id ? 'Creating…' : '💳 Payment Link'}
                           </button>
                         )}
                         <button onClick={() => downloadPdf(inv)}
