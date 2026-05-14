@@ -48,7 +48,7 @@ export default async function PublicBookingPage({ params }: Props) {
   const { data: dentist } = await supabase
     .from('dentists')
     .select(`
-      id, slug, name, clinic_name, profile_photo, phone, whatsapp,
+      id, slug, name, clinic_name, profile_photo, phone, whatsapp, working_hours,
       areas(name),
       dentist_treatments(treatments(id, name, icon))
     `)
@@ -102,6 +102,7 @@ export default async function PublicBookingPage({ params }: Props) {
           clinicName={dentist.clinic_name ?? ''}
           areaName={areaName}
           dentistPhone={dentist.whatsapp || dentist.phone || ''}
+          workingHours={dentist.working_hours ?? null}
           treatments={treatments}
         />
       </div>

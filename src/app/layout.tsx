@@ -1,5 +1,25 @@
 import type { Metadata } from 'next'
+import { Sora, DM_Sans } from 'next/font/google'
 import './globals.css'
+
+// Self-hosted via next/font. The `variable` prop sets a CSS variable on
+// whichever element gets the returned className — we apply both to <html>
+// below so every CSS var(--font-heading) / var(--font-body) in the app
+// resolves to the self-hosted family.
+const sora = Sora({
+  subsets: ['latin'],
+  weight: ['400', '600', '700', '800'],
+  display: 'swap',
+  variable: '--font-heading',
+})
+
+const dmSans = DM_Sans({
+  subsets: ['latin'],
+  weight: ['400', '500', '600'],
+  style: ['normal', 'italic'],
+  display: 'swap',
+  variable: '--font-body',
+})
 
 export const metadata: Metadata = {
   title: {
@@ -33,15 +53,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap"
-          rel="stylesheet"
-        />
-      </head>
+    <html lang="en" className={`${sora.variable} ${dmSans.variable}`}>
       <body>{children}</body>
     </html>
   )

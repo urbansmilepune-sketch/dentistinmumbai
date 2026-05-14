@@ -18,7 +18,7 @@ interface Dentist {
   emi_available: boolean
   is_verified: boolean
   tier: string
-  profile_photo_url: string | null
+  profile_photo: string | null
   whatsapp: string | null
   phone: string | null
   working_hours: any
@@ -92,8 +92,8 @@ export default function DentistCard({ dentist: d, view }: DentistCardProps) {
       }} className="card-hover">
         {/* Photo banner */}
         <div style={{ height: 130, background: 'var(--blue-light)', position: 'relative', overflow: 'hidden' }}>
-          {d.profile_photo_url ? (
-            <img src={d.profile_photo_url} alt={d.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          {d.profile_photo ? (
+            <img src={d.profile_photo} alt={d.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           ) : (
             <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 48 }}>🦷</div>
           )}
@@ -174,8 +174,8 @@ export default function DentistCard({ dentist: d, view }: DentistCardProps) {
         background: 'var(--blue-light)', overflow: 'hidden',
         border: '2px solid var(--border)',
       }}>
-        {d.profile_photo_url ? (
-          <img src={d.profile_photo_url} alt={d.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        {d.profile_photo ? (
+          <img src={d.profile_photo} alt={d.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         ) : (
           <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28 }}>🦷</div>
         )}

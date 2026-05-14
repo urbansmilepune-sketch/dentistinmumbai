@@ -3,17 +3,34 @@
 import { useEffect, useMemo, useState } from 'react'
 
 interface Treatment { id: string; name: string; icon: string | null }
+interface DayHours { is_open?: boolean; open_time?: string | null; close_time?: string | null }
+type WorkingHours = Partial<Record<'sun' | 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat', DayHours>> | null
+
 interface Props {
   dentistId: string
   dentistName: string
   clinicName: string
   areaName: string
   dentistPhone: string
+  workingHours?: WorkingHours
   treatments: Treatment[]
 }
 
 // 9am to 7pm with 1-hour starts → 09:00 … 18:00
 const HOURLY_SLOTS: string[] = Array.from({ length: 10 }, (_, i) => `${String(9 + i).padStart(2, '0')}:00`)
+const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const
+
+/** A slot is allowed if the clinic is open that weekday AND the slot start time
+ * is within [open_time, close_time). If working_hours is missing or malformed
+ * we fall back to allowing everything — better to show too many slots than to
+ * silently hide all of them. */
+function isSlotInsideHours(slot: string, hours: DayHours | undefined): boolean {
+  if (!hours) return true
+  if (hours.is_open === false) return false
+  const open = hours.open_time || '00:00'
+  const close = hours.close_time || '23:59'
+  return slot >= open && slot < close
+}
 
 function toLocalIso(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -37,7 +54,7 @@ function nextDays(n: number): { iso: string; label: string; sub: string }[] {
   return out
 }
 
-export default function BookingFlow({ dentistId, dentistName, clinicName, areaName, dentistPhone, treatments }: Props) {
+export default function BookingFlow({ dentistId, dentistName, clinicName, areaName, dentistPhone, workingHours, treatments }: Props) {
   const days = useMemo(() => nextDays(7), [])
   const [selectedDate, setSelectedDate] = useState<string>(days[0].iso)
   const [booked, setBooked] = useState<Set<string>>(new Set())
@@ -72,7 +89,15 @@ export default function BookingFlow({ dentistId, dentistName, clinicName, areaNa
   }, [dentistId, selectedDate])
 
   const availableSlots = useMemo(() => {
+    // Resolve the selected date's day-of-week key (sun..sat) so we can look up
+    // the matching entry in working_hours. Parsing the ISO directly with the UTC
+    // suffix would shift Sunday → Saturday for early-morning IST loads.
+    const [yy, mm, dd] = selectedDate.split('-').map(Number)
+    const dayHours = (workingHours && Number.isFinite(yy + mm + dd))
+      ? workingHours[DAY_KEYS[new Date(yy, (mm || 1) - 1, dd || 1).getDay()]]
+      : undefined
     return HOURLY_SLOTS.filter(slot => {
+      if (!isSlotInsideHours(slot, dayHours)) return false
       if (booked.has(slot)) return false
       if (selectedDate === todayIso) {
         const hour = parseInt(slot.split(':')[0], 10)
@@ -80,7 +105,7 @@ export default function BookingFlow({ dentistId, dentistName, clinicName, areaNa
       }
       return true
     })
-  }, [booked, selectedDate, todayIso, nowHour])
+  }, [booked, selectedDate, todayIso, nowHour, workingHours])
 
   function validate(): string | null {
     if (!name.trim()) return 'Please enter your name'

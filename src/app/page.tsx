@@ -53,7 +53,7 @@ export default async function HomePage() {
       supabase.from('treatments').select('id, name, slug, icon').order('sort_order'),
       supabase
         .from('dentists')
-        .select('id, name, slug, clinic_name, area_id, consultation_fee, experience_years, tier, is_verified, profile_photo_url, areas(name)')
+        .select('id, name, slug, clinic_name, area_id, consultation_fee, experience_years, tier, is_verified, profile_photo, areas(name)')
         .eq('is_active', true)
         .eq('is_verified', true)
         .in('tier', ['featured', 'gold', 'silver'])
@@ -206,8 +206,8 @@ export default async function HomePage() {
                           fontSize: 24, flexShrink: 0,
                           border: '2px solid var(--border)',
                         }}>
-                          {d.profile_photo_url ? (
-                            <img src={d.profile_photo_url} alt={d.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 10 }} />
+                          {d.profile_photo ? (
+                            <img src={d.profile_photo} alt={d.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 10 }} />
                           ) : '🦷'}
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>

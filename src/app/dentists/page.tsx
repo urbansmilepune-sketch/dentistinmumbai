@@ -70,7 +70,7 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
     .select(`
       id, slug, name, clinic_name, qualifications, experience_years,
       gender, consultation_fee, emi_available, is_verified, tier,
-      profile_photo_url, whatsapp, phone, working_hours,
+      profile_photo, whatsapp, phone, working_hours,
       lat, lng, specialties, languages,
       areas!inner(name, slug),
       dentist_treatments(treatments(name, slug))

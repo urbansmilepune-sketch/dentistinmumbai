@@ -1,4 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap');
+/* Fonts (--font-heading, --font-body) are injected by next/font/google in
+   src/app/layout.tsx. No external @import here — that would re-fetch the
+   files Google-hosted and defeat the self-hosting we just set up. */
 
 :root {
   --blue: #0057A8;
@@ -25,8 +27,8 @@
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
   --shadow-md: 0 4px 16px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.04);
   --shadow-lg: 0 8px 32px rgba(0,0,0,0.10), 0 4px 12px rgba(0,0,0,0.06);
-  --font-heading: 'Sora', sans-serif;
-  --font-body: 'DM Sans', sans-serif;
+  /* --font-heading and --font-body are set by next/font/google on the <html>
+     className (see src/app/layout.tsx). Listed here as a hint only. */
 }
 
 *, *::before, *::after {

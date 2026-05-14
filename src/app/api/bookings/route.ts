@@ -50,6 +50,23 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+
+    // Double-booking guard. This is a check-then-insert and still has a small
+    // race window — for stronger guarantees add a partial unique index on
+    // (dentist_id, appt_date, time_slot) WHERE status != 'cancelled' and let
+    // the constraint surface 23505 here.
+    const { data: clash } = await supabase
+      .from('appointments')
+      .select('id')
+      .eq('dentist_id', dentist_id)
+      .eq('appt_date', appt_date)
+      .eq('time_slot', time_slot)
+      .neq('status', 'cancelled')
+      .maybeSingle()
+    if (clash) {
+      return NextResponse.json({ error: 'This slot is already booked. Please choose another time.' }, { status: 409 })
+    }
+
     const reference_no = generateRef()
 
     const { data: dentist } = await supabase.from('dentists').select('name, phone, whatsapp, clinic_name').eq('id', dentist_id).single()

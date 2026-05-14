@@ -9,15 +9,16 @@ cloudinary.config({
   secure: true,
 })
 
-const ALLOWED_TYPES = ['profile', 'cover', 'gallery', 'xray'] as const
+const ALLOWED_TYPES = ['profile', 'cover', 'gallery', 'xray', 'patient_photo'] as const
 type UploadType = typeof ALLOWED_TYPES[number]
 const MAX_SIZE = 10 * 1024 * 1024
 
 const TRANSFORMS: Record<UploadType, object[]> = {
-  profile: [{ width: 400, height: 400, crop: 'fill', gravity: 'face' }],
-  cover:   [{ width: 1200, height: 300, crop: 'fill' }],
-  gallery: [{ width: 1200, crop: 'limit' }],
-  xray:    [{ width: 1200, crop: 'limit' }],
+  profile:       [{ width: 400, height: 400, crop: 'fill', gravity: 'face' }],
+  cover:         [{ width: 1200, height: 300, crop: 'fill' }],
+  gallery:       [{ width: 1200, crop: 'limit' }],
+  xray:          [{ width: 1200, crop: 'limit' }],
+  patient_photo: [{ width: 1600, crop: 'limit' }],
 }
 
 export async function POST(request: NextRequest) {
@@ -60,12 +61,14 @@ export async function POST(request: NextRequest) {
       fetch_format: 'auto',
     })
 
-    // Save to database
+    // Save to database. patient_photo is intentionally NOT persisted here —
+    // the caller (the patient before/after photos page) inserts its own row
+    // in patient_photos with the URL we return below.
     if (uploadType === 'profile') {
       await supabase.from('dentists').update({ profile_photo: result.secure_url }).eq('id', dentist.id)
     } else if (uploadType === 'cover') {
       await supabase.from('dentists').update({ cover_photo: result.secure_url }).eq('id', dentist.id)
-    } else {
+    } else if (uploadType === 'gallery' || uploadType === 'xray') {
       await supabase.from('gallery_photos').insert({
         dentist_id: dentist.id,
         image_url: result.secure_url,

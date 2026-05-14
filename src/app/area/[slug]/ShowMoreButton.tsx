@@ -11,7 +11,7 @@ interface Dentist {
   consultation_fee: number
   is_verified: boolean
   tier: string
-  profile_photo_url: string | null
+  profile_photo: string | null
   areas: { name: string } | null
   dentist_treatments: { treatments: { name: string; slug: string } }[]
 }
@@ -40,8 +40,8 @@ export default function ShowMoreButton({ hiddenDentists, areaName }: ShowMoreBut
                   width: 56, height: 56, borderRadius: 10, flexShrink: 0,
                   background: 'var(--blue-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22,
                 }}>
-                  {d.profile_photo_url
-                    ? <img src={d.profile_photo_url} alt={d.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 8 }} />
+                  {d.profile_photo
+                    ? <img src={d.profile_photo} alt={d.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 8 }} />
                     : '🦷'}
                 </div>
                 <div style={{ flex: 1 }}>

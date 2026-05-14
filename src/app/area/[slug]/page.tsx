@@ -91,7 +91,7 @@ export default async function AreaPage({ params }: { params: Promise<{ slug: str
     .select(`
       id, slug, name, clinic_name, qualifications, experience_years,
       gender, consultation_fee, emi_available, is_verified, tier,
-      profile_photo_url, whatsapp, phone, working_hours,
+      profile_photo, whatsapp, phone, working_hours,
       areas(name, slug),
       dentist_treatments(treatments(name, slug))
     `)
@@ -354,7 +354,7 @@ export default async function AreaPage({ params }: { params: Promise<{ slug: str
                     {topSidebarDentists.map(d => (
                       <Link key={d.id} href={`/dentist/${d.slug}`} style={{ display: 'flex', gap: 10, alignItems: 'center', textDecoration: 'none' }}>
                         <div style={{ width: 40, height: 40, borderRadius: 8, background: 'var(--blue-light)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>
-                          {d.profile_photo_url ? <img src={d.profile_photo_url} alt={d.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 6 }} /> : '🦷'}
+                          {d.profile_photo ? <img src={d.profile_photo} alt={d.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 6 }} /> : '🦷'}
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontWeight: 600, fontSize: 13, fontFamily: 'var(--font-heading)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.name}</div>
