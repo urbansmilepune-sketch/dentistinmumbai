@@ -135,6 +135,29 @@ export default function EditProfilePage() {
     setTimeout(() => setSaved(false), 3000)
   }
 
+  // Live profile completion grade — 12 patient-facing fields. Recomputes
+  // every render off the current form state so the bar tracks edits before
+  // the dentist hits Save.
+  const completionChecks = [
+    !!form.name?.trim(),
+    !!form.clinic_name?.trim(),
+    !!form.qualifications?.trim(),
+    (parseInt(form.experience_years) || 0) > 0,
+    !!(form.bio && form.bio.length > 20),
+    !!form.phone?.trim(),
+    !!form.whatsapp?.trim(),
+    !!form.address?.trim(),
+    (parseInt(form.consultation_fee) || 0) > 0,
+    !!form.mci_number?.trim(),
+    form.languages.length > 0,
+    form.specialties.length > 0,
+  ]
+  const completionDone = completionChecks.filter(Boolean).length
+  const completionPct = Math.round((completionDone / completionChecks.length) * 100)
+  const completionColor = completionPct === 100 ? '#00A878' : completionPct >= 50 ? '#F59E0B' : '#DC2626'
+  const completionBg    = completionPct === 100 ? '#DCFCE7' : completionPct >= 50 ? '#FEF3C7' : '#FEE2E2'
+  const completionBorder = completionPct === 100 ? '#BBF7D0' : completionPct >= 50 ? '#FDE68A' : '#FECACA'
+
   const inputStyle = {
     width: '100%', padding: '11px 14px', borderRadius: 10,
     border: '1.5px solid var(--border)', fontSize: 14,
@@ -161,6 +184,20 @@ export default function EditProfilePage() {
           onClick={handleSave} disabled={saving}
           style={{ padding: '11px 24px', background: saved ? '#00A878' : 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: 14, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1, transition: 'background 0.3s' }}
         >{saving ? 'Saving...' : saved ? '✓ Saved!' : 'Save Changes'}</button>
+      </div>
+
+      <div style={{ background: completionBg, border: `1px solid ${completionBorder}`, borderRadius: 12, padding: '14px 18px', marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, gap: 12, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 14, fontWeight: 700, color: completionColor }}>
+            Profile {completionPct}% complete
+          </span>
+          <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+            {completionDone} of {completionChecks.length} fields filled
+          </span>
+        </div>
+        <div style={{ height: 8, background: 'rgba(0,0,0,0.06)', borderRadius: 4, overflow: 'hidden' }}>
+          <div style={{ height: '100%', width: `${completionPct}%`, background: completionColor, borderRadius: 4, transition: 'width 0.3s' }} />
+        </div>
       </div>
 
       {error && <div style={{ padding: '12px 16px', background: '#FEE2E2', border: '1px solid #FECACA', borderRadius: 10, fontSize: 13, color: '#991B1B', marginBottom: 20 }}>{error}</div>}
