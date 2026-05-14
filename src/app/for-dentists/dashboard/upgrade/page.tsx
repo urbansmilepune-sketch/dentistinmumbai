@@ -1,6 +1,20 @@
 import PlanSelector from './PlanSelector'
 
-export default function UpgradePage() {
+type Plan = 'monthly' | 'annual'
+
+interface Props {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}
+
+function parsePlan(v: string | string[] | undefined): Plan | null {
+  const s = Array.isArray(v) ? v[0] : v
+  return s === 'monthly' || s === 'annual' ? s : null
+}
+
+export default async function UpgradePage({ searchParams }: Props) {
+  const params = await searchParams
+  const defaultPlan = parsePlan(params.plan)
+
   return (
     <div>
       <div style={{ marginBottom: 24, textAlign: 'center' }}>
@@ -8,7 +22,7 @@ export default function UpgradePage() {
         <p style={{ fontSize: 15, color: 'var(--muted)', maxWidth: 480, margin: '0 auto' }}>Get more patients with better visibility. Cancel anytime.</p>
       </div>
 
-      <PlanSelector />
+      <PlanSelector defaultPlan={defaultPlan} />
 
       <div style={{ textAlign: 'center', marginTop: 32 }}>
         <p style={{ fontSize: 14, color: 'var(--muted)', marginBottom: 12 }}>Questions about plans? Talk to us directly.</p>

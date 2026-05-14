@@ -100,7 +100,23 @@ export async function sendApprovalEmail(data: {
   clinic_name: string
   slug: string
   to_email: string
+  selected_plan?: 'monthly' | 'annual' | null
 }) {
+  const planCopy = data.selected_plan === 'annual'
+    ? { label: 'Annual', price: '₹9,999/year' }
+    : data.selected_plan === 'monthly'
+      ? { label: 'Monthly', price: '₹999/month' }
+      : null
+
+  const planBlock = planCopy
+    ? `
+          <div style="background: linear-gradient(135deg, #FFF7ED 0%, #FEF3C7 100%); border: 1.5px solid #FDE68A; border-radius: 10px; padding: 20px; margin-bottom: 20px;">
+            <p style="margin: 0 0 8px; color: #7C2D12; font-size: 15px; font-weight: bold;">⭐ Your Gold ${planCopy.label} plan is ready to activate</p>
+            <p style="margin: 0 0 14px; color: #7C2D12; font-size: 14px; line-height: 1.6;">You selected <strong>Gold ${planCopy.label} — ${planCopy.price}</strong> at registration. Click below to complete payment and unlock priority placement, full analytics, and PMS tools.</p>
+            <a href="https://www.dentistinmumbai.in/for-dentists/dashboard/upgrade?plan=${data.selected_plan}" style="display: inline-block; background: #FF6135; color: white; padding: 11px 22px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 14px;">Activate Gold ${planCopy.label} →</a>
+          </div>`
+    : ''
+
   return resend.emails.send({
     from: FROM_EMAIL,
     to: data.to_email,
@@ -116,7 +132,7 @@ export async function sendApprovalEmail(data: {
           <p style="color: #374151; font-size: 15px;">Great news! Your clinic <strong>${data.clinic_name}</strong> is now live on dentistinmumbai.in and patients can find and book you directly.</p>
           <div style="text-align: center; margin: 28px 0;">
             <a href="https://www.dentistinmumbai.in/dentist/${data.slug}" style="background: #0057A8; color: white; padding: 14px 28px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 15px;">View Your Live Profile →</a>
-          </div>
+          </div>${planBlock}
           <div style="background: #f8faff; border-radius: 10px; padding: 20px; margin-bottom: 20px;">
             <h3 style="margin-top: 0; color: #0F1923;">Complete your profile to get more patients:</h3>
             <ul style="color: #374151; font-size: 14px; padding-left: 20px; line-height: 2;">

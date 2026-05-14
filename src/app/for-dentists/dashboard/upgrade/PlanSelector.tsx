@@ -9,8 +9,12 @@ const MONTHLY_PRICE = 999
 const ANNUAL_PRICE = 9999
 const ANNUAL_SAVINGS = MONTHLY_PRICE * 12 - ANNUAL_PRICE // ₹1,989
 
-export default function PlanSelector() {
-  const [period, setPeriod] = useState<Period>('annual')
+interface Props {
+  defaultPlan?: Period | null
+}
+
+export default function PlanSelector({ defaultPlan }: Props = {}) {
+  const [period, setPeriod] = useState<Period>(defaultPlan ?? 'annual')
 
   const goldPrice = period === 'annual' ? `₹${ANNUAL_PRICE.toLocaleString('en-IN')}` : `₹${MONTHLY_PRICE.toLocaleString('en-IN')}`
   const goldPeriodLabel = period === 'annual' ? '/year' : '/month'
