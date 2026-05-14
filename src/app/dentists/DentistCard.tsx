@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { formatDistance } from '@/lib/distance'
 
 interface Treatment {
   name: string
@@ -25,6 +26,21 @@ interface Dentist {
   dentist_treatments: { treatments: Treatment }[]
   avg_rating?: number
   review_count?: number
+  distance_km?: number | null
+}
+
+function DistanceBadge({ distance_km }: { distance_km: number }) {
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 4,
+      padding: '2px 8px', borderRadius: 20,
+      background: '#DCFCE7', color: '#166534',
+      fontSize: 11, fontWeight: 700,
+      border: '1px solid #BBF7D0',
+    }}>
+      📍 {formatDistance(distance_km)}
+    </span>
+  )
 }
 
 interface DentistCardProps {
@@ -99,6 +115,11 @@ export default function DentistCard({ dentist: d, view }: DentistCardProps) {
           <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 8 }}>
             {d.clinic_name} · {d.areas?.name}
           </p>
+          {typeof d.distance_km === 'number' && (
+            <div style={{ marginBottom: 8 }}>
+              <DistanceBadge distance_km={d.distance_km} />
+            </div>
+          )}
 
           {rating > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
@@ -188,7 +209,8 @@ export default function DentistCard({ dentist: d, view }: DentistCardProps) {
         </div>
 
         {/* Meta row */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, fontSize: 13, color: 'var(--muted)', marginBottom: 10 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, fontSize: 13, color: 'var(--muted)', marginBottom: 10, alignItems: 'center' }}>
+          {typeof d.distance_km === 'number' && <DistanceBadge distance_km={d.distance_km} />}
           {d.areas && <span>📍 {d.areas.name}</span>}
           {d.experience_years > 0 && <span>🎓 {d.experience_years} yrs exp</span>}
           {d.gender && <span>👤 {d.gender.charAt(0).toUpperCase() + d.gender.slice(1)}</span>}

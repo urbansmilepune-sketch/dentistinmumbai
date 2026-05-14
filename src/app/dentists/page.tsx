@@ -5,6 +5,7 @@ import FilterSidebar from './FilterSidebar'
 import DentistCard from './DentistCard'
 import Pagination from './Pagination'
 import SortSelect from './SortSelect'
+import { haversineKm } from '@/lib/distance'
 
 export const revalidate = 60
 
@@ -21,6 +22,14 @@ export async function generateMetadata({ searchParams }: { searchParams: Promise
 
 const PER_PAGE = 6
 
+function parseCoord(v: string | undefined, range: number): number | null {
+  if (!v) return null
+  const n = Number(v)
+  if (!Number.isFinite(n)) return null
+  if (Math.abs(n) > range) return null
+  return n
+}
+
 export default async function DentistsPage({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   const params = await searchParams
   const supabase = await createClient()
@@ -28,6 +37,8 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
   // Parse filters
   const areaFilter = params.area ? params.area.split(',') : []
   const treatmentFilter = params.treatment ? params.treatment.split(',') : []
+  const specialtyFilter = params.specialty ? params.specialty.split(',') : []
+  const languageFilter = params.language ? params.language.split(',') : []
   const ratingFilter = params.rating || ''
   const feeFilter = params.fee || ''
   const genderFilter = params.gender || ''
@@ -37,19 +48,30 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
   const sortBy = params.sort || 'relevance'
   const page = Math.max(1, parseInt(params.page || '1'))
 
+  // GPS coordinates (user-supplied). When both are present, we switch to a
+  // distance-sorted layout and fetch the whole filter result so we can sort
+  // by Haversine in JS — Postgres doesn't have a stock great-circle function
+  // without PostGIS, and the project's row counts (hundreds, not millions)
+  // make this perfectly fine.
+  const userLat = parseCoord(params.lat, 90)
+  const userLng = parseCoord(params.lng, 180)
+  const hasCoords = userLat !== null && userLng !== null
+
   // Fetch filter data
   const [{ data: allAreas }, { data: allTreatments }] = await Promise.all([
     supabase.from('areas').select('name, slug, dentist_count').order('dentist_count', { ascending: false }),
     supabase.from('treatments').select('name, slug').order('sort_order'),
   ])
 
-  // Build dentist query
+  // Build dentist query — we ask for lat/lng/specialties/languages too so we
+  // can compute distance and apply array-overlap filters in memory if needed.
   let query = supabase
     .from('dentists')
     .select(`
       id, slug, name, clinic_name, qualifications, experience_years,
       gender, consultation_fee, emi_available, is_verified, tier,
       profile_photo_url, whatsapp, phone, working_hours,
+      lat, lng, specialties, languages,
       areas!inner(name, slug),
       dentist_treatments(treatments(name, slug))
     `, { count: 'exact' })
@@ -74,6 +96,17 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
     }
   }
 
+  // Specialty filter — dentists.specialties is a text[]. .overlaps() means
+  // "match any dentist whose array shares at least one element with ours".
+  if (specialtyFilter.length > 0) {
+    query = query.overlaps('specialties', specialtyFilter)
+  }
+
+  // Language filter — same pattern.
+  if (languageFilter.length > 0) {
+    query = query.overlaps('languages', languageFilter)
+  }
+
   // Gender filter
   if (genderFilter) query = query.eq('gender', genderFilter)
 
@@ -83,29 +116,62 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
   // EMI filter
   if (emiFilter) query = query.eq('emi_available', true)
 
-  // Fee filter
+  // Fee filter — Indian dental consultation prices typically range ₹100–₹2000.
   if (feeFilter) {
-    if (feeFilter === 'under200') query = query.lt('consultation_fee', 200)
-    else if (feeFilter === '200-400') query = query.gte('consultation_fee', 200).lte('consultation_fee', 400)
-    else if (feeFilter === '400-600') query = query.gte('consultation_fee', 400).lte('consultation_fee', 600)
-    else if (feeFilter === 'above600') query = query.gt('consultation_fee', 600)
+    if (feeFilter === 'under500') query = query.lt('consultation_fee', 500)
+    else if (feeFilter === '500-2000') query = query.gte('consultation_fee', 500).lte('consultation_fee', 2000)
+    else if (feeFilter === 'above2000') query = query.gt('consultation_fee', 2000)
   }
 
-  // Sort
-  const tierOrder = { featured: 0, gold: 1, silver: 2, free: 3 }
-  if (sortBy === 'fee_asc') query = query.order('consultation_fee', { ascending: true })
-  else if (sortBy === 'fee_desc') query = query.order('consultation_fee', { ascending: false })
-  else if (sortBy === 'experience') query = query.order('experience_years', { ascending: false })
-  else query = query.order('tier').order('is_verified', { ascending: false }).order('created_at', { ascending: false })
+  // Sort — distance always wins when coords are present; the user's intent
+  // ("show me closest") trumps any sticky sort dropdown choice.
+  if (!hasCoords) {
+    const tierOrder = { featured: 0, gold: 1, silver: 2, free: 3 }
+    if (sortBy === 'fee_asc') query = query.order('consultation_fee', { ascending: true })
+    else if (sortBy === 'fee_desc') query = query.order('consultation_fee', { ascending: false })
+    else if (sortBy === 'experience') query = query.order('experience_years', { ascending: false })
+    else query = query.order('tier').order('is_verified', { ascending: false }).order('created_at', { ascending: false })
 
-  // Pagination
-  const from = (page - 1) * PER_PAGE
-  query = query.range(from, from + PER_PAGE - 1)
+    // DB-side pagination when distance isn't involved.
+    const from = (page - 1) * PER_PAGE
+    query = query.range(from, from + PER_PAGE - 1)
+  } else {
+    // For distance sort we still apply a default DB order so the network
+    // payload is deterministic, but we paginate in memory below.
+    query = query.order('tier').order('created_at', { ascending: false })
+  }
 
-  const { data: dentists, count } = await query
+  const { data: rawDentists, count } = await query
 
-  const totalCount = count || 0
-  const totalPages = Math.ceil(totalCount / PER_PAGE)
+  // Distance enrichment + in-memory sort/pagination when coords are present.
+  type DentistRow = { id: string; lat: number | null; lng: number | null; [k: string]: unknown }
+  let dentists = (rawDentists ?? []) as unknown as DentistRow[]
+  let totalCount = count || 0
+  let totalPages = Math.ceil(totalCount / PER_PAGE)
+
+  if (hasCoords) {
+    const lat = userLat as number
+    const lng = userLng as number
+    const enriched = dentists.map(d => {
+      const dl = typeof d.lat === 'number' ? d.lat : null
+      const dg = typeof d.lng === 'number' ? d.lng : null
+      const distance_km = (dl !== null && dg !== null) ? haversineKm(lat, lng, dl, dg) : null
+      return { ...d, distance_km }
+    })
+    enriched.sort((a, b) => {
+      // Dentists without coords sink to the bottom; among those with coords,
+      // closest first.
+      if (a.distance_km === null && b.distance_km === null) return 0
+      if (a.distance_km === null) return 1
+      if (b.distance_km === null) return -1
+      return a.distance_km - b.distance_km
+    })
+    totalCount = enriched.length
+    totalPages = Math.ceil(totalCount / PER_PAGE)
+    const from = (page - 1) * PER_PAGE
+    dentists = enriched.slice(from, from + PER_PAGE) as unknown as DentistRow[]
+  }
+
   const view = (params.view as 'list' | 'grid') || 'list'
 
   // Active area names for display
@@ -121,9 +187,11 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
     const name = allTreatments?.find(x => x.slug === t)?.name || t
     chips.push({ label: `🦷 ${name}`, removeKey: 'treatment', removeVal: t })
   })
+  specialtyFilter.forEach(s => chips.push({ label: `⚕️ ${s}`, removeKey: 'specialty', removeVal: s }))
+  languageFilter.forEach(l => chips.push({ label: `🗣️ ${l}`, removeKey: 'language', removeVal: l }))
   if (ratingFilter) chips.push({ label: `★ ${ratingFilter}+`, removeKey: 'rating' })
   if (feeFilter) {
-    const labels: Record<string, string> = { under200: '< ₹200', '200-400': '₹200–400', '400-600': '₹400–600', above600: '₹600+' }
+    const labels: Record<string, string> = { under500: '< ₹500', '500-2000': '₹500–2,000', above2000: '₹2,000+' }
     chips.push({ label: `💰 ${labels[feeFilter] || feeFilter}`, removeKey: 'fee' })
   }
   if (genderFilter) chips.push({ label: `👤 ${genderFilter}`, removeKey: 'gender' })
@@ -143,11 +211,24 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
 
   function removeChip(chip: typeof chips[0]) {
     if (chip.removeVal) {
-      const vals = chip.removeKey === 'area' ? areaFilter : treatmentFilter
+      let vals: string[]
+      if (chip.removeKey === 'area') vals = areaFilter
+      else if (chip.removeKey === 'treatment') vals = treatmentFilter
+      else if (chip.removeKey === 'specialty') vals = specialtyFilter
+      else if (chip.removeKey === 'language') vals = languageFilter
+      else vals = []
       const next = vals.filter(v => v !== chip.removeVal)
       return buildUrl({ [chip.removeKey]: next.length ? next.join(',') : null })
     }
     return buildUrl({ [chip.removeKey]: null })
+  }
+
+  function clearLocationUrl() {
+    const p = new URLSearchParams(params as Record<string, string>)
+    p.delete('lat')
+    p.delete('lng')
+    p.set('page', '1')
+    return `/dentists?${p.toString()}`
   }
 
   return (
@@ -169,15 +250,31 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
 
       <main className="listing-main" style={{ background: 'var(--bg)', minHeight: '100vh', padding: '32px 20px' }}>
         <div className="container">
+
+          {hasCoords && (
+            <div style={{ background: '#DCFCE7', border: '1px solid #BBF7D0', borderRadius: 12, padding: '12px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 14, color: '#166534', fontWeight: 600 }}>
+                📍 Sorted by distance from your location
+              </span>
+              <Link href={clearLocationUrl()}
+                style={{ fontSize: 13, color: '#166534', fontWeight: 600, textDecoration: 'underline' }}>
+                Clear location
+              </Link>
+            </div>
+          )}
+
           <div className="listing-layout" style={{ display: 'flex', gap: 28, alignItems: 'flex-start' }}>
 
             {/* Sidebar */}
             <FilterSidebar
               areas={(allAreas || []).map(a => ({ name: a.name, slug: a.slug, dentist_count: a.dentist_count || 0 }))}
               treatments={(allTreatments || []).map(t => ({ name: t.name, slug: t.slug }))}
+              hasCoords={hasCoords}
               activeFilters={{
                 areas: areaFilter,
                 treatments: treatmentFilter,
+                specialties: specialtyFilter,
+                languages: languageFilter,
                 rating: ratingFilter,
                 fee: feeFilter,
                 gender: genderFilter,
@@ -203,8 +300,8 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  {/* Sort */}
-                  <SortSelect currentSort={sortBy} />
+                  {/* Sort — hidden when distance-sorted */}
+                  {!hasCoords && <SortSelect currentSort={sortBy} />}
 
                   {/* View toggle */}
                   <div style={{ display: 'flex', background: '#fff', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>

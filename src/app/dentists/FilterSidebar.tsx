@@ -2,16 +2,23 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import NearMeButton from './NearMeButton'
 
 interface Area { name: string; slug: string; dentist_count: number }
 interface Treatment { name: string; slug: string }
 
+const SPECIALTIES = ['Implants', 'Orthodontics', 'Pediatric', 'Cosmetic', 'Oral Surgery']
+const LANGUAGES = ['Hindi', 'English', 'Marathi', 'Gujarati']
+
 interface FilterSidebarProps {
   areas: Area[]
   treatments: Treatment[]
+  hasCoords?: boolean
   activeFilters: {
     areas: string[]
     treatments: string[]
+    specialties: string[]
+    languages: string[]
     rating: string
     fee: string
     gender: string
@@ -21,7 +28,7 @@ interface FilterSidebarProps {
   }
 }
 
-export default function FilterSidebar({ areas, treatments, activeFilters }: FilterSidebarProps) {
+export default function FilterSidebar({ areas, treatments, hasCoords, activeFilters }: FilterSidebarProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [, startTransition] = useTransition()
@@ -32,6 +39,8 @@ export default function FilterSidebar({ areas, treatments, activeFilters }: Filt
   const activeCount = [
     activeFilters.areas.length > 0,
     activeFilters.treatments.length > 0,
+    activeFilters.specialties.length > 0,
+    activeFilters.languages.length > 0,
     !!activeFilters.rating,
     !!activeFilters.fee,
     !!activeFilters.gender,
@@ -72,6 +81,18 @@ export default function FilterSidebar({ areas, treatments, activeFilters }: Filt
     updateFilter('treatment', next)
   }
 
+  function toggleSpecialty(name: string) {
+    const current = activeFilters.specialties
+    const next = current.includes(name) ? current.filter(s => s !== name) : [...current, name]
+    updateFilter('specialty', next)
+  }
+
+  function toggleLanguage(name: string) {
+    const current = activeFilters.languages
+    const next = current.includes(name) ? current.filter(l => l !== name) : [...current, name]
+    updateFilter('language', next)
+  }
+
   function clearAll() {
     startTransition(() => {
       router.push('/dentists')
@@ -94,6 +115,9 @@ export default function FilterSidebar({ areas, treatments, activeFilters }: Filt
           </button>
         )}
       </div>
+
+      {/* GPS — most prominent slot */}
+      <NearMeButton active={!!hasCoords} />
 
       {/* 1. Area */}
       <FilterPanel title="Area" active={activeFilters.areas.length > 0} onClear={() => updateFilter('area', [])}>
@@ -158,10 +182,9 @@ export default function FilterSidebar({ areas, treatments, activeFilters }: Filt
       {/* 4. Fee */}
       <FilterPanel title="Consultation Fee" active={!!activeFilters.fee} onClear={() => updateFilter('fee', null)}>
         {[
-          { label: 'Under ₹200', value: 'under200' },
-          { label: '₹200 – ₹400', value: '200-400' },
-          { label: '₹400 – ₹600', value: '400-600' },
-          { label: '₹600+', value: 'above600' },
+          { label: 'Under ₹500', value: 'under500' },
+          { label: '₹500 – ₹2,000', value: '500-2000' },
+          { label: 'Above ₹2,000', value: 'above2000' },
         ].map(opt => (
           <label key={opt.value} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 4px', cursor: 'pointer' }}>
             <input
@@ -173,6 +196,40 @@ export default function FilterSidebar({ areas, treatments, activeFilters }: Filt
             <span style={{ fontSize: 14 }}>{opt.label}</span>
           </label>
         ))}
+      </FilterPanel>
+
+      {/* 4b. Specialty */}
+      <FilterPanel title="Specialty" active={activeFilters.specialties.length > 0} onClear={() => updateFilter('specialty', [])}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {SPECIALTIES.map(s => (
+            <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 4px', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={activeFilters.specialties.includes(s)}
+                onChange={() => toggleSpecialty(s)}
+                style={{ accentColor: 'var(--blue)', width: 16, height: 16 }}
+              />
+              <span style={{ fontSize: 14 }}>{s}</span>
+            </label>
+          ))}
+        </div>
+      </FilterPanel>
+
+      {/* 4c. Language */}
+      <FilterPanel title="Language Spoken" active={activeFilters.languages.length > 0} onClear={() => updateFilter('language', [])}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {LANGUAGES.map(l => (
+            <label key={l} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 4px', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={activeFilters.languages.includes(l)}
+                onChange={() => toggleLanguage(l)}
+                style={{ accentColor: 'var(--blue)', width: 16, height: 16 }}
+              />
+              <span style={{ fontSize: 14 }}>{l}</span>
+            </label>
+          ))}
+        </div>
       </FilterPanel>
 
       {/* 5. Gender */}
