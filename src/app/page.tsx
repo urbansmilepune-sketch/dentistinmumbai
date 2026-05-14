@@ -47,20 +47,47 @@ const ZONE_COLORS: Record<string, { bg: string; text: string; border: string }> 
 export default async function HomePage() {
   const supabase = await createClient()
 
-  const [{ data: areas }, { data: treatments }, { data: featuredDentists }, { count: dentistCount }] =
-    await Promise.all([
-      supabase.from('areas').select('id, name, slug, zone, dentist_count').order('dentist_count', { ascending: false }),
-      supabase.from('treatments').select('id, name, slug, icon').order('sort_order'),
-      supabase
-        .from('dentists')
-        .select('id, name, slug, clinic_name, area_id, consultation_fee, experience_years, tier, is_verified, profile_photo, areas(name)')
-        .eq('is_active', true)
-        .eq('is_verified', true)
-        .in('tier', ['featured', 'gold', 'silver'])
-        .order('tier')
-        .limit(6),
-      supabase.from('dentists').select('*', { count: 'exact', head: true }).eq('is_active', true),
-    ])
+  // Early-stage UX: until we cross PREMIUM_FLOOR active gold/featured
+  // listings, the homepage shows every active dentist so new approvals
+  // surface immediately (rather than waiting on an admin to flip
+  // Verified + raise tier). Once we cross the floor the section
+  // auto-switches back to the curated featured/gold/silver+verified view.
+  // Both dentist queries are fired in parallel and we pick afterwards —
+  // costs ~6 extra rows on the wire but saves a round-trip.
+  const PREMIUM_FLOOR = 50
+  const DENTIST_SELECT = 'id, name, slug, clinic_name, area_id, consultation_fee, experience_years, tier, is_verified, profile_photo, areas(name)'
+
+  const [
+    { data: areas },
+    { data: treatments },
+    { count: premiumCount },
+    { count: dentistCount },
+    { data: allActiveDentists },
+    { data: curatedDentists },
+  ] = await Promise.all([
+    supabase.from('areas').select('id, name, slug, zone, dentist_count').order('dentist_count', { ascending: false }),
+    supabase.from('treatments').select('id, name, slug, icon').order('sort_order'),
+    supabase.from('dentists').select('*', { count: 'exact', head: true }).eq('is_active', true).in('tier', ['gold', 'featured']),
+    supabase.from('dentists').select('*', { count: 'exact', head: true }).eq('is_active', true),
+    supabase
+      .from('dentists')
+      .select(DENTIST_SELECT)
+      .eq('is_active', true)
+      .order('tier')
+      .order('created_at', { ascending: false })
+      .limit(6),
+    supabase
+      .from('dentists')
+      .select(DENTIST_SELECT)
+      .eq('is_active', true)
+      .eq('is_verified', true)
+      .in('tier', ['featured', 'gold', 'silver'])
+      .order('tier')
+      .limit(6),
+  ])
+
+  const showAllDentists = (premiumCount ?? 0) < PREMIUM_FLOOR
+  const featuredDentists = showAllDentists ? allActiveDentists : curatedDentists
 
   const areaList = areas ?? []
   const treatmentList = treatments ?? []
@@ -183,8 +210,8 @@ export default async function HomePage() {
             <div className="container">
               <div className="home-section-head" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 40, gap: 12, flexWrap: 'wrap' }}>
                 <div>
-                  <p style={{ color: 'var(--blue)', fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Top Rated</p>
-                  <h2 style={{ fontSize: 'clamp(1.5rem, 3vw, 2rem)', fontWeight: 800 }}>Featured Dentists in Mumbai</h2>
+                  <p style={{ color: 'var(--blue)', fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>{showAllDentists ? 'Browse' : 'Top Rated'}</p>
+                  <h2 style={{ fontSize: 'clamp(1.5rem, 3vw, 2rem)', fontWeight: 800 }}>{showAllDentists ? 'Dentists on DentistInMumbai.in' : 'Featured Dentists in Mumbai'}</h2>
                 </div>
                 <Link href="/dentists" style={{ color: 'var(--blue)', fontWeight: 600, fontSize: 14 }}>View all →</Link>
               </div>
