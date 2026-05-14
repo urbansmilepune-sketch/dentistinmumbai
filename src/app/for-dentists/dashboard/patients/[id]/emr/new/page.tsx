@@ -1,13 +1,38 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import AutocompleteInput from '@/components/AutocompleteInput'
 
 const COMPLAINT_CHIPS = [
   'Tooth Decay', 'Sensitivity', 'Pain in tooth', 'Missing tooth', 'Broken tooth',
   'Swollen gum', 'Bleeding gum', 'Root canal', 'Crooked teeth', 'Jaw pain',
+]
+
+const PROCEDURE_SUGGESTIONS = [
+  'Root Canal Treatment', 'Root Planning', 'Root Fragment Removal',
+  'Extraction', 'Surgical Extraction',
+  'Dental Implant', 'Implant Consultation',
+  'Scaling', 'Deep Scaling',
+  'Composite Filling', 'GIC Filling',
+  'Crown', 'PFM Crown', 'Zirconia Crown',
+  'Teeth Whitening',
+  'Braces Consultation', 'Orthodontic Treatment',
+  'Denture', 'Partial Denture',
+  'Sinus Lift', 'Bone Grafting',
+  'Gum Treatment', 'Apicoectomy', 'Tooth Splinting',
+]
+
+const BUILTIN_MEDICATIONS = [
+  'Amoxicillin 500mg', 'Amoxiclav 625mg',
+  'Metronidazole 400mg', 'Metrogyl DG Gel',
+  'Ibuprofen 400mg', 'Diclofenac 50mg', 'Paracetamol 500mg',
+  'Pantoprazole 40mg',
+  'Betadine Mouthwash', 'Chlorhexidine Mouthwash',
+  'Sensodyne Toothpaste', 'Fluoride Gel', 'Lignocaine Gel',
+  'Dexamethasone 0.5mg', 'Prednisolone 10mg',
 ]
 
 type MedRow = { name: string; dosage: string; frequency: string; duration: string }
@@ -51,6 +76,7 @@ export default function NewEmrPage() {
 
   const [templates, setTemplates] = useState<DbTemplate[]>([])
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('')
+  const [customMedicines, setCustomMedicines] = useState<string[]>([])
   const [complaints, setComplaints] = useState<string[]>([])
   const [vitals, setVitals] = useState({ bp: '', pulse: '', spo2: '', weight_kg: '', height_cm: '' })
   const [diagnosis, setDiagnosis] = useState('')
@@ -70,15 +96,18 @@ export default function NewEmrPage() {
       if (!dentist) { router.push('/for-dentists/login'); return }
       setDentistId(dentist.id)
 
-      const [{ data: p }, { data: tpls }] = await Promise.all([
+      const [{ data: p }, { data: tpls }, { data: customMeds }] = await Promise.all([
         supabase.from('patients').select('id, name, age, gender')
           .eq('id', patientId).eq('dentist_id', dentist.id).single(),
         supabase.from('emr_templates').select('id, name, procedures, medications, advice, times_used')
           .eq('dentist_id', dentist.id).order('times_used', { ascending: false, nullsFirst: false }).order('created_at', { ascending: false }),
+        supabase.from('custom_medicines').select('name')
+          .eq('dentist_id', dentist.id).order('created_at', { ascending: false }),
       ])
       if (!p) { router.push('/for-dentists/dashboard/patients'); return }
       setPatient(p)
       setTemplates((tpls as DbTemplate[]) || [])
+      setCustomMedicines(((customMeds ?? []) as Array<{ name: string }>).map(r => r.name).filter(Boolean))
       setLoading(false)
     }
     load()
@@ -113,6 +142,12 @@ export default function NewEmrPage() {
     setProcedures(prev => prev.map((row, idx) => idx === i ? { ...row, ...patch } : row))
   }
 
+  // Merge built-in medications with this dentist's previously-saved custom ones.
+  const medicationSuggestions = useMemo(
+    () => [...BUILTIN_MEDICATIONS, ...customMedicines],
+    [customMedicines],
+  )
+
   async function save() {
     setSaving(true)
     setError(null)
@@ -146,6 +181,28 @@ export default function NewEmrPage() {
     const { error: insertError } = await supabase.from('emr_records').insert(payload)
     setSaving(false)
     if (insertError) { setError(insertError.message); return }
+
+    // Silently persist any medication names the dentist typed that aren't already
+    // in our built-in list or their existing custom list. Errors are swallowed —
+    // a failed upsert here must not block the EMR save flow.
+    try {
+      const known = new Set(medicationSuggestions.map(s => s.toLowerCase()))
+      const seen = new Set<string>()
+      const newMeds: string[] = []
+      for (const m of payload.medications) {
+        const name = (m.name || '').trim()
+        if (!name) continue
+        const key = name.toLowerCase()
+        if (known.has(key) || seen.has(key)) continue
+        seen.add(key)
+        newMeds.push(name)
+      }
+      if (newMeds.length > 0) {
+        const rows = newMeds.map(name => ({ dentist_id: dentistId, name }))
+        await supabase.from('custom_medicines').upsert(rows, { onConflict: 'dentist_id,name', ignoreDuplicates: true })
+      }
+    } catch { /* swallow */ }
+
     router.push(`/for-dentists/dashboard/patients/${patientId}`)
   }
 
@@ -288,7 +345,16 @@ export default function NewEmrPage() {
             <tbody>
               {medications.map((m, i) => (
                 <tr key={i} style={{ borderTop: '1px solid var(--border)' }}>
-                  <td style={{ padding: '6px 8px' }}><input value={m.name} onChange={e => updateMed(i, { name: e.target.value })} placeholder="Amoxicillin 500mg" style={inputStyle} /></td>
+                  <td style={{ padding: '6px 8px' }}>
+                    <AutocompleteInput
+                      value={m.name}
+                      onChange={v => updateMed(i, { name: v })}
+                      suggestions={medicationSuggestions}
+                      placeholder="Amoxicillin 500mg"
+                      style={inputStyle}
+                      ariaLabel="Medicine name"
+                    />
+                  </td>
                   <td style={{ padding: '6px 8px' }}><input value={m.dosage} onChange={e => updateMed(i, { dosage: e.target.value })} placeholder="500mg" style={inputStyle} /></td>
                   <td style={{ padding: '6px 8px' }}><input value={m.frequency} onChange={e => updateMed(i, { frequency: e.target.value })} placeholder="1-0-1" style={inputStyle} /></td>
                   <td style={{ padding: '6px 8px' }}><input value={m.duration} onChange={e => updateMed(i, { duration: e.target.value })} placeholder="5 days" style={inputStyle} /></td>
@@ -322,7 +388,16 @@ export default function NewEmrPage() {
             <tbody>
               {procedures.map((p, i) => (
                 <tr key={i} style={{ borderTop: '1px solid var(--border)' }}>
-                  <td style={{ padding: '6px 8px' }}><input value={p.name} onChange={e => updateProc(i, { name: e.target.value })} placeholder="Root canal treatment" style={inputStyle} /></td>
+                  <td style={{ padding: '6px 8px' }}>
+                    <AutocompleteInput
+                      value={p.name}
+                      onChange={v => updateProc(i, { name: v })}
+                      suggestions={PROCEDURE_SUGGESTIONS}
+                      placeholder="Root Canal Treatment"
+                      style={inputStyle}
+                      ariaLabel="Procedure name"
+                    />
+                  </td>
                   <td style={{ padding: '6px 8px' }}><input value={p.tooth_number} onChange={e => updateProc(i, { tooth_number: e.target.value })} placeholder="36" style={inputStyle} /></td>
                   <td style={{ padding: '6px 8px' }}><input type="number" inputMode="numeric" value={p.price} onChange={e => updateProc(i, { price: e.target.value })} placeholder="5000" style={inputStyle} /></td>
                   <td style={{ padding: '6px 8px' }}>
