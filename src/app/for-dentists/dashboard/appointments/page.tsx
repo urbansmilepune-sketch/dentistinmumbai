@@ -18,6 +18,20 @@ function todayIsoLocal(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+function tomorrowIsoLocal(): string {
+  const d = new Date()
+  d.setDate(d.getDate() + 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function formatDateLong(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+function waLink(phone: string, text: string): string {
+  return `https://wa.me/91${(phone || '').replace(/\D/g, '')}?text=${encodeURIComponent(text)}`
+}
+
 // New state-machine values + legacy values that still appear in old rows.
 // Legacy `pending` and `confirmed` are bucketed into the Scheduled tab so existing
 // bookings keep flowing through the workflow without a DB migration.
@@ -45,8 +59,10 @@ export default function AppointmentsPage() {
   const searchParams = useSearchParams()
   const [loading, setLoading] = useState(true)
   const [dentistId, setDentistId] = useState('')
+  const [dentistMeta, setDentistMeta] = useState<{ name: string; clinic_name: string; whatsapp: string }>({ name: '', clinic_name: '', whatsapp: '' })
   const [appointments, setAppointments] = useState<any[]>([])
   const [invoicedPhones, setInvoicedPhones] = useState<Set<string>>(new Set())
+  const [unpaidByPhone, setUnpaidByPhone] = useState<Map<string, number>>(new Map())
   const [filter, setFilter] = useState<FilterKey>('all')
   const [updating, setUpdating] = useState<string | null>(null)
   const [treatments, setTreatments] = useState<{ id: string; name: string }[]>([])
@@ -68,9 +84,18 @@ export default function AppointmentsPage() {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/for-dentists/login'); return }
-      const { data: dentist } = await supabase.from('dentists').select('id').eq('email', user.email).single()
+      const { data: dentist } = await supabase
+        .from('dentists')
+        .select('id, name, clinic_name, whatsapp, phone')
+        .eq('email', user.email)
+        .single()
       if (!dentist) return
       setDentistId(dentist.id)
+      setDentistMeta({
+        name: dentist.name || '',
+        clinic_name: dentist.clinic_name || '',
+        whatsapp: dentist.whatsapp || dentist.phone || '',
+      })
 
       const [{ data: appts }, { data: invs }, { data: tx }] = await Promise.all([
         supabase
@@ -80,7 +105,7 @@ export default function AppointmentsPage() {
           .order('appt_date', { ascending: false }),
         supabase
           .from('invoices')
-          .select('patients(phone)')
+          .select('total, payment_status, patients(phone)')
           .eq('dentist_id', dentist.id),
         supabase
           .from('dentist_treatments')
@@ -90,11 +115,17 @@ export default function AppointmentsPage() {
 
       setAppointments(appts || [])
       const phones = new Set<string>()
+      const unpaid = new Map<string, number>()
       ;(invs || []).forEach((row: any) => {
         const p = row.patients?.phone
-        if (p) phones.add(p)
+        if (!p) return
+        phones.add(p)
+        if (row.payment_status === 'pending' || row.payment_status === 'overdue') {
+          unpaid.set(p, (unpaid.get(p) ?? 0) + Number(row.total || 0))
+        }
       })
       setInvoicedPhones(phones)
+      setUnpaidByPhone(unpaid)
       const tList = (tx || []).map((r: any) => r.treatments).filter(Boolean) as { id: string; name: string }[]
       setTreatments(tList)
       setLoading(false)
@@ -282,8 +313,60 @@ export default function AppointmentsPage() {
             const isScheduled = SCHEDULED_STATUSES.has(a.status)
             const isActive = a.status === 'active'
             const isWaiting = a.status === 'waiting'
+            const isCompleted = a.status === 'completed'
             const isClosed = a.status === 'completed' || a.status === 'cancelled'
             const reBookText = encodeURIComponent(`Hi ${a.patient_name}, would you like to book another appointment with us? Reply with a date and time that works for you.`)
+
+            // 24-hour reminder eligibility: tomorrow's date AND not already closed out.
+            const tomorrowIso = tomorrowIsoLocal()
+            const remindable = a.appt_date === tomorrowIso && !isClosed && a.status !== 'no_show'
+
+            // Find the next future appointment for this patient — used in the completed-visit summary.
+            let nextAppt: typeof a | null = null
+            if (isCompleted && a.patient_phone) {
+              const candidates = appointments.filter((x: any) =>
+                x.patient_phone === a.patient_phone &&
+                x.id !== a.id &&
+                !['completed', 'cancelled', 'no_show'].includes(x.status) &&
+                (x.appt_date > a.appt_date ||
+                  (x.appt_date === a.appt_date && (x.time_slot || '') > (a.time_slot || '')))
+              )
+              if (candidates.length > 0) {
+                nextAppt = candidates.reduce((earliest: any, cur: any) => {
+                  const e = `${earliest.appt_date}T${earliest.time_slot ?? '00:00'}`
+                  const c = `${cur.appt_date}T${cur.time_slot ?? '00:00'}`
+                  return c < e ? cur : earliest
+                })
+              }
+            }
+
+            const amountDue = unpaidByPhone.get(a.patient_phone) ?? 0
+            const treatmentLabel = a.treatments?.name || 'Consultation'
+            const clinicWa = dentistMeta.whatsapp
+
+            const summaryLines = [
+              `Hi ${a.patient_name},`,
+              '',
+              `Thank you for visiting ${dentistMeta.clinic_name || 'our clinic'} today. Here's a summary of your appointment:`,
+              '',
+              `🦷 Treatment: ${treatmentLabel}`,
+              nextAppt ? `📅 Next visit: ${formatDateLong(nextAppt.appt_date)} at ${nextAppt.time_slot}` : '',
+              amountDue > 0 ? `💰 Pending payment: ₹${amountDue.toLocaleString('en-IN')}` : '',
+              '',
+              clinicWa ? `For any questions, WhatsApp us at +91 ${clinicWa}.` : '',
+              '',
+              `— ${dentistMeta.name || 'Your dentist'}`,
+            ].filter(Boolean).join('\n')
+
+            const reminderLines = [
+              `Hi ${a.patient_name},`,
+              '',
+              `Friendly reminder: your appointment with ${dentistMeta.name || 'your dentist'} at ${dentistMeta.clinic_name || 'our clinic'} is tomorrow (${formatDateLong(a.appt_date)}) at ${a.time_slot}.`,
+              '',
+              clinicWa
+                ? `See you then! WhatsApp us at +91 ${clinicWa} if you need to reschedule.`
+                : 'See you then!',
+            ].join('\n')
 
             return (
               <div key={a.id} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '16px 20px', display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -329,6 +412,26 @@ export default function AppointmentsPage() {
                       target="_blank" rel="noopener noreferrer"
                       style={{ ...primaryBtn, background: '#E0E7FF', color: '#3730A3', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
                       ↺ Book Again
+                    </a>
+                  )}
+
+                  {/* 24-hour reminder */}
+                  {remindable && a.patient_phone && (
+                    <a href={waLink(a.patient_phone, reminderLines)}
+                      target="_blank" rel="noopener noreferrer"
+                      title="Send WhatsApp reminder — appointment is tomorrow"
+                      style={{ ...primaryBtn, background: '#F59E0B', color: '#fff', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      ⏰ Send Reminder
+                    </a>
+                  )}
+
+                  {/* Post-completion summary */}
+                  {isCompleted && a.patient_phone && (
+                    <a href={waLink(a.patient_phone, summaryLines)}
+                      target="_blank" rel="noopener noreferrer"
+                      title="Send WhatsApp summary of this completed visit"
+                      style={{ ...primaryBtn, background: '#25D366', color: '#fff', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      ✉️ Send Summary
                     </a>
                   )}
 
