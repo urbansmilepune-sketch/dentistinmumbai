@@ -69,6 +69,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true })
   }
 
+  console.error('[admin/registrations approve] start', { registration_id })
+
   // Approve path: build (or refresh) the dentists row, fire the email.
   const { data: reg, error: regErr } = await admin_db
     .from('dentist_registrations')
@@ -76,45 +78,89 @@ export async function POST(request: NextRequest) {
     .eq('id', registration_id)
     .single()
   if (regErr || !reg) {
-    return NextResponse.json({ error: 'Registration not found' }, { status: 404 })
+    console.error('[admin/registrations approve] registration fetch failed', { registration_id, regErr })
+    return NextResponse.json({ error: 'Registration not found', detail: regErr?.message }, { status: 404 })
   }
+  console.error('[admin/registrations approve] registration fetched', {
+    id: reg.id, email: reg.email, area: reg.area, selected_plan: reg.selected_plan,
+  })
 
-  // Resolve area_id by name (best effort — if unmatched we leave area_id null).
+  // Resolve area_id. The registration form stores the area as a free-form
+  // string from a hard-coded list (see for-dentists/register/page.tsx) — the
+  // matching DB row in `areas` may differ by case or whitespace, so we try
+  // exact → case-insensitive → slug fallback before giving up.
   let area_id: string | null = null
   if (reg.area) {
-    const { data: areaRow } = await admin_db.from('areas').select('id').eq('name', reg.area).maybeSingle()
-    if (areaRow) area_id = areaRow.id
+    const wanted = reg.area.trim()
+    const { data: areaExact, error: areaExactErr } = await admin_db
+      .from('areas').select('id, name').eq('name', wanted).maybeSingle()
+    if (areaExactErr) console.error('[admin/registrations approve] area exact lookup error', areaExactErr)
+
+    if (areaExact) {
+      area_id = areaExact.id
+      console.error('[admin/registrations approve] area matched (exact)', { wanted, area_id })
+    } else {
+      const { data: areaCi, error: areaCiErr } = await admin_db
+        .from('areas').select('id, name').ilike('name', wanted).maybeSingle()
+      if (areaCiErr) console.error('[admin/registrations approve] area ilike lookup error', areaCiErr)
+
+      if (areaCi) {
+        area_id = areaCi.id
+        console.error('[admin/registrations approve] area matched (case-insensitive)', { wanted, matched: areaCi.name, area_id })
+      } else {
+        const wantedSlug = slugify(wanted)
+        const { data: areaBySlug, error: areaSlugErr } = await admin_db
+          .from('areas').select('id, name, slug').eq('slug', wantedSlug).maybeSingle()
+        if (areaSlugErr) console.error('[admin/registrations approve] area slug lookup error', areaSlugErr)
+
+        if (areaBySlug) {
+          area_id = areaBySlug.id
+          console.error('[admin/registrations approve] area matched (slug)', { wanted, wantedSlug, matched: areaBySlug.name, area_id })
+        } else {
+          console.error('[admin/registrations approve] area NOT matched — inserting with area_id=null', { wanted, wantedSlug })
+        }
+      }
+    }
   }
 
   const plan: Plan | null = normalizePlan(reg.selected_plan)
 
   // Does this email already have a dentists row? If yes, refresh it (preserves
   // any manual edits the admin made in Studio); if no, create with a fresh slug.
-  const { data: existing } = await admin_db
+  const { data: existing, error: existingErr } = await admin_db
     .from('dentists')
     .select('id, slug')
     .eq('email', reg.email)
     .maybeSingle()
+  if (existingErr) console.error('[admin/registrations approve] existing dentist lookup error', existingErr)
+  console.error('[admin/registrations approve] existing dentist?', { email: reg.email, found: !!existing })
 
   let slug: string
   if (existing) {
     slug = existing.slug
+    const updatePayload = {
+      name: reg.name,
+      clinic_name: reg.clinic_name,
+      phone: reg.phone,
+      qualifications: reg.qualification,
+      mci_number: reg.mci_registration,
+      area_id,
+      selected_plan: plan,
+      is_active: true,
+    }
+    console.error('[admin/registrations approve] updating existing dentist', { id: existing.id, slug, updatePayload })
     const { error: updateErr } = await admin_db
       .from('dentists')
-      .update({
-        name: reg.name,
-        clinic_name: reg.clinic_name,
-        phone: reg.phone,
-        qualifications: reg.qualification,
-        mci_number: reg.mci_registration,
-        area_id,
-        selected_plan: plan,
-        is_active: true,
-      })
+      .update(updatePayload)
       .eq('id', existing.id)
     if (updateErr) {
       console.error('[admin/registrations approve] dentist update failed', updateErr)
-      return NextResponse.json({ error: 'Failed to update dentist profile' }, { status: 500 })
+      return NextResponse.json({
+        error: 'Failed to update dentist profile',
+        detail: updateErr.message,
+        code: updateErr.code,
+        hint: updateErr.hint,
+      }, { status: 500 })
     }
   } else {
     // Generate a unique slug from clinic_name (fallback to name). Append -2, -3…
@@ -123,30 +169,46 @@ export async function POST(request: NextRequest) {
     const base = slugify(reg.clinic_name || reg.name || 'clinic') || 'clinic'
     slug = base
     for (let i = 2; i <= 10; i++) {
-      const { data: clash } = await admin_db.from('dentists').select('id').eq('slug', slug).maybeSingle()
+      const { data: clash, error: clashErr } = await admin_db.from('dentists').select('id').eq('slug', slug).maybeSingle()
+      if (clashErr) console.error('[admin/registrations approve] slug clash lookup error', { slug, clashErr })
       if (!clash) break
       slug = `${base}-${i}`
     }
+    console.error('[admin/registrations approve] slug resolved', { base, slug })
 
+    const insertPayload = {
+      email: reg.email,
+      name: reg.name,
+      clinic_name: reg.clinic_name,
+      phone: reg.phone,
+      qualifications: reg.qualification,
+      mci_number: reg.mci_registration,
+      area_id,
+      slug,
+      is_active: true,
+      tier: 'free',
+      selected_plan: plan,
+    }
+    console.error('[admin/registrations approve] inserting dentist', insertPayload)
     const { error: insertErr } = await admin_db
       .from('dentists')
-      .insert({
-        email: reg.email,
-        name: reg.name,
-        clinic_name: reg.clinic_name,
-        phone: reg.phone,
-        qualifications: reg.qualification,
-        mci_number: reg.mci_registration,
-        area_id,
-        slug,
-        is_active: true,
-        tier: 'free',
-        selected_plan: plan,
-      })
+      .insert(insertPayload)
     if (insertErr) {
-      console.error('[admin/registrations approve] dentist insert failed', insertErr)
-      return NextResponse.json({ error: 'Failed to create dentist profile' }, { status: 500 })
+      console.error('[admin/registrations approve] dentist insert failed', {
+        message: insertErr.message,
+        code: insertErr.code,
+        details: insertErr.details,
+        hint: insertErr.hint,
+        payload: insertPayload,
+      })
+      return NextResponse.json({
+        error: 'Failed to create dentist profile',
+        detail: insertErr.message,
+        code: insertErr.code,
+        hint: insertErr.hint,
+      }, { status: 500 })
     }
+    console.error('[admin/registrations approve] dentist insert succeeded', { slug })
   }
 
   // Flip the registration to approved.
