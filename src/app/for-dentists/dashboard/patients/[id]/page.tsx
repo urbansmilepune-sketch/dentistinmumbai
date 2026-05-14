@@ -11,6 +11,7 @@ const TABS = [
   { id: 'visits', label: 'Visit Notes', icon: '📋' },
   { id: 'prescriptions', label: 'Prescriptions', icon: '💊' },
   { id: 'plans', label: 'Treatment Plans', icon: '🦷' },
+  { id: 'emr', label: 'EMR', icon: '🏥' },
   { id: 'chart', label: 'Dental Chart', icon: '🦷' },
   { id: 'xrays', label: 'X-Ray Vault', icon: '🩻' },
 ]
@@ -443,6 +444,21 @@ export default function PatientDetailPage() {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* EMR */}
+      {activeTab === 'emr' && (
+        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '28px', textAlign: 'center' }}>
+          <div style={{ fontSize: 40, marginBottom: 10 }}>🏥</div>
+          <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18, marginBottom: 6 }}>Electronic Medical Record</h3>
+          <p style={{ fontSize: 14, color: 'var(--muted)', maxWidth: 480, margin: '0 auto 20px' }}>
+            Capture a full clinical encounter — vitals, complaints, diagnosis, medications, procedures, advice, and follow-up — in one form.
+          </p>
+          <Link href={`/for-dentists/dashboard/patients/${patientId}/emr/new`}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '11px 22px', minHeight: 44, background: 'var(--blue)', color: '#fff', borderRadius: 10, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
+            + New EMR Record
+          </Link>
         </div>
       )}
 
