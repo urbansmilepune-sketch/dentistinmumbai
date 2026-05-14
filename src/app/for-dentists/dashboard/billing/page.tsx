@@ -1,13 +1,24 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import jsPDF from 'jspdf'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+
+type DentistMeta = {
+  id: string
+  name: string | null
+  clinic_name: string | null
+  phone: string | null
+  whatsapp: string | null
+  areas: { name: string | null } | null
+}
 
 export default function BillingPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [dentistId, setDentistId] = useState('')
+  const [dentist, setDentist] = useState<DentistMeta | null>(null)
   const [invoices, setInvoices] = useState<any[]>([])
   const [patients, setPatients] = useState<any[]>([])
   const [showAdd, setShowAdd] = useState(false)
@@ -23,12 +34,17 @@ export default function BillingPage() {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/for-dentists/login'); return }
-      const { data: dentist } = await supabase.from('dentists').select('id').eq('email', user.email).single()
-      if (!dentist) return
-      setDentistId(dentist.id)
+      const { data: dentistRow } = await supabase
+        .from('dentists')
+        .select('id, name, clinic_name, phone, whatsapp, areas(name)')
+        .eq('email', user.email)
+        .single()
+      if (!dentistRow) return
+      setDentistId(dentistRow.id)
+      setDentist(dentistRow as unknown as DentistMeta)
       const [{ data: inv }, { data: pat }] = await Promise.all([
-        supabase.from('invoices').select('*, patients(name, phone)').eq('dentist_id', dentist.id).order('created_at', { ascending: false }),
-        supabase.from('patients').select('id, name, phone').eq('dentist_id', dentist.id).order('name'),
+        supabase.from('invoices').select('*, patients(name, phone)').eq('dentist_id', dentistRow.id).order('created_at', { ascending: false }),
+        supabase.from('patients').select('id, name, phone').eq('dentist_id', dentistRow.id).order('name'),
       ])
       setInvoices(inv || [])
       setPatients(pat || [])
@@ -64,6 +80,166 @@ export default function BillingPage() {
     const supabase = createClient()
     await supabase.from('invoices').update({ payment_status: status }).eq('id', id)
     setInvoices(prev => prev.map(inv => inv.id === id ? { ...inv, payment_status: status } : inv))
+  }
+
+  function downloadPdf(inv: any) {
+    if (!dentist) return
+    const doc = new jsPDF({ unit: 'pt', format: 'a4' })
+    const PAGE_W = doc.internal.pageSize.getWidth()
+    const PAGE_H = doc.internal.pageSize.getHeight()
+    const MARGIN = 48
+
+    // Clinic header
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(20)
+    doc.setTextColor(0, 87, 168) // var(--blue)
+    doc.text(dentist.clinic_name || dentist.name || 'Clinic', MARGIN, MARGIN + 8)
+
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(11)
+    doc.setTextColor(60, 60, 60)
+    const subtitleLines: string[] = []
+    if (dentist.name && dentist.clinic_name) subtitleLines.push(dentist.name)
+    const locale = dentist.areas?.name ? `${dentist.areas.name}, Mumbai` : 'Mumbai'
+    subtitleLines.push(locale)
+    const contact = dentist.phone || dentist.whatsapp
+    if (contact) subtitleLines.push(`Phone: ${contact}`)
+    subtitleLines.forEach((line, i) => {
+      doc.text(line, MARGIN, MARGIN + 28 + (i * 14))
+    })
+
+    // Invoice meta (right side)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(22)
+    doc.setTextColor(15, 25, 35)
+    doc.text('INVOICE', PAGE_W - MARGIN, MARGIN + 4, { align: 'right' })
+
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(11)
+    doc.setTextColor(80, 80, 80)
+    doc.text(`# ${inv.invoice_no}`, PAGE_W - MARGIN, MARGIN + 22, { align: 'right' })
+    const date = new Date(inv.invoice_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+    doc.text(`Date: ${date}`, PAGE_W - MARGIN, MARGIN + 38, { align: 'right' })
+
+    // Divider
+    let cursorY = MARGIN + 90
+    doc.setDrawColor(220, 220, 220)
+    doc.setLineWidth(1)
+    doc.line(MARGIN, cursorY, PAGE_W - MARGIN, cursorY)
+    cursorY += 22
+
+    // Patient block
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(10)
+    doc.setTextColor(100, 116, 139)
+    doc.text('BILL TO', MARGIN, cursorY)
+    cursorY += 14
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(13)
+    doc.setTextColor(15, 25, 35)
+    doc.text(inv.patients?.name || 'Patient', MARGIN, cursorY)
+    cursorY += 16
+    if (inv.patients?.phone) {
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(11)
+      doc.setTextColor(80, 80, 80)
+      doc.text(`Phone: ${inv.patients.phone}`, MARGIN, cursorY)
+      cursorY += 14
+    }
+
+    // Items table
+    cursorY += 18
+    const COL_AMT_X = PAGE_W - MARGIN
+    doc.setFillColor(245, 247, 252)
+    doc.rect(MARGIN, cursorY - 14, PAGE_W - MARGIN * 2, 24, 'F')
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(10)
+    doc.setTextColor(100, 116, 139)
+    doc.text('DESCRIPTION', MARGIN + 8, cursorY + 2)
+    doc.text('AMOUNT', COL_AMT_X - 8, cursorY + 2, { align: 'right' })
+    cursorY += 22
+
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(12)
+    doc.setTextColor(30, 41, 59)
+    const items: { description: string; amount: number }[] = Array.isArray(inv.items) ? inv.items : []
+    for (const item of items) {
+      const desc = String(item.description ?? '')
+      const wrapped = doc.splitTextToSize(desc, PAGE_W - MARGIN * 2 - 110) as string[]
+      wrapped.forEach((line, idx) => {
+        doc.text(line, MARGIN + 8, cursorY)
+        if (idx === 0) {
+          doc.text(`₹${Number(item.amount || 0).toLocaleString('en-IN')}`, COL_AMT_X - 8, cursorY, { align: 'right' })
+        }
+        cursorY += 16
+      })
+      doc.setDrawColor(238, 240, 244)
+      doc.line(MARGIN, cursorY - 4, PAGE_W - MARGIN, cursorY - 4)
+      cursorY += 6
+    }
+
+    // Totals
+    cursorY += 12
+    const totalLabelX = PAGE_W - MARGIN - 160
+    const totalValueX = PAGE_W - MARGIN
+    function row(label: string, value: string, bold = false, color: [number, number, number] = [30, 41, 59]) {
+      doc.setFont('helvetica', bold ? 'bold' : 'normal')
+      doc.setFontSize(bold ? 14 : 11)
+      doc.setTextColor(color[0], color[1], color[2])
+      doc.text(label, totalLabelX, cursorY)
+      doc.text(value, totalValueX, cursorY, { align: 'right' })
+      cursorY += bold ? 22 : 16
+    }
+    row('Subtotal', `₹${Number(inv.subtotal || 0).toLocaleString('en-IN')}`)
+    if (Number(inv.discount) > 0) {
+      row('Discount', `- ₹${Number(inv.discount).toLocaleString('en-IN')}`, false, [22, 101, 52])
+    }
+    doc.setDrawColor(200, 200, 200)
+    doc.line(totalLabelX, cursorY - 2, totalValueX, cursorY - 2)
+    cursorY += 6
+    row('Total', `₹${Number(inv.total || 0).toLocaleString('en-IN')}`, true, [0, 87, 168])
+
+    // Status badge
+    cursorY += 6
+    const status = (inv.payment_status || 'pending') as 'pending' | 'paid' | 'overdue'
+    const badge: Record<string, { fill: [number, number, number]; text: [number, number, number]; label: string }> = {
+      paid:    { fill: [220, 252, 231], text: [22, 101, 52],  label: 'PAID'    },
+      pending: { fill: [254, 243, 199], text: [146, 64, 14],  label: 'PENDING' },
+      overdue: { fill: [254, 226, 226], text: [153, 27, 27],  label: 'OVERDUE' },
+    }
+    const b = badge[status] ?? badge.pending
+    const badgeW = 90
+    const badgeX = PAGE_W - MARGIN - badgeW
+    doc.setFillColor(b.fill[0], b.fill[1], b.fill[2])
+    doc.roundedRect(badgeX, cursorY - 14, badgeW, 22, 11, 11, 'F')
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(10)
+    doc.setTextColor(b.text[0], b.text[1], b.text[2])
+    doc.text(b.label, badgeX + badgeW / 2, cursorY, { align: 'center' })
+    cursorY += 16
+
+    // Notes (optional)
+    if (inv.notes) {
+      cursorY += 16
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(10)
+      doc.setTextColor(100, 116, 139)
+      doc.text('NOTES', MARGIN, cursorY)
+      cursorY += 14
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(11)
+      doc.setTextColor(50, 50, 50)
+      const wrapped = doc.splitTextToSize(String(inv.notes), PAGE_W - MARGIN * 2) as string[]
+      wrapped.forEach(line => { doc.text(line, MARGIN, cursorY); cursorY += 14 })
+    }
+
+    // Footer
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(9)
+    doc.setTextColor(140, 140, 140)
+    doc.text('Powered by dentistinmumbai.in', PAGE_W / 2, PAGE_H - MARGIN / 2, { align: 'center' })
+
+    doc.save(`Invoice-${inv.invoice_no}.pdf`)
   }
 
   const inputStyle = { width: '100%', padding: '9px 12px', borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 13, fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box' as const }
@@ -213,13 +389,17 @@ export default function BillingPage() {
                       <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: sc.bg, color: sc.text }}>{inv.payment_status}</span>
                     </td>
                     <td style={{ padding: '12px 16px' }}>
-                      <div style={{ display: 'flex', gap: 6 }}>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         {inv.payment_status === 'pending' && (
                           <button onClick={() => updatePaymentStatus(inv.id, 'paid')}
                             style={{ padding: '5px 10px', background: '#DCFCE7', color: '#166534', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
                             Mark Paid
                           </button>
                         )}
+                        <button onClick={() => downloadPdf(inv)}
+                          style={{ padding: '5px 10px', background: 'var(--blue-light)', color: 'var(--blue)', border: '1px solid #BFDBFE', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
+                          ⬇ PDF
+                        </button>
                         {inv.patients?.phone && (
                           <a href={`https://wa.me/91${inv.patients.phone.replace(/\D/g,'')}?text=Dear ${inv.patients.name}, your invoice ${inv.invoice_no} of ₹${inv.total} from ${new Date(inv.invoice_date).toLocaleDateString('en-IN')} is due. Please make payment at your earliest. Thank you.`}
                             target="_blank" rel="noopener noreferrer"
