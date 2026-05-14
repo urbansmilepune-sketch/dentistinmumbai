@@ -12,11 +12,15 @@ function generateRef(): string {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { name, phone, email, clinic_name, area, qualification, mci_registration, founding_number } = body
+    const { name, phone, email, clinic_name, area, qualification, mci_registration, founding_number, selected_plan } = body
 
     if (!name || !phone || !email || !clinic_name || !area || !qualification || !mci_registration) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
+
+    // Whitelist plan input — accept null or one of the two known values; ignore anything else.
+    const planValue: 'monthly' | 'annual' | null =
+      selected_plan === 'monthly' || selected_plan === 'annual' ? selected_plan : null
 
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -42,7 +46,7 @@ export async function POST(request: NextRequest) {
 
     const { data, error } = await supabase
       .from('dentist_registrations')
-      .insert({ ref_no, name, phone, email, clinic_name, area, qualification, mci_registration, founding_number, status: 'pending' })
+      .insert({ ref_no, name, phone, email, clinic_name, area, qualification, mci_registration, founding_number, selected_plan: planValue, status: 'pending' })
       .select('ref_no')
       .single()
 

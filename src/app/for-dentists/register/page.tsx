@@ -13,6 +13,17 @@ function generateRef(): string {
   return ref
 }
 
+type Plan = 'monthly' | 'annual'
+
+const PLAN_COPY: Record<Plan, { label: string; price: string; period: string }> = {
+  monthly: { label: 'Monthly', price: '₹999',   period: '/month' },
+  annual:  { label: 'Annual',  price: '₹9,999', period: '/year'  },
+}
+
+function parsePlan(v: string | null): Plan | null {
+  return v === 'monthly' || v === 'annual' ? v : null
+}
+
 export default function RegisterPage() {
   const [form, setForm] = useState({
     name: '', phone: '', email: '', clinic_name: '',
@@ -23,6 +34,7 @@ export default function RegisterPage() {
   const [refNo, setRefNo] = useState('')
   const [error, setError] = useState('')
   const [prefilledFromLogin, setPrefilledFromLogin] = useState(false)
+  const [planFromUrl, setPlanFromUrl] = useState<Plan | null>(null)
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -31,6 +43,8 @@ export default function RegisterPage() {
       setForm(f => ({ ...f, email: emailParam }))
       setPrefilledFromLogin(true)
     }
+    const planParam = parsePlan(params.get('plan'))
+    if (planParam) setPlanFromUrl(planParam)
   }, [])
 
   function update(key: string, value: string) {
@@ -49,7 +63,11 @@ export default function RegisterPage() {
       const res = await fetch('/api/registrations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, founding_number: Math.floor(Math.random() * 250) + 1 }),
+        body: JSON.stringify({
+          ...form,
+          selected_plan: planFromUrl,
+          founding_number: Math.floor(Math.random() * 250) + 1,
+        }),
       })
       const data = await res.json()
       if (data.ref_no) {
@@ -92,6 +110,14 @@ export default function RegisterPage() {
               {prefilledFromLogin && (
                 <div style={{ padding: '14px 18px', background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: 12, fontSize: 14, color: '#92400E', marginBottom: 24, lineHeight: 1.5 }}>
                   <strong>No account found for {form.email}.</strong> Please complete the registration below to claim your free listing — your profile will be activated within 24 hours.
+                </div>
+              )}
+              {planFromUrl && (
+                <div style={{ padding: '16px 18px', background: 'linear-gradient(135deg, #FFF7ED 0%, #FEF3C7 100%)', border: '1.5px solid #FDE68A', borderRadius: 12, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 14 }}>
+                  <div style={{ width: 44, height: 44, flexShrink: 0, borderRadius: 12, background: '#FF6135', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>⭐</div>
+                  <div style={{ flex: 1, fontSize: 14, color: '#7C2D12', lineHeight: 1.5 }}>
+                    You selected <strong>Gold {PLAN_COPY[planFromUrl].label}</strong> — <strong>{PLAN_COPY[planFromUrl].price}{PLAN_COPY[planFromUrl].period}</strong>. Your plan activates after profile approval.
+                  </div>
                 </div>
               )}
               {/* Hero */}
@@ -187,7 +213,12 @@ export default function RegisterPage() {
               <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 28, marginBottom: 8 }}>
                 Welcome, {form.name.split(' ')[0]}!
               </h2>
-              <p style={{ color: 'var(--muted)', fontSize: 16, marginBottom: 28 }}>Your registration is confirmed.</p>
+              <p style={{ color: 'var(--muted)', fontSize: 16, marginBottom: planFromUrl ? 16 : 28 }}>Your registration is confirmed.</p>
+              {planFromUrl && (
+                <p style={{ color: 'var(--text)', fontSize: 15, fontWeight: 600, marginBottom: 28 }}>
+                  Your Gold <span style={{ color: '#FF6135' }}>{PLAN_COPY[planFromUrl].label}</span> plan will activate once approved.
+                </p>
+              )}
 
               <div style={{ background: 'var(--blue-light)', border: '1px solid #BFDBFE', borderRadius: 14, padding: '20px', marginBottom: 28 }}>
                 <p style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>Reference Number</p>
