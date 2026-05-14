@@ -52,7 +52,10 @@ export default function ExpoPricingSection() {
             Founding Member Offer<br />
             <span style={{ color: '#FF6135' }}>Closes at the Expo</span>
           </h2>
-          <p style={{ color: 'rgba(255,255,255,0.75)', fontSize: 16, maxWidth: 520, margin: '0 auto' }}>
+          <p style={{ color: 'rgba(255,255,255,0.9)', fontSize: 17, maxWidth: 580, margin: '0 auto 10px', fontWeight: 600 }}>
+            Complete Practice Management — not just a directory listing.
+          </p>
+          <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: 15, maxWidth: 520, margin: '0 auto' }}>
             Lock in ₹999/month forever. After June 12 the price goes to ₹2,499/month. No price hike ever for founding members.
           </p>
         </div>

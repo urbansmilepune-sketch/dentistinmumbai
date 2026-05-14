@@ -43,12 +43,12 @@ export default async function ForDentistsPage() {
   const areaNames = (areas || []).map(a => a.name)
 
   const WHY_CARDS = [
-    { icon: '🔍', title: 'Be Found on Google', desc: 'Every profile is an indexed page. Patients searching "dentist in Bandra" find your listing.' },
-    { icon: '📱', title: 'WhatsApp Directly', desc: 'One tap connects patients to your WhatsApp. No gatekeepers, no commission.' },
-    { icon: '📅', title: 'Accept Bookings 24/7', desc: 'Your profile takes appointment requests round the clock — even when clinic is closed.' },
-    { icon: '🗂️', title: 'Showcase Your Work', desc: 'Upload clinic photos, equipment, before/after. Patients who see your clinic are more likely to visit.' },
-    { icon: '⭐', title: 'Build Your Reputation', desc: 'Verified patient reviews build social proof that converts browsers into booked appointments.' },
-    { icon: '📊', title: 'Understand Your Patients', desc: 'See which treatments people search, which areas they come from, how they found you.' },
+    { icon: '📅', title: 'Smart Appointments',     desc: 'Walk-in, scheduled, state-machine flow — every booking moves through the right status automatically.' },
+    { icon: '🦷', title: 'EMR & Prescriptions',    desc: 'Reusable templates, clickable chief-complaint chips, medications and procedures in one form.' },
+    { icon: '💰', title: 'Billing & Invoices',     desc: 'Generate professional PDF invoices, track payments, send WhatsApp reminders for dues.' },
+    { icon: '👥', title: 'Patient Records',        desc: 'Full PMS — visit notes, treatment plans, dental chart, X-ray vault, medical history.' },
+    { icon: '📊', title: 'Analytics',              desc: 'Profile views, WhatsApp clicks, booking-to-show rates, engagement funnels — all visualised.' },
+    { icon: '📲', title: 'WhatsApp Native',        desc: '24-hour reminders, post-visit summaries, payment-due nudges — every patient touchpoint, one tap.' },
   ]
 
   const FEATURES = [
@@ -100,17 +100,17 @@ export default async function ForDentistsPage() {
         <div aria-hidden="true" style={{ position: 'absolute', bottom: -80, left: '5%', width: 300, height: 300, background: 'rgba(255,255,255,0.03)', borderRadius: '50%' }} />
 
         <div className="container" style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-          {/* Founding badge */}
+          {/* Platform badge */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 20px', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 40, marginBottom: 28 }}>
             <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#FBBF24', animation: 'pulse 2s infinite' }} />
-            <span style={{ fontSize: 13, fontWeight: 600, color: '#FDE68A' }}>🏅 Founding Member Programme — Limited to First 250 Dentists</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#FDE68A' }}>🏆 Mumbai&apos;s #1 Dental Practice Platform</span>
           </div>
 
           <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(2rem, 5vw, 3.25rem)', color: '#fff', maxWidth: 680, marginBottom: 20, lineHeight: 1.15 }}>
-            Get More Patients.<br />List Your Clinic <span style={{ color: '#FBBF24' }}>Free.</span>
+            List Free.<br />Manage <span style={{ color: '#FBBF24' }}>Everything.</span>
           </h1>
-          <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 18, maxWidth: 560, marginBottom: 48, lineHeight: 1.7 }}>
-            Mumbai patients searching for dentists every day. Full profile, booking system, direct WhatsApp. No payment. No commission. Ever.
+          <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 18, maxWidth: 620, marginBottom: 48, lineHeight: 1.7 }}>
+            Patients find you on Google. You manage appointments, EMR, billing, prescriptions, and WhatsApp — all in one place. Free forever.
           </p>
 
           {/* Progress bar */}
