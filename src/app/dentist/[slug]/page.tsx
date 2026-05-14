@@ -6,7 +6,6 @@ import { createClient } from '@/lib/supabase/server'
 import ProfileTabs from './ProfileTabs'
 import ViewTracker from './ViewTracker'
 import TrackedLink from './TrackedLink'
-import BookingTrigger from '@/components/BookingTrigger'
 import ReviewForm from '@/components/ReviewForm'
 
 export const dynamic = 'force-dynamic'
@@ -145,7 +144,11 @@ export default async function DentistProfilePage({ params }: Props) {
                   📞 Call Clinic
                 </TrackedLink>
               )}
-              <BookingTrigger dentist={{ id: dentist.id, name: dentist.name, clinic_name: dentist.clinic_name, working_hours: dentist.working_hours }} treatments={dentist.dentist_treatments || []} />
+              <Link
+                href={`/book/${dentist.slug}`}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px 20px', background: 'var(--blue)', color: '#fff', borderRadius: 10, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
+                📅 Book Appointment
+              </Link>
             </div>
           </div>
 
