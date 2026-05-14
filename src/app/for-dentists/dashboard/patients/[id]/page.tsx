@@ -8,6 +8,7 @@ import DentalChart from '@/components/DentalChart'
 
 const TABS = [
   { id: 'overview', label: 'Overview', icon: '👤' },
+  { id: 'timeline', label: 'Timeline', icon: '📈' },
   { id: 'visits', label: 'Visit Notes', icon: '📋' },
   { id: 'prescriptions', label: 'Prescriptions', icon: '💊' },
   { id: 'plans', label: 'Treatment Plans', icon: '🦷' },
@@ -15,6 +16,7 @@ const TABS = [
   { id: 'consent', label: 'Consent', icon: '📝' },
   { id: 'chart', label: 'Dental Chart', icon: '🦷' },
   { id: 'xrays', label: 'X-Ray Vault', icon: '🩻' },
+  { id: 'photos', label: 'Before / After', icon: '🖼️' },
 ]
 
 const PRESCRIPTION_TEMPLATES = {
@@ -459,6 +461,36 @@ export default function PatientDetailPage() {
           <Link href={`/for-dentists/dashboard/patients/${patientId}/emr/new`}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '11px 22px', minHeight: 44, background: 'var(--blue)', color: '#fff', borderRadius: 10, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
             + New EMR Record
+          </Link>
+        </div>
+      )}
+
+      {/* TIMELINE */}
+      {activeTab === 'timeline' && (
+        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '28px', textAlign: 'center' }}>
+          <div style={{ fontSize: 40, marginBottom: 10 }}>📈</div>
+          <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18, marginBottom: 6 }}>Treatment History Timeline</h3>
+          <p style={{ fontSize: 14, color: 'var(--muted)', maxWidth: 480, margin: '0 auto 20px' }}>
+            One chronological view of every visit, prescription, EMR, invoice, appointment, consent form, and X-ray for this patient.
+          </p>
+          <Link href={`/for-dentists/dashboard/patients/${patientId}/timeline`}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '11px 22px', minHeight: 44, background: 'var(--blue)', color: '#fff', borderRadius: 10, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
+            Open Timeline →
+          </Link>
+        </div>
+      )}
+
+      {/* BEFORE/AFTER */}
+      {activeTab === 'photos' && (
+        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '28px', textAlign: 'center' }}>
+          <div style={{ fontSize: 40, marginBottom: 10 }}>🖼️</div>
+          <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18, marginBottom: 6 }}>Before &amp; After Photos</h3>
+          <p style={{ fontSize: 14, color: 'var(--muted)', maxWidth: 480, margin: '0 auto 20px' }}>
+            Upload paired before/after shots and view them with a side-by-side reveal slider — great for showing patients their progress.
+          </p>
+          <Link href={`/for-dentists/dashboard/patients/${patientId}/photos`}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '11px 22px', minHeight: 44, background: 'var(--blue)', color: '#fff', borderRadius: 10, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
+            Open Photos →
           </Link>
         </div>
       )}
