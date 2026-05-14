@@ -96,7 +96,7 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
     try {
       const res = await fetch('/api/admin/registrations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registration_id: id, action: 'decline', reason }) })
       const data = await res.json()
-      if (data.success) { setRegList(prev => prev.map(r => r.id === id ? { ...r, status: 'declined' } : r)); alert('Declined. Email sent.') }
+      if (data.success) { setRegList(prev => prev.map(r => r.id === id ? { ...r, status: 'rejected' } : r)); alert('Declined. Email sent.') }
       else alert('Error: ' + (data.error || 'Unknown'))
     } catch { alert('Network error') }
     setActionLoading(null)

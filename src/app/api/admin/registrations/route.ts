@@ -59,13 +59,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Missing registration_id or action' }, { status: 400 })
   }
 
-  // Decline path: just flip the status + record the reason.
+  // Decline path: just flip the status + record the reason. The
+  // dentist_registrations.status check constraint allows
+  // 'pending' | 'approved' | 'rejected' — using 'rejected' (not 'declined')
+  // to satisfy it and to line up with the Badge color map in the admin UI.
   if (action === 'decline') {
     const { error } = await admin_db
       .from('dentist_registrations')
-      .update({ status: 'declined', decline_reason: reason })
+      .update({ status: 'rejected', decline_reason: reason })
       .eq('id', registration_id)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) {
+      console.error('[admin/registrations decline] status update failed', error)
+      return NextResponse.json({ error: error.message, code: error.code, hint: error.hint }, { status: 500 })
+    }
     return NextResponse.json({ success: true })
   }
 
