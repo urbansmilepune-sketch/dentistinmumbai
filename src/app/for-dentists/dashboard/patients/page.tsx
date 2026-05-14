@@ -2,16 +2,17 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 
 export default function PatientsPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [loading, setLoading] = useState(true)
   const [dentistId, setDentistId] = useState('')
   const [patients, setPatients] = useState<any[]>([])
   const [search, setSearch] = useState('')
-  const [showAdd, setShowAdd] = useState(false)
+  const [showAdd, setShowAdd] = useState(() => searchParams.get('new') === '1')
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({
     name: '', phone: '', email: '', age: '', gender: '',

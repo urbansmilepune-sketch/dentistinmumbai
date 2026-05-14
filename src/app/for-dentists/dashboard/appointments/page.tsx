@@ -2,9 +2,21 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 type FilterKey = 'all' | 'waiting' | 'scheduled' | 'active' | 'completed' | 'cancelled'
+
+function generateRef(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+  let ref = 'DIM'
+  for (let i = 0; i < 6; i++) ref += chars[Math.floor(Math.random() * chars.length)]
+  return ref
+}
+
+function todayIsoLocal(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 // New state-machine values + legacy values that still appear in old rows.
 // Legacy `pending` and `confirmed` are bucketed into the Scheduled tab so existing
@@ -30,12 +42,26 @@ function matchesFilter(status: string, filter: FilterKey): boolean {
 
 export default function AppointmentsPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [loading, setLoading] = useState(true)
   const [dentistId, setDentistId] = useState('')
   const [appointments, setAppointments] = useState<any[]>([])
   const [invoicedPhones, setInvoicedPhones] = useState<Set<string>>(new Set())
   const [filter, setFilter] = useState<FilterKey>('all')
   const [updating, setUpdating] = useState<string | null>(null)
+  const [treatments, setTreatments] = useState<{ id: string; name: string }[]>([])
+  const [showAdd, setShowAdd] = useState(() => searchParams.get('new') === '1')
+  const [saving, setSaving] = useState(false)
+  const [addError, setAddError] = useState<string | null>(null)
+  const [form, setForm] = useState({
+    patient_name: '',
+    patient_phone: '',
+    appt_date: todayIsoLocal(),
+    time_slot: '',
+    treatment_id: '',
+    status: 'waiting',
+    notes: '',
+  })
 
   useEffect(() => {
     async function load() {
@@ -46,7 +72,7 @@ export default function AppointmentsPage() {
       if (!dentist) return
       setDentistId(dentist.id)
 
-      const [{ data: appts }, { data: invs }] = await Promise.all([
+      const [{ data: appts }, { data: invs }, { data: tx }] = await Promise.all([
         supabase
           .from('appointments')
           .select('*, treatments(name, icon)')
@@ -55,6 +81,10 @@ export default function AppointmentsPage() {
         supabase
           .from('invoices')
           .select('patients(phone)')
+          .eq('dentist_id', dentist.id),
+        supabase
+          .from('dentist_treatments')
+          .select('treatments(id, name)')
           .eq('dentist_id', dentist.id),
       ])
 
@@ -65,10 +95,47 @@ export default function AppointmentsPage() {
         if (p) phones.add(p)
       })
       setInvoicedPhones(phones)
+      const tList = (tx || []).map((r: any) => r.treatments).filter(Boolean) as { id: string; name: string }[]
+      setTreatments(tList)
       setLoading(false)
     }
     load()
   }, [])
+
+  async function addAppointment() {
+    setAddError(null)
+    if (!form.patient_name.trim() || !form.patient_phone.trim()) {
+      setAddError('Patient name and phone are required'); return
+    }
+    if (!form.appt_date || !form.time_slot.trim()) {
+      setAddError('Date and time are required'); return
+    }
+    setSaving(true)
+    const supabase = createClient()
+    const { data, error } = await supabase
+      .from('appointments')
+      .insert({
+        dentist_id: dentistId,
+        patient_name: form.patient_name.trim(),
+        patient_phone: form.patient_phone.trim(),
+        appt_date: form.appt_date,
+        time_slot: form.time_slot.trim(),
+        treatment_id: form.treatment_id || null,
+        status: form.status,
+        notes: form.notes.trim() || null,
+        reference_no: generateRef(),
+      })
+      .select('*, treatments(name, icon)')
+      .single()
+    setSaving(false)
+    if (error) { setAddError(error.message); return }
+    setAppointments(prev => [data, ...prev])
+    setShowAdd(false)
+    setForm({
+      patient_name: '', patient_phone: '', appt_date: todayIsoLocal(),
+      time_slot: '', treatment_id: '', status: 'waiting', notes: '',
+    })
+  }
 
   async function updateStatus(id: string, status: string) {
     setUpdating(id)
@@ -104,10 +171,93 @@ export default function AppointmentsPage() {
 
   return (
     <div>
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 4 }}>Appointments</h1>
-        <p style={{ fontSize: 14, color: 'var(--muted)' }}>Manage all patient appointment requests</p>
+      <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 4 }}>Appointments</h1>
+          <p style={{ fontSize: 14, color: 'var(--muted)' }}>Manage all patient appointment requests</p>
+        </div>
+        <button onClick={() => setShowAdd(true)}
+          style={{ padding: '12px 22px', minHeight: 48, background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 14, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
+          + Add Appointment
+        </button>
       </div>
+
+      {/* Add Appointment Modal */}
+      {showAdd && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 540, maxHeight: '92vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 24px', borderBottom: '1px solid var(--border)' }}>
+              <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18 }}>New Appointment</h2>
+              <button onClick={() => setShowAdd(false)}
+                style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--muted)' }}>✕</button>
+            </div>
+            <div style={{ padding: 24 }}>
+              {addError && (
+                <div style={{ background: '#FEE2E2', border: '1px solid #FECACA', color: '#991B1B', padding: '10px 14px', borderRadius: 10, marginBottom: 14, fontSize: 13 }}>
+                  {addError}
+                </div>
+              )}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                <div style={{ gridColumn: '1/-1' }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Patient Name *</label>
+                  <input value={form.patient_name} onChange={e => setForm(f => ({ ...f, patient_name: e.target.value }))}
+                    placeholder="Walk-in patient name"
+                    style={{ width: '100%', padding: '12px', minHeight: 48, borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 14, fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Phone *</label>
+                  <input value={form.patient_phone} onChange={e => setForm(f => ({ ...f, patient_phone: e.target.value }))}
+                    placeholder="10-digit number"
+                    style={{ width: '100%', padding: '12px', minHeight: 48, borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 14, fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Status</label>
+                  <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
+                    style={{ width: '100%', padding: '12px', minHeight: 48, borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 14, fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box', background: '#fff' }}>
+                    <option value="waiting">Waiting (walk-in)</option>
+                    <option value="scheduled">Scheduled (future)</option>
+                    <option value="active">Active</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Date *</label>
+                  <input type="date" value={form.appt_date} onChange={e => setForm(f => ({ ...f, appt_date: e.target.value }))}
+                    style={{ width: '100%', padding: '12px', minHeight: 48, borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 14, fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Time *</label>
+                  <input type="time" value={form.time_slot} onChange={e => setForm(f => ({ ...f, time_slot: e.target.value }))}
+                    style={{ width: '100%', padding: '12px', minHeight: 48, borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 14, fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box' }} />
+                </div>
+                <div style={{ gridColumn: '1/-1' }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Treatment</label>
+                  <select value={form.treatment_id} onChange={e => setForm(f => ({ ...f, treatment_id: e.target.value }))}
+                    style={{ width: '100%', padding: '12px', minHeight: 48, borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 14, fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box', background: '#fff' }}>
+                    <option value="">— Select treatment (optional)</option>
+                    {treatments.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
+                </div>
+                <div style={{ gridColumn: '1/-1' }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Notes</label>
+                  <input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+                    placeholder="Walk-in details, chief complaint…"
+                    style={{ width: '100%', padding: '12px', minHeight: 48, borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 14, fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box' }} />
+                </div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '14px 24px', borderTop: '1px solid var(--border)' }}>
+              <button onClick={() => setShowAdd(false)}
+                style={{ padding: '12px 20px', minHeight: 48, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
+                Cancel
+              </button>
+              <button onClick={addAppointment} disabled={saving}
+                style={{ padding: '12px 24px', minHeight: 48, background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1, fontFamily: 'var(--font-body)' }}>
+                {saving ? 'Saving…' : 'Create Appointment'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Filter tabs */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>

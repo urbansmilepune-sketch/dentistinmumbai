@@ -68,13 +68,61 @@ export default async function DashboardPage() {
   return (
     <div>
       {/* Welcome */}
-      <div style={{ marginBottom: 24 }}>
+      <div style={{ marginBottom: 20 }}>
         <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 4 }}>
           Welcome back, {dentist.name?.split(' ')[0]} 👋
         </h1>
         <p style={{ fontSize: 14, color: 'var(--muted)' }}>
           {dentist.is_verified ? '✅ Verified listing' : '⏳ Verification pending'} · {dentist.tier || 'free'} plan
         </p>
+      </div>
+
+      {/* Primary CTAs — Walk-in is the dominant action */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 16, marginBottom: 24 }}>
+        <Link href="/for-dentists/dashboard/patients?new=1"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 16,
+            padding: '22px 24px', minHeight: 96,
+            background: 'linear-gradient(135deg, #00A878 0%, #00875E 100%)',
+            color: '#fff', borderRadius: 16, textDecoration: 'none',
+            boxShadow: '0 6px 20px rgba(0,168,120,0.28)',
+            transition: 'transform 0.15s, box-shadow 0.15s',
+          }}>
+          <div style={{
+            width: 56, height: 56, borderRadius: 14, flexShrink: 0,
+            background: 'rgba(255,255,255,0.18)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 28,
+          }}>👤</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', opacity: 0.85, marginBottom: 4 }}>Most used</div>
+            <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, lineHeight: 1.1, marginBottom: 4 }}>Walk-in Patient</div>
+            <div style={{ fontSize: 13, opacity: 0.9 }}>Register a new patient who just walked in.</div>
+          </div>
+          <span style={{ fontSize: 24, opacity: 0.85, flexShrink: 0 }}>→</span>
+        </Link>
+
+        <Link href="/for-dentists/dashboard/appointments?new=1"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 16,
+            padding: '22px 24px', minHeight: 96,
+            background: 'linear-gradient(135deg, #0057A8 0%, #003F7A 100%)',
+            color: '#fff', borderRadius: 16, textDecoration: 'none',
+            boxShadow: '0 6px 20px rgba(0,87,168,0.24)',
+            transition: 'transform 0.15s, box-shadow 0.15s',
+          }}>
+          <div style={{
+            width: 56, height: 56, borderRadius: 14, flexShrink: 0,
+            background: 'rgba(255,255,255,0.18)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 28,
+          }}>📅</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 20, lineHeight: 1.1, marginBottom: 4 }}>Book Appointment</div>
+            <div style={{ fontSize: 13, opacity: 0.9 }}>Schedule a future visit.</div>
+          </div>
+          <span style={{ fontSize: 24, opacity: 0.85, flexShrink: 0 }}>→</span>
+        </Link>
       </div>
 
       {/* Profile completion banner */}

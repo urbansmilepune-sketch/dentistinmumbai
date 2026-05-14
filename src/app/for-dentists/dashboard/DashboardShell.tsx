@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -42,7 +42,23 @@ export default function DashboardShell({ dentist, completionPct, children }: Pro
   const pathname = usePathname()
   const router = useRouter()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [addOpen, setAddOpen] = useState(false)
+  const addRef = useRef<HTMLDivElement>(null)
   const isGold = dentist.tier === 'gold' || dentist.tier === 'featured'
+
+  useEffect(() => {
+    if (!addOpen) return
+    function onDoc(e: MouseEvent) {
+      if (addRef.current && !addRef.current.contains(e.target as Node)) setAddOpen(false)
+    }
+    function onEsc(e: KeyboardEvent) { if (e.key === 'Escape') setAddOpen(false) }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onEsc)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onEsc)
+    }
+  }, [addOpen])
 
   async function handleLogout() {
     const supabase = createClient()
@@ -150,8 +166,59 @@ export default function DashboardShell({ dentist, completionPct, children }: Pro
       {/* Main */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {/* Header */}
-        <div className="dash-header" style={{ height: 56, background: '#fff', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', padding: '0 20px', gap: 12, flexShrink: 0 }}>
+        <div className="dash-header" style={{ height: 56, background: '#fff', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', padding: '0 20px', gap: 12, flexShrink: 0, position: 'relative', zIndex: 60 }}>
           <div style={{ flex: 1 }} />
+          {/* Quick-add */}
+          <div ref={addRef} style={{ position: 'relative' }}>
+            <button type="button" onClick={() => setAddOpen(v => !v)} aria-haspopup="menu" aria-expanded={addOpen}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                height: 40, minHeight: 40, padding: '0 16px',
+                background: 'var(--blue)', color: '#fff',
+                border: 'none', borderRadius: 10,
+                fontWeight: 700, fontSize: 14, cursor: 'pointer',
+                fontFamily: 'var(--font-body)',
+              }}>
+              <span style={{ fontSize: 16, lineHeight: 1 }}>+</span>
+              <span>Add</span>
+              <span style={{ fontSize: 10, marginLeft: 2, opacity: 0.85 }}>▾</span>
+            </button>
+            {addOpen && (
+              <div role="menu"
+                style={{
+                  position: 'absolute', top: 'calc(100% + 6px)', right: 0,
+                  background: '#fff', border: '1px solid var(--border)',
+                  borderRadius: 12, padding: 6,
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+                  minWidth: 220, zIndex: 70,
+                }}>
+                <Link href="/for-dentists/dashboard/patients?new=1" role="menuitem"
+                  onClick={() => setAddOpen(false)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '12px 14px', minHeight: 48,
+                    borderRadius: 8, textDecoration: 'none',
+                    fontSize: 14, fontWeight: 600, color: 'var(--text)',
+                    background: '#fff',
+                  }}>
+                  <span style={{ fontSize: 18 }}>👤</span>
+                  Add Patient
+                </Link>
+                <Link href="/for-dentists/dashboard/appointments?new=1" role="menuitem"
+                  onClick={() => setAddOpen(false)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '12px 14px', minHeight: 48,
+                    borderRadius: 8, textDecoration: 'none',
+                    fontSize: 14, fontWeight: 600, color: 'var(--text)',
+                    background: '#fff',
+                  }}>
+                  <span style={{ fontSize: 18 }}>📅</span>
+                  Add Appointment
+                </Link>
+              </div>
+            )}
+          </div>
           <a href={`/dentist/${dentist.slug}`} target="_blank" rel="noopener noreferrer"
             style={{ fontSize: 12, color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>View Profile →</a>
           <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--blue-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: 'var(--blue)', overflow: 'hidden' }}>
