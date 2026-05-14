@@ -39,7 +39,7 @@ export default async function DashboardPage() {
 
   const { data: dentist } = await supabase
     .from('dentists')
-    .select('id, name, slug, tier, is_verified, profile_photo, cover_photo, bio, whatsapp, maps_embed, created_at')
+    .select('id, name, slug, tier, is_verified, profile_photo, cover_photo, bio, phone, whatsapp, working_hours, maps_embed, created_at')
     .eq('email', user.email)
     .single()
 
@@ -129,15 +129,14 @@ export default async function DashboardPage() {
     status: a.status,
   }))
 
-  // Profile completion
+  // Onboarding checklist — 5 critical fields a dentist must fill before their
+  // profile is patient-ready. Card hides once everything is done.
   const completionItems = [
-    { label: 'Profile photo', done: !!dentist.profile_photo, href: '/for-dentists/dashboard/photos' },
-    { label: 'Cover photo', done: !!dentist.cover_photo, href: '/for-dentists/dashboard/photos' },
-    { label: 'Bio (50+ characters)', done: !!(dentist.bio && dentist.bio.length >= 50), href: '/for-dentists/dashboard/profile' },
-    { label: 'WhatsApp number', done: !!dentist.whatsapp, href: '/for-dentists/dashboard/profile' },
-    { label: 'Google Maps embed', done: !!dentist.maps_embed, href: '/for-dentists/dashboard/profile' },
-    { label: 'Add treatments (3+)', done: (treatmentCount || 0) >= 3, href: '/for-dentists/dashboard/treatments' },
-    { label: 'Upload photos (3+)', done: (photoCount || 0) >= 3, href: '/for-dentists/dashboard/photos' },
+    { label: 'Profile photo',     done: !!dentist.profile_photo,                       href: '/for-dentists/dashboard/photos' },
+    { label: 'Working hours',     done: !!dentist.working_hours,                       href: '/for-dentists/dashboard/hours' },
+    { label: 'Add a treatment',   done: (treatmentCount || 0) >= 1,                    href: '/for-dentists/dashboard/treatments' },
+    { label: 'Bio (20+ chars)',   done: !!(dentist.bio && dentist.bio.length > 20),    href: '/for-dentists/dashboard/profile' },
+    { label: 'Phone number',      done: !!dentist.phone,                               href: '/for-dentists/dashboard/profile' },
   ]
   const pct = Math.round((completionItems.filter(i => i.done).length / completionItems.length) * 100)
 
