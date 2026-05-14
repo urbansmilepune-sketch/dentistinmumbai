@@ -176,6 +176,9 @@ export async function POST(request: NextRequest) {
     }
     console.error('[admin/registrations approve] slug resolved', { base, slug })
 
+    // address/sub_area/bio/website are NOT NULL in the dentists table but the
+    // registration form doesn't collect them — seed with empty strings so the
+    // insert succeeds; the dentist fills them in via the profile editor.
     const insertPayload = {
       email: reg.email,
       name: reg.name,
@@ -185,6 +188,10 @@ export async function POST(request: NextRequest) {
       mci_number: reg.mci_registration,
       area_id,
       slug,
+      address: '',
+      sub_area: '',
+      bio: '',
+      website: '',
       is_active: true,
       tier: 'free',
       selected_plan: plan,
