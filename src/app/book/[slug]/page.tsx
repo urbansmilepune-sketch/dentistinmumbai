@@ -13,15 +13,31 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const supabase = await createClient()
   const { data: d } = await supabase
     .from('dentists')
-    .select('name, clinic_name, areas(name)')
+    .select('name, clinic_name, profile_photo, areas(name)')
     .eq('slug', slug)
     .single()
   if (!d) return {}
   const area = (d.areas as any)?.name || 'Mumbai'
+  const title = `Book Appointment — ${d.name} | ${d.clinic_name}, ${area}`
+  const description = `Book an appointment with ${d.name} at ${d.clinic_name} in ${area}. Pick a date, choose a time slot, confirm in seconds.`
+  const url = `https://www.dentistinmumbai.in/book/${slug}`
+  const images = d.profile_photo ? [{ url: d.profile_photo, alt: d.name ?? 'Dentist' }] : undefined
   return {
-    title: `Book Appointment — ${d.name} | ${d.clinic_name}, ${area}`,
-    description: `Book an appointment with ${d.name} at ${d.clinic_name} in ${area}. Pick a date, choose a time slot, confirm in seconds.`,
-    alternates: { canonical: `https://www.dentistinmumbai.in/book/${slug}` },
+    title,
+    description,
+    alternates: { canonical: url },
+    openGraph: {
+      title, description, url,
+      siteName: 'dentistinmumbai.in',
+      type: 'website',
+      locale: 'en_IN',
+      images,
+    },
+    twitter: {
+      card: images ? 'summary_large_image' : 'summary',
+      title, description,
+      images: images?.map(i => i.url),
+    },
   }
 }
 

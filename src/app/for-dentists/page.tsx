@@ -12,10 +12,20 @@ export async function generateMetadata(): Promise<Metadata> {
   const supabase = await createClient()
   const { count } = await supabase.from('dentists').select('*', { count: 'exact', head: true }).eq('is_active', true)
   const listedCount = count || 0
+  const title = 'List Your Dental Clinic Free | dentistinmumbai.in'
+  const description = `Join ${listedCount} dentists already listed on Mumbai's fastest growing dental directory. Free forever. No commission. Get patient enquiries from day 1.`
+  const url = 'https://www.dentistinmumbai.in/for-dentists'
   return {
-    title: 'List Your Dental Clinic Free | dentistinmumbai.in',
-    description: `Join ${listedCount} dentists already listed on Mumbai's fastest growing dental directory. Free forever. No commission. Get patient enquiries from day 1.`,
-    alternates: { canonical: 'https://www.dentistinmumbai.in/for-dentists' },
+    title,
+    description,
+    alternates: { canonical: url },
+    openGraph: {
+      title, description, url,
+      siteName: 'dentistinmumbai.in',
+      type: 'website',
+      locale: 'en_IN',
+    },
+    twitter: { card: 'summary', title, description },
   }
 }
 

@@ -1,10 +1,23 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 
+const ABOUT_TITLE = 'About Us | dentistinmumbai.in'
+const ABOUT_DESC = 'dentistinmumbai.in is Mumbai\'s most trusted dental directory. Built by Dentaura Prime LLP to help patients find verified dentists and help dentists grow their practice.'
+const ABOUT_URL = 'https://www.dentistinmumbai.in/about'
+
 export const metadata: Metadata = {
-  title: 'About Us | dentistinmumbai.in',
-  description: 'dentistinmumbai.in is Mumbai\'s most trusted dental directory. Built by Dentaura Prime LLP to help patients find verified dentists and help dentists grow their practice.',
-  alternates: { canonical: 'https://www.dentistinmumbai.in/about' },
+  title: ABOUT_TITLE,
+  description: ABOUT_DESC,
+  alternates: { canonical: ABOUT_URL },
+  openGraph: {
+    title: ABOUT_TITLE,
+    description: ABOUT_DESC,
+    url: ABOUT_URL,
+    siteName: 'dentistinmumbai.in',
+    type: 'website',
+    locale: 'en_IN',
+  },
+  twitter: { card: 'summary', title: ABOUT_TITLE, description: ABOUT_DESC },
 }
 
 export default function AboutPage() {

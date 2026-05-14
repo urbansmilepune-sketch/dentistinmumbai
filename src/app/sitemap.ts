@@ -55,11 +55,20 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.8,
   }))
 
+  // Public booking pages (one per active dentist)
+  const bookingPages: MetadataRoute.Sitemap = (dentists || []).map(d => ({
+    url: `${BASE}/book/${d.slug}`,
+    lastModified: d.created_at ? new Date(d.created_at) : new Date(),
+    changeFrequency: 'weekly' as const,
+    priority: 0.75,
+  }))
+
   return [
     ...staticPages,
     ...areaPages,
     ...treatmentPages,
     ...areaTreatmentPages,
     ...dentistPages,
+    ...bookingPages,
   ]
 }
