@@ -160,16 +160,16 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
             <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17 }}>DentistInMumbai<span style={{ color: 'var(--blue)' }}>.in</span></span>
           </Link>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Link href="/dentists" style={{ padding: '8px 16px', fontWeight: 600, fontSize: 14, color: 'var(--blue)' }}>Find Dentists</Link>
-            <Link href="/for-dentists" style={{ padding: '8px 16px', fontWeight: 500, fontSize: 14, color: 'var(--text-secondary)' }}>For Dentists</Link>
+            <Link href="/dentists" className="nav-secondary-link" style={{ padding: '8px 16px', fontWeight: 600, fontSize: 14, color: 'var(--blue)' }}>Find Dentists</Link>
+            <Link href="/for-dentists" className="nav-secondary-link" style={{ padding: '8px 16px', fontWeight: 500, fontSize: 14, color: 'var(--text-secondary)' }}>For Dentists</Link>
             <Link href="/for-dentists/register" className="btn btn-primary btn-sm">List Your Clinic</Link>
           </div>
         </nav>
       </header>
 
-      <main style={{ background: 'var(--bg)', minHeight: '100vh', padding: '32px 20px' }}>
+      <main className="listing-main" style={{ background: 'var(--bg)', minHeight: '100vh', padding: '32px 20px' }}>
         <div className="container">
-          <div style={{ display: 'flex', gap: 28, alignItems: 'flex-start' }}>
+          <div className="listing-layout" style={{ display: 'flex', gap: 28, alignItems: 'flex-start' }}>
 
             {/* Sidebar */}
             <FilterSidebar
@@ -191,7 +191,7 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
             <div style={{ flex: 1, minWidth: 0 }}>
 
               {/* Top bar */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+              <div className="listing-topbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
                 <div>
                   <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18, marginBottom: 2 }}>
                     {totalCount} Dentist{totalCount !== 1 ? 's' : ''} in Mumbai
@@ -276,6 +276,16 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
           </div>
         </div>
       </main>
+
+      <style>{`
+        @media (max-width: 768px) {
+          .nav-secondary-link { display: none !important; }
+          .listing-main { padding: 16px 0 96px !important; }
+          .listing-layout { gap: 0 !important; flex-direction: column !important; }
+          .listing-topbar { flex-direction: column !important; align-items: stretch !important; }
+          .listing-topbar > div:last-child { justify-content: space-between !important; }
+        }
+      `}</style>
     </>
   )
 }

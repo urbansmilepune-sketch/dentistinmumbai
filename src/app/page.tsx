@@ -89,8 +89,8 @@ export default async function HomePage() {
             </span>
           </Link>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Link href="/dentists" style={{ padding: '8px 16px', fontWeight: 500, fontSize: 14, color: 'var(--text-secondary)' }}>Find Dentists</Link>
-            <Link href="/for-dentists" style={{ padding: '8px 16px', fontWeight: 500, fontSize: 14, color: 'var(--text-secondary)' }}>For Dentists</Link>
+            <Link href="/dentists" className="nav-secondary-link" style={{ padding: '8px 16px', fontWeight: 500, fontSize: 14, color: 'var(--text-secondary)' }}>Find Dentists</Link>
+            <Link href="/for-dentists" className="nav-secondary-link" style={{ padding: '8px 16px', fontWeight: 500, fontSize: 14, color: 'var(--text-secondary)' }}>For Dentists</Link>
             <Link href="/for-dentists/register" className="btn btn-primary btn-sm">List Your Clinic</Link>
           </div>
         </nav>
@@ -98,7 +98,7 @@ export default async function HomePage() {
 
       <main>
         {/* HERO */}
-        <section style={{
+        <section className="home-hero" style={{
           background: 'linear-gradient(135deg, #003F7A 0%, #0057A8 50%, #1A6FC4 100%)',
           padding: '80px 20px 100px',
           position: 'relative',
@@ -129,7 +129,7 @@ export default async function HomePage() {
             }}>
               Find the Best Dentist<br />in Mumbai — <span style={{ color: '#7DD3FC' }}>Near You</span>
             </h1>
-            <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 18, maxWidth: 520, marginBottom: 40, lineHeight: 1.7 }}>
+            <p className="home-hero-sub" style={{ color: 'rgba(255,255,255,0.8)', fontSize: 18, maxWidth: 520, marginBottom: 40, lineHeight: 1.7 }}>
               Verified dentists across all Mumbai areas. Real reviews, transparent fees, instant booking.
             </p>
 
@@ -159,9 +159,9 @@ export default async function HomePage() {
         </section>
 
         {/* STATS BAR */}
-        <section style={{ background: '#fff', borderBottom: '1px solid var(--border)', padding: '28px 20px' }}>
+        <section className="home-stats" style={{ background: '#fff', borderBottom: '1px solid var(--border)', padding: '28px 20px' }}>
           <div className="container">
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 24, textAlign: 'center' }}>
+            <div className="home-stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 24, textAlign: 'center' }}>
               {[
                 { value: `${totalDentists || '200'}+`, label: 'Verified Dentists' },
                 { value: '24+', label: 'Mumbai Areas' },
@@ -169,7 +169,7 @@ export default async function HomePage() {
                 { value: '4.8★', label: 'Average Rating' },
               ].map(stat => (
                 <div key={stat.label}>
-                  <div style={{ fontFamily: 'var(--font-heading)', fontSize: 28, fontWeight: 800, color: 'var(--blue)' }}>{stat.value}</div>
+                  <div className="home-stat-value" style={{ fontFamily: 'var(--font-heading)', fontSize: 28, fontWeight: 800, color: 'var(--blue)' }}>{stat.value}</div>
                   <div style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 500, marginTop: 2 }}>{stat.label}</div>
                 </div>
               ))}
@@ -179,16 +179,16 @@ export default async function HomePage() {
 
         {/* FEATURED DENTISTS */}
         {dentists.length > 0 && (
-          <section style={{ padding: '72px 20px', background: 'var(--bg)' }}>
+          <section className="home-section" style={{ padding: '72px 20px', background: 'var(--bg)' }}>
             <div className="container">
-              <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 40 }}>
+              <div className="home-section-head" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 40, gap: 12, flexWrap: 'wrap' }}>
                 <div>
                   <p style={{ color: 'var(--blue)', fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Top Rated</p>
                   <h2 style={{ fontSize: 'clamp(1.5rem, 3vw, 2rem)', fontWeight: 800 }}>Featured Dentists in Mumbai</h2>
                 </div>
                 <Link href="/dentists" style={{ color: 'var(--blue)', fontWeight: 600, fontSize: 14 }}>View all →</Link>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 20 }}>
+              <div className="home-featured-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 20 }}>
                 {dentists.map(d => (
                   <Link key={d.id} href={`/dentist/${d.slug}`} style={{ textDecoration: 'none' }}>
                     <article className="card-hover" style={{
@@ -245,7 +245,7 @@ export default async function HomePage() {
         )}
 
         {/* AREAS GRID */}
-        <section style={{ padding: '72px 20px', background: '#fff' }}>
+        <section className="home-section" style={{ padding: '72px 20px', background: '#fff' }}>
           <div className="container">
             <div style={{ textAlign: 'center', marginBottom: 48 }}>
               <p style={{ color: 'var(--blue)', fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Browse by Location</p>
@@ -300,7 +300,7 @@ export default async function HomePage() {
         </section>
 
         {/* TREATMENTS GRID */}
-        <section style={{ padding: '72px 20px', background: 'var(--bg)' }}>
+        <section className="home-section" style={{ padding: '72px 20px', background: 'var(--bg)' }}>
           <div className="container">
             <div style={{ textAlign: 'center', marginBottom: 48 }}>
               <p style={{ color: 'var(--blue)', fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Browse by Treatment</p>
@@ -331,7 +331,7 @@ export default async function HomePage() {
         </section>
 
         {/* WHY US — DARK SECTION */}
-        <section style={{ padding: '80px 20px', background: 'var(--text)' }}>
+        <section className="home-section" style={{ padding: '80px 20px', background: 'var(--text)' }}>
           <div className="container">
             <div style={{ textAlign: 'center', marginBottom: 56 }}>
               <p style={{ color: '#7DD3FC', fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>Why DentistInMumbai.in</p>
@@ -357,9 +357,9 @@ export default async function HomePage() {
         </section>
 
         {/* FOR DENTISTS TEASER */}
-        <section style={{ padding: '72px 20px', background: '#fff' }}>
+        <section className="home-section" style={{ padding: '72px 20px', background: '#fff' }}>
           <div className="container">
-            <div style={{
+            <div className="home-cta-card" style={{
               background: 'linear-gradient(135deg, var(--blue-light) 0%, #EFF6FF 100%)',
               border: '1px solid #BFDBFE',
               borderRadius: 24,
@@ -407,7 +407,7 @@ export default async function HomePage() {
         </section>
 
         {/* FAQ */}
-        <section style={{ padding: '72px 20px', background: 'var(--bg)' }}>
+        <section className="home-section" style={{ padding: '72px 20px', background: 'var(--bg)' }}>
           <div className="container">
             <div style={{ maxWidth: 720, margin: '0 auto' }}>
               <div style={{ textAlign: 'center', marginBottom: 48 }}>
@@ -473,6 +473,21 @@ export default async function HomePage() {
           </div>
         </div>
       </footer>
+
+      <style>{`
+        @media (max-width: 768px) {
+          .nav-secondary-link { display: none !important; }
+          .home-hero { padding: 48px 16px 64px !important; }
+          .home-hero-sub { font-size: 15px !important; margin-bottom: 28px !important; }
+          .home-stats { padding: 20px 16px !important; }
+          .home-stats-grid { gap: 12px !important; grid-template-columns: repeat(2, 1fr) !important; }
+          .home-stat-value { font-size: 22px !important; }
+          .home-section { padding: 48px 16px !important; }
+          .home-section-head { flex-direction: column !important; align-items: flex-start !important; margin-bottom: 24px !important; }
+          .home-featured-grid { grid-template-columns: 1fr !important; gap: 14px !important; }
+          .home-cta-card { padding: 32px 22px !important; flex-direction: column !important; align-items: stretch !important; gap: 28px !important; text-align: left !important; }
+        }
+      `}</style>
     </>
   )
 }

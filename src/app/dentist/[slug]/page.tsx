@@ -83,15 +83,15 @@ export default async function DentistProfilePage({ params }: Props) {
         </nav>
       </header>
       <main style={{ background: 'var(--bg)', minHeight: '100vh' }}>
-        <div style={{ height: 220, background: dentist.cover_photo ? `url(${dentist.cover_photo}) center/cover` : 'linear-gradient(135deg, #003F7A, #0057A8)', position: 'relative' }}>
+        <div className="profile-cover" style={{ height: 220, background: dentist.cover_photo ? `url(${dentist.cover_photo}) center/cover` : 'linear-gradient(135deg, #003F7A, #0057A8)', position: 'relative' }}>
           {!dentist.cover_photo && <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span style={{ fontSize: 64, opacity: 0.3 }}>🦷</span></div>}
         </div>
         <div className="container" style={{ position: 'relative' }}>
-          <div style={{ background: '#fff', borderRadius: 20, border: '1px solid var(--border)', padding: '0 24px 24px', marginTop: -60, marginBottom: 24, display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-            <div style={{ width: 100, height: 100, borderRadius: '50%', border: '4px solid #fff', background: dentist.profile_photo ? `url(${dentist.profile_photo}) center/cover` : 'var(--blue-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 36, marginTop: -20, flexShrink: 0, overflow: 'hidden', boxShadow: '0 4px 12px rgba(0,0,0,0.12)' }}>
+          <div className="profile-hero-card" style={{ background: '#fff', borderRadius: 20, border: '1px solid var(--border)', padding: '0 24px 24px', marginTop: -60, marginBottom: 24, display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <div className="profile-avatar" style={{ width: 100, height: 100, borderRadius: '50%', border: '4px solid #fff', background: dentist.profile_photo ? `url(${dentist.profile_photo}) center/cover` : 'var(--blue-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 36, marginTop: -20, flexShrink: 0, overflow: 'hidden', boxShadow: '0 4px 12px rgba(0,0,0,0.12)' }}>
               {!dentist.profile_photo && '👨‍⚕️'}
             </div>
-            <div style={{ flex: 1, minWidth: 240, paddingTop: 12 }}>
+            <div className="profile-hero-info" style={{ flex: 1, minWidth: 240, paddingTop: 12 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
                 <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22 }}>{dentist.name}</h1>
                 {dentist.is_verified && <span style={{ fontSize: 11, fontWeight: 700, color: '#166534', background: '#DCFCE7', padding: '2px 8px', borderRadius: 20, border: '1px solid #BBF7D0' }}>✓ MCI Verified</span>}
@@ -124,7 +124,7 @@ export default async function DentistProfilePage({ params }: Props) {
                 </div>
               )}
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 180, paddingTop: 16 }}>
+            <div className="profile-hero-cta" style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 180, paddingTop: 16 }}>
               {dentist.whatsapp && (
                 <TrackedLink
                   dentistId={dentist.id}
@@ -237,7 +237,19 @@ export default async function DentistProfilePage({ params }: Props) {
       <footer style={{ background: '#0A1628', padding: '24px 20px', color: 'rgba(255,255,255,0.6)', textAlign: 'center', marginTop: 40 }}>
         <p style={{ fontSize: 13 }}>© {new Date().getFullYear()} dentistinmumbai.in · A Dentaura Prime LLP initiative</p>
       </footer>
-      <style>{`@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } } @media (max-width: 768px) { .profile-grid { grid-template-columns: 1fr !important; } }`}</style>
+      <style>{`
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        @media (max-width: 768px) {
+          .profile-grid { grid-template-columns: 1fr !important; gap: 16px !important; }
+          .profile-cover { height: 140px !important; }
+          .profile-hero-card { padding: 0 16px 18px !important; gap: 14px !important; margin-top: -50px !important; flex-direction: column !important; align-items: stretch !important; }
+          .profile-avatar { width: 88px !important; height: 88px !important; margin-top: -36px !important; align-self: center !important; }
+          .profile-hero-info { min-width: 0 !important; padding-top: 4px !important; text-align: center !important; }
+          .profile-hero-info > div { justify-content: center !important; }
+          .profile-hero-cta { min-width: 0 !important; padding-top: 4px !important; }
+          .profile-hero-cta a, .profile-hero-cta button { min-height: 44px !important; font-size: 15px !important; }
+        }
+      `}</style>
     </>
   )
 }

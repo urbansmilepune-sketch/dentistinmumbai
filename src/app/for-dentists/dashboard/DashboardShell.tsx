@@ -19,6 +19,13 @@ const NAV = [
   { href: '/for-dentists/dashboard/upgrade',      icon: '⭐', label: 'Upgrade Plan'  },
 ]
 
+const MOBILE_NAV = [
+  { href: '/for-dentists/dashboard',              icon: '📊', label: 'Overview'     },
+  { href: '/for-dentists/dashboard/appointments', icon: '📅', label: 'Appointments' },
+  { href: '/for-dentists/dashboard/patients',     icon: '👥', label: 'Patients'     },
+  { href: '/for-dentists/dashboard/enquiries',    icon: '💬', label: 'Enquiries'    },
+]
+
 const TIER_COLORS: Record<string, string> = {
   free: '#6B7280', silver: '#475569', gold: '#92400E', featured: '#C2410C',
 }
@@ -141,8 +148,7 @@ export default function DashboardShell({ dentist, completionPct, children }: Pro
       {/* Main */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {/* Header */}
-        <div style={{ height: 56, background: '#fff', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', padding: '0 20px', gap: 12, flexShrink: 0 }}>
-          <button onClick={() => setMobileOpen(true)} className="dash-menu-btn" style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--text)' }}>☰</button>
+        <div className="dash-header" style={{ height: 56, background: '#fff', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', padding: '0 20px', gap: 12, flexShrink: 0 }}>
           <div style={{ flex: 1 }} />
           <a href={`/dentist/${dentist.slug}`} target="_blank" rel="noopener noreferrer"
             style={{ fontSize: 12, color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>View Profile →</a>
@@ -152,17 +158,59 @@ export default function DashboardShell({ dentist, completionPct, children }: Pro
         </div>
 
         {/* Content */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
+        <div className="dash-content" style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
           {children}
         </div>
       </div>
 
+      {/* Mobile bottom nav */}
+      <nav className="dash-bottom-nav" aria-label="Dashboard mobile navigation">
+        {MOBILE_NAV.map(item => {
+          const isActive = pathname === item.href || (item.href !== '/for-dentists/dashboard' && pathname.startsWith(item.href))
+          return (
+            <Link key={item.href} href={item.href} className={`dash-bottom-item${isActive ? ' is-active' : ''}`}>
+              <span className="dash-bottom-icon">{item.icon}</span>
+              <span className="dash-bottom-label">{item.label}</span>
+            </Link>
+          )
+        })}
+        <button type="button" onClick={() => setMobileOpen(true)} className="dash-bottom-item dash-bottom-more">
+          <span className="dash-bottom-icon">☰</span>
+          <span className="dash-bottom-label">More</span>
+        </button>
+      </nav>
+
       <style>{`
         .dash-sidebar { display: flex !important; }
-        .dash-menu-btn { display: none !important; }
+        .dash-bottom-nav { display: none; }
         @media (max-width: 768px) {
           .dash-sidebar { display: none !important; }
-          .dash-menu-btn { display: block !important; }
+          .dash-content { padding: 16px !important; padding-bottom: 88px !important; }
+          .dash-bottom-nav {
+            display: flex;
+            position: fixed; left: 0; right: 0; bottom: 0;
+            height: 64px;
+            background: #fff;
+            border-top: 1px solid var(--border);
+            z-index: 150;
+            box-shadow: 0 -2px 12px rgba(0,0,0,0.06);
+            padding: 4px 0 max(4px, env(safe-area-inset-bottom));
+          }
+          .dash-bottom-item {
+            flex: 1;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: 2px;
+            min-height: 56px;
+            background: none; border: none;
+            color: var(--muted);
+            text-decoration: none;
+            cursor: pointer;
+            font-family: var(--font-body);
+            padding: 4px;
+          }
+          .dash-bottom-item.is-active { color: var(--blue); }
+          .dash-bottom-icon { font-size: 20px; line-height: 1; }
+          .dash-bottom-label { font-size: 11px; font-weight: 600; line-height: 1; }
         }
       `}</style>
     </div>

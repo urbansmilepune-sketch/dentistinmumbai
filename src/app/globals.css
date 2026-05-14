@@ -188,3 +188,13 @@ input, select, textarea {
   color: white;
   font-size: 10px;
 }
+
+/* Mobile base rules — apply across the site */
+@media (max-width: 768px) {
+  html, body { overflow-x: hidden; }
+  body { font-size: 15px; }
+  .container { padding: 0 16px; }
+  .btn { min-height: 44px; padding: 12px 20px; font-size: 14px; }
+  .btn-sm { min-height: 40px; padding: 10px 16px; font-size: 13px; }
+  .btn-lg { padding: 14px 24px; font-size: 15px; }
+}
