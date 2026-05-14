@@ -1,8 +1,11 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import QRCode from 'qrcode'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+
+const SITE_BASE = 'https://www.dentistinmumbai.in'
 
 const LANGUAGES = ['English', 'Hindi', 'Marathi', 'Gujarati', 'Tamil', 'Telugu', 'Kannada', 'Bengali', 'Urdu']
 const SPECIALTIES = ['General Dentistry', 'Orthodontics', 'Endodontics', 'Periodontology', 'Prosthodontics', 'Oral Surgery', 'Pediatric Dentistry', 'Cosmetic Dentistry', 'Implantology', 'Oral Medicine']
@@ -15,6 +18,8 @@ export default function EditProfilePage() {
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
   const [dentistId, setDentistId] = useState('')
+  const [slug, setSlug] = useState('')
+  const [qrDataUrl, setQrDataUrl] = useState('')
 
   const [form, setForm] = useState({
     name: '', clinic_name: '', qualifications: '', experience_years: '',
@@ -32,12 +37,13 @@ export default function EditProfilePage() {
 
       const { data: dentist } = await supabase
         .from('dentists')
-        .select('id, name, clinic_name, qualifications, experience_years, bio, phone, whatsapp, website, address, consultation_fee, mci_number, emi_available, languages, specialties, maps_embed')
+        .select('id, slug, name, clinic_name, qualifications, experience_years, bio, phone, whatsapp, website, address, consultation_fee, mci_number, emi_available, languages, specialties, maps_embed')
         .eq('email', user.email)
         .single()
 
       if (dentist) {
         setDentistId(dentist.id)
+        setSlug(dentist.slug || '')
         setForm({
           name: dentist.name || '',
           clinic_name: dentist.clinic_name || '',
@@ -63,6 +69,38 @@ export default function EditProfilePage() {
 
   function toggleArray(arr: string[], value: string): string[] {
     return arr.includes(value) ? arr.filter(v => v !== value) : [...arr, value]
+  }
+
+  // Generate the booking-page QR whenever the dentist's slug becomes available.
+  useEffect(() => {
+    if (!slug) return
+    let cancelled = false
+    QRCode.toDataURL(`${SITE_BASE}/book/${slug}`, {
+      width: 512,
+      margin: 2,
+      errorCorrectionLevel: 'H',
+      color: { dark: '#0F1923', light: '#FFFFFF' },
+    }).then(url => { if (!cancelled) setQrDataUrl(url) }).catch(() => {})
+    return () => { cancelled = true }
+  }, [slug])
+
+  function downloadQr() {
+    if (!qrDataUrl) return
+    const a = document.createElement('a')
+    a.href = qrDataUrl
+    a.download = `book-${slug}-qr.png`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+  }
+
+  function shareOnWhatsApp() {
+    const bookingUrl = `${SITE_BASE}/book/${slug}`
+    const lines = [
+      `Book your appointment with ${form.clinic_name || form.name || 'us'}:`,
+      bookingUrl,
+    ]
+    window.open(`https://wa.me/?text=${encodeURIComponent(lines.join('\n'))}`, '_blank', 'noopener,noreferrer')
   }
 
   async function handleSave() {
@@ -255,6 +293,54 @@ export default function EditProfilePage() {
             >{form.specialties.includes(sp) ? '✓ ' : ''}{sp}</button>
           ))}
         </div>
+      </div>
+
+      {/* Booking QR */}
+      <div style={sectionStyle}>
+        <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, marginBottom: 6 }}>Your Booking QR Code</h2>
+        <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 18 }}>
+          Patients scan this to land directly on your booking page. <strong>Print this and place at reception.</strong>
+        </p>
+        {!slug ? (
+          <p style={{ fontSize: 13, color: 'var(--muted)' }}>
+            Your QR will appear once your profile is set up.
+          </p>
+        ) : (
+          <div style={{ display: 'flex', gap: 24, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.04)', flexShrink: 0 }}>
+              {qrDataUrl ? (
+                <img src={qrDataUrl} alt="Booking QR" width={200} height={200}
+                  style={{ display: 'block', width: 200, height: 200 }} />
+              ) : (
+                <div style={{ width: 200, height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontSize: 13 }}>
+                  Generating…
+                </div>
+              )}
+            </div>
+            <div style={{ flex: 1, minWidth: 240 }}>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Booking link
+              </div>
+              <a href={`${SITE_BASE}/book/${slug}`} target="_blank" rel="noopener noreferrer"
+                style={{ display: 'inline-block', fontSize: 13, color: 'var(--blue)', fontWeight: 600, marginBottom: 14, wordBreak: 'break-all' }}>
+                {`${SITE_BASE}/book/${slug}`}
+              </a>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <button type="button" onClick={downloadQr} disabled={!qrDataUrl}
+                  style={{ padding: '10px 18px', minHeight: 44, background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 14, cursor: qrDataUrl ? 'pointer' : 'not-allowed', opacity: qrDataUrl ? 1 : 0.6, fontFamily: 'var(--font-body)' }}>
+                  ⬇ Download QR
+                </button>
+                <button type="button" onClick={shareOnWhatsApp}
+                  style={{ padding: '10px 18px', minHeight: 44, background: '#25D366', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 14, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
+                  💬 Share on WhatsApp
+                </button>
+              </div>
+              <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 12, lineHeight: 1.6 }}>
+                Tip: laminate the printout. Patients scan from across the waiting area — no app install needed.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Save button bottom */}
