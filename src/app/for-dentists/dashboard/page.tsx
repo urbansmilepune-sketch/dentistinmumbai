@@ -1,8 +1,36 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import TodayWhatsAppButton, { type TodayAppt } from './TodayWhatsAppButton'
 
 export const dynamic = 'force-dynamic'
+
+const IST_TZ = 'Asia/Kolkata'
+
+function istTodayIso(): string {
+  // en-CA locale returns YYYY-MM-DD which is what Postgres `date` columns expect.
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: IST_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date())
+}
+
+function istTodayLabel(): string {
+  return new Intl.DateTimeFormat('en-IN', {
+    timeZone: IST_TZ, weekday: 'long', day: 'numeric', month: 'long',
+  }).format(new Date())
+}
+
+function formatTimeLabel(slot: string | null | undefined): string {
+  if (!slot) return '—'
+  const [hStr, mStr] = slot.split(':')
+  const h = Number(hStr); const m = Number(mStr)
+  if (isNaN(h)) return slot
+  const hour12 = ((h + 11) % 12) + 1
+  const ampm = h < 12 ? 'AM' : 'PM'
+  return `${hour12}:${String(m || 0).padStart(2, '0')} ${ampm}`
+}
+
+const CLOSED_STATUSES = new Set(['completed', 'cancelled', 'no_show'])
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -17,18 +45,41 @@ export default async function DashboardPage() {
 
   if (!dentist) redirect('/for-dentists/login')
 
+  const todayIso = istTodayIso()
+  const todayLabel = istTodayLabel()
+  const clinicName = (dentist as any).clinic_name || dentist.name || ''
+
   const [
     { count: appointmentCount },
     { count: enquiryCount },
     { count: reviewCount },
     { count: photoCount },
     { count: treatmentCount },
+    { data: todayAppts },
+    { data: priorPhones },
+    { data: unpaidInvoices },
   ] = await Promise.all([
     supabase.from('appointments').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id),
     supabase.from('enquiries').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id),
     supabase.from('reviews').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id).eq('status', 'approved'),
     supabase.from('gallery_photos').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id),
     supabase.from('dentist_treatments').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id),
+    supabase
+      .from('appointments')
+      .select('id, patient_name, patient_phone, appt_date, time_slot, status, treatments(name)')
+      .eq('dentist_id', dentist.id)
+      .eq('appt_date', todayIso)
+      .order('time_slot', { ascending: true }),
+    supabase
+      .from('appointments')
+      .select('patient_phone')
+      .eq('dentist_id', dentist.id)
+      .lt('appt_date', todayIso),
+    supabase
+      .from('invoices')
+      .select('total, payment_status')
+      .eq('dentist_id', dentist.id)
+      .in('payment_status', ['pending', 'overdue']),
   ])
 
   // Recent appointments
@@ -38,6 +89,45 @@ export default async function DashboardPage() {
     .eq('dentist_id', dentist.id)
     .order('created_at', { ascending: false })
     .limit(5)
+
+  // Today summary computations
+  const todayList = ((todayAppts ?? []) as unknown) as Array<{
+    id: string; patient_name: string | null; patient_phone: string | null;
+    appt_date: string; time_slot: string | null; status: string;
+    treatments: { name: string | null } | null;
+  }>
+  const totalToday = todayList.length
+  const priorPhoneSet = new Set<string>(((priorPhones ?? []) as Array<{ patient_phone: string | null }>)
+    .map(r => r.patient_phone || '')
+    .filter(Boolean))
+  let newCount = 0
+  let followUpCount = 0
+  for (const a of todayList) {
+    if (a.patient_phone && priorPhoneSet.has(a.patient_phone)) followUpCount++
+    else newCount++
+  }
+  // Next appointment: earliest non-closed slot today, preferring future-of-now,
+  // falling back to earliest of any non-closed slot if none in the future.
+  const nowHm = new Intl.DateTimeFormat('en-GB', {
+    timeZone: IST_TZ, hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(new Date())
+  const upcoming = todayList
+    .filter(a => !CLOSED_STATUSES.has(a.status) && (a.time_slot ?? '') > nowHm)
+    .sort((a, b) => (a.time_slot ?? '').localeCompare(b.time_slot ?? ''))
+  const anyOpen = todayList
+    .filter(a => !CLOSED_STATUSES.has(a.status))
+    .sort((a, b) => (a.time_slot ?? '').localeCompare(b.time_slot ?? ''))
+  const nextAppt = upcoming[0] || anyOpen[0] || null
+
+  const pendingDue = ((unpaidInvoices ?? []) as Array<{ total: number | null }>)
+    .reduce((sum, inv) => sum + Number(inv.total || 0), 0)
+
+  const todayApptsForMsg: TodayAppt[] = todayList.map(a => ({
+    time_slot: a.time_slot,
+    patient_name: a.patient_name,
+    treatment: a.treatments?.name ?? null,
+    status: a.status,
+  }))
 
   // Profile completion
   const completionItems = [
@@ -67,6 +157,56 @@ export default async function DashboardPage() {
 
   return (
     <div>
+      {/* Today's Schedule */}
+      <section style={{
+        background: 'linear-gradient(135deg, #0057A8 0%, #003F7A 100%)',
+        color: '#fff', borderRadius: 18, padding: '20px 24px', marginBottom: 20,
+        boxShadow: '0 6px 20px rgba(0,87,168,0.18)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', opacity: 0.7, marginBottom: 4 }}>
+              Today
+            </div>
+            <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(20px, 3vw, 28px)', lineHeight: 1.15 }}>
+              {todayLabel}
+            </h2>
+          </div>
+          <TodayWhatsAppButton
+            dateLabel={todayLabel}
+            clinicName={clinicName}
+            total={totalToday}
+            newCount={newCount}
+            followUpCount={followUpCount}
+            nextAppt={nextAppt ? { time_slot: nextAppt.time_slot, patient_name: nextAppt.patient_name } : null}
+            pendingDue={pendingDue}
+            appts={todayApptsForMsg}
+          />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+          <ScheduleTile
+            label="Appointments"
+            value={String(totalToday)}
+            sub={totalToday === 0 ? 'Nothing on the books' : `${totalToday === 1 ? '1 patient' : `${totalToday} patients`} expected`}
+          />
+          <ScheduleTile
+            label="Mix"
+            value={`${newCount} / ${followUpCount}`}
+            sub="new · follow-up"
+          />
+          <ScheduleTile
+            label="Next up"
+            value={nextAppt ? formatTimeLabel(nextAppt.time_slot) : '—'}
+            sub={nextAppt ? (nextAppt.patient_name ?? 'Patient') : (totalToday === 0 ? 'No appointments today' : 'All done')}
+          />
+          <ScheduleTile
+            label="Pending dues"
+            value={`₹${pendingDue.toLocaleString('en-IN')}`}
+            sub={pendingDue === 0 ? 'All invoices settled' : 'Across unpaid invoices'}
+          />
+        </div>
+      </section>
+
       {/* Welcome */}
       <div style={{ marginBottom: 20 }}>
         <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 4 }}>
@@ -210,6 +350,26 @@ export default async function DashboardPage() {
             <div style={{ fontSize: 12, color: 'var(--muted)' }}>{action.desc}</div>
           </Link>
         ))}
+      </div>
+    </div>
+  )
+}
+
+function ScheduleTile({ label, value, sub }: { label: string; value: string; sub: string }) {
+  return (
+    <div style={{
+      background: 'rgba(255,255,255,0.12)',
+      border: '1px solid rgba(255,255,255,0.18)',
+      borderRadius: 12, padding: '12px 14px',
+    }}>
+      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', opacity: 0.75, marginBottom: 4 }}>
+        {label}
+      </div>
+      <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, lineHeight: 1.15 }}>
+        {value}
+      </div>
+      <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {sub}
       </div>
     </div>
   )
