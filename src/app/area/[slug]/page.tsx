@@ -71,13 +71,6 @@ function getSEOContent(areaName: string, zone: string, dentistCount: number, cit
   }
 }
 
-const ZONE_COLORS: Record<string, string> = {
-  Western: '#1D4ED8',
-  Central: '#166534',
-  South: '#7E22CE',
-  'Navi Mumbai': '#C2410C',
-}
-
 export default async function AreaPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
   const supabase = await createClient()
@@ -114,14 +107,19 @@ export default async function AreaPage({ params }: { params: Promise<{ slug: str
     .order('is_verified', { ascending: false })
     .limit(20)
 
+  const isMumbai = city.citySlug === 'mumbai'
   const dentistList = dentists || []
   const visibleDentists = dentistList.slice(0, 4)
   const hiddenDentists = dentistList.slice(4)
-  const nearbyAreas = (allAreas || []).filter(a => a.slug !== slug && a.zone === area.zone).slice(0, 6)
+  // Mumbai groups "nearby" by suburban-rail line. Other cities don't carry
+  // that semantics on their zone column, so fall back to any-other-area
+  // within the same city.
+  const nearbyAreas = (allAreas || [])
+    .filter(a => a.slug !== slug && (isMumbai ? a.zone === area.zone : true))
+    .slice(0, 6)
   const topSidebarDentists = dentistList.filter(d => d.tier === 'featured' || d.tier === 'gold').slice(0, 4)
   const faqs = getFAQs(area.name, area.dentist_count || dentistList.length)
   const seoContent = getSEOContent(area.name, area.zone, area.dentist_count || dentistList.length, city.cityName, city.domain)
-  const zoneColor = ZONE_COLORS[area.zone] || 'var(--blue)'
 
   // JSON-LD schemas
   const origin = `https://${city.domain}`
@@ -205,7 +203,7 @@ export default async function AreaPage({ params }: { params: Promise<{ slug: str
               padding: '4px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600,
               background: 'rgba(255,255,255,0.12)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)',
             }}>
-              📍 {area.zone} · {city.cityName}
+              📍 {isMumbai && area.zone ? `${area.zone} · ${city.cityName}` : city.cityName}
             </span>
           </div>
 
@@ -329,7 +327,8 @@ export default async function AreaPage({ params }: { params: Promise<{ slug: str
                   </div>
                   {[
                     { label: 'Area', value: area.name },
-                    { label: 'Zone', value: area.zone },
+                    // Zone is Mumbai-only context (Western/Central/Harbour…).
+                    ...(isMumbai && area.zone ? [{ label: 'Zone', value: area.zone }] : []),
                     { label: 'Dentists Listed', value: String(area.dentist_count || dentistList.length || '10+') },
                     { label: 'Avg Consultation Fee', value: '₹200 – ₹500' },
                     { label: 'Best For', value: 'Implants, Cosmetic Dentistry, Orthodontics' },

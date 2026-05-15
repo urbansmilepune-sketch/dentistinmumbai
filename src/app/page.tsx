@@ -98,10 +98,15 @@ export default async function HomePage() {
   const dentists = featuredDentists ?? []
   const totalDentists = dentistCount ?? 0
 
-  const westernAreas = areaList.filter(a => a.zone === 'Western').slice(0, 5)
-  const centralAreas = areaList.filter(a => a.zone === 'Central').slice(0, 5)
-  const southAreas = areaList.filter(a => a.zone === 'South').slice(0, 3)
-  const naviAreas = areaList.filter(a => a.zone === 'Navi Mumbai').slice(0, 3)
+  const isMumbai = city.citySlug === 'mumbai'
+  // Mumbai-only grouping by suburban-rail line. Every other city is rendered
+  // as a single flat grid below; their `zone` column is either NULL or
+  // city-specific and doesn't carry the Western/Central/Harbour semantics.
+  const westernAreas = isMumbai ? areaList.filter(a => a.zone === 'Western').slice(0, 5) : []
+  const centralAreas = isMumbai ? areaList.filter(a => a.zone === 'Central').slice(0, 5) : []
+  const southAreas   = isMumbai ? areaList.filter(a => a.zone === 'South').slice(0, 3)   : []
+  const naviAreas    = isMumbai ? areaList.filter(a => a.zone === 'Navi Mumbai').slice(0, 3) : []
+  const flatAreas    = isMumbai ? [] : areaList.slice(0, 16)
   const topTreatments = treatmentList.slice(0, 12)
 
   return (
@@ -276,43 +281,66 @@ export default async function HomePage() {
               </p>
             </div>
 
-            {/* Zone groups */}
-            {[
-              { zone: 'Western', areas: westernAreas },
-              { zone: 'Central', areas: centralAreas },
-              { zone: 'South', areas: southAreas },
-              { zone: 'Navi Mumbai', areas: naviAreas },
-            ].map(({ zone, areas: zoneAreas }) => zoneAreas.length > 0 && (
-              <div key={zone} style={{ marginBottom: 36 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-                  <span style={{
-                    padding: '3px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600,
-                    background: ZONE_COLORS[zone]?.bg, color: ZONE_COLORS[zone]?.text,
-                    border: `1px solid ${ZONE_COLORS[zone]?.border}`,
-                  }}>{zone} Line</span>
-                  <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
-                  {zoneAreas.map(area => (
-                    <Link key={area.id} href={`/area/${area.slug}`}>
-                      <div className="area-card" style={{
-                        padding: '16px 20px',
-                        background: 'var(--bg)',
-                        border: '1px solid var(--border)',
-                        borderRadius: 12,
-                        cursor: 'pointer',
-                        transition: 'border-color 0.2s, background 0.2s',
-                      }}>
-                        <div style={{ fontWeight: 600, fontSize: 15, fontFamily: 'var(--font-heading)', marginBottom: 4 }}>{area.name}</div>
-                        <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                          {area.dentist_count > 0 ? `${area.dentist_count} dentists` : 'View dentists'}
+            {isMumbai ? (
+              /* Zone groups — Mumbai only, keyed off the suburban-rail line. */
+              [
+                { zone: 'Western', areas: westernAreas },
+                { zone: 'Central', areas: centralAreas },
+                { zone: 'South', areas: southAreas },
+                { zone: 'Navi Mumbai', areas: naviAreas },
+              ].map(({ zone, areas: zoneAreas }) => zoneAreas.length > 0 && (
+                <div key={zone} style={{ marginBottom: 36 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                    <span style={{
+                      padding: '3px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+                      background: ZONE_COLORS[zone]?.bg, color: ZONE_COLORS[zone]?.text,
+                      border: `1px solid ${ZONE_COLORS[zone]?.border}`,
+                    }}>{zone} Line</span>
+                    <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
+                    {zoneAreas.map(area => (
+                      <Link key={area.id} href={`/area/${area.slug}`}>
+                        <div className="area-card" style={{
+                          padding: '16px 20px',
+                          background: 'var(--bg)',
+                          border: '1px solid var(--border)',
+                          borderRadius: 12,
+                          cursor: 'pointer',
+                          transition: 'border-color 0.2s, background 0.2s',
+                        }}>
+                          <div style={{ fontWeight: 600, fontSize: 15, fontFamily: 'var(--font-heading)', marginBottom: 4 }}>{area.name}</div>
+                          <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                            {area.dentist_count > 0 ? `${area.dentist_count} dentists` : 'View dentists'}
+                          </div>
                         </div>
-                      </div>
-                    </Link>
-                  ))}
+                      </Link>
+                    ))}
+                  </div>
                 </div>
+              ))
+            ) : (
+              /* Flat grid — every other city. */
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12, marginBottom: 36 }}>
+                {flatAreas.map(area => (
+                  <Link key={area.id} href={`/area/${area.slug}`}>
+                    <div className="area-card" style={{
+                      padding: '16px 20px',
+                      background: 'var(--bg)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 12,
+                      cursor: 'pointer',
+                      transition: 'border-color 0.2s, background 0.2s',
+                    }}>
+                      <div style={{ fontWeight: 600, fontSize: 15, fontFamily: 'var(--font-heading)', marginBottom: 4 }}>{area.name}</div>
+                      <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                        {area.dentist_count > 0 ? `${area.dentist_count} dentists` : 'View dentists'}
+                      </div>
+                    </div>
+                  </Link>
+                ))}
               </div>
-            ))}
+            )}
 
             <div style={{ textAlign: 'center', marginTop: 12 }}>
               <Link href="/dentists" className="btn btn-outline">View All Areas →</Link>
