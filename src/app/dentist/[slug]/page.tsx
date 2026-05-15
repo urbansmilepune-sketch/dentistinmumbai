@@ -75,7 +75,7 @@ export default async function DentistProfilePage({ params }: Props) {
       <header style={{ background: '#fff', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 100 }}>
         <nav className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 64 }}>
           <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 34, height: 34, background: 'var(--blue)', borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontFamily: 'var(--font-heading)', fontSize: 17 }}>D</div>
+            <img src="/logo.svg" alt="DentistInMumbai.in" style={{ height: 38, width: 'auto', display: 'block' }} />
             <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16 }}>DentistInMumbai<span style={{ color: 'var(--blue)' }}>.in</span></span>
           </Link>
           <Link href="/dentists" style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 500 }}>← All Dentists</Link>

@@ -27,6 +27,11 @@ export const metadata: Metadata = {
     template: '%s | DentistInMumbai.in',
   },
   description: 'Find verified dentists in Mumbai by area and treatment. Compare fees, read reviews, and book appointments online.',
+  icons: {
+    icon: '/favicon.svg',
+    shortcut: '/favicon.svg',
+    apple: '/favicon.svg',
+  },
 verification: {
     google: '1T1WaA-nRtq8w-GycybOoricYbjTqql3D-au0VzFm98',
   },
