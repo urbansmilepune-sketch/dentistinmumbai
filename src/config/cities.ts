@@ -54,3 +54,28 @@ export function getCityBySlug(slug: string | null | undefined): CityConfig {
   if (!slug) return CITY_CONFIGS[DEFAULT_CITY]
   return CITY_CONFIGS[slug as CitySlug] || CITY_CONFIGS[DEFAULT_CITY]
 }
+
+/**
+ * Brand chunk that goes before the TLD — e.g. 'DentistInMumbai',
+ * 'DentistInNaviMumbai', 'DentistInPune'. Matches what the existing JSX
+ * rendered before multi-city: 'DentistIn' + city name with spaces removed.
+ */
+export function cityBrandName(city: CityConfig): string {
+  return `DentistIn${city.cityName.replace(/\s+/g, '')}`
+}
+
+/**
+ * The TLD portion of the brand, with the leading dot — e.g. '.in' or '.com'.
+ * Pairs with cityBrandName to compose the visible domain.
+ */
+export function cityBrandTld(city: CityConfig): string {
+  const parts = city.domain.split('.')
+  return '.' + parts.slice(1).join('.')
+}
+
+/**
+ * Canonical https origin for the city — e.g. 'https://dentistinpune.in'.
+ */
+export function cityOrigin(city: CityConfig): string {
+  return `https://${city.domain}`
+}

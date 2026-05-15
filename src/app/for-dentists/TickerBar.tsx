@@ -3,12 +3,15 @@
 interface TickerBarProps {
   listedCount: number
   spotsLeft: number
+  cityName?: string
+  areaCount?: number
 }
 
-export default function TickerBar({ listedCount, spotsLeft }: TickerBarProps) {
+export default function TickerBar({ listedCount, spotsLeft, cityName = 'Mumbai', areaCount }: TickerBarProps) {
+  const areaLabel = areaCount && areaCount > 0 ? `${areaCount}` : '24'
   const items = [
     `🟢 ${listedCount} dentists listed`,
-    `📍 24 Mumbai areas covered`,
+    `📍 ${areaLabel} ${cityName} areas covered`,
     `⚡ ${spotsLeft} founding spots left`,
     `💰 100% free to list right now`,
   ]

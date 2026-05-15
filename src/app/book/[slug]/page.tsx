@@ -1,7 +1,9 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
+import { getCityBySlug, cityOrigin } from '@/config/cities'
 import BookingFlow from './BookingFlow'
 
 export const dynamic = 'force-dynamic'
@@ -11,16 +13,18 @@ interface Props { params: Promise<{ slug: string }> }
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
   const supabase = await createClient()
+  const h = await headers()
+  const city = getCityBySlug(h.get('x-city-slug'))
   const { data: d } = await supabase
     .from('dentists')
     .select('name, clinic_name, profile_photo, areas(name)')
     .eq('slug', slug)
     .single()
   if (!d) return {}
-  const area = (d.areas as any)?.name || 'Mumbai'
+  const area = (d.areas as any)?.name || city.cityName
   const title = `Book Appointment — ${d.name} | ${d.clinic_name}, ${area}`
   const description = `Book an appointment with ${d.name} at ${d.clinic_name} in ${area}. Pick a date, choose a time slot, confirm in seconds.`
-  const url = `https://www.dentistinmumbai.in/book/${slug}`
+  const url = `${cityOrigin(city)}/book/${slug}`
   const images = d.profile_photo ? [{ url: d.profile_photo, alt: d.name ?? 'Dentist' }] : undefined
   return {
     title,
@@ -28,7 +32,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     alternates: { canonical: url },
     openGraph: {
       title, description, url,
-      siteName: 'dentistinmumbai.in',
+      siteName: city.domain,
       type: 'website',
       locale: 'en_IN',
       images,
@@ -44,6 +48,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function PublicBookingPage({ params }: Props) {
   const { slug } = await params
   const supabase = await createClient()
+  const h = await headers()
+  const city = getCityBySlug(h.get('x-city-slug'))
 
   const { data: dentist } = await supabase
     .from('dentists')
@@ -58,7 +64,7 @@ export default async function PublicBookingPage({ params }: Props) {
 
   if (!dentist) notFound()
 
-  const areaName = (dentist.areas as any)?.name || 'Mumbai'
+  const areaName = (dentist.areas as any)?.name || city.cityName
   const treatments = ((dentist.dentist_treatments ?? []) as any[])
     .map(dt => dt.treatments)
     .filter((t: any) => t && t.id) as { id: string; name: string; icon: string | null }[]
@@ -72,7 +78,7 @@ export default async function PublicBookingPage({ params }: Props) {
             <span style={{ fontSize: 16 }}>←</span> Profile
           </Link>
           <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 14, color: 'var(--text)' }}>
-            dentistinmumbai<span style={{ color: 'var(--blue)' }}>.in</span>
+            {city.domain.split('.')[0]}<span style={{ color: 'var(--blue)' }}>{'.' + city.domain.split('.').slice(1).join('.')}</span>
           </span>
         </div>
       </header>
@@ -92,7 +98,7 @@ export default async function PublicBookingPage({ params }: Props) {
             <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               🏥 {dentist.clinic_name}
             </p>
-            <p style={{ fontSize: 12, color: 'var(--muted)' }}>📍 {areaName}, Mumbai</p>
+            <p style={{ fontSize: 12, color: 'var(--muted)' }}>📍 {areaName}, {city.cityName}</p>
           </div>
         </section>
 

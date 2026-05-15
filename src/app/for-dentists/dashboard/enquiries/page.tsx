@@ -3,20 +3,23 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { getCityBySlug } from '@/config/cities'
 
 export default function EnquiriesPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [enquiries, setEnquiries] = useState<any[]>([])
   const [filter, setFilter] = useState('all')
+  const [cityDomain, setCityDomain] = useState('dentistinmumbai.in')
 
   useEffect(() => {
     async function load() {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/for-dentists/login'); return }
-      const { data: dentist } = await supabase.from('dentists').select('id').eq('email', user.email).single()
+      const { data: dentist } = await supabase.from('dentists').select('id, city').eq('email', user.email).single()
       if (!dentist) return
+      setCityDomain(getCityBySlug((dentist as any).city).domain)
       const { data } = await supabase.from('enquiries').select('*').eq('dentist_id', dentist.id).order('created_at', { ascending: false })
       setEnquiries(data || [])
       setLoading(false)
@@ -74,7 +77,7 @@ export default function EnquiriesPage() {
               </div>
               <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                 {e.patient_phone && (
-                  <a href={`https://wa.me/91${e.patient_phone.replace(/\D/g,'')}?text=Hi ${e.patient_name}, thank you for your enquiry. I am Dr. from dentistinmumbai.in — how can I help you?`}
+                  <a href={`https://wa.me/91${e.patient_phone.replace(/\D/g,'')}?text=${encodeURIComponent(`Hi ${e.patient_name}, thank you for your enquiry. I am Dr. from ${cityDomain} — how can I help you?`)}`}
                     target="_blank" rel="noopener noreferrer"
                     style={{ padding: '7px 14px', background: '#25D366', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, textDecoration: 'none' }}>
                     WhatsApp

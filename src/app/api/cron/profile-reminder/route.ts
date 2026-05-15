@@ -16,6 +16,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { sendProfileReminderEmail } from '@/lib/email'
+import { CITY_CONFIGS } from '@/config/cities'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -33,6 +34,7 @@ type DentistRow = {
   bio: string | null
   working_hours: unknown
   reminder_email_sent_at: string | null
+  city: string | null
 }
 
 export async function GET(request: NextRequest) {
@@ -54,7 +56,7 @@ export async function GET(request: NextRequest) {
   // .or() handles "never reminded OR last reminded >7d ago" in one filter.
   const { data: dentists, error: dentErr } = await db
     .from('dentists')
-    .select('id, name, email, profile_photo, bio, working_hours, reminder_email_sent_at')
+    .select('id, name, email, profile_photo, bio, working_hours, reminder_email_sent_at, city')
     .eq('is_active', true)
     .eq('email_reminders_opt_out', false)
     .lt('created_at', cutoffIso)
@@ -97,7 +99,12 @@ export async function GET(request: NextRequest) {
     if (pct >= COMPLETION_THRESHOLD_PCT) continue
 
     const missing = checks.filter(c => !c.done).map(({ label, href }) => ({ label, href }))
-    const unsubscribeUrl = `${SITE_URL}/api/email/unsubscribe?id=${encodeURIComponent(d.id)}`
+    // Build the unsubscribe URL against the dentist's own city domain when
+    // possible — falls back to NEXT_PUBLIC_SITE_URL / dentistinmumbai.in.
+    const dentistOrigin = d.city && CITY_CONFIGS.hasOwnProperty(d.city)
+      ? `https://${(CITY_CONFIGS as any)[d.city].domain}`
+      : SITE_URL
+    const unsubscribeUrl = `${dentistOrigin}/api/email/unsubscribe?id=${encodeURIComponent(d.id)}`
 
     try {
       await sendProfileReminderEmail({
@@ -106,6 +113,7 @@ export async function GET(request: NextRequest) {
         completion_pct: pct,
         missing,
         unsubscribe_url: unsubscribeUrl,
+        city: d.city ?? undefined,
       })
       // Only stamp on success so a transient send failure stays retryable
       // on the next run instead of being silently 7-day-cooled-down.

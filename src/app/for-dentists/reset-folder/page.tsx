@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { getCityByDomain, CITY_CONFIGS, DEFAULT_CITY, type CityConfig } from '@/config/cities'
 
 export default function ResetPasswordPage() {
   const router = useRouter()
@@ -13,13 +14,16 @@ export default function ResetPasswordPage() {
   const [done, setDone] = useState(false)
   const [error, setError] = useState('')
   const [ready, setReady] = useState(false)
+  const [cityConfig, setCityConfig] = useState<CityConfig>(CITY_CONFIGS[DEFAULT_CITY])
 
   useEffect(() => {
+    setCityConfig(getCityByDomain(window.location.hostname))
     const supabase = createClient()
     supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') setReady(true)
     })
   }, [])
+  const brandTld = '.' + cityConfig.domain.split('.').slice(1).join('.')
 
   async function handleReset() {
     if (!password) { setError('Please enter a new password'); return }
@@ -38,7 +42,7 @@ export default function ResetPasswordPage() {
     <div style={{ minHeight: '100vh', background: 'var(--bg)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
       <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', marginBottom: 32 }}>
         <div style={{ width: 36, height: 36, background: 'var(--blue)', borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontFamily: 'var(--font-heading)', fontSize: 18 }}>D</div>
-        <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, color: 'var(--text)' }}>DentistInMumbai<span style={{ color: 'var(--blue)' }}>.in</span></span>
+        <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, color: 'var(--text)' }}>DentistIn{cityConfig.cityName.replace(/\s+/g, '')}<span style={{ color: 'var(--blue)' }}>{brandTld}</span></span>
       </Link>
 
       <div style={{ background: '#fff', borderRadius: 20, border: '1px solid var(--border)', padding: '40px', width: '100%', maxWidth: 420 }}>

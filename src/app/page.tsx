@@ -3,34 +3,36 @@ import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import SearchBar from '@/components/SearchBar'
 import FaqAccordion from '@/components/FaqAccordion'
-import { getCityBySlug } from '@/config/cities'
+import { getCityBySlug, cityBrandName, cityBrandTld } from '@/config/cities'
 
-const FAQ_ITEMS = [
-  {
-    q: 'How do I find the best dentist near me in Mumbai?',
-    a: 'Use our search to filter by your area (Bandra, Andheri, Thane etc.) and the treatment you need. Every dentist on our platform is verified, with real patient reviews and transparent fees.',
-  },
-  {
-    q: 'Are the dentists on this platform verified?',
-    a: 'Yes. Every dentist listed is verified with their MCI registration number, clinic address, and contact details before going live on our platform.',
-  },
-  {
-    q: 'Is it free to book an appointment through your platform?',
-    a: 'Completely free for patients. We never charge for bookings, enquiries, or WhatsApp connects. You pay only the dentist for the treatment.',
-  },
-  {
-    q: 'What is the average cost of dental implants in Mumbai?',
-    a: 'Dental implants in Mumbai typically range from ₹25,000 to ₹80,000 per implant depending on the brand, clinic, and area. Use our cost guide on any area page to compare.',
-  },
-  {
-    q: 'Can I book an emergency dental appointment?',
-    a: 'Yes. Filter by "Emergency Dental" in our search to find dentists who offer same-day or emergency slots. Many clinics on our platform have WhatsApp direct connect for urgent cases.',
-  },
-  {
-    q: 'How do I list my dental clinic on DentistInMumbai.in?',
-    a: 'We\'re currently onboarding founding member dentists — the first 250 listings are completely free, forever. Visit our "For Dentists" page to register your clinic in under 5 minutes.',
-  },
-]
+function faqItemsFor(cityName: string, domain: string) {
+  return [
+    {
+      q: `How do I find the best dentist near me in ${cityName}?`,
+      a: `Use our search to filter by your area and the treatment you need. Every dentist on our platform is verified, with real patient reviews and transparent fees.`,
+    },
+    {
+      q: 'Are the dentists on this platform verified?',
+      a: 'Yes. Every dentist listed is verified with their MCI registration number, clinic address, and contact details before going live on our platform.',
+    },
+    {
+      q: 'Is it free to book an appointment through your platform?',
+      a: 'Completely free for patients. We never charge for bookings, enquiries, or WhatsApp connects. You pay only the dentist for the treatment.',
+    },
+    {
+      q: `What is the average cost of dental implants in ${cityName}?`,
+      a: `Dental implants in ${cityName} typically range from ₹25,000 to ₹80,000 per implant depending on the brand, clinic, and area. Use our cost guide on any area page to compare.`,
+    },
+    {
+      q: 'Can I book an emergency dental appointment?',
+      a: 'Yes. Filter by "Emergency Dental" in our search to find dentists who offer same-day or emergency slots. Many clinics on our platform have WhatsApp direct connect for urgent cases.',
+    },
+    {
+      q: `How do I list my dental clinic on ${domain}?`,
+      a: `We're currently onboarding founding member dentists — the first 250 listings are completely free, forever. Visit our "For Dentists" page to register your clinic in under 5 minutes.`,
+    },
+  ]
+}
 
 const ZONE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   Western: { bg: '#EFF6FF', text: '#1D4ED8', border: '#BFDBFE' },
@@ -43,6 +45,9 @@ export default async function HomePage() {
   const supabase = await createClient()
   const h = await headers()
   const city = getCityBySlug(h.get('x-city-slug'))
+  const brandName = cityBrandName(city)
+  const brandTld = cityBrandTld(city)
+  const FAQ_ITEMS = faqItemsFor(city.cityName, city.domain)
 
   // Early-stage UX: until we cross PREMIUM_FLOOR active gold/featured
   // listings, the homepage shows every active dentist so new approvals
@@ -105,7 +110,7 @@ export default async function HomePage() {
       <header style={{ background: '#fff', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 100, backdropFilter: 'blur(8px)' }}>
         <nav className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 68 }}>
           <Link href="/" style={{ display: 'flex', alignItems: 'center' }}>
-            <img src="/logo.png" alt="DentistInMumbai.in" style={{ height: 40, width: 'auto', display: 'block' }} />
+            <img src="/logo.png" alt={city.domain} style={{ height: 40, width: 'auto', display: 'block' }} />
           </Link>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Link href="/dentists" className="nav-secondary-link" style={{ padding: '8px 16px', fontWeight: 500, fontSize: 14, color: 'var(--text-secondary)' }}>Find Dentists</Link>
@@ -152,27 +157,24 @@ export default async function HomePage() {
               {city.heroSubtitle}. Real reviews, transparent fees, instant booking.
             </p>
 
-            <SearchBar areas={areaList.map(a => ({ name: a.name, slug: a.slug }))} treatments={treatmentList.map(t => ({ name: t.name, slug: t.slug }))} />
+            <SearchBar areas={areaList.map(a => ({ name: a.name, slug: a.slug }))} treatments={treatmentList.map(t => ({ name: t.name, slug: t.slug }))} cityName={city.cityName} />
 
-            {/* Quick area chips */}
+            {/* Quick area chips — top 6 areas by dentist_count (areaList is already city-filtered). */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 28, justifyContent: 'center' }}>
-              {['Bandra', 'Andheri', 'Juhu', 'Borivali', 'Thane', 'Navi Mumbai'].map(area => {
-                const a = areaList.find(x => x.name === area)
-                return a ? (
-                  <Link key={area} href={`/area/${a.slug}`} style={{
-                    padding: '7px 16px',
-                    background: 'rgba(255,255,255,0.12)',
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    borderRadius: 20,
-                    color: '#fff',
-                    fontSize: 13,
-                    fontWeight: 500,
-                    transition: 'background 0.2s',
-                  }}>
-                    {area}
-                  </Link>
-                ) : null
-              })}
+              {areaList.slice(0, 6).map(a => (
+                <Link key={a.slug} href={`/area/${a.slug}`} style={{
+                  padding: '7px 16px',
+                  background: 'rgba(255,255,255,0.12)',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  borderRadius: 20,
+                  color: '#fff',
+                  fontSize: 13,
+                  fontWeight: 500,
+                  transition: 'background 0.2s',
+                }}>
+                  {a.name}
+                </Link>
+              ))}
             </div>
           </div>
         </section>
@@ -183,7 +185,7 @@ export default async function HomePage() {
             <div className="home-stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 24, textAlign: 'center' }}>
               {[
                 { value: `${totalDentists || '200'}+`, label: 'Verified Dentists' },
-                { value: '24+', label: 'Mumbai Areas' },
+                { value: `${areaList.length || 24}+`, label: `${city.cityName} Areas` },
                 { value: '15+', label: 'Treatments' },
                 { value: '4.8★', label: 'Average Rating' },
               ].map(stat => (
@@ -203,7 +205,7 @@ export default async function HomePage() {
               <div className="home-section-head" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 40, gap: 12, flexWrap: 'wrap' }}>
                 <div>
                   <p style={{ color: 'var(--blue)', fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>{showAllDentists ? 'Browse' : 'Top Rated'}</p>
-                  <h2 style={{ fontSize: 'clamp(1.5rem, 3vw, 2rem)', fontWeight: 800 }}>{showAllDentists ? 'Dentists on DentistInMumbai.in' : 'Featured Dentists in Mumbai'}</h2>
+                  <h2 style={{ fontSize: 'clamp(1.5rem, 3vw, 2rem)', fontWeight: 800 }}>{showAllDentists ? `Dentists on ${city.domain}` : `Featured Dentists in ${city.cityName}`}</h2>
                 </div>
                 <Link href="/dentists" style={{ color: 'var(--blue)', fontWeight: 600, fontSize: 14 }}>View all →</Link>
               </div>
@@ -235,7 +237,7 @@ export default async function HomePage() {
                             {d.is_verified && <span className="verified-icon" title="Verified">✓</span>}
                           </div>
                           <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 8 }}>
-                            {d.clinic_name} · {(d as any).areas?.name || 'Mumbai'}
+                            {d.clinic_name} · {(d as any).areas?.name || city.cityName}
                           </p>
                           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                             {d.tier === 'featured' && <span className="badge badge-featured">⭐ Featured</span>}
@@ -353,9 +355,9 @@ export default async function HomePage() {
         <section className="home-section" style={{ padding: '80px 20px', background: 'var(--text)' }}>
           <div className="container">
             <div style={{ textAlign: 'center', marginBottom: 56 }}>
-              <p style={{ color: '#7DD3FC', fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>Why DentistInMumbai.in</p>
+              <p style={{ color: '#7DD3FC', fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>Why {city.domain}</p>
               <h2 style={{ fontSize: 'clamp(1.5rem, 3vw, 2.25rem)', fontWeight: 800, color: '#fff', maxWidth: 560, margin: '0 auto' }}>
-                The smarter way to find your dentist in Mumbai
+                The smarter way to find your dentist in {city.cityName}
               </h2>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 32 }}>
@@ -446,15 +448,15 @@ export default async function HomePage() {
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
                 <div style={{ width: 32, height: 32, background: 'var(--blue)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 16, fontFamily: 'var(--font-heading)' }}>D</div>
-                <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, color: '#fff', fontSize: 15 }}>DentistInMumbai.in</span>
+                <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, color: '#fff', fontSize: 15 }}>{city.domain}</span>
               </div>
               <p style={{ fontSize: 14, lineHeight: 1.7, maxWidth: 220 }}>
-                Mumbai&apos;s most trusted platform for finding verified dentists by area and treatment.
+                {city.cityName}&apos;s most trusted platform for finding verified dentists by area and treatment.
               </p>
             </div>
             <div>
               <h4 style={{ color: '#fff', fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 14, marginBottom: 16, textTransform: 'uppercase', letterSpacing: '0.06em' }}>For Patients</h4>
-              {['Find Dentists', 'Dental Implants Mumbai', 'Teeth Whitening Mumbai', 'Braces Mumbai', 'Emergency Dental'].map(link => (
+              {[`Find Dentists`, `Dental Implants ${city.cityName}`, `Teeth Whitening ${city.cityName}`, `Braces ${city.cityName}`, 'Emergency Dental'].map(link => (
                 <div key={link} style={{ marginBottom: 10 }}>
                   <Link href="/dentists" style={{ fontSize: 14, color: 'rgba(255,255,255,0.6)', transition: 'color 0.2s' }}>{link}</Link>
                 </div>
@@ -484,7 +486,7 @@ export default async function HomePage() {
             </div>
           </div>
           <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-            <p style={{ fontSize: 13 }}>© {new Date().getFullYear()} DentistInMumbai.in · All rights reserved</p>
+            <p style={{ fontSize: 13 }}>© {new Date().getFullYear()} {city.domain} · All rights reserved</p>
             <div style={{ display: 'flex', gap: 20 }}>
               <Link href="/privacy" style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>Privacy Policy</Link>
               <Link href="/terms" style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>Terms of Use</Link>

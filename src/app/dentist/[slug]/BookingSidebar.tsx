@@ -14,11 +14,12 @@ interface BookingSidebarProps {
     is_verified: boolean
     tier: string
   }
+  cityDomain?: string
 }
 
-export default function BookingSidebar({ dentist }: BookingSidebarProps) {
+export default function BookingSidebar({ dentist, cityDomain = 'dentistinmumbai.in' }: BookingSidebarProps) {
   const waLink = dentist.whatsapp
-    ? `https://wa.me/91${dentist.whatsapp.replace(/\D/g, '')}?text=Hi, I found your profile on DentistInMumbai.in and would like to book an appointment.`
+    ? `https://wa.me/91${dentist.whatsapp.replace(/\D/g, '')}?text=${encodeURIComponent(`Hi, I found your profile on ${cityDomain} and would like to book an appointment.`)}`
     : null
 
   return (

@@ -7,6 +7,8 @@ interface RegistrationModalProps {
   onClose: () => void
   foundingNumber: number
   areas: string[]
+  cityName?: string
+  citySlug?: string
 }
 
 const QUALIFICATIONS = [
@@ -24,7 +26,7 @@ function generateRef(): string {
   return ref
 }
 
-export default function RegistrationModal({ isOpen, onClose, foundingNumber, areas }: RegistrationModalProps) {
+export default function RegistrationModal({ isOpen, onClose, foundingNumber, areas, cityName = 'Mumbai', citySlug = 'mumbai' }: RegistrationModalProps) {
   const [form, setForm] = useState({
     name: '', phone: '', email: '', clinic_name: '',
     area: '', qualification: '', mci_registration: '',
@@ -55,7 +57,7 @@ export default function RegistrationModal({ isOpen, onClose, foundingNumber, are
       const res = await fetch('/api/registrations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, founding_number: spotNumber }),
+        body: JSON.stringify({ ...form, founding_number: spotNumber, city: citySlug }),
       })
       const data = await res.json()
       if (data.ref_no) {
@@ -142,7 +144,7 @@ export default function RegistrationModal({ isOpen, onClose, foundingNumber, are
               </div>
 
               <div>
-                <label style={labelStyle}>Area in Mumbai *</label>
+                <label style={labelStyle}>Area in {cityName} *</label>
                 <select value={form.area} onChange={e => update('area', e.target.value)} style={{ ...inputStyle, cursor: 'pointer', appearance: 'none' as any }}>
                   <option value="">Select your area</option>
                   {areas.map(a => <option key={a} value={a}>{a}</option>)}

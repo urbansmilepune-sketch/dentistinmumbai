@@ -1,33 +1,36 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { headers } from 'next/headers'
+import { getCityBySlug, cityBrandName, cityBrandTld, cityOrigin } from '@/config/cities'
 
-const ABOUT_TITLE = 'About Us | dentistinmumbai.in'
-const ABOUT_DESC = 'dentistinmumbai.in is Mumbai\'s most trusted dental directory. Built by Dentaura Prime LLP to help patients find verified dentists and help dentists grow their practice.'
-const ABOUT_URL = 'https://www.dentistinmumbai.in/about'
+export const dynamic = 'force-dynamic'
 
-export const metadata: Metadata = {
-  title: ABOUT_TITLE,
-  description: ABOUT_DESC,
-  alternates: { canonical: ABOUT_URL },
-  openGraph: {
-    title: ABOUT_TITLE,
-    description: ABOUT_DESC,
-    url: ABOUT_URL,
-    siteName: 'dentistinmumbai.in',
-    type: 'website',
-    locale: 'en_IN',
-  },
-  twitter: { card: 'summary', title: ABOUT_TITLE, description: ABOUT_DESC },
+export async function generateMetadata(): Promise<Metadata> {
+  const h = await headers()
+  const city = getCityBySlug(h.get('x-city-slug'))
+  const title = `About Us | ${city.domain}`
+  const description = `${city.domain} is ${city.cityName}'s most trusted dental directory. Built by Dentaura Prime LLP to help patients find verified dentists and help dentists grow their practice.`
+  const url = `${cityOrigin(city)}/about`
+  return {
+    title,
+    description,
+    alternates: { canonical: url },
+    openGraph: { title, description, url, siteName: city.domain, type: 'website', locale: 'en_IN' },
+    twitter: { card: 'summary', title, description },
+  }
 }
 
-export default function AboutPage() {
+export default async function AboutPage() {
+  const h = await headers()
+  const city = getCityBySlug(h.get('x-city-slug'))
+
   return (
     <>
       <header style={{ background: '#fff', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 100 }}>
         <nav className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 68 }}>
           <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ width: 36, height: 36, background: 'var(--blue)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontFamily: 'var(--font-heading)', fontSize: 18 }}>D</div>
-            <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17 }}>DentistInMumbai<span style={{ color: 'var(--blue)' }}>.in</span></span>
+            <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17 }}>{cityBrandName(city)}<span style={{ color: 'var(--blue)' }}>{cityBrandTld(city)}</span></span>
           </Link>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Link href="/dentists" style={{ padding: '8px 16px', fontWeight: 500, fontSize: 14, color: 'var(--text-secondary)' }}>Find Dentists</Link>
@@ -37,24 +40,22 @@ export default function AboutPage() {
       </header>
 
       <main style={{ background: 'var(--bg)', minHeight: '100vh' }}>
-        {/* Hero */}
         <section style={{ background: 'linear-gradient(135deg, #003F7A, #0057A8)', padding: '60px 20px' }}>
           <div className="container" style={{ textAlign: 'center' }}>
-            <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(2rem, 4vw, 3rem)', color: '#fff', marginBottom: 16 }}>About DentistInMumbai.in</h1>
+            <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(2rem, 4vw, 3rem)', color: '#fff', marginBottom: 16 }}>About {city.domain}</h1>
             <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 18, maxWidth: 560, margin: '0 auto' }}>
-              Mumbai's most trusted platform for finding verified dentists — built by Dentaura Prime LLP.
+              {city.cityName}&apos;s most trusted platform for finding verified dentists — built by Dentaura Prime LLP.
             </p>
           </div>
         </section>
 
-        {/* Content */}
         <section style={{ padding: '72px 20px' }}>
           <div className="container" style={{ maxWidth: 760 }}>
             <div style={{ background: '#fff', borderRadius: 16, border: '1px solid var(--border)', padding: '48px' }}>
 
               <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 16 }}>Our Mission</h2>
               <p style={{ fontSize: 16, color: 'var(--text-secondary)', lineHeight: 1.8, marginBottom: 32 }}>
-                dentistinmumbai.in was built to solve a simple but frustrating problem: Mumbai has thousands of excellent dentists, but patients can't find them — and dentists can't reach patients who are searching online. We built the bridge.
+                {city.domain} was built to solve a simple but frustrating problem: {city.cityName} has thousands of excellent dentists, but patients can&apos;t find them — and dentists can&apos;t reach patients who are searching online. We built the bridge.
               </p>
 
               <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 16 }}>What We Do</h2>
@@ -67,12 +68,12 @@ export default function AboutPage() {
 
               <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 16 }}>Who We Are</h2>
               <p style={{ fontSize: 16, color: 'var(--text-secondary)', lineHeight: 1.8, marginBottom: 32 }}>
-                dentistinmumbai.in is a product of <strong>Dentaura Prime LLP</strong>, a Pune-based healthcare technology company. We also operate DentalSamaan (dental materials quick-commerce) and Urban Smile dental clinics. We understand dental from both sides of the chair.
+                {city.domain} is a product of <strong>Dentaura Prime LLP</strong>, a Pune-based healthcare technology company. We also operate DentalSamaan (dental materials quick-commerce) and Urban Smile dental clinics. We understand dental from both sides of the chair.
               </p>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 20, marginBottom: 40 }}>
                 {[
-                  { value: '80+', label: 'Mumbai Areas' },
+                  { value: '80+', label: `${city.cityName} Areas` },
                   { value: '15+', label: 'Treatments' },
                   { value: '100%', label: 'Free for Patients' },
                   { value: '24hrs', label: 'Profile Go-Live' },
@@ -98,7 +99,7 @@ export default function AboutPage() {
       </main>
 
       <footer style={{ background: '#0A1628', padding: '32px 20px', color: 'rgba(255,255,255,0.6)', textAlign: 'center' }}>
-        <p style={{ fontSize: 13 }}>© {new Date().getFullYear()} dentistinmumbai.in · A Dentaura Prime LLP initiative</p>
+        <p style={{ fontSize: 13 }}>© {new Date().getFullYear()} {city.domain} · A Dentaura Prime LLP initiative</p>
       </footer>
     </>
   )

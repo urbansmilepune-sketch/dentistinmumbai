@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
-import { getCityBySlug } from '@/config/cities'
+import { getCityBySlug, cityBrandName, cityBrandTld } from '@/config/cities'
 import FilterSidebar from './FilterSidebar'
 import DentistCard from './DentistCard'
 import Pagination from './Pagination'
@@ -247,7 +247,7 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
         <nav className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 68 }}>
           <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ width: 36, height: 36, background: 'var(--blue)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontFamily: 'var(--font-heading)', fontSize: 18 }}>D</div>
-            <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17 }}>DentistInMumbai<span style={{ color: 'var(--blue)' }}>.in</span></span>
+            <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17 }}>{cityBrandName(city)}<span style={{ color: 'var(--blue)' }}>{cityBrandTld(city)}</span></span>
           </Link>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Link href="/dentists" className="nav-secondary-link" style={{ padding: '8px 16px', fontWeight: 600, fontSize: 14, color: 'var(--blue)' }}>Find Dentists</Link>

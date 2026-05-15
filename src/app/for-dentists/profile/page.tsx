@@ -201,7 +201,7 @@ export default function EditProfilePage() {
           </div>
           <div>
             <label style={labelStyle}>Clinic Address</label>
-            <textarea value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} placeholder="Full clinic address including area, Mumbai, PIN" rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
+            <textarea value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} placeholder="Full clinic address including area, city, PIN" rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
           </div>
           <div>
             <label style={labelStyle}>Google Maps Embed Code</label>

@@ -1,20 +1,31 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { headers } from 'next/headers'
+import { getCityBySlug, cityBrandName, cityBrandTld, cityOrigin } from '@/config/cities'
 
-export const metadata: Metadata = {
-  title: 'Contact Us | dentistinmumbai.in',
-  description: 'Get in touch with dentistinmumbai.in. For patients, dentists, or partnership enquiries.',
-  alternates: { canonical: 'https://www.dentistinmumbai.in/contact' },
+export const dynamic = 'force-dynamic'
+
+export async function generateMetadata(): Promise<Metadata> {
+  const h = await headers()
+  const city = getCityBySlug(h.get('x-city-slug'))
+  return {
+    title: `Contact Us | ${city.domain}`,
+    description: `Get in touch with ${city.domain}. For patients, dentists, or partnership enquiries.`,
+    alternates: { canonical: `${cityOrigin(city)}/contact` },
+  }
 }
 
-export default function ContactPage() {
+export default async function ContactPage() {
+  const h = await headers()
+  const city = getCityBySlug(h.get('x-city-slug'))
+
   return (
     <>
       <header style={{ background: '#fff', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 100 }}>
         <nav className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 68 }}>
           <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ width: 36, height: 36, background: 'var(--blue)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontFamily: 'var(--font-heading)', fontSize: 18 }}>D</div>
-            <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17 }}>DentistInMumbai<span style={{ color: 'var(--blue)' }}>.in</span></span>
+            <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17 }}>{cityBrandName(city)}<span style={{ color: 'var(--blue)' }}>{cityBrandTld(city)}</span></span>
           </Link>
           <Link href="/dentists" style={{ padding: '8px 16px', fontWeight: 500, fontSize: 14, color: 'var(--text-secondary)' }}>Find Dentists</Link>
         </nav>
@@ -24,7 +35,7 @@ export default function ContactPage() {
         <div className="container" style={{ maxWidth: 680 }}>
           <div style={{ textAlign: 'center', marginBottom: 48 }}>
             <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(1.8rem, 4vw, 2.5rem)', marginBottom: 12 }}>Contact Us</h1>
-            <p style={{ color: 'var(--muted)', fontSize: 16 }}>We're here to help patients, dentists, and partners.</p>
+            <p style={{ color: 'var(--muted)', fontSize: 16 }}>We&apos;re here to help patients, dentists, and partners.</p>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20, marginBottom: 40 }}>
@@ -70,7 +81,7 @@ export default function ContactPage() {
       </main>
 
       <footer style={{ background: '#0A1628', padding: '32px 20px', color: 'rgba(255,255,255,0.6)', textAlign: 'center' }}>
-        <p style={{ fontSize: 13 }}>© {new Date().getFullYear()} dentistinmumbai.in · A Dentaura Prime LLP initiative</p>
+        <p style={{ fontSize: 13 }}>© {new Date().getFullYear()} {city.domain} · A Dentaura Prime LLP initiative</p>
       </footer>
     </>
   )

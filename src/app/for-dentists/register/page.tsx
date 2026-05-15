@@ -136,7 +136,7 @@ export default function RegisterPage() {
         <nav className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 64 }}>
           <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}>
             <div style={{ width: 34, height: 34, background: 'var(--blue)', borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontFamily: 'var(--font-heading)', fontSize: 17 }}>D</div>
-            <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16, color: 'var(--text)' }}>DentistInMumbai<span style={{ color: 'var(--blue)' }}>.in</span></span>
+            <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16, color: 'var(--text)' }}>DentistIn{cityConfig.cityName.replace(/\s+/g, '')}<span style={{ color: 'var(--blue)' }}>{'.' + cityConfig.domain.split('.').slice(1).join('.')}</span></span>
           </Link>
           <Link href="/for-dentists/login" style={{ fontSize: 13, color: 'var(--blue)', fontWeight: 600 }}>Already registered? Login →</Link>
         </nav>

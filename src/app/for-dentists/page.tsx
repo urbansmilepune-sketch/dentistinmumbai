@@ -90,13 +90,13 @@ export default async function ForDentistsPage() {
   return (
     <>
       {/* Ticker */}
-      <TickerBar listedCount={listedCount} spotsLeft={spotsLeft} />
+      <TickerBar listedCount={listedCount} spotsLeft={spotsLeft} cityName={city.cityName} areaCount={areaNames.length} />
 
       {/* NAV */}
       <header style={{ background: '#fff', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 100 }}>
         <nav className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 68 }}>
           <Link href="/" style={{ display: 'flex', alignItems: 'center' }}>
-            <img src="/logo.png" alt="DentistInMumbai.in" style={{ height: 40, width: 'auto', display: 'block' }} />
+            <img src="/logo.png" alt={city.domain} style={{ height: 40, width: 'auto', display: 'block' }} />
           </Link>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <Link href="/dentists" style={{ padding: '8px 16px', fontWeight: 500, fontSize: 14, color: 'var(--text-secondary)' }}>For Patients →</Link>
@@ -131,7 +131,7 @@ export default async function ForDentistsPage() {
 
           {/* CTA buttons */}
           <div id="register" style={{ display: 'flex', gap: 14, flexWrap: 'wrap', justifyContent: 'center' }}>
-            <HeroButtons listedCount={listedCount} areaNames={areaNames} />
+            <HeroButtons listedCount={listedCount} areaNames={areaNames} cityName={city.cityName} citySlug={city.citySlug} />
           </div>
         </div>
       </section>
@@ -151,7 +151,7 @@ export default async function ForDentistsPage() {
       <section style={{ padding: '80px 20px', background: '#fff' }}>
         <div className="container">
           <div style={{ textAlign: 'center', marginBottom: 52 }}>
-            <p style={{ color: 'var(--blue)', fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Why List on DentistInMumbai</p>
+            <p style={{ color: 'var(--blue)', fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Why List on {city.domain}</p>
             <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(1.6rem, 3vw, 2.25rem)', maxWidth: 560, margin: '0 auto' }}>
               Patients in {city.cityName} are searching. Make sure they find you.
             </h2>
@@ -202,7 +202,7 @@ export default async function ForDentistsPage() {
           {/* Second progress bar */}
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
             <ProgressBar listedCount={listedCount} spotsLeft={spotsLeft} pct={pct} showButton={false} />
-            <HeroButtons listedCount={listedCount} areaNames={areaNames} orange />
+            <HeroButtons listedCount={listedCount} areaNames={areaNames} orange cityName={city.cityName} citySlug={city.citySlug} />
           </div>
         </div>
       </section>
@@ -298,7 +298,7 @@ export default async function ForDentistsPage() {
           <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 17, marginBottom: 36 }}>
             Join {listedCount} dentists already listed. Free forever. No catch.
           </p>
-          <HeroButtons listedCount={listedCount} areaNames={areaNames} orange large />
+          <HeroButtons listedCount={listedCount} areaNames={areaNames} orange large cityName={city.cityName} citySlug={city.citySlug} />
         </div>
       </section>
 

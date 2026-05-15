@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import jsPDF from 'jspdf'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { getCityBySlug } from '@/config/cities'
 
 type DentistMeta = {
   id: string
@@ -11,6 +12,7 @@ type DentistMeta = {
   clinic_name: string | null
   phone: string | null
   whatsapp: string | null
+  city: string | null
   areas: { name: string | null } | null
 }
 
@@ -37,7 +39,7 @@ export default function BillingPage() {
       if (!user) { router.push('/for-dentists/login'); return }
       const { data: dentistRow } = await supabase
         .from('dentists')
-        .select('id, name, clinic_name, phone, whatsapp, areas(name)')
+        .select('id, name, clinic_name, phone, whatsapp, city, areas(name)')
         .eq('email', user.email)
         .single()
       if (!dentistRow) return
@@ -140,7 +142,8 @@ export default function BillingPage() {
     doc.setTextColor(60, 60, 60)
     const subtitleLines: string[] = []
     if (dentist.name && dentist.clinic_name) subtitleLines.push(dentist.name)
-    const locale = dentist.areas?.name ? `${dentist.areas.name}, Mumbai` : 'Mumbai'
+    const cityName = getCityBySlug(dentist.city).cityName
+    const locale = dentist.areas?.name ? `${dentist.areas.name}, ${cityName}` : cityName
     subtitleLines.push(locale)
     const contact = dentist.phone || dentist.whatsapp
     if (contact) subtitleLines.push(`Phone: ${contact}`)
@@ -277,7 +280,7 @@ export default function BillingPage() {
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(9)
     doc.setTextColor(140, 140, 140)
-    doc.text('Powered by dentistinmumbai.in', PAGE_W / 2, PAGE_H - MARGIN / 2, { align: 'center' })
+    doc.text(`Powered by ${getCityBySlug(dentist.city).domain}`, PAGE_W / 2, PAGE_H - MARGIN / 2, { align: 'center' })
 
     doc.save(`Invoice-${inv.invoice_no}.pdf`)
   }

@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import GoldCheckoutButton from './GoldCheckoutButton'
+import { getCityByDomain, CITY_CONFIGS, DEFAULT_CITY, type CityConfig } from '@/config/cities'
 
 type Period = 'monthly' | 'annual'
 
@@ -15,6 +16,8 @@ interface Props {
 
 export default function PlanSelector({ defaultPlan }: Props = {}) {
   const [period, setPeriod] = useState<Period>(defaultPlan ?? 'annual')
+  const [cityConfig, setCityConfig] = useState<CityConfig>(CITY_CONFIGS[DEFAULT_CITY])
+  useEffect(() => { setCityConfig(getCityByDomain(window.location.hostname)) }, [])
 
   const goldPrice = period === 'annual' ? `₹${ANNUAL_PRICE.toLocaleString('en-IN')}` : `₹${MONTHLY_PRICE.toLocaleString('en-IN')}`
   const goldPeriodLabel = period === 'annual' ? '/year' : '/month'
@@ -84,7 +87,7 @@ export default function PlanSelector({ defaultPlan }: Props = {}) {
             'Priority support',
           ]}
           footer={
-            <a href="https://wa.me/917719903232?text=Hi, I want to upgrade my dentistinmumbai.in listing to the Featured plan. My clinic is listed on the platform."
+            <a href={`https://wa.me/917719903232?text=${encodeURIComponent(`Hi, I want to upgrade my ${cityConfig.domain} listing to the Featured plan. My clinic is listed on the platform.`)}`}
               target="_blank" rel="noopener noreferrer"
               style={{ display: 'block', width: '100%', padding: '12px', background: '#C2410C', color: '#fff', borderRadius: 10, textAlign: 'center', fontSize: 14, fontWeight: 700, textDecoration: 'none' }}>
               Get Featured →

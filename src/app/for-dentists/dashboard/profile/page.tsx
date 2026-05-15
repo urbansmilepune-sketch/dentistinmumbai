@@ -4,8 +4,7 @@ import { useState, useEffect } from 'react'
 import QRCode from 'qrcode'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-
-const SITE_BASE = 'https://www.dentistinmumbai.in'
+import { getCityBySlug } from '@/config/cities'
 
 const LANGUAGES = ['English', 'Hindi', 'Marathi', 'Gujarati', 'Tamil', 'Telugu', 'Kannada', 'Bengali', 'Urdu']
 const SPECIALTIES = ['General Dentistry', 'Orthodontics', 'Endodontics', 'Periodontology', 'Prosthodontics', 'Oral Surgery', 'Pediatric Dentistry', 'Cosmetic Dentistry', 'Implantology', 'Oral Medicine']
@@ -20,6 +19,7 @@ export default function EditProfilePage() {
   const [dentistId, setDentistId] = useState('')
   const [slug, setSlug] = useState('')
   const [qrDataUrl, setQrDataUrl] = useState('')
+  const [siteBase, setSiteBase] = useState('https://dentistinmumbai.in')
 
   const [form, setForm] = useState({
     name: '', clinic_name: '', qualifications: '', experience_years: '',
@@ -37,13 +37,14 @@ export default function EditProfilePage() {
 
       const { data: dentist } = await supabase
         .from('dentists')
-        .select('id, slug, name, clinic_name, qualifications, experience_years, bio, phone, whatsapp, website, address, consultation_fee, mci_number, emi_available, languages, specialties, maps_embed')
+        .select('id, slug, name, clinic_name, qualifications, experience_years, bio, phone, whatsapp, website, address, consultation_fee, mci_number, emi_available, languages, specialties, maps_embed, city')
         .eq('email', user.email)
         .single()
 
       if (dentist) {
         setDentistId(dentist.id)
         setSlug(dentist.slug || '')
+        setSiteBase(`https://${getCityBySlug((dentist as any).city).domain}`)
         setForm({
           name: dentist.name || '',
           clinic_name: dentist.clinic_name || '',
@@ -75,14 +76,14 @@ export default function EditProfilePage() {
   useEffect(() => {
     if (!slug) return
     let cancelled = false
-    QRCode.toDataURL(`${SITE_BASE}/book/${slug}`, {
+    QRCode.toDataURL(`${siteBase}/book/${slug}`, {
       width: 512,
       margin: 2,
       errorCorrectionLevel: 'H',
       color: { dark: '#0F1923', light: '#FFFFFF' },
     }).then(url => { if (!cancelled) setQrDataUrl(url) }).catch(() => {})
     return () => { cancelled = true }
-  }, [slug])
+  }, [slug, siteBase])
 
   function downloadQr() {
     if (!qrDataUrl) return
@@ -95,7 +96,7 @@ export default function EditProfilePage() {
   }
 
   function shareOnWhatsApp() {
-    const bookingUrl = `${SITE_BASE}/book/${slug}`
+    const bookingUrl = `${siteBase}/book/${slug}`
     const lines = [
       `Book your appointment with ${form.clinic_name || form.name || 'us'}:`,
       bookingUrl,
@@ -276,7 +277,7 @@ export default function EditProfilePage() {
           </div>
           <div>
             <label style={labelStyle}>Clinic Address</label>
-            <textarea value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} placeholder="Full clinic address including area, Mumbai, PIN" rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
+            <textarea value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} placeholder="Full clinic address including area, city, PIN" rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
           </div>
           <div>
             <label style={labelStyle}>Google Maps Embed Code</label>
@@ -358,9 +359,9 @@ export default function EditProfilePage() {
               <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 Booking link
               </div>
-              <a href={`${SITE_BASE}/book/${slug}`} target="_blank" rel="noopener noreferrer"
+              <a href={`${siteBase}/book/${slug}`} target="_blank" rel="noopener noreferrer"
                 style={{ display: 'inline-block', fontSize: 13, color: 'var(--blue)', fontWeight: 600, marginBottom: 14, wordBreak: 'break-all' }}>
-                {`${SITE_BASE}/book/${slug}`}
+                {`${siteBase}/book/${slug}`}
               </a>
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                 <button type="button" onClick={downloadQr} disabled={!qrDataUrl}

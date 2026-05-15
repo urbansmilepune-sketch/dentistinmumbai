@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
   if (action === 'decline') {
     const { data: declineReg, error: declineRegErr } = await admin_db
       .from('dentist_registrations')
-      .select('name, clinic_name, email')
+      .select('name, clinic_name, email, city')
       .eq('id', registration_id)
       .single()
     if (declineRegErr || !declineReg) {
@@ -94,6 +94,7 @@ export async function POST(request: NextRequest) {
       clinic_name: declineReg.clinic_name,
       to_email: declineReg.email,
       reason,
+      city: normalizeCity((declineReg as any).city),
     }).catch(err => console.error('[admin/registrations decline] decline email failed', err))
 
     return NextResponse.json({ success: true })
@@ -281,6 +282,7 @@ export async function POST(request: NextRequest) {
     slug,
     to_email: reg.email,
     selected_plan: plan,
+    city,
   }).catch(err => console.error('[admin/registrations approve] approval email failed', err))
 
   return NextResponse.json({ success: true, slug })

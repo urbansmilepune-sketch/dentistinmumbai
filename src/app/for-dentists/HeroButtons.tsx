@@ -8,9 +8,11 @@ interface HeroButtonsProps {
   areaNames: string[]
   orange?: boolean
   large?: boolean
+  cityName?: string
+  citySlug?: string
 }
 
-export default function HeroButtons({ listedCount, areaNames, orange, large }: HeroButtonsProps) {
+export default function HeroButtons({ listedCount, areaNames, orange, large, cityName, citySlug }: HeroButtonsProps) {
   const [modalOpen, setModalOpen] = useState(false)
   const btnSize = large ? { padding: '16px 36px', fontSize: 17 } : { padding: '13px 28px', fontSize: 15 }
 
@@ -46,6 +48,8 @@ export default function HeroButtons({ listedCount, areaNames, orange, large }: H
         onClose={() => setModalOpen(false)}
         foundingNumber={listedCount}
         areas={areaNames}
+        cityName={cityName}
+        citySlug={citySlug}
       />
     </>
   )

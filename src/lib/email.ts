@@ -1,9 +1,21 @@
 import { Resend } from 'resend'
+import { CITY_CONFIGS, DEFAULT_CITY, type CitySlug } from '@/config/cities'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
 const FROM_EMAIL = 'hello@dentistinmumbai.in'
 const ADMIN_EMAIL = 'dentistinmumbaiapp@gmail.com'
+
+/**
+ * Resolve a CitySlug-ish input to a CityConfig with sensible fallback.
+ * Email callers pass the city slug they have on the row (or omit it for
+ * legacy data), and we use that to brand every template.
+ */
+function resolveCity(v: string | null | undefined) {
+  const slug = (v && Object.prototype.hasOwnProperty.call(CITY_CONFIGS, v) ? v : DEFAULT_CITY) as CitySlug
+  const cfg = CITY_CONFIGS[slug]
+  return { ...cfg, origin: `https://${cfg.domain}` }
+}
 
 export async function sendRegistrationEmailToAdmin(data: {
   name: string
@@ -13,7 +25,9 @@ export async function sendRegistrationEmailToAdmin(data: {
   email: string
   qualification: string
   ref_no: string
+  city?: string
 }) {
+  const city = resolveCity(data.city)
   return resend.emails.send({
     from: FROM_EMAIL,
     to: ADMIN_EMAIL,
@@ -22,20 +36,21 @@ export async function sendRegistrationEmailToAdmin(data: {
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
         <div style="background: #0057A8; padding: 20px; border-radius: 10px 10px 0 0; text-align: center;">
           <h1 style="color: white; margin: 0; font-size: 22px;">New Dentist Registration</h1>
-          <p style="color: rgba(255,255,255,0.8); margin: 8px 0 0;">dentistinmumbai.in</p>
+          <p style="color: rgba(255,255,255,0.8); margin: 8px 0 0;">${city.domain}</p>
         </div>
         <div style="background: #f8faff; padding: 24px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 10px 10px;">
           <table style="width: 100%; border-collapse: collapse;">
             <tr><td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #64748b; width: 40%;">Reference</td><td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; font-weight: bold; color: #0057A8;">${data.ref_no}</td></tr>
             <tr><td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #64748b;">Name</td><td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; font-weight: bold;">${data.name}</td></tr>
             <tr><td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #64748b;">Clinic</td><td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0;">${data.clinic_name}</td></tr>
+            <tr><td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #64748b;">City</td><td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0;">${city.cityName}</td></tr>
             <tr><td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #64748b;">Area</td><td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0;">${data.area}</td></tr>
             <tr><td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #64748b;">Phone</td><td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0;">${data.phone}</td></tr>
             <tr><td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #64748b;">Email</td><td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0;">${data.email}</td></tr>
             <tr><td style="padding: 10px 0; color: #64748b;">Qualification</td><td style="padding: 10px 0;">${data.qualification}</td></tr>
           </table>
           <div style="margin-top: 24px; text-align: center;">
-            <a href="https://www.dentistinmumbai.in/admin" style="background: #0057A8; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold;">Review in Admin Panel →</a>
+            <a href="${city.origin}/admin" style="background: #0057A8; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold;">Review in Admin Panel →</a>
           </div>
         </div>
       </div>
@@ -48,8 +63,10 @@ export async function sendNewRegistrationAdminAlert(data: {
   clinic_name: string
   area: string
   phone: string
+  city?: string
 }) {
-  const summary = `New dentist registration: ${data.name}, ${data.clinic_name}, ${data.area}, ${data.phone}. Approve here: https://www.dentistinmumbai.in/admin`
+  const city = resolveCity(data.city)
+  const summary = `New dentist registration: ${data.name}, ${data.clinic_name}, ${data.area}, ${data.phone}. Approve here: ${city.origin}/admin`
   return resend.emails.send({
     from: FROM_EMAIL,
     to: ADMIN_EMAIL,
@@ -58,7 +75,7 @@ export async function sendNewRegistrationAdminAlert(data: {
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
         <p style="font-size: 15px; color: #0F1923; line-height: 1.6; margin: 0 0 18px;">${summary.replace('Approve here:', '<br/><br/>Approve here:')}</p>
-        <a href="https://www.dentistinmumbai.in/admin" style="background: #0057A8; color: #fff; padding: 12px 22px; border-radius: 8px; text-decoration: none; font-weight: 700; display: inline-block;">Open Admin Panel →</a>
+        <a href="${city.origin}/admin" style="background: #0057A8; color: #fff; padding: 12px 22px; border-radius: 8px; text-decoration: none; font-weight: 700; display: inline-block;">Open Admin Panel →</a>
       </div>
     `,
   })
@@ -71,16 +88,18 @@ export async function sendRegistrationEmailToDentist(data: {
   phone: string
   ref_no: string
   to_email: string
+  city?: string
 }) {
+  const city = resolveCity(data.city)
   return resend.emails.send({
     from: FROM_EMAIL,
     to: data.to_email,
-    subject: `Welcome to DentistInMumbai.in — Your Registration is Confirmed!`,
+    subject: `Welcome to ${city.domain} — Your Registration is Confirmed!`,
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
         <div style="background: linear-gradient(135deg, #003F7A, #0057A8); padding: 32px 20px; border-radius: 10px 10px 0 0; text-align: center;">
           <h1 style="color: white; margin: 0; font-size: 26px;">Welcome, ${data.name.split(' ')[0]}! 🎉</h1>
-          <p style="color: rgba(255,255,255,0.85); margin: 10px 0 0; font-size: 15px;">Your registration on dentistinmumbai.in is confirmed</p>
+          <p style="color: rgba(255,255,255,0.85); margin: 10px 0 0; font-size: 15px;">Your registration on ${city.domain} is confirmed</p>
         </div>
         <div style="background: #fff; padding: 32px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 10px 10px;">
           <div style="background: #E8F3FF; border: 1px solid #BFDBFE; border-radius: 10px; padding: 20px; text-align: center; margin-bottom: 24px;">
@@ -104,11 +123,11 @@ export async function sendRegistrationEmailToDentist(data: {
           </div>
           <div style="margin-top: 28px; text-align: center; padding-top: 20px; border-top: 1px solid #e2e8f0;">
             <p style="color: #64748b; font-size: 13px; margin-bottom: 16px;">Once your profile is live, you can manage it from your dashboard</p>
-            <a href="https://www.dentistinmumbai.in/for-dentists/login" style="background: #FF6135; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 15px;">Access Your Dashboard →</a>
+            <a href="${city.origin}/for-dentists/login" style="background: #FF6135; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 15px;">Access Your Dashboard →</a>
           </div>
           <div style="margin-top: 24px; text-align: center;">
             <p style="color: #94a3b8; font-size: 12px;">Questions? WhatsApp us at <a href="https://wa.me/917719903232" style="color: #0057A8;">+91 7719903232</a></p>
-            <p style="color: #94a3b8; font-size: 12px; margin-top: 4px;">© 2026 dentistinmumbai.in · A Dentaura Prime LLP initiative</p>
+            <p style="color: #94a3b8; font-size: 12px; margin-top: 4px;">© ${new Date().getFullYear()} ${city.domain} · A Dentaura Prime LLP initiative</p>
           </div>
         </div>
       </div>
@@ -121,9 +140,9 @@ export async function sendDeclineEmail(data: {
   clinic_name: string
   to_email: string
   reason: string | null
+  city?: string
 }) {
-  // Reason is admin free-form text; render in a pre-wrap block so newlines
-  // survive and any stray HTML chars don't break the layout.
+  const city = resolveCity(data.city)
   const safeReason = (data.reason || '').trim()
   const reasonBlock = safeReason
     ? `
@@ -136,27 +155,27 @@ export async function sendDeclineEmail(data: {
   return resend.emails.send({
     from: FROM_EMAIL,
     to: data.to_email,
-    subject: 'Update on your DentistInMumbai.in registration',
+    subject: `Update on your ${city.domain} registration`,
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
         <div style="background: linear-gradient(135deg, #475569, #0F1923); padding: 32px 20px; border-radius: 10px 10px 0 0; text-align: center;">
           <h1 style="color: white; margin: 0; font-size: 24px;">Registration Update</h1>
-          <p style="color: rgba(255,255,255,0.85); margin: 10px 0 0; font-size: 14px;">dentistinmumbai.in</p>
+          <p style="color: rgba(255,255,255,0.85); margin: 10px 0 0; font-size: 14px;">${city.domain}</p>
         </div>
         <div style="background: #fff; padding: 32px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 10px 10px;">
           <p style="color: #374151; font-size: 15px;">Dear ${data.name},</p>
-          <p style="color: #374151; font-size: 15px; line-height: 1.6;">Thank you for your interest in listing <strong>${data.clinic_name}</strong> on dentistinmumbai.in. After reviewing your registration, we are unable to approve your application at this time.</p>
+          <p style="color: #374151; font-size: 15px; line-height: 1.6;">Thank you for your interest in listing <strong>${data.clinic_name}</strong> on ${city.domain}. After reviewing your registration, we are unable to approve your application at this time.</p>
           ${reasonBlock}
           <p style="color: #374151; font-size: 15px; line-height: 1.6;">If you believe this was a mistake, or if you can address the points raised above, you are welcome to submit a fresh registration. Our team is also happy to discuss your application directly — please reach out and we will help where we can.</p>
           <div style="background: #f8faff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 18px 20px; margin: 22px 0;">
             <p style="margin: 0 0 8px; color: #0F1923; font-size: 14px; font-weight: bold;">Next steps</p>
-            <p style="margin: 0 0 6px; color: #374151; font-size: 14px; line-height: 1.6;">• Reapply: <a href="https://www.dentistinmumbai.in/for-dentists/register" style="color: #0057A8;">dentistinmumbai.in/for-dentists/register</a></p>
-            <p style="margin: 0; color: #374151; font-size: 14px; line-height: 1.6;">• Contact us: <a href="mailto:dentistinmumbaiapp@gmail.com" style="color: #0057A8;">dentistinmumbaiapp@gmail.com</a></p>
+            <p style="margin: 0 0 6px; color: #374151; font-size: 14px; line-height: 1.6;">• Reapply: <a href="${city.origin}/for-dentists/register" style="color: #0057A8;">${city.domain}/for-dentists/register</a></p>
+            <p style="margin: 0; color: #374151; font-size: 14px; line-height: 1.6;">• Contact us: <a href="mailto:${ADMIN_EMAIL}" style="color: #0057A8;">${ADMIN_EMAIL}</a></p>
           </div>
           <p style="color: #374151; font-size: 15px; line-height: 1.6;">We appreciate the time you took to apply and wish you the very best with your practice.</p>
-          <p style="color: #374151; font-size: 15px; margin-top: 20px;">Warm regards,<br/><strong>The DentistInMumbai.in team</strong></p>
+          <p style="color: #374151; font-size: 15px; margin-top: 20px;">Warm regards,<br/><strong>The ${city.domain} team</strong></p>
           <div style="margin-top: 28px; padding-top: 20px; border-top: 1px solid #e2e8f0; text-align: center;">
-            <p style="color: #94a3b8; font-size: 12px; margin: 0;">© 2026 dentistinmumbai.in · A Dentaura Prime LLP initiative</p>
+            <p style="color: #94a3b8; font-size: 12px; margin: 0;">© ${new Date().getFullYear()} ${city.domain} · A Dentaura Prime LLP initiative</p>
           </div>
         </div>
       </div>
@@ -170,9 +189,11 @@ export async function sendProfileReminderEmail(data: {
   completion_pct: number
   missing: Array<{ label: string; href: string }>
   unsubscribe_url: string
+  city?: string
 }) {
+  const city = resolveCity(data.city)
   const missingRows = data.missing.map(item => `
-    <a href="https://www.dentistinmumbai.in${item.href}" style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; text-decoration: none; margin-bottom: 8px;">
+    <a href="${city.origin}${item.href}" style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; text-decoration: none; margin-bottom: 8px;">
       <span style="display: inline-block; width: 24px; height: 24px; border-radius: 50%; background: #FEE2E2; color: #991B1B; text-align: center; line-height: 24px; font-size: 14px; font-weight: bold; flex-shrink: 0;">✗</span>
       <span style="color: #0F1923; font-size: 14px; font-weight: 600; flex: 1;">${item.label}</span>
       <span style="color: #0057A8; font-size: 13px; font-weight: 600;">Fix →</span>
@@ -182,7 +203,7 @@ export async function sendProfileReminderEmail(data: {
   return resend.emails.send({
     from: FROM_EMAIL,
     to: data.to_email,
-    subject: 'Your DentistInMumbai.in profile needs attention 🦷',
+    subject: `Your ${city.domain} profile needs attention 🦷`,
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
         <div style="background: linear-gradient(135deg, #003F7A, #0057A8); padding: 28px 20px; border-radius: 10px 10px 0 0; text-align: center;">
@@ -200,14 +221,14 @@ export async function sendProfileReminderEmail(data: {
           ${missingRows}
 
           <div style="text-align: center; margin-top: 24px;">
-            <a href="https://www.dentistinmumbai.in/for-dentists/dashboard" style="background: #FF6135; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 15px;">Open My Dashboard →</a>
+            <a href="${city.origin}/for-dentists/dashboard" style="background: #FF6135; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 15px;">Open My Dashboard →</a>
           </div>
 
           <div style="margin-top: 28px; padding-top: 18px; border-top: 1px solid #e2e8f0; text-align: center;">
             <p style="color: #94a3b8; font-size: 12px; margin: 0 0 6px;">
               Don't want profile reminders? <a href="${data.unsubscribe_url}" style="color: #64748b; text-decoration: underline;">Unsubscribe</a>
             </p>
-            <p style="color: #94a3b8; font-size: 12px; margin: 0;">© 2026 dentistinmumbai.in · A Dentaura Prime LLP initiative</p>
+            <p style="color: #94a3b8; font-size: 12px; margin: 0;">© ${new Date().getFullYear()} ${city.domain} · A Dentaura Prime LLP initiative</p>
           </div>
         </div>
       </div>
@@ -221,7 +242,9 @@ export async function sendApprovalEmail(data: {
   slug: string
   to_email: string
   selected_plan?: 'monthly' | 'annual' | null
+  city?: string
 }) {
+  const city = resolveCity(data.city)
   const planCopy = data.selected_plan === 'annual'
     ? { label: 'Annual', price: '₹9,999/year' }
     : data.selected_plan === 'monthly'
@@ -233,25 +256,25 @@ export async function sendApprovalEmail(data: {
           <div style="background: linear-gradient(135deg, #FFF7ED 0%, #FEF3C7 100%); border: 1.5px solid #FDE68A; border-radius: 10px; padding: 20px; margin-bottom: 20px;">
             <p style="margin: 0 0 8px; color: #7C2D12; font-size: 15px; font-weight: bold;">⭐ Your Gold ${planCopy.label} plan is ready to activate</p>
             <p style="margin: 0 0 14px; color: #7C2D12; font-size: 14px; line-height: 1.6;">You selected <strong>Gold ${planCopy.label} — ${planCopy.price}</strong> at registration. Click below to complete payment and unlock priority placement, full analytics, and PMS tools.</p>
-            <a href="https://www.dentistinmumbai.in/for-dentists/dashboard/upgrade?plan=${data.selected_plan}" style="display: inline-block; background: #FF6135; color: white; padding: 11px 22px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 14px;">Activate Gold ${planCopy.label} →</a>
+            <a href="${city.origin}/for-dentists/dashboard/upgrade?plan=${data.selected_plan}" style="display: inline-block; background: #FF6135; color: white; padding: 11px 22px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 14px;">Activate Gold ${planCopy.label} →</a>
           </div>`
     : ''
 
   return resend.emails.send({
     from: FROM_EMAIL,
     to: data.to_email,
-    subject: `🎉 Your DentistInMumbai.in profile is LIVE!`,
+    subject: `🎉 Your ${city.domain} profile is LIVE!`,
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
         <div style="background: linear-gradient(135deg, #00A878, #0057A8); padding: 32px 20px; border-radius: 10px 10px 0 0; text-align: center;">
           <h1 style="color: white; margin: 0; font-size: 26px;">Your Profile is Live! 🎉</h1>
-          <p style="color: rgba(255,255,255,0.85); margin: 10px 0 0;">Patients can now find and book you on dentistinmumbai.in</p>
+          <p style="color: rgba(255,255,255,0.85); margin: 10px 0 0;">Patients can now find and book you on ${city.domain}</p>
         </div>
         <div style="background: #fff; padding: 32px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 10px 10px;">
           <p style="color: #374151; font-size: 15px;">Dear ${data.name},</p>
-          <p style="color: #374151; font-size: 15px;">Great news! Your clinic <strong>${data.clinic_name}</strong> is now live on dentistinmumbai.in and patients can find and book you directly.</p>
+          <p style="color: #374151; font-size: 15px;">Great news! Your clinic <strong>${data.clinic_name}</strong> is now live on ${city.domain} and patients can find and book you directly.</p>
           <div style="text-align: center; margin: 28px 0;">
-            <a href="https://www.dentistinmumbai.in/dentist/${data.slug}" style="background: #0057A8; color: white; padding: 14px 28px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 15px;">View Your Live Profile →</a>
+            <a href="${city.origin}/dentist/${data.slug}" style="background: #0057A8; color: white; padding: 14px 28px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 15px;">View Your Live Profile →</a>
           </div>${planBlock}
           <div style="background: #f8faff; border-radius: 10px; padding: 20px; margin-bottom: 20px;">
             <h3 style="margin-top: 0; color: #0F1923;">Complete your profile to get more patients:</h3>
@@ -263,10 +286,10 @@ export async function sendApprovalEmail(data: {
             </ul>
           </div>
           <div style="text-align: center;">
-            <a href="https://www.dentistinmumbai.in/for-dentists/login" style="background: #FF6135; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: bold;">Complete Your Profile →</a>
+            <a href="${city.origin}/for-dentists/login" style="background: #FF6135; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: bold;">Complete Your Profile →</a>
           </div>
           <div style="margin-top: 24px; text-align: center;">
-            <p style="color: #94a3b8; font-size: 12px;">© 2026 dentistinmumbai.in · A Dentaura Prime LLP initiative</p>
+            <p style="color: #94a3b8; font-size: 12px;">© ${new Date().getFullYear()} ${city.domain} · A Dentaura Prime LLP initiative</p>
           </div>
         </div>
       </div>

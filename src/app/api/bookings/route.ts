@@ -6,6 +6,7 @@
 //   MSG91_SENDER_ID                — DLT-registered 6-char header passed as `sender` in the flow body
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { getCityBySlug } from '@/config/cities'
 
 function generateRef(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
@@ -69,7 +70,7 @@ export async function POST(request: NextRequest) {
 
     const reference_no = generateRef()
 
-    const { data: dentist } = await supabase.from('dentists').select('name, phone, whatsapp, clinic_name').eq('id', dentist_id).single()
+    const { data: dentist } = await supabase.from('dentists').select('name, phone, whatsapp, clinic_name, city').eq('id', dentist_id).single()
 
     let treatmentName = 'General Consultation'
     if (treatment_id) {
@@ -86,7 +87,8 @@ export async function POST(request: NextRequest) {
     if (dentist) {
       const dentistPhone = dentist.whatsapp || dentist.phone
       const formattedDate = new Date(appt_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
-      const message = `🦷 New Appointment — dentistinmumbai.in\n\nRef: ${reference_no}\nPatient: ${patient_name}\nPhone: ${patient_phone}\nTreatment: ${treatmentName}\nDate: ${formattedDate} at ${time_slot}${notes ? `\nNote: ${notes}` : ''}\n\nManage: dentistinmumbai.in/for-dentists/dashboard`
+      const cityCfg = getCityBySlug((dentist as any).city)
+      const message = `🦷 New Appointment — ${cityCfg.domain}\n\nRef: ${reference_no}\nPatient: ${patient_name}\nPhone: ${patient_phone}\nTreatment: ${treatmentName}\nDate: ${formattedDate} at ${time_slot}${notes ? `\nNote: ${notes}` : ''}\n\nManage: ${cityCfg.domain}/for-dentists/dashboard`
       if (dentistPhone) await notifyDentist(dentistPhone, message)
     }
 

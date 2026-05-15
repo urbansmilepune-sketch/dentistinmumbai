@@ -6,9 +6,10 @@ import { useRouter } from 'next/navigation'
 interface SearchBarProps {
   areas: { name: string; slug: string }[]
   treatments: { name: string; slug: string }[]
+  cityName?: string
 }
 
-export default function SearchBar({ areas, treatments }: SearchBarProps) {
+export default function SearchBar({ areas, treatments, cityName = 'Mumbai' }: SearchBarProps) {
   const router = useRouter()
   const [area, setArea] = useState('')
   const [treatment, setTreatment] = useState('')
@@ -33,9 +34,9 @@ export default function SearchBar({ areas, treatments }: SearchBarProps) {
             value={area}
             onChange={e => setArea(e.target.value)}
             onKeyDown={handleKeyDown}
-            aria-label="Select area in Mumbai"
+            aria-label={`Select area in ${cityName}`}
           >
-            <option value="">All areas in Mumbai</option>
+            <option value="">All areas in {cityName}</option>
             {areas.map(a => (
               <option key={a.slug} value={a.slug}>{a.name}</option>
             ))}

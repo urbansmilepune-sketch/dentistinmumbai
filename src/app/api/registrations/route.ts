@@ -64,13 +64,14 @@ export async function POST(request: NextRequest) {
 
     // Admin notifications: pre-existing branded emails + new short alert email
     // + a wa.me click-to-chat ping so the admin gets a WhatsApp pop on their phone.
-    const adminMsg = `New dentist registration: ${name}, ${clinic_name}, ${area}, ${phone}. Approve here: https://www.dentistinmumbai.in/admin`
+    const cityDomain = CITY_CONFIGS[cityValue].domain
+    const adminMsg = `New dentist registration: ${name}, ${clinic_name}, ${area}, ${phone}. Approve here: https://${cityDomain}/admin`
     const waUrl = `https://wa.me/${ADMIN_WHATSAPP}?text=${encodeURIComponent(adminMsg)}`
 
     Promise.all([
-      sendRegistrationEmailToAdmin({ name, clinic_name, area, phone, email, qualification, ref_no }),
-      sendRegistrationEmailToDentist({ name, clinic_name, area, phone, ref_no, to_email: email }),
-      sendNewRegistrationAdminAlert({ name, clinic_name, area, phone }),
+      sendRegistrationEmailToAdmin({ name, clinic_name, area, phone, email, qualification, ref_no, city: cityValue }),
+      sendRegistrationEmailToDentist({ name, clinic_name, area, phone, ref_no, to_email: email, city: cityValue }),
+      sendNewRegistrationAdminAlert({ name, clinic_name, area, phone, city: cityValue }),
       fetch(waUrl, { method: 'GET' }).catch(() => null),
     ]).catch(err => console.error('Admin notification failed:', err))
 

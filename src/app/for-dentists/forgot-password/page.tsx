@@ -1,21 +1,27 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { getCityByDomain, CITY_CONFIGS, DEFAULT_CITY, type CityConfig } from '@/config/cities'
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
   const [sent, setSent] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [cityConfig, setCityConfig] = useState<CityConfig>(CITY_CONFIGS[DEFAULT_CITY])
+  useEffect(() => { setCityConfig(getCityByDomain(window.location.hostname)) }, [])
+  const brandTld = '.' + cityConfig.domain.split('.').slice(1).join('.')
 
   async function handleSubmit() {
     if (!email) { setError('Please enter your email address'); return }
     setLoading(true); setError('')
     const supabase = createClient()
+    // Send the password-reset back to the current city's domain so the user
+    // lands on the same brand they came from.
     const { error: authError } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: 'https://www.dentistinmumbai.in/for-dentists/reset-password',
+      redirectTo: `${window.location.origin}/for-dentists/reset-password`,
     })
     setLoading(false)
     if (authError) { setError('Could not send reset email. Please try again.'); return }
@@ -26,7 +32,7 @@ export default function ForgotPasswordPage() {
     <div style={{ minHeight: '100vh', background: 'var(--bg)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
       <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', marginBottom: 32 }}>
         <div style={{ width: 36, height: 36, background: 'var(--blue)', borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontFamily: 'var(--font-heading)', fontSize: 18 }}>D</div>
-        <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, color: 'var(--text)' }}>DentistInMumbai<span style={{ color: 'var(--blue)' }}>.in</span></span>
+        <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, color: 'var(--text)' }}>DentistIn{cityConfig.cityName.replace(/\s+/g, '')}<span style={{ color: 'var(--blue)' }}>{brandTld}</span></span>
       </Link>
 
       <div style={{ background: '#fff', borderRadius: 20, border: '1px solid var(--border)', padding: '40px', width: '100%', maxWidth: 420 }}>

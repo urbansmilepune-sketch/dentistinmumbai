@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
+import { getCityByDomain, CITY_CONFIGS, DEFAULT_CITY, type CityConfig } from '@/config/cities'
 
 export default function AdminLoginPage() {
   const [email, setEmail] = useState('')
@@ -11,6 +12,8 @@ export default function AdminLoginPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const router = useRouter()
+  const [cityConfig, setCityConfig] = useState<CityConfig>(CITY_CONFIGS[DEFAULT_CITY])
+  useEffect(() => { setCityConfig(getCityByDomain(window.location.hostname)) }, [])
 
   async function handleLogin() {
     if (!email || !password) { setError('Enter email and password'); return }
@@ -26,7 +29,7 @@ export default function AdminLoginPage() {
       <div style={{ width: '100%', maxWidth: 400 }}>
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <h1 style={{ fontFamily: 'sans-serif', fontWeight: 800, fontSize: 24 }}>Admin Login</h1>
-          <p style={{ color: '#64748B', fontSize: 14, marginTop: 4 }}>DentistInMumbai.in — Restricted</p>
+          <p style={{ color: '#64748B', fontSize: 14, marginTop: 4 }}>{cityConfig.domain} — Restricted</p>
         </div>
         <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #E2E8F0', padding: 28 }}>
           <div style={{ marginBottom: 16 }}>

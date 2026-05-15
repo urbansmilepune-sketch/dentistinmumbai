@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { getCityByDomain, CITY_CONFIGS, DEFAULT_CITY, type CityConfig } from '@/config/cities'
 
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: '📊' },
@@ -33,6 +34,8 @@ interface AdminShellProps {
 export default function AdminShell({ activeSection, onSectionChange, stats }: AdminShellProps) {
   const router = useRouter()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [cityConfig, setCityConfig] = useState<CityConfig>(CITY_CONFIGS[DEFAULT_CITY])
+  useEffect(() => { setCityConfig(getCityByDomain(window.location.hostname)) }, [])
 
   async function handleLogout() {
     const supabase = createClient()
@@ -45,7 +48,7 @@ export default function AdminShell({ activeSection, onSectionChange, stats }: Ad
       {/* Logo */}
       <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
         <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 15, color: '#fff' }}>
-          DentistInMumbai.in
+          {cityConfig.domain}
         </div>
         <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>Admin Panel</div>
       </div>

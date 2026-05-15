@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import SignaturePad, { type SignaturePadHandle } from '@/components/SignaturePad'
+import { getCityBySlug } from '@/config/cities'
 
 type FormType = 'implant' | 'extraction' | 'rct' | 'whitening'
 
@@ -94,7 +95,7 @@ type FormRow = {
 }
 
 type Patient = { id: string; name: string; phone: string | null; age: number | null; gender: string | null }
-type Dentist = { id: string; name: string | null; clinic_name: string | null; phone: string | null; whatsapp: string | null; areas: { name: string | null } | null }
+type Dentist = { id: string; name: string | null; clinic_name: string | null; phone: string | null; whatsapp: string | null; city: string | null; areas: { name: string | null } | null }
 
 export default function ConsentFormsPage() {
   const router = useRouter()
@@ -121,7 +122,7 @@ export default function ConsentFormsPage() {
       if (!user) { router.push('/for-dentists/login'); return }
       const { data: dentistRow } = await supabase
         .from('dentists')
-        .select('id, name, clinic_name, phone, whatsapp, areas(name)')
+        .select('id, name, clinic_name, phone, whatsapp, city, areas(name)')
         .eq('email', user.email)
         .single()
       if (!dentistRow) { router.push('/for-dentists/login'); return }
@@ -228,7 +229,7 @@ export default function ConsentFormsPage() {
     doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(80, 80, 80)
     const subParts: string[] = []
     if (dentist.name && dentist.clinic_name) subParts.push(dentist.name)
-    if (dentist.areas?.name) subParts.push(`${dentist.areas.name}, Mumbai`)
+    if (dentist.areas?.name) subParts.push(`${dentist.areas.name}, ${getCityBySlug(dentist.city).cityName}`)
     if (dentist.phone || dentist.whatsapp) subParts.push(`Phone: ${dentist.phone || dentist.whatsapp}`)
     doc.text(subParts.join(' · '), MARGIN, cursorY)
     cursorY += 16
@@ -298,7 +299,7 @@ export default function ConsentFormsPage() {
     for (let i = 1; i <= pageCount; i++) {
       doc.setPage(i)
       doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(150, 150, 150)
-      doc.text(`Powered by dentistinmumbai.in · Form ID: ${form.id.slice(0, 8)}`, PAGE_W / 2, PAGE_H - MARGIN / 2, { align: 'center' })
+      doc.text(`Powered by ${getCityBySlug(dentist.city).domain} · Form ID: ${form.id.slice(0, 8)}`, PAGE_W / 2, PAGE_H - MARGIN / 2, { align: 'center' })
     }
 
     doc.save(`consent-${activeType}-${patient.name.replace(/\s+/g, '-').toLowerCase()}.pdf`)

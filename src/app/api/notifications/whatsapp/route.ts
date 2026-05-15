@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getCityBySlug } from '@/config/cities'
 
 // WhatsApp notification via WhatsApp Business API / Twilio / WATI
 // For now uses a simple WhatsApp link approach
@@ -9,14 +10,15 @@ const ADMIN_WHATSAPP = '917719903232'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { type, dentist_phone, dentist_name, patient_name, patient_phone, treatment, area, reference } = body
+    const { type, dentist_phone, dentist_name, patient_name, patient_phone, treatment, area, reference, city } = body
+    const cityCfg = getCityBySlug(city)
 
     let message = ''
 
     if (type === 'new_appointment') {
-      message = `🦷 *New Appointment — dentistinmumbai.in*\n\nRef: ${reference}\nPatient: ${patient_name}\nPhone: ${patient_phone}\nTreatment: ${treatment || 'General'}\n\nReply to confirm.`
+      message = `🦷 *New Appointment — ${cityCfg.domain}*\n\nRef: ${reference}\nPatient: ${patient_name}\nPhone: ${patient_phone}\nTreatment: ${treatment || 'General'}\n\nReply to confirm.`
     } else if (type === 'new_enquiry') {
-      message = `💬 *New Patient Enquiry — dentistinmumbai.in*\n\nPatient: ${patient_name}\nPhone: ${patient_phone}\nLooking for: ${treatment || 'General consultation'}\nArea: ${area}\n\nCall them back!`
+      message = `💬 *New Patient Enquiry — ${cityCfg.domain}*\n\nPatient: ${patient_name}\nPhone: ${patient_phone}\nLooking for: ${treatment || 'General consultation'}\nArea: ${area}\n\nCall them back!`
     } else if (type === 'new_registration') {
       message = `🏅 *New Dentist Registration*\n\nName: ${dentist_name}\nPhone: ${dentist_phone}\nRef: ${reference}\n\nReview in admin panel.`
     }

@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { getCityByDomain, CITY_CONFIGS, DEFAULT_CITY, type CityConfig } from '@/config/cities'
 
 export default function DentistLoginPage() {
   const router = useRouter()
@@ -14,6 +15,11 @@ export default function DentistLoginPage() {
   const [loading, setLoading] = useState(false)
   const [gLoading, setGLoading] = useState(false)
   const [error, setError] = useState('')
+  const [cityConfig, setCityConfig] = useState<CityConfig>(CITY_CONFIGS[DEFAULT_CITY])
+  useEffect(() => { setCityConfig(getCityByDomain(window.location.hostname)) }, [])
+  const brandLeft = cityConfig.domain.split('.')[0]
+  const brandTld = '.' + cityConfig.domain.split('.').slice(1).join('.')
+  const brandLeftPretty = `DentistIn${cityConfig.cityName.replace(/\s+/g, '')}`
 
   const supabase = createClient()
 
@@ -47,7 +53,7 @@ async function handleGoogle() {
       <div style={{ display: 'none', width: '40%', flexDirection: 'column', justifyContent: 'space-between', padding: '40px', background: 'linear-gradient(145deg, #003F7A, #0057A8)' }} className="login-panel">
         <div>
           <Link href="/" style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, color: '#fff', textDecoration: 'none' }}>
-            DentistIn<span style={{ color: '#FF6135' }}>Mumbai</span>.in
+            DentistIn<span style={{ color: '#FF6135' }}>{cityConfig.cityName.replace(/\s+/g, '')}</span>{brandTld}
           </Link>
         </div>
         <div>
@@ -75,7 +81,7 @@ async function handleGoogle() {
           {/* Mobile logo */}
           <div style={{ marginBottom: 32, textAlign: 'center' }}>
             <Link href="/" style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, color: 'var(--blue)', textDecoration: 'none' }}>
-              DentistIn<span style={{ color: '#FF6135' }}>Mumbai</span>.in
+              DentistIn<span style={{ color: '#FF6135' }}>{cityConfig.cityName.replace(/\s+/g, '')}</span>{brandTld}
             </Link>
           </div>
 
@@ -142,7 +148,7 @@ async function handleGoogle() {
           </button>
 
           <p style={{ textAlign: 'center', fontSize: 13, color: 'var(--muted)', marginTop: 24 }}>
-            New to DentistInMumbai?{' '}
+            New to {brandLeftPretty}?{' '}
             <Link href="/for-dentists" style={{ color: 'var(--blue)', fontWeight: 600 }}>Create your free listing →</Link>
           </p>
         </div>

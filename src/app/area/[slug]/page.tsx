@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
-import { getCityBySlug } from '@/config/cities'
+import { getCityBySlug, cityBrandName, cityBrandTld } from '@/config/cities'
 import TreatmentNavTabs from './TreatmentNavTabs'
 import QuickFilters from './QuickFilters'
 import ShowMoreButton from './ShowMoreButton'
@@ -64,10 +64,10 @@ function getFAQs(areaName: string, dentistCount: number) {
   ]
 }
 
-function getSEOContent(areaName: string, zone: string, dentistCount: number) {
+function getSEOContent(areaName: string, zone: string, dentistCount: number, cityName: string, domain: string) {
   return {
-    intro: `${areaName} is one of Mumbai's most sought-after residential and commercial localities, and its dental care landscape reflects that diversity. From boutique smile design studios to multi-specialty dental hospitals, ${areaName} offers a comprehensive range of dental services for residents and visitors alike. Whether you need a routine cleaning, orthodontic treatment, or full-mouth rehabilitation, finding the right dentist in ${areaName} is now easier than ever with DentistInMumbai.in.`,
-    para2: `The dental clinics in ${areaName} are staffed by experienced professionals trained at top Indian dental colleges and abroad. Many clinics in ${areaName} have invested in modern equipment — digital X-rays, CAD/CAM crown milling, laser dentistry, and intra-oral cameras — ensuring that patients receive world-class care without having to travel to South Mumbai or Bandra. With ${dentistCount || 'multiple'} verified dentists currently listed in ${areaName}, you can compare fees, check availability, and book appointments instantly.`,
+    intro: `${areaName} is one of ${cityName}'s most sought-after residential and commercial localities, and its dental care landscape reflects that diversity. From boutique smile design studios to multi-specialty dental hospitals, ${areaName} offers a comprehensive range of dental services for residents and visitors alike. Whether you need a routine cleaning, orthodontic treatment, or full-mouth rehabilitation, finding the right dentist in ${areaName} is now easier than ever with ${domain}.`,
+    para2: `The dental clinics in ${areaName} are staffed by experienced professionals trained at top Indian dental colleges and abroad. Many clinics in ${areaName} have invested in modern equipment — digital X-rays, CAD/CAM crown milling, laser dentistry, and intra-oral cameras — ensuring that patients receive world-class care without having to travel across ${cityName}. With ${dentistCount || 'multiple'} verified dentists currently listed in ${areaName}, you can compare fees, check availability, and book appointments instantly.`,
   }
 }
 
@@ -120,7 +120,7 @@ export default async function AreaPage({ params }: { params: Promise<{ slug: str
   const nearbyAreas = (allAreas || []).filter(a => a.slug !== slug && a.zone === area.zone).slice(0, 6)
   const topSidebarDentists = dentistList.filter(d => d.tier === 'featured' || d.tier === 'gold').slice(0, 4)
   const faqs = getFAQs(area.name, area.dentist_count || dentistList.length)
-  const seoContent = getSEOContent(area.name, area.zone, area.dentist_count || dentistList.length)
+  const seoContent = getSEOContent(area.name, area.zone, area.dentist_count || dentistList.length, city.cityName, city.domain)
   const zoneColor = ZONE_COLORS[area.zone] || 'var(--blue)'
 
   // JSON-LD schemas
@@ -165,7 +165,7 @@ export default async function AreaPage({ params }: { params: Promise<{ slug: str
         <nav className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 68 }}>
           <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ width: 36, height: 36, background: 'var(--blue)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontFamily: 'var(--font-heading)', fontSize: 18 }}>D</div>
-            <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17 }}>DentistInMumbai<span style={{ color: 'var(--blue)' }}>.in</span></span>
+            <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17 }}>{cityBrandName(city)}<span style={{ color: 'var(--blue)' }}>{cityBrandTld(city)}</span></span>
           </Link>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Link href="/dentists" style={{ padding: '8px 16px', fontWeight: 500, fontSize: 14, color: 'var(--text-secondary)' }}>Find Dentists</Link>
@@ -319,7 +319,7 @@ export default async function AreaPage({ params }: { params: Promise<{ slug: str
                   How to Choose a Dentist in {area.name}
                 </h3>
                 <p style={{ fontSize: 15, color: 'var(--text-secondary)', lineHeight: 1.8, marginBottom: 28 }}>
-                  When choosing a dentist in {area.name}, verify their MCI registration number, check their specialisation relative to your treatment need, and read at least 10 patient reviews. Fee transparency is also important — a trustworthy clinic will give you a written treatment plan with costs before starting any procedure. All dentists on DentistInMumbai.in have been manually verified before listing.
+                  When choosing a dentist in {area.name}, verify their MCI registration number, check their specialisation relative to your treatment need, and read at least 10 patient reviews. Fee transparency is also important — a trustworthy clinic will give you a written treatment plan with costs before starting any procedure. All dentists on {city.domain} have been manually verified before listing.
                 </p>
 
                 {/* Quick Facts Table */}
@@ -441,14 +441,14 @@ export default async function AreaPage({ params }: { params: Promise<{ slug: str
         <div className="container">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
             <Link href="/" style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, color: '#fff', fontSize: 15 }}>
-              DentistInMumbai.in
+              {city.domain}
             </Link>
             <div style={{ display: 'flex', gap: 20 }}>
               <Link href="/dentists" style={{ fontSize: 13 }}>Find Dentists</Link>
               <Link href="/for-dentists" style={{ fontSize: 13 }}>For Dentists</Link>
               <Link href="/about" style={{ fontSize: 13 }}>About</Link>
             </div>
-            <p style={{ fontSize: 13 }}>© {new Date().getFullYear()} DentistInMumbai.in</p>
+            <p style={{ fontSize: 13 }}>© {new Date().getFullYear()} {city.domain}</p>
           </div>
         </div>
       </footer>

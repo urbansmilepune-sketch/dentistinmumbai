@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { getCityByDomain, CITY_CONFIGS, DEFAULT_CITY, type CityConfig } from '@/config/cities'
 
 declare global {
   interface Window {
@@ -31,6 +32,8 @@ export default function GoldCheckoutButton({ color, plan = 'monthly', label }: P
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [cityConfig, setCityConfig] = useState<CityConfig>(CITY_CONFIGS[DEFAULT_CITY])
+  useEffect(() => { setCityConfig(getCityByDomain(window.location.hostname)) }, [])
 
   async function handlePay() {
     setError('')
@@ -60,7 +63,7 @@ export default function GoldCheckoutButton({ color, plan = 'monthly', label }: P
       key: order.key_id,
       amount: order.amount,
       currency: order.currency,
-      name: 'DentistInMumbai.in',
+      name: cityConfig.domain,
       description: order.plan_label || (plan === 'annual' ? 'Gold Plan — Annual (365 days)' : 'Gold Plan — Monthly (30 days)'),
       order_id: order.order_id,
       prefill: { name: order.dentist_name, email: order.dentist_email },
