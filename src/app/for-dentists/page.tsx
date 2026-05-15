@@ -84,7 +84,7 @@ export default async function ForDentistsPage() {
       <header style={{ background: '#fff', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 100 }}>
         <nav className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 68 }}>
           <Link href="/" style={{ display: 'flex', alignItems: 'center' }}>
-            <img src="/logo.svg" alt="DentistInMumbai.in" style={{ height: 40, width: 'auto', display: 'block' }} />
+            <img src="/logo.svg" alt="DentistInMumbai.in" style={{ height: 32, width: 'auto', display: 'block' }} />
           </Link>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <Link href="/dentists" style={{ padding: '8px 16px', fontWeight: 500, fontSize: 14, color: 'var(--text-secondary)' }}>For Patients →</Link>

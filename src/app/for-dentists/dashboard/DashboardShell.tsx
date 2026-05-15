@@ -73,7 +73,7 @@ export default function DashboardShell({ dentist, completionPct, children }: Pro
       {/* Logo */}
       <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid var(--border)' }}>
         <Link href="/" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none' }}>
-          <img src="/logo.svg" alt="DentistInMumbai" style={{ height: 36, width: 'auto', display: 'block' }} />
+          <img src="/logo.svg" alt="DentistInMumbai" style={{ height: 32, width: 'auto', display: 'block' }} />
         </Link>
       </div>
 
