@@ -1,12 +1,21 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { getCityByDomain } from '@/config/cities'
 
 export async function proxy(request: NextRequest) {
   if (request.nextUrl.pathname.startsWith('/auth/')) {
     return NextResponse.next()
   }
 
-  let response = NextResponse.next({ request })
+  // Resolve city from the request host (Vercel forwards the original host via
+  // x-forwarded-host) and inject x-city-slug so downstream server components
+  // and route handlers can branch by city without re-parsing the host.
+  const host = request.headers.get('x-forwarded-host') || request.headers.get('host')
+  const city = getCityByDomain(host)
+  const forwardedHeaders = new Headers(request.headers)
+  forwardedHeaders.set('x-city-slug', city.citySlug)
+
+  let response = NextResponse.next({ request: { headers: forwardedHeaders } })
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -18,7 +27,7 @@ export async function proxy(request: NextRequest) {
         },
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-          response = NextResponse.next({ request })
+          response = NextResponse.next({ request: { headers: forwardedHeaders } })
           cookiesToSet.forEach(({ name, value, options }) =>
             response.cookies.set(name, value, options)
           )

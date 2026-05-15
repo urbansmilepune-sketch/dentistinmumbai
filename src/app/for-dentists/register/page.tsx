@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { getCityByDomain, DEFAULT_CITY, type CitySlug } from '@/config/cities'
 
 // Mirrors every row in the public.areas table (audited 2026-05-14, expanded
 // with all Western/Central/Harbour line stations). Keep in sync — the admin
@@ -39,6 +40,7 @@ export default function RegisterPage() {
   const [error, setError] = useState('')
   const [prefilledFromLogin, setPrefilledFromLogin] = useState(false)
   const [planFromUrl, setPlanFromUrl] = useState<Plan | null>(null)
+  const [city, setCity] = useState<CitySlug>(DEFAULT_CITY)
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -49,6 +51,10 @@ export default function RegisterPage() {
     }
     const planParam = parsePlan(params.get('plan'))
     if (planParam) setPlanFromUrl(planParam)
+
+    // City is inferred from the current hostname so a dentist registering on
+    // dentistinpune.in lands a row tagged city='pune'.
+    setCity(getCityByDomain(window.location.hostname).citySlug)
   }, [])
 
   function update(key: string, value: string) {
@@ -69,6 +75,7 @@ export default function RegisterPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...form,
+          city,
           selected_plan: planFromUrl,
           founding_number: Math.floor(Math.random() * 250) + 1,
         }),
@@ -192,6 +199,10 @@ export default function RegisterPage() {
                     <label style={labelStyle}>MCI / DCI Registration No. *</label>
                     <input value={form.mci_registration} onChange={e => update('mci_registration', e.target.value)} placeholder="Your registration number" style={inputStyle} />
                   </div>
+
+                  {/* Hidden city field — set on mount from window.location.hostname so the
+                      backend can tag the row with the correct city. */}
+                  <input type="hidden" name="city" value={city} readOnly />
 
                   {error && (
                     <div style={{ padding: '12px 16px', background: '#FEE2E2', border: '1px solid #FECACA', borderRadius: 10, fontSize: 13, color: '#991B1B' }}>

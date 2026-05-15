@@ -1,5 +1,7 @@
 import type { Metadata } from 'next'
 import { Sora, DM_Sans } from 'next/font/google'
+import { headers } from 'next/headers'
+import { getCityBySlug } from '@/config/cities'
 import './globals.css'
 
 // Self-hosted via next/font. The `variable` prop sets a CSS variable on
@@ -21,35 +23,52 @@ const dmSans = DM_Sans({
   variable: '--font-body',
 })
 
-export const metadata: Metadata = {
-  title: {
-    default: 'Dentist in Mumbai | Find Best Dentists Near You',
-    template: '%s | DentistInMumbai.in',
-  },
-  description: 'Find verified dentists in Mumbai by area and treatment. Compare fees, read reviews, and book appointments online.',
-  icons: {
-    icon: '/favicon.svg',
-    shortcut: '/favicon.svg',
-    apple: '/favicon.svg',
-  },
-verification: {
-    google: '1T1WaA-nRtq8w-GycybOoricYbjTqql3D-au0VzFm98',
-  },
-  keywords: ['dentist in mumbai', 'dental clinic mumbai', 'best dentist mumbai', 'dental implants mumbai', 'teeth whitening mumbai'],
-  metadataBase: new URL('https://dentistinmumbai.in'),
-  openGraph: {
-    type: 'website',
-    locale: 'en_IN',
-    url: 'https://dentistinmumbai.in',
-    siteName: 'DentistInMumbai.in',
-  },
-  twitter: {
-    card: 'summary_large_image',
-  },
-  robots: {
-    index: true,
-    follow: true,
-  },
+export async function generateMetadata(): Promise<Metadata> {
+  const h = await headers()
+  const city = getCityBySlug(h.get('x-city-slug'))
+  const origin = `https://${city.domain}`
+  const cityLower = city.cityName.toLowerCase()
+  const description = `Find verified dentists in ${city.cityName} by area and treatment. Compare fees, read reviews, and book appointments online.`
+
+  return {
+    title: {
+      default: city.metaTitle,
+      template: `%s | ${city.domain}`,
+    },
+    description,
+    icons: {
+      icon: '/favicon.svg',
+      shortcut: '/favicon.svg',
+      apple: '/favicon.svg',
+    },
+    verification: {
+      google: '1T1WaA-nRtq8w-GycybOoricYbjTqql3D-au0VzFm98',
+    },
+    keywords: [
+      `dentist in ${cityLower}`,
+      `dental clinic ${cityLower}`,
+      `best dentist ${cityLower}`,
+      `dental implants ${cityLower}`,
+      `teeth whitening ${cityLower}`,
+    ],
+    metadataBase: new URL(origin),
+    alternates: { canonical: origin },
+    openGraph: {
+      type: 'website',
+      locale: 'en_IN',
+      url: origin,
+      siteName: city.domain,
+      title: city.metaTitle,
+      description,
+    },
+    twitter: {
+      card: 'summary_large_image',
+    },
+    robots: {
+      index: true,
+      follow: true,
+    },
+  }
 }
 
 export default function RootLayout({

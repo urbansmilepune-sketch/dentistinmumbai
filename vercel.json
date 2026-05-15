@@ -4,5 +4,21 @@
       "path": "/api/cron/profile-reminder",
       "schedule": "0 3 * * *"
     }
+  ],
+  "_comment": "Domain attachment is performed in the Vercel dashboard or via `vercel domains add <host>`; the _domains array below is the canonical list of every apex host that should resolve to this project.",
+  "_domains": [
+    { "city": "mumbai",        "domain": "dentistinmumbai.in" },
+    { "city": "navimumbai",    "domain": "dentistinnavimumbai.in" },
+    { "city": "pune",          "domain": "dentistinpune.in" },
+    { "city": "thane",         "domain": "dentistinthane.com" },
+    { "city": "nashik",        "domain": "dentistinnashik.com" },
+    { "city": "nagpur",        "domain": "dentistinnagpur.in" },
+    { "city": "kolhapur",      "domain": "dentistinkolhapur.in" },
+    { "city": "goa",           "domain": "dentistingoa.in" },
+    { "city": "surat",         "domain": "dentistinsurat.com" },
+    { "city": "sambhajinagar", "domain": "dentistinsambhajinagar.com" },
+    { "city": "rajkot",        "domain": "dentistinrajkot.in" },
+    { "city": "ahmedabad",     "domain": "dentistinahmedabad.com" },
+    { "city": "jamnagar",      "domain": "dentistinjamnagar.in" }
   ]
 }

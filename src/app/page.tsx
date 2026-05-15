@@ -1,14 +1,9 @@
-import type { Metadata } from 'next'
 import Link from 'next/link'
+import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import SearchBar from '@/components/SearchBar'
 import FaqAccordion from '@/components/FaqAccordion'
-
-export const metadata: Metadata = {
-  title: 'Find Best Dentists in Mumbai | Book Appointment Online',
-  description: 'Discover verified dentists across Mumbai — Bandra, Andheri, Juhu, Thane & more. Compare fees, read real reviews, and book appointments instantly.',
-  alternates: { canonical: 'https://dentistinmumbai.in' },
-}
+import { getCityBySlug } from '@/config/cities'
 
 const FAQ_ITEMS = [
   {
@@ -46,6 +41,8 @@ const ZONE_COLORS: Record<string, { bg: string; text: string; border: string }> 
 
 export default async function HomePage() {
   const supabase = await createClient()
+  const h = await headers()
+  const city = getCityBySlug(h.get('x-city-slug'))
 
   // Early-stage UX: until we cross PREMIUM_FLOOR active gold/featured
   // listings, the homepage shows every active dentist so new approvals
@@ -136,7 +133,7 @@ export default async function HomePage() {
 
           <div className="container" style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
             <div className="badge badge-blue" style={{ background: 'rgba(255,255,255,0.15)', color: '#fff', border: '1px solid rgba(255,255,255,0.25)', marginBottom: 20 }}>
-              🏆 Mumbai&apos;s Most Trusted Dental Directory
+              🏆 {city.cityName}&apos;s Most Trusted Dental Directory
             </div>
             <h1 style={{
               fontFamily: 'var(--font-heading)',
@@ -147,10 +144,10 @@ export default async function HomePage() {
               marginBottom: 20,
               lineHeight: 1.15,
             }}>
-              Find the Best Dentist<br />in Mumbai — <span style={{ color: '#7DD3FC' }}>Near You</span>
+              {city.heroTitle} — <span style={{ color: '#7DD3FC' }}>Near You</span>
             </h1>
             <p className="home-hero-sub" style={{ color: 'rgba(255,255,255,0.8)', fontSize: 18, maxWidth: 520, marginBottom: 40, lineHeight: 1.7 }}>
-              Verified dentists across all Mumbai areas. Real reviews, transparent fees, instant booking.
+              {city.heroSubtitle}. Real reviews, transparent fees, instant booking.
             </p>
 
             <SearchBar areas={areaList.map(a => ({ name: a.name, slug: a.slug }))} treatments={treatmentList.map(t => ({ name: t.name, slug: t.slug }))} />
