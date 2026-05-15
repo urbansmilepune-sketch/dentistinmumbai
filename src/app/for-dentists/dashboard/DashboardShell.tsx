@@ -72,9 +72,8 @@ export default function DashboardShell({ dentist, completionPct, children }: Pro
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#fff', borderRight: '1px solid var(--border)' }}>
       {/* Logo */}
       <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid var(--border)' }}>
-        <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 16, color: 'var(--blue)', textDecoration: 'none' }}>
+        <Link href="/" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none' }}>
           <img src="/logo.svg" alt="DentistInMumbai" style={{ height: 36, width: 'auto', display: 'block' }} />
-          <span>DentistIn<span style={{ color: '#FF6135' }}>Mumbai</span></span>
         </Link>
       </div>
 
