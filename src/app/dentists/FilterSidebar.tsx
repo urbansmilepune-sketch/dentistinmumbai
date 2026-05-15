@@ -4,16 +4,21 @@ import { useState, useTransition } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import NearMeButton from './NearMeButton'
 
-interface Area { name: string; slug: string; dentist_count: number }
+interface Area { name: string; slug: string; dentist_count: number; zone?: string | null }
 interface Treatment { name: string; slug: string }
 
 const SPECIALTIES = ['Implants', 'Orthodontics', 'Pediatric', 'Cosmetic', 'Oral Surgery']
 const LANGUAGES = ['Hindi', 'English', 'Marathi', 'Gujarati']
 
+// Stable ordering for Mumbai zone subheaders. Anything not in this list falls
+// to the end alphabetically, so a stray new zone won't disappear.
+const MUMBAI_ZONE_ORDER = ['Western', 'Central', 'Harbour', 'South', 'South Mumbai', 'Navi Mumbai']
+
 interface FilterSidebarProps {
   areas: Area[]
   treatments: Treatment[]
   hasCoords?: boolean
+  groupAreasByZone?: boolean
   activeFilters: {
     areas: string[]
     treatments: string[]
@@ -28,7 +33,7 @@ interface FilterSidebarProps {
   }
 }
 
-export default function FilterSidebar({ areas, treatments, hasCoords, activeFilters }: FilterSidebarProps) {
+export default function FilterSidebar({ areas, treatments, hasCoords, groupAreasByZone, activeFilters }: FilterSidebarProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [, startTransition] = useTransition()
@@ -126,19 +131,61 @@ export default function FilterSidebar({ areas, treatments, hasCoords, activeFilt
           onChange={e => setAreaSearch(e.target.value)}
           style={searchInputStyle}
         />
-        <div style={{ maxHeight: 200, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {filteredAreas.map(area => (
-            <label key={area.slug} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 4px', cursor: 'pointer', borderRadius: 6 }}>
-              <input
-                type="checkbox"
-                checked={activeFilters.areas.includes(area.slug)}
-                onChange={() => toggleArea(area.slug)}
-                style={{ accentColor: 'var(--blue)', width: 16, height: 16 }}
-              />
-              <span style={{ flex: 1, fontSize: 14 }}>{area.name}</span>
-              <span style={{ fontSize: 12, color: 'var(--muted)' }}>({area.dentist_count})</span>
-            </label>
-          ))}
+        <div style={{ maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {/* When zone grouping is on (Mumbai) AND search is empty, render
+              non-clickable zone subheaders above the matching areas. Typing in
+              the search box collapses back to a flat list so results aren't
+              broken up. */}
+          {groupAreasByZone && !areaSearch
+            ? (() => {
+                const byZone = new Map<string, Area[]>()
+                for (const a of filteredAreas) {
+                  const key = a.zone || 'Other'
+                  if (!byZone.has(key)) byZone.set(key, [])
+                  byZone.get(key)!.push(a)
+                }
+                const sortedZones = Array.from(byZone.keys()).sort((a, b) => {
+                  const ai = MUMBAI_ZONE_ORDER.indexOf(a)
+                  const bi = MUMBAI_ZONE_ORDER.indexOf(b)
+                  if (ai === -1 && bi === -1) return a.localeCompare(b)
+                  if (ai === -1) return 1
+                  if (bi === -1) return -1
+                  return ai - bi
+                })
+                return sortedZones.map(zone => (
+                  <div key={zone}>
+                    <div style={{
+                      fontSize: 11, fontWeight: 700, color: 'var(--muted)',
+                      textTransform: 'uppercase', letterSpacing: '0.06em',
+                      padding: '8px 4px 4px', marginTop: 4,
+                    }}>{zone === 'Other' ? zone : `${zone} Line`}</div>
+                    {byZone.get(zone)!.map(area => (
+                      <label key={area.slug} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 4px', cursor: 'pointer', borderRadius: 6 }}>
+                        <input
+                          type="checkbox"
+                          checked={activeFilters.areas.includes(area.slug)}
+                          onChange={() => toggleArea(area.slug)}
+                          style={{ accentColor: 'var(--blue)', width: 16, height: 16 }}
+                        />
+                        <span style={{ flex: 1, fontSize: 14 }}>{area.name}</span>
+                        <span style={{ fontSize: 12, color: 'var(--muted)' }}>({area.dentist_count})</span>
+                      </label>
+                    ))}
+                  </div>
+                ))
+              })()
+            : filteredAreas.map(area => (
+                <label key={area.slug} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 4px', cursor: 'pointer', borderRadius: 6 }}>
+                  <input
+                    type="checkbox"
+                    checked={activeFilters.areas.includes(area.slug)}
+                    onChange={() => toggleArea(area.slug)}
+                    style={{ accentColor: 'var(--blue)', width: 16, height: 16 }}
+                  />
+                  <span style={{ flex: 1, fontSize: 14 }}>{area.name}</span>
+                  <span style={{ fontSize: 12, color: 'var(--muted)' }}>({area.dentist_count})</span>
+                </label>
+              ))}
         </div>
       </FilterPanel>
 

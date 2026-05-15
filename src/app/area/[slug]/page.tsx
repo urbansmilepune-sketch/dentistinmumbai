@@ -203,7 +203,7 @@ export default async function AreaPage({ params }: { params: Promise<{ slug: str
               padding: '4px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600,
               background: 'rgba(255,255,255,0.12)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)',
             }}>
-              📍 {isMumbai && area.zone ? `${area.zone} · ${city.cityName}` : city.cityName}
+              📍 {isMumbai && area.zone ? `${area.zone} · ${city.cityName}` : area.name}
             </span>
           </div>
 

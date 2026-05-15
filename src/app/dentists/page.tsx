@@ -67,7 +67,7 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
 
   // Fetch filter data
   const [{ data: allAreas }, { data: allTreatments }] = await Promise.all([
-    supabase.from('areas').select('name, slug, dentist_count').eq('city', citySlug).order('dentist_count', { ascending: false }),
+    supabase.from('areas').select('name, slug, dentist_count, zone').eq('city', citySlug).order('dentist_count', { ascending: false }),
     supabase.from('treatments').select('name, slug').order('sort_order'),
   ])
 
@@ -276,9 +276,10 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
 
             {/* Sidebar */}
             <FilterSidebar
-              areas={(allAreas || []).map(a => ({ name: a.name, slug: a.slug, dentist_count: a.dentist_count || 0 }))}
+              areas={(allAreas || []).map(a => ({ name: a.name, slug: a.slug, dentist_count: a.dentist_count || 0, zone: (a as any).zone ?? null }))}
               treatments={(allTreatments || []).map(t => ({ name: t.name, slug: t.slug }))}
               hasCoords={hasCoords}
+              groupAreasByZone={city.citySlug === 'mumbai'}
               activeFilters={{
                 areas: areaFilter,
                 treatments: treatmentFilter,
