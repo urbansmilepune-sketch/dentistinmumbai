@@ -129,13 +129,12 @@ export default async function DashboardPage() {
     status: a.status,
   }))
 
-  // Onboarding checklist — 5 critical fields a dentist must fill before their
+  // Onboarding checklist — 4 critical fields a dentist must fill before their
   // profile is patient-ready. Card hides once everything is done.
   const completionItems = [
     { label: 'Profile photo',     done: !!dentist.profile_photo,                       href: '/for-dentists/dashboard/photos' },
-    { label: 'Working hours',     done: !!dentist.working_hours,                       href: '/for-dentists/dashboard/hours' },
-    { label: 'Add a treatment',   done: (treatmentCount || 0) >= 1,                    href: '/for-dentists/dashboard/treatments' },
     { label: 'Bio (20+ chars)',   done: !!(dentist.bio && dentist.bio.length > 20),    href: '/for-dentists/dashboard/profile' },
+    { label: 'Working hours',     done: !!dentist.working_hours,                       href: '/for-dentists/dashboard/hours' },
     { label: 'Phone number',      done: !!dentist.phone,                               href: '/for-dentists/dashboard/profile' },
   ]
   const pct = Math.round((completionItems.filter(i => i.done).length / completionItems.length) * 100)
@@ -156,6 +155,48 @@ export default async function DashboardPage() {
 
   return (
     <div>
+      {/* Onboarding checklist — appears first when profile is incomplete, hides at 100%. */}
+      {pct < 100 && (
+        <section style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '20px 24px', marginBottom: 20, boxShadow: '0 4px 14px rgba(15,25,35,0.05)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--blue)', marginBottom: 4 }}>Get started</div>
+              <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 18 }}>Finish setting up your profile</h2>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, color: 'var(--blue)' }}>{pct}%</span>
+              <span style={{ fontSize: 12, color: 'var(--muted)' }}>{completionItems.filter(i => i.done).length} of {completionItems.length} done</span>
+            </div>
+          </div>
+          <div style={{ height: 8, background: '#E2E8F0', borderRadius: 4, overflow: 'hidden', marginBottom: 14 }}>
+            <div style={{ height: '100%', width: `${pct}%`, background: 'linear-gradient(90deg, #0057A8, #00A878)', borderRadius: 4, transition: 'width 0.5s' }} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
+            {completionItems.map(item => (
+              <Link key={item.label} href={item.href} style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '10px 14px', borderRadius: 10,
+                background: item.done ? '#F0FDF4' : 'var(--bg)',
+                border: `1px solid ${item.done ? '#BBF7D0' : 'var(--border)'}`,
+                textDecoration: 'none',
+              }}>
+                <span style={{
+                  width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: item.done ? '#00A878' : '#fff',
+                  border: item.done ? 'none' : '1.5px solid #CBD5E1',
+                  color: '#fff', fontSize: 12, fontWeight: 800,
+                }}>{item.done ? '✓' : ''}</span>
+                <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: item.done ? '#166534' : 'var(--text)', textDecoration: item.done ? 'line-through' : 'none' }}>
+                  {item.label}
+                </span>
+                {!item.done && <span style={{ fontSize: 13, color: 'var(--blue)', fontWeight: 700 }}>→</span>}
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Today's Schedule */}
       <section style={{
         background: 'linear-gradient(135deg, #0057A8 0%, #003F7A 100%)',
@@ -263,26 +304,6 @@ export default async function DashboardPage() {
           <span style={{ fontSize: 24, opacity: 0.85, flexShrink: 0 }}>→</span>
         </Link>
       </div>
-
-      {/* Profile completion banner */}
-      {pct < 100 && (
-        <div style={{ background: 'var(--blue-light)', border: '1px solid #BFDBFE', borderRadius: 16, padding: '20px 24px', marginBottom: 24 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-            <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15 }}>Complete your profile</h3>
-            <span style={{ fontWeight: 800, fontSize: 18, color: 'var(--blue)' }}>{pct}%</span>
-          </div>
-          <div style={{ height: 6, background: '#BFDBFE', borderRadius: 3, overflow: 'hidden', marginBottom: 16 }}>
-            <div style={{ height: '100%', width: `${pct}%`, background: 'var(--blue)', borderRadius: 3, transition: 'width 0.5s' }} />
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {completionItems.filter(i => !i.done).map(item => (
-              <Link key={item.label} href={item.href} style={{ fontSize: 12, fontWeight: 500, padding: '4px 12px', background: '#fff', border: '1px solid #BFDBFE', borderRadius: 20, color: 'var(--blue)', textDecoration: 'none' }}>
-                + {item.label}
-              </Link>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 16, marginBottom: 24 }}>

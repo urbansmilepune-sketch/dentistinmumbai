@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { sendRegistrationEmailToAdmin, sendRegistrationEmailToDentist } from '@/lib/email'
+import { sendRegistrationEmailToAdmin, sendRegistrationEmailToDentist, sendNewRegistrationAdminAlert } from '@/lib/email'
+
+const ADMIN_WHATSAPP = '917719903232'
 
 function generateRef(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
@@ -52,10 +54,17 @@ export async function POST(request: NextRequest) {
 
     if (error) throw error
 
+    // Admin notifications: pre-existing branded emails + new short alert email
+    // + a wa.me click-to-chat ping so the admin gets a WhatsApp pop on their phone.
+    const adminMsg = `New dentist registration: ${name}, ${clinic_name}, ${area}, ${phone}. Approve here: https://www.dentistinmumbai.in/admin`
+    const waUrl = `https://wa.me/${ADMIN_WHATSAPP}?text=${encodeURIComponent(adminMsg)}`
+
     Promise.all([
       sendRegistrationEmailToAdmin({ name, clinic_name, area, phone, email, qualification, ref_no }),
       sendRegistrationEmailToDentist({ name, clinic_name, area, phone, ref_no, to_email: email }),
-    ]).catch(err => console.error('Email sending failed:', err))
+      sendNewRegistrationAdminAlert({ name, clinic_name, area, phone }),
+      fetch(waUrl, { method: 'GET' }).catch(() => null),
+    ]).catch(err => console.error('Admin notification failed:', err))
 
     return NextResponse.json({ ref_no: data.ref_no, success: true })
   } catch (error: any) {

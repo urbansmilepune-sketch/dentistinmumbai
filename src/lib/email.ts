@@ -43,6 +43,27 @@ export async function sendRegistrationEmailToAdmin(data: {
   })
 }
 
+export async function sendNewRegistrationAdminAlert(data: {
+  name: string
+  clinic_name: string
+  area: string
+  phone: string
+}) {
+  const summary = `New dentist registration: ${data.name}, ${data.clinic_name}, ${data.area}, ${data.phone}. Approve here: https://www.dentistinmumbai.in/admin`
+  return resend.emails.send({
+    from: FROM_EMAIL,
+    to: ADMIN_EMAIL,
+    subject: `🚨 New dentist registration — ${data.name}`,
+    text: summary,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
+        <p style="font-size: 15px; color: #0F1923; line-height: 1.6; margin: 0 0 18px;">${summary.replace('Approve here:', '<br/><br/>Approve here:')}</p>
+        <a href="https://www.dentistinmumbai.in/admin" style="background: #0057A8; color: #fff; padding: 12px 22px; border-radius: 8px; text-decoration: none; font-weight: 700; display: inline-block;">Open Admin Panel →</a>
+      </div>
+    `,
+  })
+}
+
 export async function sendRegistrationEmailToDentist(data: {
   name: string
   clinic_name: string
