@@ -12,6 +12,7 @@ interface AdminPageClientProps {
   reviews: any[]
   areas: any[]
   foundingConfig: any
+  analytics: any
 }
 
 function StatCard({ icon, label, value, color }: { icon: string; label: string; value: string | number; color?: string }) {
@@ -20,6 +21,54 @@ function StatCard({ icon, label, value, color }: { icon: string; label: string; 
       <div style={{ fontSize: 28, marginBottom: 8 }}>{icon}</div>
       <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 28, color: color || 'var(--text)' }}>{value}</div>
       <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 2 }}>{label}</div>
+    </div>
+  )
+}
+
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16, marginBottom: 12, color: 'var(--text)' }}>
+      {children}
+    </h2>
+  )
+}
+
+function MetricCard({ icon, label, value, sub, color }: { icon: string; label: string; value: string | number; sub?: string; color?: string }) {
+  return (
+    <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '18px 20px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <span style={{ fontSize: 22 }}>{icon}</span>
+      </div>
+      <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 26, color: color || 'var(--text)', lineHeight: 1.1 }}>{value}</div>
+      <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4, fontWeight: 600 }}>{label}</div>
+      {sub && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>{sub}</div>}
+    </div>
+  )
+}
+
+function LeaderboardCard({ title, rows, valueLabel }: { title: string; rows: { name: string; clinic: string | null; slug: string; value: number }[]; valueLabel: string }) {
+  return (
+    <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
+      <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15 }}>{title}</h3>
+        <span style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>{valueLabel}</span>
+      </div>
+      {rows.length === 0 ? (
+        <div style={{ padding: '24px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>No data yet.</div>
+      ) : (
+        <div>
+          {rows.map((r, i) => (
+            <div key={r.slug + i} style={{ display: 'grid', gridTemplateColumns: '24px 1fr auto', alignItems: 'center', gap: 10, padding: '10px 18px', borderTop: '1px solid var(--border)' }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: i < 3 ? '#F59E0B' : 'var(--muted)', textAlign: 'center' }}>#{i + 1}</span>
+              <a href={`/dentist/${r.slug}`} target="_blank" style={{ minWidth: 0, textDecoration: 'none' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</div>
+                {r.clinic && <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.clinic}</div>}
+              </a>
+              <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--blue)' }}>{r.value}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -49,7 +98,7 @@ function Badge({ status }: { status: string }) {
   )
 }
 
-export default function AdminPageClient({ stats, dentists, registrations, appointments, enquiries, reviews, areas, foundingConfig }: AdminPageClientProps) {
+export default function AdminPageClient({ stats, dentists, registrations, appointments, enquiries, reviews, areas, foundingConfig, analytics }: AdminPageClientProps) {
   const [section, setSection] = useState('dashboard')
   const [dentistList, setDentistList] = useState(dentists)
   const [reviewList, setReviewList] = useState(reviews)
@@ -197,6 +246,219 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* ANALYTICS */}
+        {section === 'analytics' && (
+          <div>
+            <div style={{ marginBottom: 24 }}>
+              <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 4 }}>Analytics</h1>
+              <p style={{ fontSize: 14, color: 'var(--muted)' }}>Platform health, revenue, engagement, and growth — all in one place.</p>
+            </div>
+
+            {/* ROW 1 — Platform Health */}
+            <SectionTitle>Platform Health</SectionTitle>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16, marginBottom: 28 }}>
+              <MetricCard
+                icon="📋"
+                label="Total Registrations"
+                value={analytics.totalRegistrations}
+                sub={`+${analytics.registrationsThisWeek} this week`}
+                color="var(--blue)"
+              />
+              <MetricCard
+                icon="⏳"
+                label="Pending Approvals"
+                value={analytics.pendingApprovals}
+                sub={analytics.pendingApprovals > 0 ? `Avg wait ${analytics.avgPendingWaitHrs.toFixed(1)} h` : 'All caught up'}
+                color="#F59E0B"
+              />
+              <MetricCard
+                icon="🦷"
+                label="Active Dentists"
+                value={analytics.activeDentists}
+                sub={`${stats.foundingPct.toFixed(0)}% of 250 founding slots`}
+                color="var(--green)"
+              />
+              <MetricCard
+                icon="👥"
+                label="Total Patients"
+                value={analytics.totalPatients}
+                sub="Across all clinics"
+                color="#7C3AED"
+              />
+            </div>
+
+            {/* ROW 2 — Revenue */}
+            <SectionTitle>Revenue</SectionTitle>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16, marginBottom: 28 }}>
+              <MetricCard
+                icon="💰"
+                label="Paid Dentists"
+                value={analytics.paidDentists}
+                sub={`${analytics.goldCount} gold · ${analytics.featuredCount} featured`}
+                color="#D97706"
+              />
+              <MetricCard
+                icon="📅"
+                label="MRR"
+                value={`₹${analytics.mrr.toLocaleString('en-IN')}`}
+                sub="Monthly recurring"
+                color="var(--green)"
+              />
+              <MetricCard
+                icon="🚀"
+                label="ARR"
+                value={`₹${analytics.arr.toLocaleString('en-IN')}`}
+                sub="Annual recurring"
+                color="var(--blue)"
+              />
+              <MetricCard
+                icon="🎯"
+                label="Conversion Rate"
+                value={`${analytics.conversionPct.toFixed(1)}%`}
+                sub="Paid / active dentists"
+                color="#EC4899"
+              />
+            </div>
+
+            {/* ROW 3 — Engagement (last 30 days) */}
+            <SectionTitle>Engagement <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>· last 30 days</span></SectionTitle>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16, marginBottom: 28 }}>
+              <MetricCard
+                icon="👁️"
+                label="Profile Views"
+                value={analytics.engagement.profile_views}
+                sub="Across all dentists"
+                color="var(--blue)"
+              />
+              <MetricCard
+                icon="💚"
+                label="WhatsApp Clicks"
+                value={analytics.engagement.whatsapp_clicks}
+                sub="Direct lead clicks"
+                color="#25D366"
+              />
+              <MetricCard
+                icon="📲"
+                label="Booking Clicks"
+                value={analytics.engagement.booking_clicks}
+                sub="Clicked Book Now"
+                color="#92400E"
+              />
+              <MetricCard
+                icon="📅"
+                label="Appointments Booked"
+                value={analytics.engagement.appointments_last30}
+                sub="Submitted via platform"
+                color="#0EA5E9"
+              />
+            </div>
+
+            {/* ROW 4 — Top Performers */}
+            <SectionTitle>Top Performers</SectionTitle>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, marginBottom: 28 }}>
+              <LeaderboardCard
+                title="Top 10 by Profile Views"
+                rows={(analytics.topByViews as any[]).map(d => ({
+                  name: d.name, clinic: d.clinic_name, slug: d.slug, value: d.profile_views || 0,
+                }))}
+                valueLabel="views"
+              />
+              <LeaderboardCard
+                title="Top 10 by Appointments"
+                rows={(analytics.topByAppointments as any[]).map(d => ({
+                  name: d.name, clinic: d.clinic_name, slug: d.slug, value: d.count,
+                }))}
+                valueLabel="appts"
+              />
+              <LeaderboardCard
+                title="Top 10 by WhatsApp Clicks"
+                rows={(analytics.topByWhatsApp as any[]).map(d => ({
+                  name: d.name, clinic: d.clinic_name, slug: d.slug, value: d.whatsapp_clicks || 0,
+                }))}
+                valueLabel="clicks"
+              />
+            </div>
+
+            {/* ROW 5 — Registration Funnel */}
+            <SectionTitle>Registration Funnel <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>· this week</span></SectionTitle>
+            <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '24px', marginBottom: 28 }}>
+              {(() => {
+                const f = analytics.funnel
+                const stages: { label: string; value: number; color: string }[] = [
+                  { label: 'Registered this week', value: f.registeredThisWeek, color: 'var(--blue)' },
+                  { label: 'Approved this week',   value: f.approvedThisWeek,   color: '#00A878' },
+                  { label: 'Pending approval',     value: f.pending,            color: '#F59E0B' },
+                  { label: 'Rejected this week',   value: f.rejectedThisWeek,   color: '#DC2626' },
+                ]
+                const maxVal = Math.max(1, ...stages.map(s => s.value))
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {stages.map(s => (
+                      <div key={s.label} style={{ display: 'grid', gridTemplateColumns: '180px 1fr 60px', alignItems: 'center', gap: 12 }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>{s.label}</span>
+                        <div style={{ height: 22, background: 'var(--bg)', borderRadius: 6, overflow: 'hidden', position: 'relative' }}>
+                          <div style={{ height: '100%', width: `${(s.value / maxVal) * 100}%`, background: s.color, borderRadius: 6, transition: 'width 0.4s', minWidth: s.value > 0 ? 4 : 0 }} />
+                        </div>
+                        <span style={{ fontSize: 16, fontWeight: 800, color: s.color, textAlign: 'right' }}>{s.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                )
+              })()}
+            </div>
+
+            {/* ROW 6 — Area Coverage */}
+            <SectionTitle>Area Coverage <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>· dentists per area</span></SectionTitle>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 16, marginBottom: 28 }}>
+              {/* Top areas */}
+              <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
+                <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15 }}>📍 Most Populated</h3>
+                  <span style={{ fontSize: 12, color: 'var(--muted)' }}>{(analytics.areas.populated as any[]).length} areas live</span>
+                </div>
+                {(analytics.areas.populated as any[]).length === 0 ? (
+                  <div style={{ padding: '24px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>No active areas yet.</div>
+                ) : (
+                  <div>
+                    {(() => {
+                      const top = (analytics.areas.populated as any[]).slice(0, 10)
+                      const maxCount = Math.max(1, ...top.map(a => a.dentist_count || 0))
+                      return top.map(a => (
+                        <div key={a.id} style={{ display: 'grid', gridTemplateColumns: '120px 1fr 40px', alignItems: 'center', gap: 10, padding: '10px 18px', borderTop: '1px solid var(--border)' }}>
+                          <span style={{ fontSize: 13, fontWeight: 600 }}>{a.name}</span>
+                          <div style={{ height: 14, background: 'var(--bg)', borderRadius: 4, overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${((a.dentist_count || 0) / maxCount) * 100}%`, background: 'var(--blue)', borderRadius: 4 }} />
+                          </div>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--blue)', textAlign: 'right' }}>{a.dentist_count || 0}</span>
+                        </div>
+                      ))
+                    })()}
+                  </div>
+                )}
+              </div>
+
+              {/* Opportunity (empty) areas */}
+              <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
+                <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15 }}>🎯 Opportunity Map</h3>
+                  <span style={{ fontSize: 12, color: 'var(--muted)' }}>{(analytics.areas.empty as any[]).length} areas with 0 dentists</span>
+                </div>
+                {(analytics.areas.empty as any[]).length === 0 ? (
+                  <div style={{ padding: '24px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>Every area has at least one dentist 🎉</div>
+                ) : (
+                  <div style={{ padding: '14px 18px', display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {(analytics.areas.empty as any[]).map(a => (
+                      <span key={a.id} style={{ fontSize: 12, padding: '4px 10px', background: '#FEF3C7', color: '#92400E', borderRadius: 12, fontWeight: 600 }}>
+                        {a.name}{a.zone ? ` · ${a.zone}` : ''}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
 
