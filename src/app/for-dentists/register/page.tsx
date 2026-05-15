@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { getCityByDomain, DEFAULT_CITY, type CitySlug } from '@/config/cities'
+import { getCityByDomain, CITY_CONFIGS, DEFAULT_CITY, type CitySlug, type CityConfig } from '@/config/cities'
 
 // Mirrors every row in the public.areas table (audited 2026-05-14, expanded
 // with all Western/Central/Harbour line stations). Keep in sync — the admin
@@ -40,7 +40,8 @@ export default function RegisterPage() {
   const [error, setError] = useState('')
   const [prefilledFromLogin, setPrefilledFromLogin] = useState(false)
   const [planFromUrl, setPlanFromUrl] = useState<Plan | null>(null)
-  const [city, setCity] = useState<CitySlug>(DEFAULT_CITY)
+  const [cityConfig, setCityConfig] = useState<CityConfig>(CITY_CONFIGS[DEFAULT_CITY])
+  const city: CitySlug = cityConfig.citySlug
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -54,7 +55,7 @@ export default function RegisterPage() {
 
     // City is inferred from the current hostname so a dentist registering on
     // dentistinpune.in lands a row tagged city='pune'.
-    setCity(getCityByDomain(window.location.hostname).citySlug)
+    setCityConfig(getCityByDomain(window.location.hostname))
   }, [])
 
   function update(key: string, value: string) {
@@ -141,7 +142,7 @@ export default function RegisterPage() {
                   List Your Clinic Free
                 </h1>
                 <p style={{ fontSize: 16, color: 'var(--muted)', lineHeight: 1.7, maxWidth: 480, margin: '0 auto' }}>
-                  Join Mumbai's fastest growing dental directory. Free forever for founding members. No credit card. No commission.
+                  Join {cityConfig.cityName}&apos;s fastest growing dental directory. Free forever for founding members. No credit card. No commission.
                 </p>
               </div>
 
@@ -180,7 +181,7 @@ export default function RegisterPage() {
                   </div>
 
                   <div>
-                    <label style={labelStyle}>Area in Mumbai *</label>
+                    <label style={labelStyle}>Area in {cityConfig.cityName} *</label>
                     <select value={form.area} onChange={e => update('area', e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
                       <option value="">Select your area</option>
                       {AREAS.map(a => <option key={a} value={a}>{a}</option>)}

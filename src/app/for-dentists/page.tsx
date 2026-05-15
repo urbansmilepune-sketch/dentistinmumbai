@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
+import { getCityBySlug } from '@/config/cities'
 import TickerBar from './TickerBar'
 import ExpoPricingSection from './ExpoPricingSection'
 import ProgressBar from './ProgressBar'
@@ -8,20 +10,28 @@ import HeroButtons from './HeroButtons'
 
 const UNLOCK_AT = 250
 
+export const dynamic = 'force-dynamic'
+
 export async function generateMetadata(): Promise<Metadata> {
   const supabase = await createClient()
-  const { count } = await supabase.from('dentists').select('*', { count: 'exact', head: true }).eq('is_active', true)
+  const h = await headers()
+  const city = getCityBySlug(h.get('x-city-slug'))
+  const { count } = await supabase
+    .from('dentists')
+    .select('*', { count: 'exact', head: true })
+    .eq('is_active', true)
+    .eq('city', city.citySlug)
   const listedCount = count || 0
-  const title = 'List Your Dental Clinic Free | dentistinmumbai.in'
-  const description = `Join ${listedCount} dentists already listed on Mumbai's fastest growing dental directory. Free forever. No commission. Get patient enquiries from day 1.`
-  const url = 'https://www.dentistinmumbai.in/for-dentists'
+  const title = `List Your Dental Clinic Free | ${city.domain}`
+  const description = `Join ${listedCount} dentists already listed on ${city.cityName}'s fastest growing dental directory. Free forever. No commission. Get patient enquiries from day 1.`
+  const url = `https://${city.domain}/for-dentists`
   return {
     title,
     description,
     alternates: { canonical: url },
     openGraph: {
       title, description, url,
-      siteName: 'dentistinmumbai.in',
+      siteName: city.domain,
       type: 'website',
       locale: 'en_IN',
     },
@@ -31,10 +41,12 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function ForDentistsPage() {
   const supabase = await createClient()
+  const h = await headers()
+  const city = getCityBySlug(h.get('x-city-slug'))
 
   const [{ count }, { data: areas }] = await Promise.all([
-    supabase.from('dentists').select('*', { count: 'exact', head: true }).eq('is_active', true),
-    supabase.from('areas').select('name').order('name'),
+    supabase.from('dentists').select('*', { count: 'exact', head: true }).eq('is_active', true).eq('city', city.citySlug),
+    supabase.from('areas').select('name').eq('city', city.citySlug).order('name'),
   ])
 
   const listedCount = count || 0
@@ -102,7 +114,7 @@ export default async function ForDentistsPage() {
           {/* Platform badge */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 20px', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 40, marginBottom: 28 }}>
             <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#FBBF24', animation: 'pulse 2s infinite' }} />
-            <span style={{ fontSize: 13, fontWeight: 600, color: '#FDE68A' }}>🏆 Mumbai&apos;s #1 Dental Practice Platform</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#FDE68A' }}>🏆 {city.cityName}&apos;s #1 Dental Practice Platform</span>
           </div>
 
           <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(2rem, 5vw, 3.25rem)', color: '#fff', maxWidth: 680, marginBottom: 20, lineHeight: 1.15 }}>
@@ -141,7 +153,7 @@ export default async function ForDentistsPage() {
           <div style={{ textAlign: 'center', marginBottom: 52 }}>
             <p style={{ color: 'var(--blue)', fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Why List on DentistInMumbai</p>
             <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(1.6rem, 3vw, 2.25rem)', maxWidth: 560, margin: '0 auto' }}>
-              Patients in Mumbai are searching. Make sure they find you.
+              Patients in {city.cityName} are searching. Make sure they find you.
             </h2>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 20 }}>

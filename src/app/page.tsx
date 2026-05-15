@@ -62,14 +62,15 @@ export default async function HomePage() {
     { data: allActiveDentists },
     { data: curatedDentists },
   ] = await Promise.all([
-    supabase.from('areas').select('id, name, slug, zone, dentist_count').order('dentist_count', { ascending: false }),
+    supabase.from('areas').select('id, name, slug, zone, dentist_count').eq('city', city.citySlug).order('dentist_count', { ascending: false }),
     supabase.from('treatments').select('id, name, slug, icon').order('sort_order'),
-    supabase.from('dentists').select('*', { count: 'exact', head: true }).eq('is_active', true).in('tier', ['gold', 'featured']),
-    supabase.from('dentists').select('*', { count: 'exact', head: true }).eq('is_active', true),
+    supabase.from('dentists').select('*', { count: 'exact', head: true }).eq('is_active', true).eq('city', city.citySlug).in('tier', ['gold', 'featured']),
+    supabase.from('dentists').select('*', { count: 'exact', head: true }).eq('is_active', true).eq('city', city.citySlug),
     supabase
       .from('dentists')
       .select(DENTIST_SELECT)
       .eq('is_active', true)
+      .eq('city', city.citySlug)
       .order('tier')
       .order('created_at', { ascending: false })
       .limit(6),
@@ -78,6 +79,7 @@ export default async function HomePage() {
       .select(DENTIST_SELECT)
       .eq('is_active', true)
       .eq('is_verified', true)
+      .eq('city', city.citySlug)
       .in('tier', ['featured', 'gold', 'silver'])
       .order('tier')
       .limit(6),
@@ -268,7 +270,7 @@ export default async function HomePage() {
               <p style={{ color: 'var(--blue)', fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Browse by Location</p>
               <h2 style={{ fontSize: 'clamp(1.5rem, 3vw, 2rem)', fontWeight: 800, marginBottom: 12 }}>Find Dentists in Your Area</h2>
               <p style={{ color: 'var(--muted)', fontSize: 16, maxWidth: 480, margin: '0 auto' }}>
-                Covering all major Mumbai areas — from Colaba to Borivali, Thane to Navi Mumbai.
+                Covering all major {city.cityName} areas.
               </p>
             </div>
 

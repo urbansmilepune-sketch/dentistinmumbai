@@ -1,22 +1,27 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
+import { getCityBySlug } from '@/config/cities'
 import FilterSidebar from './FilterSidebar'
 import DentistCard from './DentistCard'
 import Pagination from './Pagination'
 import SortSelect from './SortSelect'
 import { haversineKm } from '@/lib/distance'
 
-export const revalidate = 60
+// headers() forces dynamic rendering; ISR revalidate is therefore moot.
+export const dynamic = 'force-dynamic'
 
 export async function generateMetadata({ searchParams }: { searchParams: Promise<Record<string, string>> }): Promise<Metadata> {
   const params = await searchParams
+  const h = await headers()
+  const city = getCityBySlug(h.get('x-city-slug'))
   const area = params.area?.split(',')[0] || ''
   const treatment = params.treatment?.split(',')[0] || ''
-  const title = [treatment, area, 'Dentists in Mumbai'].filter(Boolean).join(' · ')
+  const title = [treatment, area, `Dentists in ${city.cityName}`].filter(Boolean).join(' · ')
   return {
     title,
-    description: `Find verified dentists in Mumbai${area ? ` in ${area}` : ''}${treatment ? ` for ${treatment}` : ''}. Compare fees, read reviews, book appointments.`,
+    description: `Find verified dentists in ${city.cityName}${area ? ` in ${area}` : ''}${treatment ? ` for ${treatment}` : ''}. Compare fees, read reviews, book appointments.`,
   }
 }
 
@@ -33,6 +38,9 @@ function parseCoord(v: string | undefined, range: number): number | null {
 export default async function DentistsPage({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   const params = await searchParams
   const supabase = await createClient()
+  const h = await headers()
+  const city = getCityBySlug(h.get('x-city-slug'))
+  const citySlug = city.citySlug
 
   // Parse filters
   const areaFilter = params.area ? params.area.split(',') : []
@@ -59,7 +67,7 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
 
   // Fetch filter data
   const [{ data: allAreas }, { data: allTreatments }] = await Promise.all([
-    supabase.from('areas').select('name, slug, dentist_count').order('dentist_count', { ascending: false }),
+    supabase.from('areas').select('name, slug, dentist_count').eq('city', citySlug).order('dentist_count', { ascending: false }),
     supabase.from('treatments').select('name, slug').order('sort_order'),
   ])
 
@@ -76,6 +84,7 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
       dentist_treatments(treatments(name, slug))
     `, { count: 'exact' })
     .eq('is_active', true)
+    .eq('city', citySlug)
 
   // Area filter
   if (areaFilter.length > 0) {
@@ -291,7 +300,7 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
               <div className="listing-topbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
                 <div>
                   <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18, marginBottom: 2 }}>
-                    {totalCount} Dentist{totalCount !== 1 ? 's' : ''} in Mumbai
+                    {totalCount} Dentist{totalCount !== 1 ? 's' : ''} in {city.cityName}
                     {activeAreaNames.length > 0 && <span style={{ color: 'var(--blue)' }}> · {activeAreaNames.join(', ')}</span>}
                   </h1>
                   <p style={{ fontSize: 13, color: 'var(--muted)' }}>

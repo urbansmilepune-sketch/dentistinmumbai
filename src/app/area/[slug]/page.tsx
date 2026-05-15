@@ -1,7 +1,9 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
+import { getCityBySlug } from '@/config/cities'
 import TreatmentNavTabs from './TreatmentNavTabs'
 import QuickFilters from './QuickFilters'
 import ShowMoreButton from './ShowMoreButton'
@@ -9,24 +11,27 @@ import CostGuide from './CostGuide'
 import AreaFAQAccordion from './AreaFAQAccordion'
 import DentistCard from '@/components/DentistCard'
 
-export const revalidate = 21600
-
-export async function generateStaticParams() {
-  const { createClient: sc } = await import('@supabase/supabase-js')
-  const supabase = sc(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
-  const { data } = await supabase.from('areas').select('slug')
-  return (data || []).map(a => ({ slug: a.slug }))
-}
+// headers()-based city resolution forces dynamic rendering. Previous
+// generateStaticParams + ISR have been removed; per-city traffic is small
+// enough that on-demand SSR with edge caching is fine.
+export const dynamic = 'force-dynamic'
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params
   const supabase = await createClient()
-  const { data: area } = await supabase.from('areas').select('name, dentist_count').eq('slug', slug).single()
+  const h = await headers()
+  const city = getCityBySlug(h.get('x-city-slug'))
+  const { data: area } = await supabase
+    .from('areas')
+    .select('name, dentist_count')
+    .eq('slug', slug)
+    .eq('city', city.citySlug)
+    .single()
   if (!area) return { title: 'Area Not Found' }
   return {
-    title: `Best Dentists in ${area.name}, Mumbai | dentistinmumbai.in`,
-    description: `Find top-rated, verified dentists in ${area.name}, Mumbai. Compare fees, read reviews, book appointments. ${area.dentist_count || 0}+ dentists listed.`,
-    alternates: { canonical: `https://www.dentistinmumbai.in/area/${slug}` },
+    title: `Best Dentists in ${area.name}, ${city.cityName} | ${city.domain}`,
+    description: `Find top-rated, verified dentists in ${area.name}, ${city.cityName}. Compare fees, read reviews, book appointments. ${area.dentist_count || 0}+ dentists listed.`,
+    alternates: { canonical: `https://${city.domain}/area/${slug}` },
   }
 }
 
@@ -76,16 +81,23 @@ const ZONE_COLORS: Record<string, string> = {
 export default async function AreaPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
   const supabase = await createClient()
+  const h = await headers()
+  const city = getCityBySlug(h.get('x-city-slug'))
+  const citySlug = city.citySlug
 
   const [{ data: area }, { data: allAreas }, { data: treatments }] = await Promise.all([
-    supabase.from('areas').select('*').eq('slug', slug).single(),
-    supabase.from('areas').select('id, name, slug, zone, dentist_count').order('dentist_count', { ascending: false }),
+    // Area slug + city pair — necessary because the same slug may exist in
+    // multiple cities (e.g. "central" in Mumbai and Pune).
+    supabase.from('areas').select('*').eq('slug', slug).eq('city', citySlug).single(),
+    supabase.from('areas').select('id, name, slug, zone, dentist_count').eq('city', citySlug).order('dentist_count', { ascending: false }),
     supabase.from('treatments').select('id, name, slug, icon').order('sort_order'),
   ])
 
   if (!area) notFound()
 
-  // Fetch dentists in this area
+  // Fetch dentists in this area (belt-and-suspenders city filter — area_id
+  // already encodes city, but explicit filter guards against any cross-city
+  // FK quirk).
   const { data: dentists } = await supabase
     .from('dentists')
     .select(`
@@ -97,6 +109,7 @@ export default async function AreaPage({ params }: { params: Promise<{ slug: str
     `)
     .eq('area_id', area.id)
     .eq('is_active', true)
+    .eq('city', citySlug)
     .order('tier')
     .order('is_verified', { ascending: false })
     .limit(20)
@@ -111,22 +124,23 @@ export default async function AreaPage({ params }: { params: Promise<{ slug: str
   const zoneColor = ZONE_COLORS[area.zone] || 'var(--blue)'
 
   // JSON-LD schemas
+  const origin = `https://${city.domain}`
   const breadcrumbSchema = {
     '@context': 'https://schema.org',
     '@type': 'BreadcrumbList',
     itemListElement: [
-      { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://www.dentistinmumbai.in' },
-      { '@type': 'ListItem', position: 2, name: 'Dentists', item: 'https://www.dentistinmumbai.in/dentists' },
-      { '@type': 'ListItem', position: 3, name: area.name, item: `https://www.dentistinmumbai.in/area/${slug}` },
+      { '@type': 'ListItem', position: 1, name: 'Home', item: origin },
+      { '@type': 'ListItem', position: 2, name: 'Dentists', item: `${origin}/dentists` },
+      { '@type': 'ListItem', position: 3, name: area.name, item: `${origin}/area/${slug}` },
     ],
   }
 
   const localBusinessSchema = {
     '@context': 'https://schema.org',
     '@type': 'MedicalBusiness',
-    name: `Best Dentists in ${area.name}, Mumbai`,
-    areaServed: `${area.name}, Mumbai`,
-    url: `https://www.dentistinmumbai.in/area/${slug}`,
+    name: `Best Dentists in ${area.name}, ${city.cityName}`,
+    areaServed: `${area.name}, ${city.cityName}`,
+    url: `${origin}/area/${slug}`,
   }
 
   const faqSchema = {
@@ -191,12 +205,12 @@ export default async function AreaPage({ params }: { params: Promise<{ slug: str
               padding: '4px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600,
               background: 'rgba(255,255,255,0.12)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)',
             }}>
-              📍 {area.zone} · Mumbai
+              📍 {area.zone} · {city.cityName}
             </span>
           </div>
 
           <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(1.8rem, 4vw, 2.8rem)', color: '#fff', marginBottom: 12, lineHeight: 1.2 }}>
-            Best Dentists in {area.name}, Mumbai
+            Best Dentists in {area.name}, {city.cityName}
           </h1>
           <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 16, maxWidth: 560, marginBottom: 32, lineHeight: 1.7 }}>
             Find top-rated, verified dental clinics in {area.name}. Compare fees, read reviews, book appointments instantly.
@@ -289,7 +303,7 @@ export default async function AreaPage({ params }: { params: Promise<{ slug: str
               {/* SEO Content Block */}
               <div style={{ marginTop: 56, padding: '40px', background: '#fff', borderRadius: 16, border: '1px solid var(--border)' }}>
                 <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, marginBottom: 20 }}>
-                  Dentists in {area.name}, Mumbai — Complete Guide
+                  Dentists in {area.name}, {city.cityName} — Complete Guide
                 </h2>
                 <p style={{ fontSize: 15, color: 'var(--text-secondary)', lineHeight: 1.8, marginBottom: 20 }}>{seoContent.intro}</p>
                 <p style={{ fontSize: 15, color: 'var(--text-secondary)', lineHeight: 1.8, marginBottom: 28 }}>{seoContent.para2}</p>
