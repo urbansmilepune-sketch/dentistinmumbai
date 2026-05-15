@@ -13,10 +13,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { createClient as createUserClient } from '@/lib/supabase/server'
 import { sendApprovalEmail, sendDeclineEmail } from '@/lib/email'
+import { CITY_CONFIGS, DEFAULT_CITY, type CitySlug } from '@/config/cities'
 
 type Plan = 'monthly' | 'annual'
 function normalizePlan(v: unknown): Plan | null {
   return v === 'monthly' || v === 'annual' ? v : null
+}
+
+function normalizeCity(v: unknown): CitySlug {
+  return typeof v === 'string' && Object.prototype.hasOwnProperty.call(CITY_CONFIGS, v) ? (v as CitySlug) : DEFAULT_CITY
 }
 
 function slugify(input: string): string {
@@ -99,15 +104,20 @@ export async function POST(request: NextRequest) {
   // Approve path: build (or refresh) the dentists row, fire the email.
   const { data: reg, error: regErr } = await admin_db
     .from('dentist_registrations')
-    .select('id, name, phone, email, clinic_name, area, qualification, mci_registration, selected_plan')
+    .select('id, name, phone, email, clinic_name, area, qualification, mci_registration, selected_plan, city')
     .eq('id', registration_id)
     .single()
   if (regErr || !reg) {
     console.error('[admin/registrations approve] registration fetch failed', { registration_id, regErr })
     return NextResponse.json({ error: 'Registration not found', detail: regErr?.message }, { status: 404 })
   }
+  // Whitelist city the same way as plan — unknown / missing values fall back
+  // to DEFAULT_CITY ('mumbai'), so legacy rows from before the city column
+  // existed still resolve to a sane value.
+  const city: CitySlug = normalizeCity(reg.city)
+
   console.error('[admin/registrations approve] registration fetched', {
-    id: reg.id, email: reg.email, area: reg.area, selected_plan: reg.selected_plan,
+    id: reg.id, email: reg.email, area: reg.area, selected_plan: reg.selected_plan, city,
   })
 
   // Resolve area_id with auto-create: exact name → case-insensitive name →
@@ -138,7 +148,7 @@ export async function POST(request: NextRequest) {
         // Not found by either lookup — create it so the dentist still gets a
         // non-null area_id and the new area starts surfacing in /area pages.
         const newSlug = slugify(wanted)
-        const newAreaPayload = { name: wanted, slug: newSlug, zone: 'Other', city: 'mumbai' }
+        const newAreaPayload = { name: wanted, slug: newSlug, zone: 'Other', city }
         console.error('[admin/registrations approve] area not found — auto-creating', newAreaPayload)
         const { data: newArea, error: createErr } = await admin_db
           .from('areas')
@@ -180,6 +190,7 @@ export async function POST(request: NextRequest) {
       mci_number: reg.mci_registration,
       area_id,
       selected_plan: plan,
+      city,
       is_active: true,
     }
     console.error('[admin/registrations approve] updating existing dentist', { id: existing.id, slug, updatePayload })
@@ -229,6 +240,7 @@ export async function POST(request: NextRequest) {
       is_active: true,
       tier: 'free',
       selected_plan: plan,
+      city,
     }
     console.error('[admin/registrations approve] inserting dentist', insertPayload)
     const { error: insertErr } = await admin_db
