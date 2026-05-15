@@ -10,7 +10,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   const { data: dentist } = await supabase
     .from('dentists')
-    .select('id, slug, name, clinic_name, tier, is_active, profile_photo, cover_photo, bio, whatsapp, maps_embed')
+    .select('id, slug, name, clinic_name, tier, is_active, profile_photo, cover_photo, bio, whatsapp, maps_embed, city')
     .eq('email', user.email)
     .single()
 

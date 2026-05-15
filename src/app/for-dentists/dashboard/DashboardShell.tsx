@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { getCityByDomain, CITY_CONFIGS, DEFAULT_CITY, type CityConfig } from '@/config/cities'
+import { getCityByDomain, getCityBySlug, type CityConfig } from '@/config/cities'
 
 const NAV = [
   { href: '/for-dentists/dashboard',              icon: '📊', label: 'Overview'      },
@@ -46,8 +46,14 @@ export default function DashboardShell({ dentist, completionPct, children }: Pro
   const [addOpen, setAddOpen] = useState(false)
   const addRef = useRef<HTMLDivElement>(null)
   const isGold = dentist.tier === 'gold' || dentist.tier === 'featured'
-  const [cityConfig, setCityConfig] = useState<CityConfig>(CITY_CONFIGS[DEFAULT_CITY])
-  useEffect(() => { setCityConfig(getCityByDomain(window.location.hostname)) }, [])
+  // Logo/brand follow the dentist's own city (set on the row, source of truth).
+  // window.location.hostname is only used as a last-resort fallback for pre-
+  // city-column legacy rows where dentist.city might be null.
+  const dentistCity = getCityBySlug(dentist.city)
+  const [cityConfig, setCityConfig] = useState<CityConfig>(dentistCity)
+  useEffect(() => {
+    if (!dentist.city) setCityConfig(getCityByDomain(window.location.hostname))
+  }, [dentist.city])
 
   useEffect(() => {
     if (!addOpen) return
@@ -76,7 +82,7 @@ export default function DashboardShell({ dentist, completionPct, children }: Pro
       {/* Logo */}
       <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid var(--border)' }}>
         <Link href="/" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none' }}>
-          <img src="/logo.png" alt={cityConfig.domain} style={{ height: 40, width: 'auto', display: 'block' }} />
+          <img src={cityConfig.logoPath} alt={cityConfig.domain} style={{ height: 40, width: 'auto', display: 'block' }} />
         </Link>
       </div>
 
