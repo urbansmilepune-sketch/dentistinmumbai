@@ -143,6 +143,57 @@ export async function sendDeclineEmail(data: {
   })
 }
 
+export async function sendProfileReminderEmail(data: {
+  name: string
+  to_email: string
+  completion_pct: number
+  missing: Array<{ label: string; href: string }>
+  unsubscribe_url: string
+}) {
+  const missingRows = data.missing.map(item => `
+    <a href="https://www.dentistinmumbai.in${item.href}" style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; text-decoration: none; margin-bottom: 8px;">
+      <span style="display: inline-block; width: 24px; height: 24px; border-radius: 50%; background: #FEE2E2; color: #991B1B; text-align: center; line-height: 24px; font-size: 14px; font-weight: bold; flex-shrink: 0;">✗</span>
+      <span style="color: #0F1923; font-size: 14px; font-weight: 600; flex: 1;">${item.label}</span>
+      <span style="color: #0057A8; font-size: 13px; font-weight: 600;">Fix →</span>
+    </a>
+  `).join('')
+
+  return resend.emails.send({
+    from: FROM_EMAIL,
+    to: data.to_email,
+    subject: 'Your DentistInMumbai.in profile needs attention 🦷',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #003F7A, #0057A8); padding: 28px 20px; border-radius: 10px 10px 0 0; text-align: center;">
+          <h1 style="color: white; margin: 0; font-size: 22px;">Hi ${data.name.split(' ')[0]}, your profile needs a little love 🦷</h1>
+          <p style="color: rgba(255,255,255,0.85); margin: 10px 0 0; font-size: 14px;">Your profile is <strong>${data.completion_pct}% complete</strong></p>
+        </div>
+        <div style="background: #f8faff; padding: 28px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 10px 10px;">
+          <div style="background: linear-gradient(135deg, #FFF7ED 0%, #FEF3C7 100%); border: 1px solid #FDE68A; border-radius: 10px; padding: 16px 18px; margin-bottom: 22px;">
+            <p style="margin: 0; color: #7C2D12; font-size: 14px; line-height: 1.5;">
+              <strong>Dentists with complete profiles get 5x more patient enquiries.</strong> A few minutes today could mean a lot more bookings this week.
+            </p>
+          </div>
+
+          <h3 style="margin: 0 0 12px; color: #0F1923; font-size: 15px;">Still to do:</h3>
+          ${missingRows}
+
+          <div style="text-align: center; margin-top: 24px;">
+            <a href="https://www.dentistinmumbai.in/for-dentists/dashboard" style="background: #FF6135; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 15px;">Open My Dashboard →</a>
+          </div>
+
+          <div style="margin-top: 28px; padding-top: 18px; border-top: 1px solid #e2e8f0; text-align: center;">
+            <p style="color: #94a3b8; font-size: 12px; margin: 0 0 6px;">
+              Don't want profile reminders? <a href="${data.unsubscribe_url}" style="color: #64748b; text-decoration: underline;">Unsubscribe</a>
+            </p>
+            <p style="color: #94a3b8; font-size: 12px; margin: 0;">© 2026 dentistinmumbai.in · A Dentaura Prime LLP initiative</p>
+          </div>
+        </div>
+      </div>
+    `,
+  })
+}
+
 export async function sendApprovalEmail(data: {
   name: string
   clinic_name: string
