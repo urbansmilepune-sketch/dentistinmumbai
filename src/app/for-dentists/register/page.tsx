@@ -4,12 +4,9 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { getCityByDomain, CITY_CONFIGS, DEFAULT_CITY, type CitySlug, type CityConfig } from '@/config/cities'
 
-// Mirrors every row in the public.areas table (audited 2026-05-14, expanded
-// with all Western/Central/Harbour line stations). Keep in sync — the admin
-// approval route resolves area_id by exact name match, so any drift here
-// will silently leave new dentists with area_id=NULL.
-const AREAS = ['Ambernath', 'Andheri', 'Andheri East', 'Andheri West', 'Bandra', 'Bandra East', 'Bandra West', 'Belapur', 'Bhandup', 'Bhayandar', 'Borivali', 'Borivali East', 'Borivali West', 'Byculla', 'CSMT', 'Charni Road', 'Chembur', 'Chinchpokli', 'Chunabhatti', 'Churchgate', 'Colaba', 'Cotton Green', 'Currey Road', 'Dadar', 'Dahisar', 'Deonar', 'Diva', 'Dockyard Road', 'Dombivli', 'Elphinstone Road', 'Fort', 'GTB Nagar', 'Ghatkopar', 'Ghatkopar East', 'Ghatkopar West', 'Goregaon', 'Goregaon East', 'Goregaon West', 'Govandi', 'Grant Road', 'Jogeshwari', 'Jogeshwari East', 'Jogeshwari West', 'Juhu', 'Juinagar', 'Kalwa', 'Kalyan', 'Kandivali', 'Kandivali East', 'Kandivali West', 'Kanjurmarg', 'Khandeshwar', 'Khar Road', 'Kharghar', 'Kopar', 'Kurla', 'Kurla East', 'Kurla West', 'Lower Parel', 'Mahalaxmi', 'Mahim', 'Malad', 'Malad East', 'Malad West', 'Mankhurd', 'Mansarovar', 'Marine Lines', 'Masjid', 'Matunga', 'Matunga Road', 'Mira Road', 'Mulund', 'Mulund East', 'Mulund West', 'Mumbai Central', 'Mumbra', 'Nahur', 'Naigaon', 'Nalasopara', 'Navi Mumbai', 'Nerul', 'Panvel', 'Parel', 'Powai', 'Prabhadevi', 'Reay Road', 'Sandhurst Road', 'Sanpada', 'Santacruz', 'Santacruz East', 'Santacruz West', 'Seawoods', 'Sewri', 'Sion', 'South Mumbai', 'Thakurli', 'Thane', 'Thane East', 'Thane West', 'Tilak Nagar', 'Vasai', 'Vashi', 'Vidyavihar', 'Vikhroli', 'Vile Parle', 'Vile Parle East', 'Vile Parle West', 'Virar', 'Wadala', 'Worli']
 const QUALIFICATIONS = ['BDS', 'BDS + MDS', 'BDS + Fellowship', 'MDS Specialist', 'BDS + Diploma']
+
+type AreaStatus = 'idle' | 'loading' | 'ready' | 'error'
 
 function generateRef(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
@@ -43,6 +40,12 @@ export default function RegisterPage() {
   const [cityConfig, setCityConfig] = useState<CityConfig>(CITY_CONFIGS[DEFAULT_CITY])
   const city: CitySlug = cityConfig.citySlug
 
+  // Areas dropdown is hydrated from /api/areas?city=<slug> on mount.
+  // While the fetch is in flight we show a disabled, loading-labelled select;
+  // on failure we degrade to a free-text input so registration never blocks.
+  const [areas, setAreas] = useState<{ name: string }[]>([])
+  const [areaStatus, setAreaStatus] = useState<AreaStatus>('idle')
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const emailParam = params.get('email')
@@ -57,6 +60,30 @@ export default function RegisterPage() {
     // dentistinpune.in lands a row tagged city='pune'.
     setCityConfig(getCityByDomain(window.location.hostname))
   }, [])
+
+  // Refetch areas whenever the resolved city changes. Clear the previously
+  // chosen area in case it doesn't exist in the new city's set.
+  useEffect(() => {
+    let cancelled = false
+    setAreaStatus('loading')
+    setAreas([])
+    setForm(f => ({ ...f, area: '' }))
+    fetch(`/api/areas?city=${encodeURIComponent(city)}`)
+      .then(async res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const data = await res.json()
+        if (cancelled) return
+        const list: { name: string }[] = Array.isArray(data?.areas) ? data.areas : []
+        setAreas(list)
+        setAreaStatus('ready')
+      })
+      .catch(err => {
+        if (cancelled) return
+        console.error('[register] /api/areas fetch failed', err)
+        setAreaStatus('error')
+      })
+    return () => { cancelled = true }
+  }, [city])
 
   function update(key: string, value: string) {
     setForm(f => ({ ...f, [key]: value }))
@@ -182,10 +209,40 @@ export default function RegisterPage() {
 
                   <div>
                     <label style={labelStyle}>Area in {cityConfig.cityName} *</label>
-                    <select value={form.area} onChange={e => update('area', e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-                      <option value="">Select your area</option>
-                      {AREAS.map(a => <option key={a} value={a}>{a}</option>)}
-                    </select>
+                    {areaStatus === 'error' ? (
+                      <>
+                        <input
+                          value={form.area}
+                          onChange={e => update('area', e.target.value)}
+                          placeholder={`Type your area in ${cityConfig.cityName}`}
+                          style={inputStyle}
+                        />
+                        <div style={{ fontSize: 11, color: '#92400E', marginTop: 6 }}>
+                          ⚠️ Couldn&apos;t load the area list — please type your area instead.
+                        </div>
+                      </>
+                    ) : areaStatus !== 'ready' ? (
+                      <select disabled value="" style={{ ...inputStyle, cursor: 'wait', opacity: 0.7 }}>
+                        <option value="">Loading areas in {cityConfig.cityName}…</option>
+                      </select>
+                    ) : areas.length === 0 ? (
+                      <>
+                        <input
+                          value={form.area}
+                          onChange={e => update('area', e.target.value)}
+                          placeholder={`Type your area in ${cityConfig.cityName}`}
+                          style={inputStyle}
+                        />
+                        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
+                          We don&apos;t have a curated list for {cityConfig.cityName} yet — type your area and we&apos;ll add it.
+                        </div>
+                      </>
+                    ) : (
+                      <select value={form.area} onChange={e => update('area', e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
+                        <option value="">Select your area</option>
+                        {areas.map(a => <option key={a.name} value={a.name}>{a.name}</option>)}
+                      </select>
+                    )}
                   </div>
 
                   <div>
