@@ -1,7 +1,9 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import AdminShell from './AdminShell'
+import { CITY_CONFIGS } from '@/config/cities'
 
 interface AdminPageClientProps {
   stats: any
@@ -13,6 +15,74 @@ interface AdminPageClientProps {
   areas: any[]
   foundingConfig: any
   analytics: any
+  cityFilter: string | null
+}
+
+// User-requested display order for the city dropdown — All Cities first,
+// then the 13 cities in the order they want to see them. Anything not in
+// this list is appended at the end so an unexpected slug isn't dropped.
+const CITY_DROPDOWN_ORDER = [
+  'mumbai', 'pune', 'thane', 'nashik', 'nagpur', 'goa', 'surat',
+  'kolhapur', 'sambhajinagar', 'rajkot', 'ahmedabad', 'jamnagar', 'navimumbai',
+]
+
+function CityFilterDropdown({ value }: { value: string | null }) {
+  const router = useRouter()
+  const params = useSearchParams()
+  function onChange(next: string) {
+    const sp = new URLSearchParams(params.toString())
+    if (next === 'all') sp.delete('city')
+    else sp.set('city', next)
+    const qs = sp.toString()
+    router.push(qs ? `/admin?${qs}` : '/admin')
+  }
+  const all = Object.keys(CITY_CONFIGS)
+  const ordered = [
+    ...CITY_DROPDOWN_ORDER.filter(s => all.includes(s)),
+    ...all.filter(s => !CITY_DROPDOWN_ORDER.includes(s)),
+  ]
+  return (
+    <select
+      value={value ?? 'all'}
+      onChange={e => onChange(e.target.value)}
+      style={{
+        padding: '8px 32px 8px 12px', borderRadius: 8,
+        border: '1px solid var(--border)', fontSize: 13,
+        fontFamily: 'var(--font-body)', outline: 'none', background: '#fff',
+        cursor: 'pointer', minWidth: 180,
+      }}
+    >
+      <option value="all">All Cities</option>
+      {ordered.map(slug => (
+        <option key={slug} value={slug}>{(CITY_CONFIGS as any)[slug].cityName}</option>
+      ))}
+    </select>
+  )
+}
+
+function CityFilterBar({ cityFilter, label }: { cityFilter: string | null; label?: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 20, padding: '10px 14px', background: '#fff', border: '1px solid var(--border)', borderRadius: 10 }}>
+      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+        🌆 {label || 'City filter'}
+      </span>
+      <CityFilterDropdown value={cityFilter} />
+    </div>
+  )
+}
+
+function CityBadge({ slug }: { slug: string | null | undefined }) {
+  if (!slug) return null
+  const cfg = (CITY_CONFIGS as any)[slug]
+  if (!cfg) return null
+  return (
+    <span style={{
+      display: 'inline-block', padding: '2px 8px', borderRadius: 12,
+      fontSize: 10, fontWeight: 700, background: '#EFF6FF', color: '#1D4ED8',
+      border: '1px solid #BFDBFE', textTransform: 'uppercase', letterSpacing: '0.04em',
+      whiteSpace: 'nowrap',
+    }}>{cfg.cityName}</span>
+  )
 }
 
 function StatCard({ icon, label, value, color }: { icon: string; label: string; value: string | number; color?: string }) {
@@ -98,7 +168,7 @@ function Badge({ status }: { status: string }) {
   )
 }
 
-export default function AdminPageClient({ stats, dentists, registrations, appointments, enquiries, reviews, areas, foundingConfig, analytics }: AdminPageClientProps) {
+export default function AdminPageClient({ stats, dentists, registrations, appointments, enquiries, reviews, areas, foundingConfig, analytics, cityFilter }: AdminPageClientProps) {
   const [section, setSection] = useState('dashboard')
   const [dentistList, setDentistList] = useState(dentists)
   const [reviewList, setReviewList] = useState(reviews)
@@ -255,6 +325,38 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
             <div style={{ marginBottom: 24 }}>
               <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 4 }}>Analytics</h1>
               <p style={{ fontSize: 14, color: 'var(--muted)' }}>Platform health, revenue, engagement, and growth — all in one place.</p>
+            </div>
+
+            <CityFilterBar cityFilter={cityFilter} label="Scope metrics to city" />
+
+            {/* CITY OVERVIEW — always all-cities, regardless of the filter above. */}
+            <SectionTitle>City Overview <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>· every city, all-time</span></SectionTitle>
+            <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden', marginBottom: 28 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: 'var(--bg)' }}>
+                    {['City', 'Registered', 'Active', 'Pending', 'Patients'].map(h => (
+                      <th key={h} style={{ padding: '10px 16px', textAlign: h === 'City' ? 'left' : 'right', fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {(analytics.cityOverview as Array<{ slug: string; cityName: string; domain: string; registered: number; active: number; pending: number; patients: number }>).map((c, i) => (
+                    <tr key={c.slug} style={{ borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
+                      <td style={{ padding: '12px 16px', verticalAlign: 'middle' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontWeight: 700, fontSize: 14 }}>{c.cityName}</span>
+                          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{c.domain}</span>
+                        </div>
+                      </td>
+                      <td style={{ padding: '12px 16px', fontSize: 14, textAlign: 'right', fontWeight: 600 }}>{c.registered}</td>
+                      <td style={{ padding: '12px 16px', fontSize: 14, textAlign: 'right', fontWeight: 700, color: c.active > 0 ? 'var(--green)' : 'var(--muted)' }}>{c.active}</td>
+                      <td style={{ padding: '12px 16px', fontSize: 14, textAlign: 'right', fontWeight: 700, color: c.pending > 0 ? '#F59E0B' : 'var(--muted)' }}>{c.pending}</td>
+                      <td style={{ padding: '12px 16px', fontSize: 14, textAlign: 'right', color: 'var(--text-secondary)' }}>{c.patients}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
 
             {/* ROW 1 — Platform Health */}
@@ -465,16 +567,18 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
         {/* REGISTRATIONS */}
         {section === 'registrations' && (
           <div>
-            <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 24 }}>Dentist Registrations</h1>
-            <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead><tr>{['Ref', 'Name', 'Clinic', 'Area', 'Phone', 'Qualification', 'MCI No.', 'Spot #', 'Status', 'Actions'].map(h => <th key={h} style={tableHeaderStyle}>{h}</th>)}</tr></thead>
+            <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 16 }}>Dentist Registrations</h1>
+            <CityFilterBar cityFilter={cityFilter} />
+            <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
+                <thead><tr>{['Ref', 'Name', 'Clinic', 'City', 'Area', 'Phone', 'Qualification', 'MCI No.', 'Spot #', 'Status', 'Actions'].map(h => <th key={h} style={tableHeaderStyle}>{h}</th>)}</tr></thead>
                 <tbody>
                   {regList.map(r => (
                     <tr key={r.id}>
                       <td style={tableCellStyle}><span style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--muted)' }}>{r.ref_no}</span></td>
                       <td style={tableCellStyle}><div style={{ fontWeight: 600 }}>{r.name}</div><div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.email}</div></td>
                       <td style={tableCellStyle}>{r.clinic_name}</td>
+                      <td style={tableCellStyle}><CityBadge slug={r.city} /></td>
                       <td style={tableCellStyle}>{r.area}</td>
                       <td style={tableCellStyle}><a href={`tel:${r.phone}`} style={{ color: 'var(--blue)' }}>{r.phone}</a></td>
                       <td style={tableCellStyle}>{r.qualification}</td>
@@ -491,7 +595,7 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
                       </td>
                     </tr>
                   ))}
-                  {regList.length === 0 && <tr><td colSpan={10} style={{ ...tableCellStyle, textAlign: 'center', color: 'var(--muted)', padding: '40px' }}>No registrations yet</td></tr>}
+                  {regList.length === 0 && <tr><td colSpan={11} style={{ ...tableCellStyle, textAlign: 'center', color: 'var(--muted)', padding: '40px' }}>No registrations yet</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -501,18 +605,20 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
         {/* DENTISTS */}
         {section === 'dentists' && (
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
               <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24 }}>Dentists</h1>
               <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or clinic..." style={{ ...inputStyle, width: 280 }} />
             </div>
+            <CityFilterBar cityFilter={cityFilter} />
             <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800 }}>
-                <thead><tr>{['Name', 'Clinic', 'Area', 'Phone', 'Tier', 'Verified', 'Actions'].map(h => <th key={h} style={tableHeaderStyle}>{h}</th>)}</tr></thead>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
+                <thead><tr>{['Name', 'Clinic', 'City', 'Area', 'Phone', 'Tier', 'Verified', 'Actions'].map(h => <th key={h} style={tableHeaderStyle}>{h}</th>)}</tr></thead>
                 <tbody>
                   {filteredDentists.map(d => (
                     <tr key={d.id}>
                       <td style={tableCellStyle}><div style={{ fontWeight: 600 }}>{d.name}</div><div style={{ fontSize: 11, color: 'var(--muted)' }}>{d.qualifications}</div></td>
                       <td style={tableCellStyle}>{d.clinic_name}</td>
+                      <td style={tableCellStyle}><CityBadge slug={d.city} /></td>
                       <td style={tableCellStyle}>{(d.areas as any)?.name || '—'}</td>
                       <td style={tableCellStyle}><a href={`tel:${d.phone}`} style={{ color: 'var(--blue)' }}>{d.phone}</a></td>
                       <td style={tableCellStyle}>
@@ -530,7 +636,7 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
                       </td>
                     </tr>
                   ))}
-                  {filteredDentists.length === 0 && <tr><td colSpan={7} style={{ ...tableCellStyle, textAlign: 'center', color: 'var(--muted)', padding: '40px' }}>No dentists found</td></tr>}
+                  {filteredDentists.length === 0 && <tr><td colSpan={8} style={{ ...tableCellStyle, textAlign: 'center', color: 'var(--muted)', padding: '40px' }}>No dentists found</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -594,6 +700,8 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
           <div>
             <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 16 }}>Reviews</h1>
 
+            <CityFilterBar cityFilter={cityFilter} />
+
             {/* Status filter pills */}
             <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
               {(['pending', 'approved', 'rejected'] as const).map(status => {
@@ -630,6 +738,7 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
                       <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 6 }}>
                         For <strong style={{ color: 'var(--text-secondary)' }}>{(r as any).dentists.name}</strong>
                         {(r as any).dentists.clinic_name ? ` · ${(r as any).dentists.clinic_name}` : ''}
+                        {(r as any).dentists.city && <span style={{ marginLeft: 6 }}><CityBadge slug={(r as any).dentists.city} /></span>}
                       </div>
                     )}
                     <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 6 }}>{r.review_text}</p>

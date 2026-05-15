@@ -1,15 +1,32 @@
 import { createClient } from '@/lib/supabase/server'
 import AdminPageClient from './AdminPageClient'
+import { CITY_CONFIGS, type CitySlug } from '@/config/cities'
 
 export const dynamic = 'force-dynamic'
 
-export default async function AdminPage() {
+// `?city=<slug>` narrows every list/count on the page to that one city.
+// Unknown values fall back to `null` ("All Cities"). The whitelist mirrors
+// CITY_CONFIGS so a typo in the URL bar can't accidentally hide real rows.
+function normalizeCityFilter(v: string | string[] | undefined): CitySlug | null {
+  if (typeof v !== 'string' || !v) return null
+  return Object.prototype.hasOwnProperty.call(CITY_CONFIGS, v) ? (v as CitySlug) : null
+}
+
+export default async function AdminPage({ searchParams }: { searchParams: Promise<{ city?: string }> }) {
   const supabase = await createClient()
+  const sp = await searchParams
+  const cityFilter = normalizeCityFilter(sp.city)
 
   const now = Date.now()
   const dayMs = 24 * 60 * 60 * 1000
   const weekAgoIso = new Date(now - 7 * dayMs).toISOString()
   const thirtyDaysAgoIso = new Date(now - 30 * dayMs).toISOString()
+
+  // Small ergonomic helper so every query reads `applyCity(q)` instead of
+  // duplicating the conditional .eq('city', …) on each line. Typed loosely
+  // because Supabase's deeply-chained builder types blow past TS's recursion
+  // budget when wrapped in a generic.
+  const applyCity = (q: any): any => (cityFilter ? q.eq('city', cityFilter) : q)
 
   const [
     { count: dentistCount },
@@ -39,33 +56,51 @@ export default async function AdminPage() {
     { data: topByWhatsApp },
     { data: apptDentistRowsAll },
     { data: apptDentistRows30 },
+    // --- City Overview (always all cities, ignores cityFilter) ---
+    { data: allDentistSlim },
+    { data: allRegistrationsSlim },
+    { data: allPatientDentistIds },
   ] = await Promise.all([
-    supabase.from('dentists').select('*', { count: 'exact', head: true }).eq('is_active', true),
-    supabase.from('appointments').select('*', { count: 'exact', head: true }),
-    supabase.from('enquiries').select('*', { count: 'exact', head: true }),
-    supabase.from('dentists').select('id, slug, name, clinic_name, qualifications, phone, tier, is_verified, is_active, areas(name, slug)').order('created_at', { ascending: false }).limit(100),
-    supabase.from('dentist_registrations').select('*').order('created_at', { ascending: false }).limit(100),
-    supabase.from('appointments').select('*, dentists(name), treatments(name)').order('created_at', { ascending: false }).limit(50),
-    supabase.from('enquiries').select('*, dentists(name)').order('created_at', { ascending: false }).limit(50),
-    supabase.from('reviews').select('*, dentists(name, clinic_name)').order('created_at', { ascending: false }).limit(100),
+    applyCity(supabase.from('dentists').select('*', { count: 'exact', head: true }).eq('is_active', true)),
+    applyCity(supabase.from('appointments').select('*, dentists!inner(city)', { count: 'exact', head: true })),
+    applyCity(supabase.from('enquiries').select('*, dentists!inner(city)', { count: 'exact', head: true })),
+    applyCity(supabase.from('dentists').select('id, slug, name, clinic_name, qualifications, phone, tier, is_verified, is_active, city, areas(name, slug)').order('created_at', { ascending: false }).limit(100)),
+    applyCity(supabase.from('dentist_registrations').select('*').order('created_at', { ascending: false }).limit(100)),
+    applyCity(supabase.from('appointments').select('*, dentists!inner(name, city), treatments(name)').order('created_at', { ascending: false }).limit(50)),
+    applyCity(supabase.from('enquiries').select('*, dentists!inner(name, city)').order('created_at', { ascending: false }).limit(50)),
+    // Reviews don't carry city — filter via the joined dentist.
+    cityFilter
+      ? supabase.from('reviews').select('*, dentists!inner(name, clinic_name, city)').eq('dentists.city', cityFilter).order('created_at', { ascending: false }).limit(100)
+      : supabase.from('reviews').select('*, dentists(name, clinic_name, city)').order('created_at', { ascending: false }).limit(100),
     supabase.from('areas').select('*').order('zone').order('name'),
     supabase.from('founding_config').select('*').eq('id', 1).single(),
-    supabase.from('reviews').select('id', { count: 'exact', head: false }).eq('status', 'pending'),
-    supabase.from('dentist_registrations').select('id', { count: 'exact', head: false }).eq('status', 'pending'),
-    supabase.from('dentist_registrations').select('*', { count: 'exact', head: true }),
-    supabase.from('dentist_registrations').select('*', { count: 'exact', head: true }).gte('created_at', weekAgoIso),
-    supabase.from('patients').select('*', { count: 'exact', head: true }),
-    supabase.from('dentists').select('*', { count: 'exact', head: true }).eq('is_active', true).eq('tier', 'gold'),
-    supabase.from('dentists').select('*', { count: 'exact', head: true }).eq('is_active', true).eq('tier', 'featured'),
-    supabase.from('dentist_registrations').select('created_at').eq('status', 'pending'),
-    supabase.from('analytics_events').select('event_type').gte('created_at', thirtyDaysAgoIso),
-    supabase.from('appointments').select('*', { count: 'exact', head: true }).gte('created_at', thirtyDaysAgoIso),
-    supabase.from('dentist_registrations').select('*', { count: 'exact', head: true }).eq('status', 'approved').gte('created_at', weekAgoIso),
-    supabase.from('dentist_registrations').select('*', { count: 'exact', head: true }).eq('status', 'rejected').gte('created_at', weekAgoIso),
-    supabase.from('dentists').select('id, name, slug, clinic_name, profile_views, areas(name)').eq('is_active', true).order('profile_views', { ascending: false, nullsFirst: false }).limit(10),
-    supabase.from('dentists').select('id, name, slug, clinic_name, whatsapp_clicks, areas(name)').eq('is_active', true).order('whatsapp_clicks', { ascending: false, nullsFirst: false }).limit(10),
-    supabase.from('appointments').select('dentist_id, dentists(id, name, slug, clinic_name)').limit(5000),
-    supabase.from('appointments').select('dentist_id, dentists(id, name, slug, clinic_name)').gte('created_at', thirtyDaysAgoIso).limit(5000),
+    cityFilter
+      ? supabase.from('reviews').select('id, dentists!inner(city)', { count: 'exact', head: false }).eq('status', 'pending').eq('dentists.city', cityFilter)
+      : supabase.from('reviews').select('id', { count: 'exact', head: false }).eq('status', 'pending'),
+    applyCity(supabase.from('dentist_registrations').select('id', { count: 'exact', head: false }).eq('status', 'pending')),
+    applyCity(supabase.from('dentist_registrations').select('*', { count: 'exact', head: true })),
+    applyCity(supabase.from('dentist_registrations').select('*', { count: 'exact', head: true }).gte('created_at', weekAgoIso)),
+    cityFilter
+      ? supabase.from('patients').select('*, dentists!inner(city)', { count: 'exact', head: true }).eq('dentists.city', cityFilter)
+      : supabase.from('patients').select('*', { count: 'exact', head: true }),
+    applyCity(supabase.from('dentists').select('*', { count: 'exact', head: true }).eq('is_active', true).eq('tier', 'gold')),
+    applyCity(supabase.from('dentists').select('*', { count: 'exact', head: true }).eq('is_active', true).eq('tier', 'featured')),
+    applyCity(supabase.from('dentist_registrations').select('created_at').eq('status', 'pending')),
+    // analytics_events isn't city-tagged; join through dentists when filtering.
+    cityFilter
+      ? supabase.from('analytics_events').select('event_type, dentists!inner(city)').eq('dentists.city', cityFilter).gte('created_at', thirtyDaysAgoIso)
+      : supabase.from('analytics_events').select('event_type').gte('created_at', thirtyDaysAgoIso),
+    applyCity(supabase.from('appointments').select('*, dentists!inner(city)', { count: 'exact', head: true }).gte('created_at', thirtyDaysAgoIso)),
+    applyCity(supabase.from('dentist_registrations').select('*', { count: 'exact', head: true }).eq('status', 'approved').gte('created_at', weekAgoIso)),
+    applyCity(supabase.from('dentist_registrations').select('*', { count: 'exact', head: true }).eq('status', 'rejected').gte('created_at', weekAgoIso)),
+    applyCity(supabase.from('dentists').select('id, name, slug, clinic_name, profile_views, city, areas(name)').eq('is_active', true).order('profile_views', { ascending: false, nullsFirst: false }).limit(10)),
+    applyCity(supabase.from('dentists').select('id, name, slug, clinic_name, whatsapp_clicks, city, areas(name)').eq('is_active', true).order('whatsapp_clicks', { ascending: false, nullsFirst: false }).limit(10)),
+    applyCity(supabase.from('appointments').select('dentist_id, dentists!inner(id, name, slug, clinic_name, city)').limit(5000)),
+    applyCity(supabase.from('appointments').select('dentist_id, dentists!inner(id, name, slug, clinic_name, city)').gte('created_at', thirtyDaysAgoIso).limit(5000)),
+    // City overview — always global, never filtered.
+    supabase.from('dentists').select('id, city, is_active'),
+    supabase.from('dentist_registrations').select('city, status'),
+    supabase.from('patients').select('dentist_id'),
   ])
 
   const dc = dentistCount || 0
@@ -121,6 +156,46 @@ export default async function AdminPage() {
   const populatedAreas = [...allAreas].filter(a => (a.dentist_count || 0) > 0).sort((a, b) => (b.dentist_count || 0) - (a.dentist_count || 0))
   const emptyAreas = allAreas.filter(a => !a.dentist_count)
 
+  // -------------------------------------------------------------------------
+  // City Overview — global aggregation, one row per known city. Done JS-side
+  // because Postgres group-by needs an RPC and our totals (≤ a few thousand
+  // dentists / regs / patients) are trivial to fold in memory.
+  // -------------------------------------------------------------------------
+  type DentSlim = { id: string; city: string | null; is_active: boolean | null }
+  type RegSlim = { city: string | null; status: string | null }
+  type PatSlim = { dentist_id: string | null }
+  const dentSlim = (allDentistSlim || []) as DentSlim[]
+  const regSlim = (allRegistrationsSlim || []) as RegSlim[]
+  const patSlim = (allPatientDentistIds || []) as PatSlim[]
+
+  // dentist_id → city map for the patients pivot
+  const dentistCityById = new Map<string, string>()
+  for (const d of dentSlim) {
+    if (d.id && d.city) dentistCityById.set(d.id, d.city)
+  }
+
+  const patientCountByCity = new Map<string, number>()
+  for (const p of patSlim) {
+    const c = p.dentist_id ? dentistCityById.get(p.dentist_id) : undefined
+    if (!c) continue
+    patientCountByCity.set(c, (patientCountByCity.get(c) ?? 0) + 1)
+  }
+
+  const cityOverview = (Object.keys(CITY_CONFIGS) as CitySlug[]).map(slug => {
+    const cfg = CITY_CONFIGS[slug]
+    const dentistsHere = dentSlim.filter(d => d.city === slug)
+    const regsHere = regSlim.filter(r => r.city === slug)
+    return {
+      slug,
+      cityName: cfg.cityName,
+      domain: cfg.domain,
+      registered: regsHere.length,
+      active: dentistsHere.filter(d => d.is_active).length,
+      pending: regsHere.filter(r => r.status === 'pending').length,
+      patients: patientCountByCity.get(slug) ?? 0,
+    }
+  }).sort((a, b) => b.active - a.active)
+
   const analytics = {
     totalRegistrations: totalRegsCount || 0,
     registrationsThisWeek: regsThisWeekCount || 0,
@@ -149,6 +224,7 @@ export default async function AdminPage() {
       populated: populatedAreas,
       empty: emptyAreas,
     },
+    cityOverview,
   }
 
   return (
@@ -162,6 +238,7 @@ export default async function AdminPage() {
       areas={areas || []}
       foundingConfig={foundingConfig}
       analytics={analytics}
+      cityFilter={cityFilter}
     />
   )
 }
