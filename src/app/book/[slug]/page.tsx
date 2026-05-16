@@ -83,7 +83,7 @@ export default async function PublicBookingPage({ params }: Props) {
         </div>
       </header>
 
-      <div className="container" style={{ paddingTop: 20, paddingBottom: 80, maxWidth: 640 }}>
+      <div className="container booking-container" style={{ paddingTop: 20, paddingBottom: 80, maxWidth: 640 }}>
         {/* Dentist header card */}
         <section style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: 20, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 16 }}>
           <div style={{
@@ -112,6 +112,11 @@ export default async function PublicBookingPage({ params }: Props) {
           treatments={treatments}
         />
       </div>
+      <style>{`
+        @media (max-width: 640px) {
+          .booking-container { padding-bottom: 120px !important; }
+        }
+      `}</style>
     </main>
   )
 }

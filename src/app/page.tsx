@@ -120,7 +120,8 @@ export default async function HomePage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Link href="/dentists" className="nav-secondary-link" style={{ padding: '8px 16px', fontWeight: 500, fontSize: 14, color: 'var(--text-secondary)' }}>Find Dentists</Link>
             <Link href="/for-dentists" className="nav-secondary-link" style={{ padding: '8px 16px', fontWeight: 500, fontSize: 14, color: 'var(--text-secondary)' }}>For Dentists</Link>
-            <Link href="/for-dentists/register" className="btn btn-primary btn-sm">List Your Clinic</Link>
+            <Link href="/for-dentists/register" className="nav-list-clinic btn btn-primary btn-sm">List Your Clinic</Link>
+            <Link href="/dentists" className="nav-mobile-cta btn btn-primary btn-sm">Find Dentists</Link>
           </div>
         </nav>
       </header>
@@ -298,7 +299,7 @@ export default async function HomePage() {
                     }}>{zone} Line</span>
                     <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
+                  <div className="home-area-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
                     {zoneAreas.map(area => (
                       <Link key={area.id} href={`/area/${area.slug}`}>
                         <div className="area-card" style={{
@@ -321,7 +322,7 @@ export default async function HomePage() {
               ))
             ) : (
               /* Flat grid — every other city. */
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12, marginBottom: 36 }}>
+              <div className="home-area-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12, marginBottom: 36 }}>
                 {flatAreas.map(area => (
                   <Link key={area.id} href={`/area/${area.slug}`}>
                     <div className="area-card" style={{
@@ -358,7 +359,7 @@ export default async function HomePage() {
                 From routine cleanings to full smile makeovers — find specialists for any treatment.
               </p>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 16 }}>
+            <div className="home-treatment-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 16 }}>
               {topTreatments.map(t => (
                 <Link key={t.id} href={`/treatment/${t.slug}`}>
                   <div className="treatment-card" style={{
@@ -472,7 +473,7 @@ export default async function HomePage() {
       {/* FOOTER */}
       <footer style={{ background: '#0A1628', padding: '56px 20px 24px', color: 'rgba(255,255,255,0.7)' }}>
         <div className="container">
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 40, marginBottom: 48 }}>
+          <div className="home-footer-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 40, marginBottom: 48 }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
                 <div style={{ width: 32, height: 32, background: 'var(--blue)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 16, fontFamily: 'var(--font-heading)' }}>D</div>
@@ -524,17 +525,25 @@ export default async function HomePage() {
       </footer>
 
       <style>{`
+        .nav-mobile-cta { display: none; }
         @media (max-width: 768px) {
           .nav-secondary-link { display: none !important; }
-          .home-hero { padding: 48px 16px 64px !important; }
-          .home-hero-sub { font-size: 15px !important; margin-bottom: 28px !important; }
+          .nav-list-clinic { display: none !important; }
+          .nav-mobile-cta { display: inline-flex !important; }
+          .home-hero { padding: 40px 16px 56px !important; }
+          .home-hero-sub { font-size: 15px !important; margin-bottom: 24px !important; }
           .home-stats { padding: 20px 16px !important; }
           .home-stats-grid { gap: 12px !important; grid-template-columns: repeat(2, 1fr) !important; }
           .home-stat-value { font-size: 22px !important; }
           .home-section { padding: 48px 16px !important; }
           .home-section-head { flex-direction: column !important; align-items: flex-start !important; margin-bottom: 24px !important; }
           .home-featured-grid { grid-template-columns: 1fr !important; gap: 14px !important; }
-          .home-cta-card { padding: 32px 22px !important; flex-direction: column !important; align-items: stretch !important; gap: 28px !important; text-align: left !important; }
+          .home-area-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 10px !important; }
+          .home-area-grid .area-card { padding: 14px 12px !important; }
+          .home-treatment-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 12px !important; }
+          .home-cta-card { padding: 28px 20px !important; flex-direction: column !important; align-items: stretch !important; gap: 24px !important; text-align: left !important; }
+          .home-cta-card .btn { width: 100% !important; }
+          .home-footer-grid { gap: 28px !important; }
         }
       `}</style>
     </>

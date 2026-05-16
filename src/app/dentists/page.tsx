@@ -252,7 +252,7 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Link href="/dentists" className="nav-secondary-link" style={{ padding: '8px 16px', fontWeight: 600, fontSize: 14, color: 'var(--blue)' }}>Find Dentists</Link>
             <Link href="/for-dentists" className="nav-secondary-link" style={{ padding: '8px 16px', fontWeight: 500, fontSize: 14, color: 'var(--text-secondary)' }}>For Dentists</Link>
-            <Link href="/for-dentists/register" className="btn btn-primary btn-sm">List Your Clinic</Link>
+            <Link href="/for-dentists/register" className="nav-list-clinic btn btn-primary btn-sm">List Your Clinic</Link>
           </div>
         </nav>
       </header>
@@ -387,10 +387,12 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
       <style>{`
         @media (max-width: 768px) {
           .nav-secondary-link { display: none !important; }
+          .nav-list-clinic { display: none !important; }
           .listing-main { padding: 16px 0 96px !important; }
           .listing-layout { gap: 0 !important; flex-direction: column !important; }
-          .listing-topbar { flex-direction: column !important; align-items: stretch !important; }
-          .listing-topbar > div:last-child { justify-content: space-between !important; }
+          .listing-topbar { flex-direction: column !important; align-items: stretch !important; gap: 10px !important; }
+          .listing-topbar > div:last-child { justify-content: space-between !important; flex-wrap: nowrap !important; overflow-x: auto !important; }
+          .listing-topbar h1 { font-size: 16px !important; }
         }
       `}</style>
     </>

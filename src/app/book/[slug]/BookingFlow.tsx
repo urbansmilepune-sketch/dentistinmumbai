@@ -230,7 +230,7 @@ export default function BookingFlow({ dentistId, dentistName, clinicName, areaNa
             No slots available on this day. Try another date.
           </p>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(86px, 1fr))', gap: 8 }}>
+          <div className="booking-slots-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(86px, 1fr))', gap: 8 }}>
             {availableSlots.map(slot => {
               const on = slot === selectedSlot
               return (
@@ -290,22 +290,36 @@ export default function BookingFlow({ dentistId, dentistName, clinicName, areaNa
         </div>
       )}
 
-      <button type="button" onClick={submit} disabled={submitting}
-        style={{
-          width: '100%', minHeight: 56, padding: '16px 20px',
-          background: 'var(--blue)', color: '#fff', border: 'none',
-          borderRadius: 14, fontWeight: 700, fontSize: 16,
-          cursor: submitting ? 'not-allowed' : 'pointer',
-          opacity: submitting ? 0.7 : 1,
-          fontFamily: 'var(--font-body)',
-          boxShadow: '0 4px 12px rgba(0,87,168,0.2)',
-        }}>
-        {submitting ? 'Booking…' : 'Confirm Booking'}
-      </button>
+      <div className="booking-submit-wrap">
+        <button type="button" onClick={submit} disabled={submitting}
+          style={{
+            width: '100%', minHeight: 56, padding: '16px 20px',
+            background: 'var(--blue)', color: '#fff', border: 'none',
+            borderRadius: 14, fontWeight: 700, fontSize: 16,
+            cursor: submitting ? 'not-allowed' : 'pointer',
+            opacity: submitting ? 0.7 : 1,
+            fontFamily: 'var(--font-body)',
+            boxShadow: '0 4px 12px rgba(0,87,168,0.2)',
+          }}>
+          {submitting ? 'Booking…' : selectedSlot ? `Confirm ${formatSlotLabel(selectedSlot)}` : 'Confirm Booking'}
+        </button>
+        <p className="booking-submit-note" style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 14 }}>
+          No payment now. The clinic will confirm shortly.
+        </p>
+      </div>
 
-      <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 14 }}>
-        No payment now. The clinic will confirm shortly.
-      </p>
+      <style>{`
+        @media (max-width: 640px) {
+          .booking-slots-grid { grid-template-columns: repeat(3, 1fr) !important; }
+          .booking-submit-wrap {
+            position: fixed; bottom: 0; left: 0; right: 0; z-index: 90;
+            background: #fff; border-top: 1px solid var(--border);
+            padding: 10px 16px env(safe-area-inset-bottom, 10px);
+            box-shadow: 0 -4px 16px rgba(0,0,0,0.08);
+          }
+          .booking-submit-note { display: none !important; }
+        }
+      `}</style>
     </>
   )
 }

@@ -167,7 +167,7 @@ export default function DentistCard({ dentist: d, view }: DentistCardProps) {
     <div style={{
       background: '#fff', border: '1px solid var(--border)', borderRadius: 16,
       padding: '20px', display: 'flex', gap: 16, transition: 'box-shadow 0.2s',
-    }} className="card-hover">
+    }} className="card-hover dentist-card-list">
       {/* Photo */}
       <div style={{
         width: 80, height: 80, borderRadius: 12, flexShrink: 0,
@@ -237,23 +237,33 @@ export default function DentistCard({ dentist: d, view }: DentistCardProps) {
         </div>
 
         {/* Action buttons */}
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <div className="dentist-card-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <Link href={`/dentist/${d.slug}`} style={{
-            padding: '8px 20px', background: 'var(--blue)', color: '#fff',
-            borderRadius: 8, fontSize: 13, fontWeight: 600,
+            padding: '10px 20px', background: 'var(--blue)', color: '#fff',
+            borderRadius: 8, fontSize: 13, fontWeight: 600, minHeight: 44,
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
           }}>View Profile →</Link>
           {waLink && (
             <a href={waLink} target="_blank" rel="noopener noreferrer" style={{
-              padding: '8px 16px', background: '#DCFCE7', color: '#166534',
+              padding: '10px 16px', background: '#DCFCE7', color: '#166534',
               borderRadius: 8, fontSize: 13, fontWeight: 600, border: '1px solid #BBF7D0',
+              minHeight: 44, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
             }}>💬 WhatsApp</a>
           )}
-          <Link href={`/dentist/${d.slug}#book`} style={{
-            padding: '8px 16px', background: 'var(--orange-light)', color: 'var(--orange)',
+          <Link href={`/book/${d.slug}`} style={{
+            padding: '10px 16px', background: 'var(--orange-light)', color: 'var(--orange)',
             borderRadius: 8, fontSize: 13, fontWeight: 600, border: '1px solid #FECACA',
+            minHeight: 44, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
           }}>📅 Book</Link>
         </div>
       </div>
+      <style>{`
+        @media (max-width: 640px) {
+          .dentist-card-list { padding: 16px !important; gap: 12px !important; }
+          .dentist-card-list > div:first-child { width: 64px !important; height: 64px !important; }
+          .dentist-card-actions > a { flex: 1 1 calc(50% - 4px) !important; justify-content: center !important; }
+        }
+      `}</style>
     </div>
   )
 }

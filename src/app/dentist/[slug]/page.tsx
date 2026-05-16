@@ -87,7 +87,7 @@ export default async function DentistProfilePage({ params }: Props) {
           <Link href="/dentists" style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 500 }}>← All Dentists</Link>
         </nav>
       </header>
-      <main style={{ background: 'var(--bg)', minHeight: '100vh' }}>
+      <main className="profile-main" style={{ background: 'var(--bg)', minHeight: '100vh' }}>
         <div className="profile-cover" style={{ height: 220, background: dentist.cover_photo ? `url(${dentist.cover_photo}) center/cover` : 'linear-gradient(135deg, #003F7A, #0057A8)', position: 'relative' }}>
           {!dentist.cover_photo && <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span style={{ fontSize: 64, opacity: 0.3 }}>🦷</span></div>}
         </div>
@@ -129,7 +129,7 @@ export default async function DentistProfilePage({ params }: Props) {
                 </div>
               )}
             </div>
-            <div className="profile-hero-cta" style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 180, paddingTop: 16 }}>
+            <div className="profile-hero-cta profile-hero-cta-desktop" style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 180, paddingTop: 16 }}>
               {dentist.whatsapp && (
                 <TrackedLink
                   dentistId={dentist.id}
@@ -243,20 +243,57 @@ export default async function DentistProfilePage({ params }: Props) {
           </div>
         </div>
       </main>
+
+      {/* Sticky mobile action bar — patient must always have one tap to book/call */}
+      <div className="profile-sticky-bar" style={{
+        position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 90,
+        background: '#fff', borderTop: '1px solid var(--border)',
+        padding: '10px 12px env(safe-area-inset-bottom, 10px)',
+        display: 'none', gap: 8,
+        boxShadow: '0 -4px 16px rgba(0,0,0,0.08)',
+      }}>
+        {dentist.whatsapp && (
+          <TrackedLink
+            dentistId={dentist.id}
+            eventType="whatsapp_click"
+            href={`https://wa.me/91${dentist.whatsapp.replace(/\D/g, '')}?text=Hi%20${encodeURIComponent(dentist.name)}%2C%20I%20found%20you%20on%20${encodeURIComponent(city.domain)}%20and%20would%20like%20to%20book%20an%20appointment.`}
+            target="_blank" rel="noopener noreferrer"
+            style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 52, padding: '0 8px', background: '#25D366', color: '#fff', borderRadius: 12, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
+            💬 WhatsApp
+          </TrackedLink>
+        )}
+        {dentist.phone && (
+          <TrackedLink
+            dentistId={dentist.id}
+            eventType="call_click"
+            href={`tel:${dentist.phone}`}
+            style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 52, padding: '0 8px', background: '#fff', color: 'var(--blue)', border: '2px solid var(--blue)', borderRadius: 12, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
+            📞 Call
+          </TrackedLink>
+        )}
+        <Link
+          href={`/book/${dentist.slug}`}
+          style={{ flex: 1.2, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 52, padding: '0 8px', background: 'var(--blue)', color: '#fff', borderRadius: 12, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
+          📅 Book
+        </Link>
+      </div>
+
       <footer style={{ background: '#0A1628', padding: '24px 20px', color: 'rgba(255,255,255,0.6)', textAlign: 'center', marginTop: 40 }}>
         <p style={{ fontSize: 13 }}>© {new Date().getFullYear()} {city.domain} · A Dentaura Prime LLP initiative</p>
       </footer>
       <style>{`
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         @media (max-width: 768px) {
+          .profile-main { padding-bottom: 80px !important; }
           .profile-grid { grid-template-columns: 1fr !important; gap: 16px !important; }
           .profile-cover { height: 140px !important; }
           .profile-hero-card { padding: 0 16px 18px !important; gap: 14px !important; margin-top: -50px !important; flex-direction: column !important; align-items: stretch !important; }
           .profile-avatar { width: 88px !important; height: 88px !important; margin-top: -36px !important; align-self: center !important; }
           .profile-hero-info { min-width: 0 !important; padding-top: 4px !important; text-align: center !important; }
+          .profile-hero-info h1 { font-size: 20px !important; }
           .profile-hero-info > div { justify-content: center !important; }
-          .profile-hero-cta { min-width: 0 !important; padding-top: 4px !important; }
-          .profile-hero-cta a, .profile-hero-cta button { min-height: 44px !important; font-size: 15px !important; }
+          .profile-hero-cta-desktop { display: none !important; }
+          .profile-sticky-bar { display: flex !important; }
         }
       `}</style>
     </>
