@@ -328,6 +328,11 @@ export async function sendApprovalEmail(data: {
   to_email: string
   selected_plan?: 'monthly' | 'annual' | null
   city?: string
+  /** One-time magic link minted by lib/approval.ts. When present, the email
+   * leads with a big "Access Your Dashboard" CTA that skips the password
+   * step entirely. When null (link generation failed), the email falls back
+   * to the regular login URL. */
+  auth_link?: string | null
 }) {
   const city = resolveCity(data.city)
   const planCopy = data.selected_plan === 'annual'
@@ -345,6 +350,26 @@ export async function sendApprovalEmail(data: {
           </div>`
     : ''
 
+  // Lead CTA: when we have a working magic link the dentist can skip the
+  // password step entirely. Without one we still ship the email — they hit
+  // /for-dentists/login and use Forgot Password to recover access.
+  const dashboardBlock = data.auth_link
+    ? `
+          <div style="background: linear-gradient(135deg, #E8F3FF 0%, #DCFCE7 100%); border: 1.5px solid #BFDBFE; border-radius: 12px; padding: 22px; margin-bottom: 24px; text-align: center;">
+            <p style="margin: 0 0 6px; color: #0F1923; font-size: 15px; font-weight: 700;">🚀 Access your dashboard in one click</p>
+            <p style="margin: 0 0 16px; color: #3D4F60; font-size: 14px; line-height: 1.6;">
+              Click below to access your dashboard — no password needed for first login. You can set a password from your profile settings.
+            </p>
+            <a href="${data.auth_link}" style="display: inline-block; background: #0057A8; color: white; padding: 14px 30px; border-radius: 10px; text-decoration: none; font-weight: 700; font-size: 15px;">Access Your Dashboard →</a>
+            <p style="margin: 12px 0 0; color: #64748B; font-size: 12px;">This single-use link expires in 24 hours. Keep this email safe until you log in.</p>
+          </div>`
+    : `
+          <div style="background: #FEF3C7; border: 1px solid #FDE68A; border-radius: 12px; padding: 18px; margin-bottom: 24px;">
+            <p style="margin: 0 0 6px; color: #7C2D12; font-size: 14px; font-weight: 700;">Set up your dashboard access</p>
+            <p style="margin: 0 0 12px; color: #7C2D12; font-size: 13px; line-height: 1.6;">Your account is ready. Use the "Forgot password" link on the sign-in page to set a password for the first time.</p>
+            <a href="${city.origin}/for-dentists/login" style="display: inline-block; background: #FF6135; color: white; padding: 11px 22px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 14px;">Go to Sign In →</a>
+          </div>`
+
   return resend.emails.send({
     from: FROM_EMAIL,
     to: data.to_email,
@@ -358,9 +383,13 @@ export async function sendApprovalEmail(data: {
         <div style="background: #fff; padding: 32px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 10px 10px;">
           <p style="color: #374151; font-size: 15px;">Dear ${data.name},</p>
           <p style="color: #374151; font-size: 15px;">Great news! Your clinic <strong>${data.clinic_name}</strong> is now live on ${city.domain} and patients can find and book you directly.</p>
-          <div style="text-align: center; margin: 28px 0;">
-            <a href="${city.origin}/dentist/${data.slug}" style="background: #0057A8; color: white; padding: 14px 28px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 15px;">View Your Live Profile →</a>
+
+          ${dashboardBlock}
+
+          <div style="text-align: center; margin: 24px 0;">
+            <a href="${city.origin}/dentist/${data.slug}" style="background: #fff; color: #0057A8; border: 2px solid #0057A8; padding: 12px 26px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 14px;">View Your Live Profile →</a>
           </div>${planBlock}
+
           <div style="background: #f8faff; border-radius: 10px; padding: 20px; margin-bottom: 20px;">
             <h3 style="margin-top: 0; color: #0F1923;">Complete your profile to get more patients:</h3>
             <ul style="color: #374151; font-size: 14px; padding-left: 20px; line-height: 2;">
@@ -369,9 +398,6 @@ export async function sendApprovalEmail(data: {
               <li>Set your working hours</li>
               <li>Add all treatments with fee ranges</li>
             </ul>
-          </div>
-          <div style="text-align: center;">
-            <a href="${city.origin}/for-dentists/login" style="background: #FF6135; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: bold;">Complete Your Profile →</a>
           </div>
           <div style="margin-top: 24px; text-align: center;">
             <p style="color: #94a3b8; font-size: 12px;">© ${new Date().getFullYear()} ${city.domain} · A Dentaura Prime LLP initiative</p>

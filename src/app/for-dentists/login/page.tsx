@@ -86,7 +86,16 @@ async function handleGoogle() {
           </div>
 
           <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 4 }}>Welcome back, Doctor</h1>
-          <p style={{ color: 'var(--muted)', fontSize: 14, marginBottom: 28 }}>Sign in to your practice portal</p>
+          <p style={{ color: 'var(--muted)', fontSize: 14, marginBottom: 20 }}>Sign in to your practice portal</p>
+
+          {/* First-login nudge: dentists who just registered get a one-click
+              magic link in their approval email rather than a password —
+              this banner steers them toward their inbox so they don't waste
+              time trying password combinations that don't exist. */}
+          <div style={{ padding: '12px 14px', background: '#E8F3FF', border: '1px solid #BFDBFE', borderRadius: 10, fontSize: 13, color: 'var(--blue-dark)', marginBottom: 20, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+            <span style={{ fontSize: 16, lineHeight: 1.2 }}>📧</span>
+            <span><strong>Just registered?</strong> Check your email for your dashboard access link — no password needed for your first sign-in.</span>
+          </div>
 
           {error && (
             <div style={{ padding: '12px 16px', background: '#FEE2E2', border: '1px solid #FECACA', borderRadius: 10, fontSize: 13, color: '#991B1B', marginBottom: 20 }}>

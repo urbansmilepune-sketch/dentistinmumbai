@@ -196,6 +196,37 @@ export async function approveDentistRegistration(
     console.error(`${tag} status update failed`, statusErr)
   }
 
+  // Mint a magic link so the dentist can hop straight into their dashboard
+  // from the approval email without setting a password first. invite first
+  // (creates the auth.users row when they don't have one yet — true for
+  // fresh registrations); magiclink as fallback if invite says "user
+  // already registered" (re-approvals, admins who created the auth user
+  // out-of-band). If both fail we still send the email, just without the
+  // big "Access Your Dashboard" button — the dentist can use forgot-password
+  // to recover. We never bubble this failure up: the approval is done.
+  const cityOrigin = `https://${CITY_CONFIGS[city].domain}`
+  const redirectTo = `${cityOrigin}/auth/callback`
+  let authLink: string | null = null
+  try {
+    const { data: invite, error: inviteErr } = await admin_db.auth.admin.generateLink({
+      type: 'invite',
+      email: reg.email,
+      options: { redirectTo },
+    })
+    if (inviteErr) {
+      const { data: ml } = await admin_db.auth.admin.generateLink({
+        type: 'magiclink',
+        email: reg.email,
+        options: { redirectTo },
+      })
+      authLink = ml?.properties?.action_link ?? null
+    } else {
+      authLink = invite?.properties?.action_link ?? null
+    }
+  } catch (err) {
+    console.error(`${tag} generateLink failed`, err)
+  }
+
   sendApprovalEmail({
     name: reg.name,
     clinic_name: reg.clinic_name,
@@ -203,6 +234,7 @@ export async function approveDentistRegistration(
     to_email: reg.email,
     selected_plan: plan,
     city,
+    auth_link: authLink,
   }).catch(err => console.error(`${tag} approval email failed`, err))
 
   return { ok: true, slug }
