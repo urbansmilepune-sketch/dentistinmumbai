@@ -58,6 +58,45 @@ export async function sendRegistrationEmailToAdmin(data: {
   })
 }
 
+export async function sendAutoApprovedAdminAlert(data: {
+  name: string
+  clinic_name: string
+  area: string
+  phone: string
+  email: string
+  ref_no: string
+  slug: string
+  city?: string
+}) {
+  const city = resolveCity(data.city)
+  return resend.emails.send({
+    from: FROM_EMAIL,
+    to: ADMIN_EMAIL,
+    subject: `✅ Auto-approved: ${data.name} (${data.ref_no})`,
+    text: `Auto-approved at signup: ${data.name}, ${data.clinic_name}, ${data.area}, ${data.phone}. Profile is live at ${city.origin}/dentist/${data.slug}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
+        <div style="background: #DCFCE7; border: 1px solid #BBF7D0; border-radius: 10px; padding: 16px 20px; margin-bottom: 18px;">
+          <p style="margin: 0; color: #166534; font-size: 14px; font-weight: 700;">✅ Auto-approved at signup — no admin action needed</p>
+          <p style="margin: 6px 0 0; color: #166534; font-size: 13px;">All gating checks passed (phone, MCI, name, clinic, area).</p>
+        </div>
+        <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+          <tr><td style="padding: 8px 0; color: #64748b; width: 40%;">Reference</td><td style="padding: 8px 0; font-weight: bold; color: #0057A8;">${data.ref_no}</td></tr>
+          <tr><td style="padding: 8px 0; color: #64748b;">Name</td><td style="padding: 8px 0; font-weight: bold;">${data.name}</td></tr>
+          <tr><td style="padding: 8px 0; color: #64748b;">Clinic</td><td style="padding: 8px 0;">${data.clinic_name}</td></tr>
+          <tr><td style="padding: 8px 0; color: #64748b;">City · Area</td><td style="padding: 8px 0;">${city.cityName} · ${data.area}</td></tr>
+          <tr><td style="padding: 8px 0; color: #64748b;">Phone</td><td style="padding: 8px 0;">${data.phone}</td></tr>
+          <tr><td style="padding: 8px 0; color: #64748b;">Email</td><td style="padding: 8px 0;">${data.email}</td></tr>
+        </table>
+        <div style="margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap;">
+          <a href="${city.origin}/dentist/${data.slug}" style="background: #0057A8; color: #fff; padding: 11px 20px; border-radius: 8px; text-decoration: none; font-weight: 700; display: inline-block; font-size: 14px;">View Live Profile →</a>
+          <a href="${city.origin}/admin" style="background: #fff; color: #0057A8; border: 2px solid #0057A8; padding: 9px 18px; border-radius: 8px; text-decoration: none; font-weight: 700; display: inline-block; font-size: 14px;">Open Admin Panel</a>
+        </div>
+      </div>
+    `,
+  })
+}
+
 export async function sendNewRegistrationAdminAlert(data: {
   name: string
   clinic_name: string

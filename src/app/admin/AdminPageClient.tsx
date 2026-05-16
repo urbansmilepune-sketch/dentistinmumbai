@@ -168,6 +168,24 @@ function Badge({ status }: { status: string }) {
   )
 }
 
+// Sits below the approved Badge to disambiguate the two paths a registration
+// can take to approved: the public POST /api/registrations auto-approval gate
+// vs. an admin clicking Approve in the panel. Legacy rows from before the
+// auto_approved column existed default to false → render as "Manually approved",
+// which is accurate for any pre-feature row (only the admin button could
+// flip status='approved' at the time).
+function ApprovalSourceBadge({ autoApproved }: { autoApproved: boolean }) {
+  return autoApproved ? (
+    <span style={{ padding: '2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 600, background: '#DBEAFE', color: '#1D4ED8', border: '1px solid #BFDBFE', whiteSpace: 'nowrap' }}>
+      ⚡ Auto-approved
+    </span>
+  ) : (
+    <span style={{ padding: '2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 600, background: '#F3F4F6', color: '#374151', border: '1px solid #E5E7EB', whiteSpace: 'nowrap' }}>
+      👤 Manually approved
+    </span>
+  )
+}
+
 export default function AdminPageClient({ stats, dentists, registrations, appointments, enquiries, reviews, areas, foundingConfig, analytics, cityFilter }: AdminPageClientProps) {
   const [section, setSection] = useState('dashboard')
   const [dentistList, setDentistList] = useState(dentists)
@@ -286,7 +304,12 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
                         <td style={tableCellStyle}><div style={{ fontWeight: 600 }}>{r.name}</div><div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.ref_no}</div></td>
                         <td style={tableCellStyle}>{r.clinic_name}</td>
                         <td style={tableCellStyle}>{r.area}</td>
-                        <td style={tableCellStyle}><Badge status={r.status} /></td>
+                        <td style={tableCellStyle}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                            <Badge status={r.status} />
+                            {r.status === 'approved' && <ApprovalSourceBadge autoApproved={!!r.auto_approved} />}
+                          </div>
+                        </td>
                         <td style={tableCellStyle}>{new Date(r.created_at).toLocaleDateString('en-IN')}</td>
                       </tr>
                     ))}
@@ -584,7 +607,12 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
                       <td style={tableCellStyle}>{r.qualification}</td>
                       <td style={tableCellStyle}>{r.mci_registration}</td>
                       <td style={tableCellStyle}><span style={{ fontWeight: 700, color: '#F59E0B' }}>#{r.founding_number}</span></td>
-                      <td style={tableCellStyle}><Badge status={r.status} /></td>
+                      <td style={tableCellStyle}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                          <Badge status={r.status} />
+                          {r.status === 'approved' && <ApprovalSourceBadge autoApproved={!!r.auto_approved} />}
+                        </div>
+                      </td>
                       <td style={tableCellStyle}>
                         {r.status === 'pending' && (
                           <div style={{ display: 'flex', gap: 6 }}>

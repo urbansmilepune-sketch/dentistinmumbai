@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { sendRegistrationEmailToAdmin, sendRegistrationEmailToDentist, sendNewRegistrationAdminAlert } from '@/lib/email'
+import {
+  sendRegistrationEmailToAdmin,
+  sendRegistrationEmailToDentist,
+  sendNewRegistrationAdminAlert,
+  sendAutoApprovedAdminAlert,
+} from '@/lib/email'
 import { CITY_CONFIGS, DEFAULT_CITY, type CitySlug } from '@/config/cities'
+import { approveDentistRegistration } from '@/lib/approval'
 
 const ADMIN_WHATSAPP = '917719903232'
 
@@ -14,6 +20,31 @@ function generateRef(): string {
   let ref = 'DIM-DR-'
   for (let i = 0; i < 5; i++) ref += chars[Math.floor(Math.random() * chars.length)]
   return ref
+}
+
+interface AutoApprovalInput {
+  name: string
+  phone: string
+  clinic_name: string
+  area: string
+  mci_registration: string
+}
+
+/**
+ * Gate that decides whether a fresh registration can skip the admin queue.
+ * Returns null if all checks pass; otherwise the failure reason (for logs).
+ * Keep this conservative — a false positive ships a dentist live without
+ * human review. The signals here are low-effort to forge but also cheap to
+ * undo: the admin can decline + delete the dentist row after the fact.
+ */
+function autoApprovalFailureReason(input: AutoApprovalInput): string | null {
+  const phoneDigits = (input.phone || '').replace(/\D/g, '')
+  if (phoneDigits.length !== 10) return `phone has ${phoneDigits.length} digits, need exactly 10`
+  if (!(input.mci_registration || '').trim()) return 'mci_registration empty'
+  if ((input.name || '').trim().length <= 3) return 'name too short (≤3 chars)'
+  if ((input.clinic_name || '').trim().length <= 3) return 'clinic_name too short (≤3 chars)'
+  if (!(input.area || '').trim()) return 'area empty'
+  return null
 }
 
 export async function POST(request: NextRequest) {
@@ -57,14 +88,43 @@ export async function POST(request: NextRequest) {
     const { data, error } = await supabase
       .from('dentist_registrations')
       .insert({ ref_no, name, phone, email, clinic_name, area, qualification, mci_registration, founding_number, selected_plan: planValue, city: cityValue, status: 'pending' })
-      .select('ref_no')
+      .select('id, ref_no')
       .single()
 
     if (error) throw error
 
-    // Admin notifications: pre-existing branded emails + new short alert email
-    // + a wa.me click-to-chat ping so the admin gets a WhatsApp pop on their phone.
+    // ---- Auto-approval gate -------------------------------------------------
+    // Decide whether we can promote this registration to 'approved' right now.
+    // The check uses the values just submitted (no need to re-fetch the row).
+    // If anything trips the gate we leave the row 'pending' and fall through
+    // to the standard admin-alert path.
+    const failReason = autoApprovalFailureReason({ name, phone, clinic_name, area, mci_registration })
     const cityDomain = CITY_CONFIGS[cityValue].domain
+
+    if (failReason === null) {
+      const result = await approveDentistRegistration(supabase, data.id, { autoApproved: true })
+      if (result.ok) {
+        console.error('[registrations] auto-approved', { ref_no: data.ref_no, slug: result.slug })
+        // Tell the admin this happened — but skip the "approve here" alert
+        // (there's nothing left to approve) and skip the dentist's "we'll
+        // review in 24h" email (the approval email already went out from the
+        // helper). One focused admin alert is enough.
+        sendAutoApprovedAdminAlert({
+          name, clinic_name, area, phone, email,
+          ref_no: data.ref_no, slug: result.slug, city: cityValue,
+        }).catch(err => console.error('[registrations] auto-approve admin alert failed:', err))
+
+        return NextResponse.json({ ref_no: data.ref_no, success: true, auto_approved: true, slug: result.slug })
+      }
+      // Helper failed — degrade gracefully to the manual-review path so the
+      // dentist doesn't see a 500 just because, say, the slugify collided.
+      console.error('[registrations] auto-approve helper failed, leaving pending', { ref_no: data.ref_no, result })
+    } else {
+      console.error('[registrations] auto-approval gate failed', { ref_no: data.ref_no, reason: failReason })
+    }
+
+    // Manual-review path: pre-existing branded emails + new short alert email
+    // + a wa.me click-to-chat ping so the admin gets a WhatsApp pop on their phone.
     const adminMsg = `New dentist registration: ${name}, ${clinic_name}, ${area}, ${phone}. Approve here: https://${cityDomain}/admin`
     const waUrl = `https://wa.me/${ADMIN_WHATSAPP}?text=${encodeURIComponent(adminMsg)}`
 
@@ -75,7 +135,7 @@ export async function POST(request: NextRequest) {
       fetch(waUrl, { method: 'GET' }).catch(() => null),
     ]).catch(err => console.error('Admin notification failed:', err))
 
-    return NextResponse.json({ ref_no: data.ref_no, success: true })
+    return NextResponse.json({ ref_no: data.ref_no, success: true, auto_approved: false })
   } catch (error: any) {
     console.error('Registration error:', error)
     return NextResponse.json({ error: 'Failed to submit registration' }, { status: 500 })
