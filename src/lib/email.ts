@@ -436,3 +436,64 @@ export async function sendApprovalEmail(data: {
     `,
   })
 }
+
+/**
+ * Sends an ad-hoc admin-authored message to a single dentist. Used by the
+ * Communications tab — the API route fans these out, one call per recipient,
+ * so each gets the city-branded from-address that matches their own clinic.
+ *
+ * The message body is treated as plain text with newlines preserved as
+ * <br/>. We intentionally do not pass admin-typed HTML through verbatim:
+ * admins are trusted, but a stray `<script>` or malformed tag breaks the
+ * template for every recipient. Bold/italic via markdown can be a later
+ * polish; for now the constraint keeps blast-radius low.
+ */
+export async function sendAdminBulkMessage(data: {
+  to_email: string
+  dentist_name: string | null
+  subject: string
+  message: string
+  city?: string
+}) {
+  const city = resolveCity(data.city)
+  const safeBody = escapeHtml(data.message).replace(/\n/g, '<br/>')
+  const greeting = data.dentist_name
+    ? `Hi ${escapeHtml(data.dentist_name.split(' ')[0])},`
+    : 'Hello,'
+  return resend.emails.send({
+    from: getCityEmail(city.citySlug),
+    to: data.to_email,
+    subject: data.subject,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #003F7A, #0057A8); padding: 24px 20px; border-radius: 10px 10px 0 0;">
+          <h1 style="color: #fff; margin: 0; font-size: 18px; font-family: Arial, sans-serif;">${city.domain}</h1>
+        </div>
+        <div style="background: #fff; padding: 28px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 10px 10px;">
+          <p style="color: #374151; font-size: 15px; margin: 0 0 14px;">${greeting}</p>
+          <div style="color: #374151; font-size: 15px; line-height: 1.7;">${safeBody}</div>
+          <div style="margin-top: 28px; padding-top: 18px; border-top: 1px solid #e2e8f0; text-align: center;">
+            <a href="${city.origin}/for-dentists/dashboard" style="display: inline-block; background: #0057A8; color: #fff; padding: 11px 24px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 14px;">Open Dashboard →</a>
+          </div>
+          <p style="color: #94a3b8; font-size: 12px; text-align: center; margin: 20px 0 0;">
+            © ${new Date().getFullYear()} ${city.domain} · A Dentaura Prime LLP initiative
+          </p>
+        </div>
+      </div>
+    `,
+  })
+}
+
+// Minimal HTML escape — covers the five characters that can break the
+// surrounding template. We're not trying to neutralise XSS for untrusted
+// input here; admins are trusted. The goal is to keep stray `<` `>` `&`
+// from rendering as broken markup when an admin types something like
+// "fees < ₹500" in the message body.
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}

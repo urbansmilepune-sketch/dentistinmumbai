@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import AdminShell from './AdminShell'
+import CommunicationsTab from './CommunicationsTab'
 import { CITY_CONFIGS } from '@/config/cities'
 
 interface AdminPageClientProps {
@@ -16,6 +17,10 @@ interface AdminPageClientProps {
   foundingConfig: any
   analytics: any
   cityFilter: string | null
+  /** Global slim dentist list (every active dentist with an email) used
+   * specifically by the Communications tab — independent of the cityFilter
+   * URL param and not capped at 100 rows. */
+  commsDentists: any[]
 }
 
 // User-requested display order for the city dropdown — All Cities first,
@@ -186,7 +191,7 @@ function ApprovalSourceBadge({ autoApproved }: { autoApproved: boolean }) {
   )
 }
 
-export default function AdminPageClient({ stats, dentists, registrations, appointments, enquiries, reviews, areas, foundingConfig, analytics, cityFilter }: AdminPageClientProps) {
+export default function AdminPageClient({ stats, dentists, registrations, appointments, enquiries, reviews, areas, foundingConfig, analytics, cityFilter, commsDentists }: AdminPageClientProps) {
   const [section, setSection] = useState('dashboard')
   const [dentistList, setDentistList] = useState(dentists)
   const [reviewList, setReviewList] = useState(reviews)
@@ -855,6 +860,11 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
               )}
             </div>
           </div>
+        )}
+
+        {/* COMMUNICATIONS */}
+        {section === 'communications' && (
+          <CommunicationsTab dentists={commsDentists} />
         )}
 
         {/* AREAS */}

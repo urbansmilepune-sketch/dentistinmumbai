@@ -60,6 +60,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     { data: allDentistSlim },
     { data: allRegistrationsSlim },
     { data: allPatientDentistIds },
+    { data: commsDentists },
   ] = await Promise.all([
     applyCity(supabase.from('dentists').select('*', { count: 'exact', head: true }).eq('is_active', true)),
     applyCity(supabase.from('appointments').select('*, dentists!inner(city)', { count: 'exact', head: true })),
@@ -101,6 +102,11 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     supabase.from('dentists').select('id, city, is_active'),
     supabase.from('dentist_registrations').select('city, status'),
     supabase.from('patients').select('dentist_id'),
+    // Communications-tab dropdown — must show every dentist regardless of
+    // the cityFilter URL param + above the 100-row cap that the dentists
+    // table query uses. Slim columns so the payload stays small even at a
+    // few thousand dentists.
+    supabase.from('dentists').select('id, name, clinic_name, email, city, tier').eq('is_active', true).not('email', 'is', null).order('clinic_name', { ascending: true }),
   ])
 
   const dc = dentistCount || 0
@@ -239,6 +245,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
       foundingConfig={foundingConfig}
       analytics={analytics}
       cityFilter={cityFilter}
+      commsDentists={commsDentists || []}
     />
   )
 }

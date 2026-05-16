@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { id: 'appointments', label: 'Appointments', icon: '📅' },
   { id: 'enquiries', label: 'Enquiries', icon: '💬' },
   { id: 'reviews', label: 'Reviews', icon: '⭐' },
+  { id: 'communications', label: 'Communications', icon: '📣' },
   { id: 'areas', label: 'Areas', icon: '📍' },
   { id: 'blog', label: 'Blog', icon: '✍️' },
   { id: 'settings', label: 'Settings', icon: '⚙️' },
