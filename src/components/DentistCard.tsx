@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { istDayTime } from '@/lib/time'
 
 interface Treatment {
   name: string
@@ -34,14 +35,14 @@ interface DentistCardProps {
 
 function isOpenNow(working_hours: any): boolean {
   if (!working_hours) return false
-  const now = new Date()
-  const days = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
-  const day = days[now.getDay()]
-  const hours = working_hours[day]
+  // IST day/time — server runs UTC; naive getDay()/getHours() would offset
+  // by 5h30 and render the wrong weekday's hours past 18:30 IST.
+  const { dayKey, hour, minute } = istDayTime(new Date())
+  const hours = working_hours[dayKey]
   if (!hours?.is_open) return false
   const [openH, openM] = (hours.open_time || '09:00').split(':').map(Number)
   const [closeH, closeM] = (hours.close_time || '19:00').split(':').map(Number)
-  const currentMins = now.getHours() * 60 + now.getMinutes()
+  const currentMins = hour * 60 + minute
   const openMins = openH * 60 + openM
   const closeMins = closeH * 60 + closeM
   return currentMins >= openMins && currentMins < closeMins
