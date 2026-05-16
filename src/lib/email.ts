@@ -3,8 +3,37 @@ import { CITY_CONFIGS, DEFAULT_CITY, type CitySlug } from '@/config/cities'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
-const FROM_EMAIL = 'hello@dentistinmumbai.in'
 const ADMIN_EMAIL = 'dentistinmumbaiapp@gmail.com'
+
+/**
+ * Domains that have been DKIM-verified in Resend and can therefore be used
+ * as a from-address without bounces. Anything outside this set is rewritten
+ * to the mumbai address by getCityEmail below — better to send a slightly
+ * off-brand from-address than to have the message rejected.
+ *
+ * To enable a new city's branded sender:
+ *   1. Add the apex domain in Resend (Settings → Domains → Add Domain).
+ *   2. Wait for DKIM/SPF green checkmarks.
+ *   3. Append the slug here.
+ */
+const VERIFIED_RESEND_DOMAINS: ReadonlySet<CitySlug> = new Set<CitySlug>([
+  'mumbai',
+])
+
+/**
+ * The per-city from-address used in Resend `from:` headers. Format is
+ * always `hello@<city-domain>`, which lines up with the CityConfig.domain
+ * values in src/config/cities.ts (both `.in` and `.com` TLDs supported).
+ * Unknown slugs and unverified domains both fall back to the mumbai
+ * sender so the send still goes through.
+ */
+export function getCityEmail(citySlug?: string | null): string {
+  const slug = (citySlug && Object.prototype.hasOwnProperty.call(CITY_CONFIGS, citySlug)
+    ? citySlug
+    : DEFAULT_CITY) as CitySlug
+  if (VERIFIED_RESEND_DOMAINS.has(slug)) return `hello@${CITY_CONFIGS[slug].domain}`
+  return `hello@${CITY_CONFIGS[DEFAULT_CITY].domain}`
+}
 
 /**
  * Resolve a CitySlug-ish input to a CityConfig with sensible fallback.
@@ -29,7 +58,7 @@ export async function sendRegistrationEmailToAdmin(data: {
 }) {
   const city = resolveCity(data.city)
   return resend.emails.send({
-    from: FROM_EMAIL,
+    from: getCityEmail(city.citySlug),
     to: ADMIN_EMAIL,
     subject: `🦷 New Dentist Registration — ${data.name} | ${data.ref_no}`,
     html: `
@@ -70,7 +99,7 @@ export async function sendAutoApprovedAdminAlert(data: {
 }) {
   const city = resolveCity(data.city)
   return resend.emails.send({
-    from: FROM_EMAIL,
+    from: getCityEmail(city.citySlug),
     to: ADMIN_EMAIL,
     subject: `✅ Auto-approved: ${data.name} (${data.ref_no})`,
     text: `Auto-approved at signup: ${data.name}, ${data.clinic_name}, ${data.area}, ${data.phone}. Profile is live at ${city.origin}/dentist/${data.slug}`,
@@ -112,7 +141,7 @@ export async function sendStaffInviteEmail(data: {
       ? 'Associate Dentist'
       : 'Clinic Owner'
   return resend.emails.send({
-    from: FROM_EMAIL,
+    from: getCityEmail(city.citySlug),
     to: data.to_email,
     subject: `${data.owner_name} invited you to join ${data.clinic_name} on ${city.domain}`,
     html: `
@@ -153,7 +182,7 @@ export async function sendNewRegistrationAdminAlert(data: {
   const city = resolveCity(data.city)
   const summary = `New dentist registration: ${data.name}, ${data.clinic_name}, ${data.area}, ${data.phone}. Approve here: ${city.origin}/admin`
   return resend.emails.send({
-    from: FROM_EMAIL,
+    from: getCityEmail(city.citySlug),
     to: ADMIN_EMAIL,
     subject: `🚨 New dentist registration — ${data.name}`,
     text: summary,
@@ -177,7 +206,7 @@ export async function sendRegistrationEmailToDentist(data: {
 }) {
   const city = resolveCity(data.city)
   return resend.emails.send({
-    from: FROM_EMAIL,
+    from: getCityEmail(city.citySlug),
     to: data.to_email,
     subject: `Welcome to ${city.domain} — Your Registration is Confirmed!`,
     html: `
@@ -238,7 +267,7 @@ export async function sendDeclineEmail(data: {
     : ''
 
   return resend.emails.send({
-    from: FROM_EMAIL,
+    from: getCityEmail(city.citySlug),
     to: data.to_email,
     subject: `Update on your ${city.domain} registration`,
     html: `
@@ -286,7 +315,7 @@ export async function sendProfileReminderEmail(data: {
   `).join('')
 
   return resend.emails.send({
-    from: FROM_EMAIL,
+    from: getCityEmail(city.citySlug),
     to: data.to_email,
     subject: `Your ${city.domain} profile needs attention 🦷`,
     html: `
@@ -371,7 +400,7 @@ export async function sendApprovalEmail(data: {
           </div>`
 
   return resend.emails.send({
-    from: FROM_EMAIL,
+    from: getCityEmail(city.citySlug),
     to: data.to_email,
     subject: `🎉 Your ${city.domain} profile is LIVE!`,
     html: `

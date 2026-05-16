@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import { getCityBySlug } from '@/config/cities'
+import { getCityEmail } from '@/lib/email'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -50,7 +51,7 @@ export async function POST(request: NextRequest) {
 
   // Send branded email with magic link
   await resend.emails.send({
-    from: 'hello@dentistinmumbai.in',
+    from: getCityEmail((dentist as any).city),
     to: email,
     subject: `Access your ${city.domain} dashboard — ${dentist.name}`,
     html: `

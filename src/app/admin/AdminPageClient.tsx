@@ -194,6 +194,10 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
   const [search, setSearch] = useState('')
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [reviewFilter, setReviewFilter] = useState<'pending' | 'approved' | 'rejected'>('pending')
+  // Per-dentist transient state for the "Login Link" action. Keyed by
+  // dentist id; auto-clears after 4–6s via setTimeout in sendLoginLink so
+  // the row reverts to its idle button.
+  const [linkStatus, setLinkStatus] = useState<Record<string, { state: 'sending' | 'sent' | 'error'; error?: string }>>({})
 
   async function adminAction(endpoint: string, body: any, id: string) {
     setActionLoading(id)
@@ -211,14 +215,19 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
     setDentistList(prev => prev.map(d => d.id === id ? { ...d, tier } : d))
   }
 
-  // Manual escape hatch for dentists who registered before the auto-login fix
-  // landed — they have a dentists row but no auth.users record, so they can't
-  // sign in until this button mints them a magic link. POST → branded Resend
-  // email with a one-click dashboard URL.
+  // Manual escape hatch for dentists who registered before the auto-login
+  // fix landed — they have a dentists row but no auth.users record, so they
+  // can't sign in until this button mints them a magic link. POST → branded
+  // Resend email with a one-click dashboard URL. Feedback is inline on the
+  // button itself (no alert / confirm dialogs) so the admin can fire several
+  // in a row without dismissing modals.
   async function sendLoginLink(d: any) {
-    if (!d.email) { alert('This dentist has no email on file.'); return }
-    if (!confirm(`Send a login link to ${d.email}?`)) return
-    setActionLoading(d.id)
+    if (!d.email) {
+      setLinkStatus(s => ({ ...s, [d.id]: { state: 'error', error: 'No email on file' } }))
+      setTimeout(() => setLinkStatus(s => { const next = { ...s }; delete next[d.id]; return next }), 5000)
+      return
+    }
+    setLinkStatus(s => ({ ...s, [d.id]: { state: 'sending' } }))
     try {
       const res = await fetch('/api/auth/send-login-link', {
         method: 'POST',
@@ -226,12 +235,17 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
         body: JSON.stringify({ email: d.email }),
       })
       const data = await res.json().catch(() => ({}))
-      if (res.ok && data.success) alert(`Login link sent to ${d.email}`)
-      else alert(`Failed to send login link: ${data?.error || 'unknown error'}`)
+      if (res.ok && data.success) {
+        setLinkStatus(s => ({ ...s, [d.id]: { state: 'sent' } }))
+        setTimeout(() => setLinkStatus(s => { const next = { ...s }; delete next[d.id]; return next }), 4000)
+      } else {
+        setLinkStatus(s => ({ ...s, [d.id]: { state: 'error', error: data?.error || 'Send failed' } }))
+        setTimeout(() => setLinkStatus(s => { const next = { ...s }; delete next[d.id]; return next }), 6000)
+      }
     } catch {
-      alert('Network error — login link not sent.')
+      setLinkStatus(s => ({ ...s, [d.id]: { state: 'error', error: 'Network error' } }))
+      setTimeout(() => setLinkStatus(s => { const next = { ...s }; delete next[d.id]; return next }), 6000)
     }
-    setActionLoading(null)
   }
 
   async function reviewAction(id: string, status: string) {
@@ -685,14 +699,32 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
                       <td style={tableCellStyle}>
                         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                           <a href={`/dentist/${d.slug}`} target="_blank" style={{ fontSize: 12, color: 'var(--blue)', fontWeight: 600 }}>View →</a>
-                          <button
-                            onClick={() => sendLoginLink(d)}
-                            disabled={actionLoading === d.id || !d.email}
-                            title={d.email ? `Send a fresh magic link to ${d.email}` : 'No email on file'}
-                            style={{ padding: '4px 10px', background: '#DBEAFE', color: '#1D4ED8', border: '1px solid #BFDBFE', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: actionLoading === d.id || !d.email ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-body)', opacity: actionLoading === d.id || !d.email ? 0.5 : 1, whiteSpace: 'nowrap' }}
-                          >
-                            {actionLoading === d.id ? '…' : '📧 Send Login Link'}
-                          </button>
+                          {(() => {
+                            const status = linkStatus[d.id]
+                            const sending = status?.state === 'sending'
+                            const sent = status?.state === 'sent'
+                            const errored = status?.state === 'error'
+                            // Three visual states drive one button: idle = blue,
+                            // sent = green "✓ Sent!", error = red with the upstream
+                            // message tucked into title= for hover. setTimeout
+                            // in sendLoginLink restores the idle look.
+                            const palette = sent
+                              ? { bg: '#DCFCE7', color: '#166534', border: '#BBF7D0' }
+                              : errored
+                                ? { bg: '#FEE2E2', color: '#991B1B', border: '#FECACA' }
+                                : { bg: '#DBEAFE', color: '#1D4ED8', border: '#BFDBFE' }
+                            const label = sending ? 'Sending…' : sent ? '✓ Sent!' : errored ? '✕ Failed' : '📧 Login Link'
+                            return (
+                              <button
+                                onClick={() => sendLoginLink(d)}
+                                disabled={sending || !d.email}
+                                title={errored ? status?.error : d.email ? `Send a fresh magic link to ${d.email}` : 'No email on file'}
+                                style={{ padding: '4px 10px', background: palette.bg, color: palette.color, border: `1px solid ${palette.border}`, borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: sending || !d.email ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-body)', opacity: !d.email ? 0.5 : 1, whiteSpace: 'nowrap', transition: 'background 0.2s, color 0.2s' }}
+                              >
+                                {label}
+                              </button>
+                            )
+                          })()}
                         </div>
                       </td>
                     </tr>
