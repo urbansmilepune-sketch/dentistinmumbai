@@ -42,7 +42,7 @@ export default async function ContactPage() {
             {[
               { icon: '👤', title: 'For Patients', desc: 'Need help finding a dentist or have a booking issue?', action: 'WhatsApp Us', href: 'https://wa.me/917719903232' },
               { icon: '🦷', title: 'For Dentists', desc: 'Want to list your clinic or have a profile question?', action: 'List Your Clinic', href: '/for-dentists' },
-              { icon: '🤝', title: 'Partnerships', desc: 'Dental brands, associations, or media enquiries.', action: 'Email Us', href: 'mailto:admin@dentistinmumbai.in' },
+              { icon: '🤝', title: 'Partnerships', desc: 'Dental brands, associations, or media enquiries.', action: 'Email Us', href: `mailto:admin@${city.domain}` },
             ].map(card => (
               <div key={card.title} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '28px', textAlign: 'center' }}>
                 <div style={{ fontSize: 36, marginBottom: 12 }}>{card.icon}</div>
@@ -59,7 +59,7 @@ export default async function ContactPage() {
             <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 20, marginBottom: 20 }}>Direct Contact</h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               {[
-                { icon: '📧', label: 'Email', value: 'admin@dentistinmumbai.in', href: 'mailto:admin@dentistinmumbai.in' },
+                { icon: '📧', label: 'Email', value: `admin@${city.domain}`, href: `mailto:admin@${city.domain}` },
                 { icon: '💬', label: 'WhatsApp', value: '+91 7719903232', href: 'https://wa.me/917719903232' },
                 { icon: '🏢', label: 'Company', value: 'Dentaura Prime LLP, Pune, Maharashtra', href: null },
               ].map(item => (

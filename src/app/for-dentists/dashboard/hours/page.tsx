@@ -88,6 +88,7 @@ export default function WorkingHoursPage() {
       setSaveError('Save failed — no row was updated. Check that you are signed in as the dentist whose hours you are editing.')
       return
     }
+    setSaveError(null)
     setSaved(true)
     setTimeout(() => setSaved(false), 3000)
   }

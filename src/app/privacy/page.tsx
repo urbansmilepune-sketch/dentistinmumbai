@@ -39,7 +39,7 @@ function sectionsFor(domain: string) {
     },
     {
       title: '6. Your Rights',
-      content: `You have the right to: access the personal data we hold about you; request correction of incorrect data; request deletion of your data; opt out of marketing communications. To exercise any of these rights, contact us at admin@dentistinmumbai.in.`,
+      content: `You have the right to: access the personal data we hold about you; request correction of incorrect data; request deletion of your data; opt out of marketing communications. To exercise any of these rights, contact us at admin@${domain}.`,
     },
     {
       title: '7. Third-Party Services',
@@ -51,7 +51,7 @@ function sectionsFor(domain: string) {
     },
     {
       title: '9. Contact',
-      content: `For any privacy-related questions, contact us at admin@dentistinmumbai.in or WhatsApp +91 7719903232.`,
+      content: `For any privacy-related questions, contact us at admin@${domain} or WhatsApp +91 7719903232.`,
     },
   ]
 }

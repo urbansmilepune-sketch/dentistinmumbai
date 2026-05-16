@@ -67,7 +67,7 @@ export async function approveDentistRegistration(
   const autoApproved = opts.autoApproved === true
   const tag = autoApproved ? '[approveDentistRegistration auto]' : '[approveDentistRegistration manual]'
 
-  console.error(`${tag} start`, { registration_id })
+  console.log(`${tag} start`, { registration_id })
 
   const { data: reg, error: regErr } = await admin_db
     .from('dentist_registrations')
@@ -87,7 +87,7 @@ export async function approveDentistRegistration(
   // surface a clear "already approved" message instead of silently
   // duplicating work.
   if (reg.status === 'approved') {
-    console.error(`${tag} registration already approved — bailing`, { registration_id })
+    console.log(`${tag} registration already approved — bailing`, { registration_id })
     return { ok: false, status: 409, error: 'Registration is already approved' }
   }
 

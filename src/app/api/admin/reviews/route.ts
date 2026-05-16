@@ -25,7 +25,44 @@ export async function POST(request: NextRequest) {
   const { id, status } = await request.json()
   if (!id || !status) return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
 
+  // Look up the dentist before flipping status so we can recompute their
+  // rating aggregates regardless of whether this transition adds an approved
+  // review (pending→approved) or removes one (approved→rejected).
+  const { data: review, error: fetchErr } = await admin_db
+    .from('reviews')
+    .select('dentist_id')
+    .eq('id', id)
+    .single()
+  if (fetchErr || !review) return NextResponse.json({ error: 'Review not found' }, { status: 404 })
+
   const { error } = await admin_db.from('reviews').update({ status }).eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ success: true })
+
+  // Recompute avg_rating + review_count from the source of truth (approved
+  // reviews for this dentist) and write them back to the dentists row.
+  // Previously these denormalised columns were never populated — the public
+  // profile showed "no reviews" even after admins approved them.
+  const { data: approvedRows } = await admin_db
+    .from('reviews')
+    .select('rating')
+    .eq('dentist_id', review.dentist_id)
+    .eq('status', 'approved')
+
+  const count = approvedRows?.length ?? 0
+  const avg = count > 0
+    ? Number(((approvedRows!.reduce((s, r) => s + (r.rating || 0), 0)) / count).toFixed(2))
+    : null
+
+  const { error: aggErr } = await admin_db
+    .from('dentists')
+    .update({ avg_rating: avg, review_count: count })
+    .eq('id', review.dentist_id)
+  if (aggErr) {
+    // Status flip already landed; report the aggregate failure but don't
+    // pretend the whole call failed.
+    console.error('[admin/reviews] aggregate update failed', { dentist_id: review.dentist_id, message: aggErr.message })
+    return NextResponse.json({ success: true, aggregate_warning: aggErr.message })
+  }
+
+  return NextResponse.json({ success: true, avg_rating: avg, review_count: count })
 }

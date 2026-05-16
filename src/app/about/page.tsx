@@ -88,7 +88,7 @@ export default async function AboutPage() {
               <div style={{ borderTop: '1px solid var(--border)', paddingTop: 32 }}>
                 <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 16 }}>Contact Us</h2>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 15, color: 'var(--text-secondary)' }}>
-                  <div>📧 <a href="mailto:admin@dentistinmumbai.in" style={{ color: 'var(--blue)' }}>admin@dentistinmumbai.in</a></div>
+                  <div>📧 <a href={`mailto:admin@${city.domain}`} style={{ color: 'var(--blue)' }}>admin@{city.domain}</a></div>
                   <div>💬 <a href="https://wa.me/917719903232" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--blue)' }}>WhatsApp: +91 7719903232</a></div>
                   <div>🏢 Dentaura Prime LLP, Pune, Maharashtra, India</div>
                 </div>

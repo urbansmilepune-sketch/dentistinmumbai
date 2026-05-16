@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
     if (failReason === null) {
       const result = await approveDentistRegistration(supabase, data.id, { autoApproved: true })
       if (result.ok) {
-        console.error('[registrations] auto-approved', { ref_no: data.ref_no, slug: result.slug })
+        console.log('[registrations] auto-approved', { ref_no: data.ref_no, slug: result.slug })
         // Tell the admin this happened — but skip the "approve here" alert
         // (there's nothing left to approve) and skip the dentist's "we'll
         // review in 24h" email (the approval email already went out from the
@@ -118,9 +118,9 @@ export async function POST(request: NextRequest) {
       }
       // Helper failed — degrade gracefully to the manual-review path so the
       // dentist doesn't see a 500 just because, say, the slugify collided.
-      console.error('[registrations] auto-approve helper failed, leaving pending', { ref_no: data.ref_no, result })
+      console.log('[registrations] auto-approve helper failed, leaving pending', { ref_no: data.ref_no, result })
     } else {
-      console.error('[registrations] auto-approval gate failed', { ref_no: data.ref_no, reason: failReason })
+      console.log('[registrations] auto-approval gate failed', { ref_no: data.ref_no, reason: failReason })
     }
 
     // Manual-review path: pre-existing branded emails + new short alert email
