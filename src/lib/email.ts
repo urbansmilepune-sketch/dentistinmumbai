@@ -97,6 +97,52 @@ export async function sendAutoApprovedAdminAlert(data: {
   })
 }
 
+export async function sendStaffInviteEmail(data: {
+  to_email: string
+  invite_url: string
+  clinic_name: string
+  owner_name: string
+  role: 'owner' | 'associate_dentist' | 'reception'
+  city?: string
+}) {
+  const city = resolveCity(data.city)
+  const roleLabel = data.role === 'reception'
+    ? 'Reception'
+    : data.role === 'associate_dentist'
+      ? 'Associate Dentist'
+      : 'Clinic Owner'
+  return resend.emails.send({
+    from: FROM_EMAIL,
+    to: data.to_email,
+    subject: `${data.owner_name} invited you to join ${data.clinic_name} on ${city.domain}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
+        <div style="background: linear-gradient(135deg, #003F7A, #0057A8); padding: 28px 20px; border-radius: 12px 12px 0 0; text-align: center;">
+          <h1 style="color: white; margin: 0; font-size: 22px;">You're invited 👋</h1>
+          <p style="color: rgba(255,255,255,0.85); margin: 8px 0 0; font-size: 14px;">Join ${data.clinic_name} on ${city.domain}</p>
+        </div>
+        <div style="background: #fff; padding: 28px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 12px 12px;">
+          <p style="color: #374151; font-size: 15px; line-height: 1.6;">
+            <strong>${data.owner_name}</strong> has invited you to join <strong>${data.clinic_name}</strong> as <strong>${roleLabel}</strong>.
+          </p>
+          <p style="color: #374151; font-size: 14px; line-height: 1.6;">
+            Click the button below to accept the invite and sign in. The link is single-use and expires in 24 hours.
+          </p>
+          <div style="text-align: center; margin: 28px 0;">
+            <a href="${data.invite_url}" style="background: #0057A8; color: white; padding: 14px 30px; border-radius: 10px; text-decoration: none; font-weight: 700; font-size: 15px; display: inline-block;">Accept Invite →</a>
+          </div>
+          <p style="color: #64748b; font-size: 12px; line-height: 1.6;">
+            If you weren't expecting this email, you can safely ignore it — the invite won't activate until you click the link.
+          </p>
+          <p style="color: #94a3b8; font-size: 12px; margin-top: 18px;">
+            © ${new Date().getFullYear()} ${city.domain} · A Dentaura Prime LLP initiative
+          </p>
+        </div>
+      </div>
+    `,
+  })
+}
+
 export async function sendNewRegistrationAdminAlert(data: {
   name: string
   clinic_name: string

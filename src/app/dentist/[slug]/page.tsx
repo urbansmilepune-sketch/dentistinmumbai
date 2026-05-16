@@ -6,6 +6,7 @@ import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { getCityBySlug, cityOrigin } from '@/config/cities'
 import ProfileTabs from './ProfileTabs'
+import LocationTabs from './LocationTabs'
 import ViewTracker from './ViewTracker'
 import TrackedLink from './TrackedLink'
 import ReviewForm from '@/components/ReviewForm'
@@ -60,6 +61,19 @@ export default async function DentistProfilePage({ params }: Props) {
     .single()
 
   if (!dentist) notFound()
+
+  // Multi-location support: pulled separately because the dentist row already
+  // joins five tables. Dentists with zero rows here keep using the original
+  // single-location fields (address, working_hours) on the dentists table —
+  // no backfill, no migration of legacy data.
+  const { data: locationRows } = await supabase
+    .from('clinic_locations')
+    .select('id, name, address, phone, working_hours, is_primary, sort_order, areas(name)')
+    .eq('dentist_id', dentist.id)
+    .order('is_primary', { ascending: false })
+    .order('sort_order')
+    .order('created_at')
+  const locations = locationRows ?? []
 
   const openStatus = isOpenNow(dentist.working_hours)
   const approvedReviews = (dentist.reviews || []).filter((r: any) => r.status === 'approved')
@@ -211,19 +225,26 @@ export default async function DentistProfilePage({ params }: Props) {
               />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '20px' }}>
-                <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, marginBottom: 14 }}>Working Hours</h3>
-                {['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].map(day => {
-                  const h = dentist.working_hours?.[day]
-                  const labels: Record<string, string> = { mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday', fri: 'Friday', sat: 'Saturday', sun: 'Sunday' }
-                  return (
-                    <div key={day} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
-                      <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{labels[day]}</span>
-                      <span style={{ fontWeight: 600, color: h?.is_open ? 'var(--text)' : '#EF4444' }}>{h?.is_open ? `${h.open_time} – ${h.close_time}` : 'Closed'}</span>
-                    </div>
-                  )
-                })}
-              </div>
+              {locations.length > 1 ? (
+                // Dentist has registered multiple branches in the Locations
+                // dashboard — show a tab strip so the patient can pick which
+                // one's hours/address they're looking at.
+                <LocationTabs locations={locations as any} />
+              ) : (
+                <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '20px' }}>
+                  <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, marginBottom: 14 }}>Working Hours</h3>
+                  {['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].map(day => {
+                    const h = dentist.working_hours?.[day]
+                    const labels: Record<string, string> = { mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday', fri: 'Friday', sat: 'Saturday', sun: 'Sunday' }
+                    return (
+                      <div key={day} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
+                        <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{labels[day]}</span>
+                        <span style={{ fontWeight: 600, color: h?.is_open ? 'var(--text)' : '#EF4444' }}>{h?.is_open ? `${h.open_time} – ${h.close_time}` : 'Closed'}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
               {dentist.maps_embed && (
                 <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
                   <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>

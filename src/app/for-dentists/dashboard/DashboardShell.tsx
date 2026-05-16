@@ -10,6 +10,8 @@ const NAV = [
   { href: '/for-dentists/dashboard',              icon: '📊', label: 'Overview'      },
   { href: '/for-dentists/dashboard/profile',      icon: '✏️', label: 'Edit Profile'  },
   { href: '/for-dentists/dashboard/hours',        icon: '🕐', label: 'Working Hours' },
+  { href: '/for-dentists/dashboard/locations',    icon: '🏥', label: 'Locations'     },
+  { href: '/for-dentists/dashboard/staff',        icon: '👥', label: 'Staff'         },
   { href: '/for-dentists/dashboard/appointments', icon: '📅', label: 'Appointments'  },
   { href: '/for-dentists/dashboard/calendar',     icon: '📆', label: 'Calendar'      },
   { href: '/for-dentists/dashboard/patients',     icon: '👥', label: 'Patients'      },
