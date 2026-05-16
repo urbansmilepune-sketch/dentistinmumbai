@@ -21,14 +21,32 @@ export async function POST(request: NextRequest) {
   const city = getCityBySlug((dentist as any).city)
   const origin = `https://${city.domain}`
 
-  // Create/invite user in Supabase Auth
-  const { data: authData, error: authError } = await supabase.auth.admin.generateLink({
+  // Try a magic link first — works for any dentist who already has an
+  // auth.users row (everyone post-approval-fix). For legacy dentists that
+  // were approved before the auto-login fix, magiclink fails because there
+  // is no auth user yet; fall back to type='invite', which both creates the
+  // row and returns a usable action link. Same belt-and-braces pattern the
+  // approval helper uses.
+  let authData: any = null
+  const { data: magicData, error: magicError } = await supabase.auth.admin.generateLink({
     type: 'magiclink',
     email,
     options: { redirectTo: `${origin}/for-dentists/dashboard` }
   })
-
-  if (authError) return NextResponse.json({ error: authError.message }, { status: 500 })
+  if (magicError) {
+    const { data: inviteData, error: inviteError } = await supabase.auth.admin.generateLink({
+      type: 'invite',
+      email,
+      options: { redirectTo: `${origin}/for-dentists/dashboard` }
+    })
+    if (inviteError) {
+      console.error('[send-login-link] both magiclink and invite failed', { email, magicError, inviteError })
+      return NextResponse.json({ error: inviteError.message || magicError.message }, { status: 500 })
+    }
+    authData = inviteData
+  } else {
+    authData = magicData
+  }
 
   // Send branded email with magic link
   await resend.emails.send({

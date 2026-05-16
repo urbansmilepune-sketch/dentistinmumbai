@@ -64,7 +64,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     applyCity(supabase.from('dentists').select('*', { count: 'exact', head: true }).eq('is_active', true)),
     applyCity(supabase.from('appointments').select('*, dentists!inner(city)', { count: 'exact', head: true })),
     applyCity(supabase.from('enquiries').select('*, dentists!inner(city)', { count: 'exact', head: true })),
-    applyCity(supabase.from('dentists').select('id, slug, name, clinic_name, qualifications, phone, tier, is_verified, is_active, city, areas(name, slug)').order('created_at', { ascending: false }).limit(100)),
+    applyCity(supabase.from('dentists').select('id, slug, name, clinic_name, email, qualifications, phone, tier, is_verified, is_active, city, areas(name, slug)').order('created_at', { ascending: false }).limit(100)),
     applyCity(supabase.from('dentist_registrations').select('*').order('created_at', { ascending: false }).limit(100)),
     applyCity(supabase.from('appointments').select('*, dentists!inner(name, city), treatments(name)').order('created_at', { ascending: false }).limit(50)),
     applyCity(supabase.from('enquiries').select('*, dentists!inner(name, city)').order('created_at', { ascending: false }).limit(50)),

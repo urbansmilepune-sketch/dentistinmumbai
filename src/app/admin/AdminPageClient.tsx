@@ -211,6 +211,29 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
     setDentistList(prev => prev.map(d => d.id === id ? { ...d, tier } : d))
   }
 
+  // Manual escape hatch for dentists who registered before the auto-login fix
+  // landed — they have a dentists row but no auth.users record, so they can't
+  // sign in until this button mints them a magic link. POST → branded Resend
+  // email with a one-click dashboard URL.
+  async function sendLoginLink(d: any) {
+    if (!d.email) { alert('This dentist has no email on file.'); return }
+    if (!confirm(`Send a login link to ${d.email}?`)) return
+    setActionLoading(d.id)
+    try {
+      const res = await fetch('/api/auth/send-login-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: d.email }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok && data.success) alert(`Login link sent to ${d.email}`)
+      else alert(`Failed to send login link: ${data?.error || 'unknown error'}`)
+    } catch {
+      alert('Network error — login link not sent.')
+    }
+    setActionLoading(null)
+  }
+
   async function reviewAction(id: string, status: string) {
     await adminAction('/api/admin/reviews', { id, status }, id)
     setReviewList(prev => prev.map(r => r.id === id ? { ...r, status } : r))
@@ -660,7 +683,17 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
                         </button>
                       </td>
                       <td style={tableCellStyle}>
-                        <a href={`/dentist/${d.slug}`} target="_blank" style={{ fontSize: 12, color: 'var(--blue)', fontWeight: 600 }}>View →</a>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <a href={`/dentist/${d.slug}`} target="_blank" style={{ fontSize: 12, color: 'var(--blue)', fontWeight: 600 }}>View →</a>
+                          <button
+                            onClick={() => sendLoginLink(d)}
+                            disabled={actionLoading === d.id || !d.email}
+                            title={d.email ? `Send a fresh magic link to ${d.email}` : 'No email on file'}
+                            style={{ padding: '4px 10px', background: '#DBEAFE', color: '#1D4ED8', border: '1px solid #BFDBFE', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: actionLoading === d.id || !d.email ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-body)', opacity: actionLoading === d.id || !d.email ? 0.5 : 1, whiteSpace: 'nowrap' }}
+                          >
+                            {actionLoading === d.id ? '…' : '📧 Send Login Link'}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
