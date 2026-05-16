@@ -122,5 +122,51 @@ export async function POST(request: NextRequest) {
     })
   }
 
+  // Audit log entry. Best-effort — if the insert fails (table missing
+  // because the migration hasn't been applied yet, RLS surprise, etc.) we
+  // log to console but don't fail the whole call. The emails are already
+  // out; the admin shouldn't see a 500 for a missing audit row.
+  const { error: logErr } = await db.from('admin_communications_log').insert({
+    sent_by: user.email,
+    mode,
+    subject,
+    message,
+    recipient_count: sent,
+    failed_count: failed,
+    city_filters: mode === 'city' ? cityFilters.filter(c => Object.prototype.hasOwnProperty.call(CITY_CONFIGS, c)) : null,
+    tier_filter: mode === 'bulk' ? (typeof targets === 'string' ? targets : 'all') : null,
+  })
+  if (logErr) {
+    console.error('[admin/communications] audit log insert failed', logErr)
+  }
+
   return NextResponse.json({ sent, failed, total: list.length })
+}
+
+export async function GET() {
+  // Same auth gate as POST — admin allowlist via the admin_users table.
+  const userClient = await createUserClient()
+  const { data: { user } } = await userClient.auth.getUser()
+  if (!user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const db = admin()
+  const { data: adminRow } = await db
+    .from('admin_users')
+    .select('id')
+    .ilike('email', user.email)
+    .maybeSingle()
+  if (!adminRow) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // Recent first; cap at 50 rows so the panel doesn't ship megabytes when
+  // the audit log grows. Add cursor pagination later if needed.
+  const { data, error } = await db
+    .from('admin_communications_log')
+    .select('id, sent_by, mode, subject, recipient_count, failed_count, city_filters, tier_filter, created_at')
+    .order('created_at', { ascending: false })
+    .limit(50)
+  if (error) {
+    console.error('[admin/communications GET] fetch failed', error)
+    return NextResponse.json({ error: error.message, history: [] }, { status: 500 })
+  }
+  return NextResponse.json({ history: data ?? [] })
 }

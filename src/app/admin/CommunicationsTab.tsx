@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { CITY_CONFIGS, type CitySlug } from '@/config/cities'
 
 type Mode = 'individual' | 'bulk' | 'city'
@@ -14,6 +14,18 @@ interface DentistSlim {
   email?: string | null
   city: string | null
   tier?: string | null
+}
+
+interface HistoryRow {
+  id: string
+  sent_by: string
+  mode: Mode
+  subject: string
+  recipient_count: number
+  failed_count: number
+  city_filters: string[] | null
+  tier_filter: string | null
+  created_at: string
 }
 
 interface Props {
@@ -77,6 +89,24 @@ export default function CommunicationsTab({ dentists }: Props) {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [result, setResult] = useState<{ sent: number; failed: number; total: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [history, setHistory] = useState<HistoryRow[]>([])
+  const [historyLoading, setHistoryLoading] = useState(true)
+  const [historyError, setHistoryError] = useState<string | null>(null)
+
+  async function loadHistory() {
+    setHistoryError(null)
+    try {
+      const res = await fetch('/api/admin/communications', { cache: 'no-store' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) setHistoryError(data?.error || 'Failed to load history')
+      else setHistory(data.history ?? [])
+    } catch {
+      setHistoryError('Network error')
+    }
+    setHistoryLoading(false)
+  }
+
+  useEffect(() => { loadHistory() }, [])
 
   // Sort dentists by clinic name for the individual dropdown so admins can
   // scan alphabetically rather than scrolling chronological registration order.
@@ -136,6 +166,10 @@ export default function CommunicationsTab({ dentists }: Props) {
         setError(data?.error || 'Send failed')
       } else {
         setResult({ sent: data.sent ?? 0, failed: data.failed ?? 0, total: data.total ?? 0 })
+        // Pull the freshly-logged row in so the audit panel reflects this
+        // blast without a full page reload. loadHistory clears its own
+        // error state, so a previous failure won't stick.
+        loadHistory()
       }
     } catch {
       setError('Network error')
@@ -339,6 +373,69 @@ export default function CommunicationsTab({ dentists }: Props) {
         </div>
       )}
 
+      {/* SENT HISTORY — last 50 blasts, newest first. Audit trail only;
+          per-recipient delivery state lives in Resend, not here. */}
+      <div style={{ marginTop: 32 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+          <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 18 }}>Sent History</h2>
+          <button onClick={loadHistory} style={subtleBtn} disabled={historyLoading}>
+            {historyLoading ? 'Refreshing…' : '↻ Refresh'}
+          </button>
+        </div>
+
+        {historyError ? (
+          <div style={{ background: '#FEE2E2', border: '1px solid #FECACA', color: '#991B1B', padding: '12px 14px', borderRadius: 10, fontSize: 13 }}>
+            {historyError}
+          </div>
+        ) : history.length === 0 && !historyLoading ? (
+          <div style={{ background: '#fff', border: '1px dashed var(--border)', borderRadius: 14, padding: 32, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>
+            No communications sent yet. Your first blast will appear here.
+          </div>
+        ) : (
+          <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, overflow: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+              <thead>
+                <tr style={{ background: 'var(--bg)' }}>
+                  {['Date', 'Subject', 'Mode', 'Filter', 'Sent', 'Failed', 'By'].map(h => (
+                    <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid var(--border)' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {history.map(row => (
+                  <tr key={row.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                    <td style={historyCell}>
+                      <div style={{ fontWeight: 600 }}>{new Date(row.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)' }}>{new Date(row.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</div>
+                    </td>
+                    <td style={{ ...historyCell, maxWidth: 280 }}>
+                      <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.subject}>{row.subject}</div>
+                    </td>
+                    <td style={historyCell}>
+                      <span style={modePill(row.mode)}>{modeLabel(row.mode)}</span>
+                    </td>
+                    <td style={{ ...historyCell, fontSize: 12, color: 'var(--text-secondary)' }}>
+                      {row.mode === 'bulk' && (row.tier_filter && row.tier_filter !== 'all' ? `Tier: ${row.tier_filter}` : 'All dentists')}
+                      {row.mode === 'city' && Array.isArray(row.city_filters) && row.city_filters.length > 0
+                        ? row.city_filters.map(c => CITY_CONFIGS[c as CitySlug]?.cityName ?? c).join(', ')
+                        : ''}
+                      {row.mode === 'individual' && '—'}
+                    </td>
+                    <td style={historyCell}>
+                      <span style={{ fontWeight: 700, color: '#166534' }}>{row.recipient_count}</span>
+                    </td>
+                    <td style={historyCell}>
+                      <span style={{ fontWeight: 700, color: row.failed_count > 0 ? '#991B1B' : 'var(--muted)' }}>{row.failed_count}</span>
+                    </td>
+                    <td style={{ ...historyCell, fontSize: 12, color: 'var(--muted)' }}>{row.sent_by}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       <style>{`
         @media (max-width: 900px) {
           .comms-grid { grid-template-columns: 1fr !important; }
@@ -348,6 +445,21 @@ export default function CommunicationsTab({ dentists }: Props) {
     </div>
   )
 }
+
+function modeLabel(m: Mode): string {
+  return m === 'individual' ? 'Individual' : m === 'bulk' ? 'Bulk' : 'City'
+}
+
+function modePill(m: Mode): React.CSSProperties {
+  const palette = m === 'individual'
+    ? { bg: '#DBEAFE', color: '#1D4ED8', border: '#BFDBFE' }
+    : m === 'bulk'
+      ? { bg: '#FEF3C7', color: '#92400E', border: '#FDE68A' }
+      : { bg: '#F3E8FF', color: '#7E22CE', border: '#E9D5FF' }
+  return { padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: palette.bg, color: palette.color, border: `1px solid ${palette.border}`, whiteSpace: 'nowrap' }
+}
+
+const historyCell: React.CSSProperties = { padding: '12px 14px', fontSize: 13, verticalAlign: 'middle' }
 
 const card: React.CSSProperties = {
   background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: 18,
