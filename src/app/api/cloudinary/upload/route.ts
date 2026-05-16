@@ -64,10 +64,25 @@ export async function POST(request: NextRequest) {
     // Save to database. patient_photo is intentionally NOT persisted here —
     // the caller (the patient before/after photos page) inserts its own row
     // in patient_photos with the URL we return below.
+    // .select('id') below makes RLS denial observable; without it a denied
+    // write returns no error and no rows — the file uploads to Cloudinary
+    // but the dentist's profile_photo column never changes.
     if (uploadType === 'profile') {
-      await supabase.from('dentists').update({ profile_photo: result.secure_url }).eq('id', dentist.id)
+      const { data: rows, error } = await supabase
+        .from('dentists')
+        .update({ profile_photo: result.secure_url })
+        .eq('id', dentist.id)
+        .select('id')
+      if (error) return NextResponse.json({ error: `DB save failed: ${error.message}` }, { status: 500 })
+      if (!rows || rows.length === 0) return NextResponse.json({ error: 'DB save failed — row not updated (RLS denied or missing row).' }, { status: 500 })
     } else if (uploadType === 'cover') {
-      await supabase.from('dentists').update({ cover_photo: result.secure_url }).eq('id', dentist.id)
+      const { data: rows, error } = await supabase
+        .from('dentists')
+        .update({ cover_photo: result.secure_url })
+        .eq('id', dentist.id)
+        .select('id')
+      if (error) return NextResponse.json({ error: `DB save failed: ${error.message}` }, { status: 500 })
+      if (!rows || rows.length === 0) return NextResponse.json({ error: 'DB save failed — row not updated (RLS denied or missing row).' }, { status: 500 })
     } else if (uploadType === 'gallery' || uploadType === 'xray') {
       await supabase.from('gallery_photos').insert({
         dentist_id: dentist.id,

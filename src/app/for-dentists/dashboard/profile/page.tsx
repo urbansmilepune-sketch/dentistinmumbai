@@ -62,6 +62,8 @@ export default function EditProfilePage() {
           specialties: dentist.specialties || [],
           maps_embed: dentist.maps_embed || '',
         })
+      } else {
+        setError(`No dentist profile is linked to ${user.email}. If you registered under a different email, sign out and sign in with that one — otherwise contact support.`)
       }
       setLoading(false)
     }
@@ -106,10 +108,15 @@ export default function EditProfilePage() {
 
   async function handleSave() {
     if (!form.name || !form.clinic_name) { setError('Name and Clinic Name are required'); return }
+    if (!dentistId) { setError('No dentist profile is linked to your account. Contact support.'); return }
     setSaving(true); setError(''); setSaved(false)
 
     const supabase = createClient()
-    const { error: updateError } = await supabase
+    // .select('id') makes RLS denials observable. Without it, a denied write
+    // returns no error AND no rows; the old code happily reported "Saved!"
+    // while the DB was unchanged. Zero returned rows means the write didn't
+    // land — usually a missing UPDATE policy or an email-mismatch.
+    const { data, error: updateError } = await supabase
       .from('dentists')
       .update({
         name: form.name,
@@ -129,9 +136,14 @@ export default function EditProfilePage() {
         maps_embed: form.maps_embed,
       })
       .eq('id', dentistId)
+      .select('id')
 
     setSaving(false)
-    if (updateError) { setError('Failed to save. Please try again.'); return }
+    if (updateError) { setError(`Save failed: ${updateError.message}`); return }
+    if (!data || data.length === 0) {
+      setError('Save failed — no row was updated. Check that you are signed in as the dentist whose profile you are editing.')
+      return
+    }
     setSaved(true)
     setTimeout(() => setSaved(false), 3000)
   }
