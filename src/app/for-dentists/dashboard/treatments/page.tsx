@@ -4,9 +4,12 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
+const SELECT_COLS = 'id, treatment_id, fee_from, fee_to, duration_mins, treatments(id, name, slug, icon)'
+
 export default function TreatmentsPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [dentistId, setDentistId] = useState('')
   const [allTreatments, setAllTreatments] = useState<any[]>([])
   const [dentistTreatments, setDentistTreatments] = useState<any[]>([])
@@ -15,77 +18,138 @@ export default function TreatmentsPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState({ fee_from: '', fee_to: '', duration_mins: '' })
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     async function load() {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/for-dentists/login'); return }
+      try {
+        const supabase = createClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) { router.push('/for-dentists/login'); return }
 
-      const { data: dentist } = await supabase.from('dentists').select('id').eq('email', user.email).single()
-      if (!dentist) return
+        const { data: dentist, error: dentistErr } = await supabase
+          .from('dentists').select('id').eq('email', user.email).single()
+        if (dentistErr || !dentist) {
+          setLoadError(dentistErr?.message || 'No dentist profile found for your account.')
+          return
+        }
 
-      setDentistId(dentist.id)
+        setDentistId(dentist.id)
 
-      const [{ data: all }, { data: mine }] = await Promise.all([
-        supabase.from('treatments').select('id, name, slug, icon').order('name'),
-        supabase.from('dentist_treatments').select('id, treatment_id, fee_from, fee_to, duration_mins, treatments(id, name, slug, icon)').eq('dentist_id', dentist.id),
-      ])
+        const [allResp, mineResp] = await Promise.all([
+          supabase.from('treatments').select('id, name, slug, icon').order('name'),
+          supabase.from('dentist_treatments').select(SELECT_COLS).eq('dentist_id', dentist.id),
+        ])
 
-      setAllTreatments(all || [])
-      setDentistTreatments(mine || [])
-      setLoading(false)
+        if (allResp.error) setLoadError(allResp.error.message)
+        else if (mineResp.error) setLoadError(mineResp.error.message)
+
+        setAllTreatments(allResp.data || [])
+        setDentistTreatments(mineResp.data || [])
+      } finally {
+        // Always release the loading state, even when an early-return path
+        // (no dentist, RLS failure) would otherwise leave the page spinning
+        // on "Loading…" forever.
+        setLoading(false)
+      }
     }
     load()
-  }, [])
+  }, [router])
 
   const myTreatmentIds = dentistTreatments.map((dt: any) => dt.treatment_id)
 
+  function flashError(msg: string) {
+    setError(msg)
+    // Don't auto-clear — errors here usually indicate something the dentist
+    // needs to see (RLS, network). Dismiss on next successful action.
+  }
+
   async function addTreatment(treatment: any) {
-    setAdding(treatment.id)
+    setAdding(treatment.id); setError(null)
     const supabase = createClient()
-    const { data } = await supabase
+    const { data, error: insertErr } = await supabase
       .from('dentist_treatments')
       .insert({ dentist_id: dentistId, treatment_id: treatment.id, fee_from: null, fee_to: null })
-      .select('id, treatment_id, fee_from, fee_to, duration_mins, treatments(id, name, slug, icon)')
+      .select(SELECT_COLS)
       .single()
-    if (data) setDentistTreatments((prev: any[]) => [...prev, data])
     setAdding(null)
+    if (insertErr || !data) {
+      console.error('[treatments] insert failed', insertErr)
+      flashError(insertErr?.message || 'Could not add this treatment. Please try again.')
+      return
+    }
+    setDentistTreatments((prev: any[]) => [...prev, data])
   }
 
   async function removeTreatment(dtId: string) {
-    setRemoving(dtId)
+    setRemoving(dtId); setError(null)
     const supabase = createClient()
-    await supabase.from('dentist_treatments').delete().eq('id', dtId)
-    setDentistTreatments((prev: any[]) => prev.filter((dt: any) => dt.id !== dtId))
+    // Use .select() so we know whether anything was actually deleted —
+    // RLS denials return zero rows without raising an error, and we don't
+    // want to fake-confirm in the UI when the DB is unchanged.
+    const { data, error: deleteErr } = await supabase
+      .from('dentist_treatments').delete().eq('id', dtId).select('id')
     setRemoving(null)
+    if (deleteErr) {
+      console.error('[treatments] delete failed', deleteErr)
+      flashError(deleteErr.message)
+      return
+    }
+    if (!data || data.length === 0) {
+      flashError('Remove failed — the row may already be gone or you may not have permission.')
+      return
+    }
+    setDentistTreatments((prev: any[]) => prev.filter((dt: any) => dt.id !== dtId))
   }
 
   async function saveFees(dtId: string) {
-    setSaving(true)
+    setSaving(true); setError(null)
     const supabase = createClient()
-    await supabase.from('dentist_treatments').update({
-      fee_from: editForm.fee_from ? parseInt(editForm.fee_from) : null,
-      fee_to: editForm.fee_to ? parseInt(editForm.fee_to) : null,
-      duration_mins: editForm.duration_mins ? parseInt(editForm.duration_mins) : null,
-    }).eq('id', dtId)
-    setDentistTreatments((prev: any[]) => prev.map((dt: any) => dt.id === dtId ? {
-      ...dt,
-      fee_from: editForm.fee_from ? parseInt(editForm.fee_from) : null,
-      fee_to: editForm.fee_to ? parseInt(editForm.fee_to) : null,
-      duration_mins: editForm.duration_mins ? parseInt(editForm.duration_mins) : null,
-    } : dt))
-    setSaving(false); setEditingId(null)
+    const payload = {
+      fee_from: editForm.fee_from ? parseInt(editForm.fee_from, 10) : null,
+      fee_to: editForm.fee_to ? parseInt(editForm.fee_to, 10) : null,
+      duration_mins: editForm.duration_mins ? parseInt(editForm.duration_mins, 10) : null,
+    }
+    // .select() forces RLS to return the updated row(s); empty array means
+    // the update was silently denied. Without this we'd fake-confirm and the
+    // refreshed page would show stale fees.
+    const { data, error: updateErr } = await supabase
+      .from('dentist_treatments').update(payload).eq('id', dtId).select(SELECT_COLS)
+    setSaving(false)
+    if (updateErr) {
+      console.error('[treatments] update failed', updateErr)
+      flashError(updateErr.message)
+      return
+    }
+    if (!data || data.length === 0) {
+      flashError('Save failed — no row was updated. You may not have permission to edit this.')
+      return
+    }
+    setDentistTreatments((prev: any[]) => prev.map((dt: any) => dt.id === dtId ? data[0] : dt))
+    setEditingId(null)
   }
 
   function startEdit(dt: any) {
     setEditingId(dt.id)
-    setEditForm({ fee_from: dt.fee_from?.toString() || '', fee_to: dt.fee_to?.toString() || '', duration_mins: dt.duration_mins?.toString() || '' })
+    setEditForm({
+      fee_from: dt.fee_from?.toString() || '',
+      fee_to: dt.fee_to?.toString() || '',
+      duration_mins: dt.duration_mins?.toString() || '',
+    })
   }
 
   const inputStyle = { padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, fontFamily: 'var(--font-body)', outline: 'none', width: '100%', boxSizing: 'border-box' as const }
 
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300 }}><p style={{ color: 'var(--muted)' }}>Loading...</p></div>
+
+  if (loadError) {
+    return (
+      <div style={{ maxWidth: 560, background: '#FEE2E2', border: '1px solid #FECACA', color: '#991B1B', padding: 20, borderRadius: 12 }}>
+        <h2 style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>Couldn't load treatments</h2>
+        <p style={{ fontSize: 13 }}>{loadError}</p>
+      </div>
+    )
+  }
 
   return (
     <div style={{ maxWidth: 720 }}>
@@ -93,6 +157,13 @@ export default function TreatmentsPage() {
         <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 4 }}>Treatments & Fees</h1>
         <p style={{ fontSize: 14, color: 'var(--muted)' }}>Add your treatments and set fee ranges. More treatments = more visibility in search.</p>
       </div>
+
+      {error && (
+        <div style={{ background: '#FEE2E2', border: '1px solid #FECACA', color: '#991B1B', padding: '12px 14px', borderRadius: 10, fontSize: 13, marginBottom: 16, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+          <span>{error}</span>
+          <button onClick={() => setError(null)} style={{ background: 'none', border: 'none', color: '#991B1B', cursor: 'pointer', fontFamily: 'var(--font-body)', fontWeight: 700 }}>✕</button>
+        </div>
+      )}
 
       {/* Your treatments */}
       <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden', marginBottom: 24 }}>
