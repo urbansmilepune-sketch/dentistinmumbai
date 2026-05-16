@@ -1,40 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
-import { CITY_CONFIGS, CITY_BY_DOMAIN, type CitySlug } from '@/config/cities'
-
-// Pick the dashboard URL for a dentist based on the city stored on their
-// row. If the dentist's city domain matches the current request host (or
-// the request is on a host we don't recognise, e.g. localhost in dev) we
-// stay on the same origin and use a relative redirect — keeps the
-// host-scoped supabase session cookie usable. Otherwise we send them to
-// the canonical city domain.
-//
-// IMPORTANT: cross-domain redirect only preserves the session if the
-// supabase auth cookie is set on a parent domain (e.g. .dentaura.com)
-// covering both hosts. With per-host cookies, the new domain will see
-// no session and bounce the user back to login. Verify cookie config
-// before relying on the cross-city case.
-function dashboardUrlForDentist(
-  dentistCity: string | null | undefined,
-  origin: string,
-  currentHost: string,
-): string {
-  const slug = (dentistCity && Object.prototype.hasOwnProperty.call(CITY_CONFIGS, dentistCity)
-    ? (dentistCity as CitySlug)
-    : null)
-  const cleanHost = currentHost.toLowerCase().replace(/^www\./, '').split(':')[0]
-  const hostIsKnownCity = !!CITY_BY_DOMAIN[cleanHost]
-  if (!slug || !hostIsKnownCity || CITY_CONFIGS[slug].domain === cleanHost) {
-    return `${origin}/for-dentists/dashboard`
-  }
-  return `https://${CITY_CONFIGS[slug].domain}/for-dentists/dashboard`
-}
 
 export async function GET(request: NextRequest) {
-  const requestUrl = new URL(request.url)
-  const { searchParams, origin } = requestUrl
-  const currentHost = requestUrl.host
+  const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
 
   if (!code) {
@@ -55,6 +24,14 @@ export async function GET(request: NextRequest) {
   // whichever applies. If neither, fall through to the dentist dashboard
   // and let its layout redirect to /register — preserves the pre-staff
   // behaviour for any login that doesn't fit either bucket.
+  //
+  // We deliberately stay on the same origin for every redirect here. Each
+  // city is a separate apex domain so the supabase auth cookie is
+  // host-scoped — a cross-domain redirect would land the user at the new
+  // host with no session and loop them back to login. The dashboard reads
+  // the dentist row by email, so the data is correct regardless of which
+  // city domain they signed in on; only the city branding follows the
+  // current host.
   const { data: { user } } = await supabase.auth.getUser()
   const userEmail = user?.email
   if (!userEmail) return NextResponse.redirect(`${origin}/for-dentists/dashboard`)
@@ -69,11 +46,11 @@ export async function GET(request: NextRequest) {
 
   const { data: dentistRow } = await admin
     .from('dentists')
-    .select('id, city')
+    .select('id')
     .eq('email', userEmail)
     .maybeSingle()
   if (dentistRow) {
-    return NextResponse.redirect(dashboardUrlForDentist((dentistRow as any).city, origin, currentHost))
+    return NextResponse.redirect(`${origin}/for-dentists/dashboard`)
   }
 
   // No dentists row → could be a staff invite acceptance. Look up the

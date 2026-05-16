@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { getCityByDomain, CITY_CONFIGS, CITY_BY_DOMAIN, DEFAULT_CITY, type CityConfig, type CitySlug } from '@/config/cities'
+import { getCityByDomain, CITY_CONFIGS, DEFAULT_CITY, type CityConfig } from '@/config/cities'
 
 export default function DentistLoginPage() {
   const router = useRouter()
@@ -31,33 +31,12 @@ export default function DentistLoginPage() {
       setError('Incorrect email or password. Please try again.')
       setLoading(false); return
     }
-
-    // After signing in, route to the dentist's own city dashboard. We use
-    // the user-bound client to read the row — the dentist has self-read
-    // policy, no service role needed. If the lookup fails (network, RLS
-    // surprise) we fall back to a same-origin redirect; the dashboard
-    // layout's safety net will catch any city mismatch from there.
-    let destination = '/for-dentists/dashboard'
-    try {
-      const { data: row } = await supabase.from('dentists').select('city').eq('email', email).maybeSingle()
-      const slug = row?.city as CitySlug | null
-      const currentHost = window.location.hostname.toLowerCase().replace(/^www\./, '')
-      const hostIsKnownCity = !!CITY_BY_DOMAIN[currentHost]
-      if (slug && Object.prototype.hasOwnProperty.call(CITY_CONFIGS, slug) && hostIsKnownCity) {
-        const expectedDomain = CITY_CONFIGS[slug].domain
-        if (expectedDomain !== currentHost) {
-          // Cross-domain — use a full URL so the browser leaves this host.
-          // Same cross-origin cookie caveat as /auth/callback: this only
-          // preserves the session if cookies are scoped to a parent
-          // domain covering both hosts.
-          window.location.href = `https://${expectedDomain}/for-dentists/dashboard`
-          return
-        }
-      }
-    } catch {
-      // Soft-fail — layout safety net will re-derive.
-    }
-    router.push(destination)
+    // Same origin only — each city is a separate apex domain so the
+    // supabase auth cookie is host-scoped; a cross-domain redirect would
+    // drop the session and loop. The dashboard reads the dentist row by
+    // email, so data renders correctly here even if this domain doesn't
+    // match the dentist's registered city.
+    router.push('/for-dentists/dashboard')
     router.refresh()
   }
 
