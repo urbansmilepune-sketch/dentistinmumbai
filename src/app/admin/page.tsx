@@ -1,4 +1,6 @@
+import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createServiceClient } from '@supabase/supabase-js'
 import AdminPageClient from './AdminPageClient'
 import { CITY_CONFIGS, type CitySlug } from '@/config/cities'
 
@@ -14,6 +16,28 @@ function normalizeCityFilter(v: string | string[] | undefined): CitySlug | null 
 
 export default async function AdminPage({ searchParams }: { searchParams: Promise<{ city?: string }> }) {
   const supabase = await createClient()
+
+  // Admin gate. Every query below runs through the user-bound supabase
+  // client, so without this check a logged-in non-admin could read the
+  // entire dentist / registration / appointment tables. Identity comes
+  // from the JWT; the admin_users lookup goes through the service-role
+  // client so we don't depend on a self-read RLS policy existing on
+  // admin_users. Anyone who isn't in admin_users gets bounced to the
+  // dentist login (not /admin/login) so we don't telegraph that an admin
+  // surface even exists.
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user?.email) redirect('/for-dentists/login')
+  const adminClient = createServiceClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  )
+  const { data: adminRow } = await adminClient
+    .from('admin_users')
+    .select('id')
+    .ilike('email', user.email)
+    .maybeSingle()
+  if (!adminRow) redirect('/for-dentists/login')
+
   const sp = await searchParams
   const cityFilter = normalizeCityFilter(sp.city)
 

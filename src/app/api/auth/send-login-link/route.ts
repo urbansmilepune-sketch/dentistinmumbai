@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { createClient as createUserClient } from '@/lib/supabase/server'
 import { Resend } from 'resend'
 import { getCityBySlug } from '@/config/cities'
 import { getCityEmail } from '@/lib/email'
@@ -7,13 +8,28 @@ import { getCityEmail } from '@/lib/email'
 const resend = new Resend(process.env.RESEND_API_KEY)
 
 export async function POST(request: NextRequest) {
-  const { email } = await request.json()
-  if (!email) return NextResponse.json({ error: 'Email required' }, { status: 400 })
+  // Admin gate. Without this, any anonymous POST with a dentist's email
+  // mints a magic link and emails it to them — account-takeover vector
+  // if the inbox is compromised, spam-bomb vector, and account enumeration
+  // via 200-vs-404 response. Identity from the JWT cookie; admin_users
+  // lookup via service-role so we don't depend on a self-read RLS policy.
+  const userClient = await createUserClient()
+  const { data: { user } } = await userClient.auth.getUser()
+  if (!user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
+  const { data: adminRow } = await supabase
+    .from('admin_users')
+    .select('id')
+    .ilike('email', user.email)
+    .maybeSingle()
+  if (!adminRow) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { email } = await request.json()
+  if (!email) return NextResponse.json({ error: 'Email required' }, { status: 400 })
 
   // Check dentist exists; pull city so the magic-link email matches their brand.
   const { data: dentist } = await supabase.from('dentists').select('name, clinic_name, city').eq('email', email).single()
