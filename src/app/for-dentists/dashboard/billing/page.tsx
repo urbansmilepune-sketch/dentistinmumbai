@@ -34,24 +34,29 @@ export default function BillingPage() {
 
   useEffect(() => {
     async function load() {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/for-dentists/login'); return }
-      const { data: dentistRow } = await supabase
-        .from('dentists')
-        .select('id, name, clinic_name, phone, whatsapp, city, areas(name)')
-        .eq('email', user.email)
-        .single()
-      if (!dentistRow) return
-      setDentistId(dentistRow.id)
-      setDentist(dentistRow as unknown as DentistMeta)
-      const [{ data: inv }, { data: pat }] = await Promise.all([
-        supabase.from('invoices').select('*, patients(name, phone)').eq('dentist_id', dentistRow.id).order('created_at', { ascending: false }),
-        supabase.from('patients').select('id, name, phone').eq('dentist_id', dentistRow.id).order('name'),
-      ])
-      setInvoices(inv || [])
-      setPatients(pat || [])
-      setLoading(false)
+      try {
+        const supabase = createClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) { router.push('/for-dentists/login'); return }
+        const { data: dentistRow } = await supabase
+          .from('dentists')
+          .select('id, name, clinic_name, phone, whatsapp, city, areas(name)')
+          .eq('email', user.email)
+          .single()
+        if (!dentistRow) return
+        setDentistId(dentistRow.id)
+        setDentist(dentistRow as unknown as DentistMeta)
+        const [{ data: inv }, { data: pat }] = await Promise.all([
+          supabase.from('invoices').select('*, patients(name, phone)').eq('dentist_id', dentistRow.id).order('created_at', { ascending: false }),
+          supabase.from('patients').select('id, name, phone').eq('dentist_id', dentistRow.id).order('name'),
+        ])
+        setInvoices(inv || [])
+        setPatients(pat || [])
+      } finally {
+        // Always release the spinner so RLS denial or a missing dentist row
+        // doesn't strand the page on "Loading…".
+        setLoading(false)
+      }
     }
     load()
   }, [])

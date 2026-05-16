@@ -8,6 +8,7 @@ type WorkingHours = Partial<Record<'sun' | 'mon' | 'tue' | 'wed' | 'thu' | 'fri'
 
 interface Props {
   dentistId: string
+  dentistSlug: string
   dentistName: string
   clinicName: string
   areaName: string
@@ -54,7 +55,7 @@ function nextDays(n: number): { iso: string; label: string; sub: string }[] {
   return out
 }
 
-export default function BookingFlow({ dentistId, dentistName, clinicName, areaName, dentistPhone, workingHours, treatments }: Props) {
+export default function BookingFlow({ dentistId, dentistSlug, dentistName, clinicName, areaName, dentistPhone, workingHours, treatments }: Props) {
   const days = useMemo(() => nextDays(7), [])
   const [selectedDate, setSelectedDate] = useState<string>(days[0].iso)
   const [booked, setBooked] = useState<Set<string>>(new Set())
@@ -182,7 +183,7 @@ export default function BookingFlow({ dentistId, dentistName, clinicName, areaNa
             💬 Confirm on WhatsApp
           </a>
         )}
-        <a href={`/dentist/${dentistId}`} style={{ display: 'block', fontSize: 13, color: 'var(--muted)', textDecoration: 'none' }}>
+        <a href={`/dentist/${dentistSlug}`} style={{ display: 'block', fontSize: 13, color: 'var(--muted)', textDecoration: 'none' }}>
           Back to clinic profile
         </a>
       </section>

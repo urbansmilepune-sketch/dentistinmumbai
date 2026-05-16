@@ -71,13 +71,26 @@ export async function approveDentistRegistration(
 
   const { data: reg, error: regErr } = await admin_db
     .from('dentist_registrations')
-    .select('id, name, phone, email, clinic_name, area, qualification, mci_registration, selected_plan, city')
+    .select('id, status, name, phone, email, clinic_name, area, qualification, mci_registration, selected_plan, city')
     .eq('id', registration_id)
     .single()
   if (regErr || !reg) {
     console.error(`${tag} registration fetch failed`, { registration_id, regErr })
     return { ok: false, status: 404, error: 'Registration not found', detail: regErr?.message }
   }
+
+  // Refuse to re-run on a registration that's already approved. Two admins
+  // clicking simultaneously, an admin re-clicking after a slow response, or
+  // an auto-approval retry would otherwise: rebuild the dentists row,
+  // re-mint a magic link (invalidating any pending one in the dentist's
+  // inbox), and re-fire the approval email. Bail with 409 so callers can
+  // surface a clear "already approved" message instead of silently
+  // duplicating work.
+  if (reg.status === 'approved') {
+    console.error(`${tag} registration already approved — bailing`, { registration_id })
+    return { ok: false, status: 409, error: 'Registration is already approved' }
+  }
+
   const city: CitySlug = normalizeCity(reg.city)
 
   // Resolve area_id: exact → case-insensitive → auto-create under zone='Other'.

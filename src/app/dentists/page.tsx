@@ -80,6 +80,7 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
       gender, consultation_fee, emi_available, is_verified, tier,
       profile_photo, whatsapp, phone, working_hours,
       lat, lng, specialties, languages,
+      avg_rating, review_count,
       areas(name, slug),
       dentist_treatments(treatments(name, slug))
     `, { count: 'exact' })

@@ -15,16 +15,37 @@ export const dynamic = 'force-dynamic'
 
 interface Props { params: Promise<{ slug: string }> }
 
+// Day-key / hour / minute, all in the clinic's local time (IST). The server
+// runs in UTC on Vercel, so naively calling new Date().getDay()/.getHours()
+// is offset by 5h30 — a Monday 23:00 IST request would render as Tuesday
+// 17:30 and look up the wrong weekday's hours. Intl.DateTimeFormat gives us
+// the corrected parts in one shot.
+function istDayTime(now: Date): { dayKey: string; hour: number; minute: number } {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Kolkata',
+    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(now)
+  const weekday = parts.find(p => p.type === 'weekday')?.value.toLowerCase() ?? 'sun'
+  const rawHour = parts.find(p => p.type === 'hour')?.value ?? '00'
+  const minute = parseInt(parts.find(p => p.type === 'minute')?.value ?? '0', 10)
+  // hour12:false occasionally returns '24' for midnight on some engines —
+  // normalise to 0 so 24*60 + minute can't yield 1440+ minute totals.
+  const hourNum = parseInt(rawHour, 10)
+  const hour = hourNum === 24 ? 0 : hourNum
+  return { dayKey: weekday, hour, minute }
+}
+
 function isOpenNow(working_hours: any): { open: boolean; label: string } {
   if (!working_hours) return { open: false, label: 'Hours not set' }
-  const now = new Date()
-  const days = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
-  const dayKey = days[now.getDay()]
+  const { dayKey, hour, minute } = istDayTime(new Date())
   const dayHours = working_hours[dayKey]
   if (!dayHours?.is_open) return { open: false, label: 'Closed today' }
   const [openH, openM] = (dayHours.open_time || '09:00').split(':').map(Number)
   const [closeH, closeM] = (dayHours.close_time || '19:00').split(':').map(Number)
-  const currentMins = now.getHours() * 60 + now.getMinutes()
+  const currentMins = hour * 60 + minute
   const openMins = openH * 60 + openM
   const closeMins = closeH * 60 + closeM
   if (currentMins >= openMins && currentMins < closeMins) return { open: true, label: `Open until ${dayHours.close_time}` }
@@ -55,15 +76,27 @@ export default async function DentistProfilePage({ params }: Props) {
 
  const { data: dentist } = await supabase
     .from('dentists')
-    .select('*, areas(name, slug), dentist_treatments(fee_from, fee_to, treatments(id, name, slug, icon)), gallery_photos(id, url, caption, category), reviews(id, patient_name, rating, review_text, treatment, created_at, status)')
+    .select('*, areas(name, slug), dentist_treatments(fee_from, fee_to, treatments(id, name, slug, icon)), gallery_photos(id, url, caption, category)')
     .eq('slug', slug)
     .eq('is_active', true)
     .single()
 
   if (!dentist) notFound()
 
+  // Reviews are fetched separately so the status filter applies server-side.
+  // Previously they joined with the dentists row and we filtered approved in
+  // JS — that shipped pending/rejected review text over the wire to every
+  // anonymous visitor, leaking moderation state.
+  const { data: approvedReviewsRows } = await supabase
+    .from('reviews')
+    .select('id, patient_name, rating, review_text, treatment, created_at')
+    .eq('dentist_id', dentist.id)
+    .eq('status', 'approved')
+    .order('created_at', { ascending: false })
+  const approvedReviews = approvedReviewsRows ?? []
+
   // Multi-location support: pulled separately because the dentist row already
-  // joins five tables. Dentists with zero rows here keep using the original
+  // joins four tables. Dentists with zero rows here keep using the original
   // single-location fields (address, working_hours) on the dentists table —
   // no backfill, no migration of legacy data.
   const { data: locationRows } = await supabase
@@ -76,7 +109,6 @@ export default async function DentistProfilePage({ params }: Props) {
   const locations = locationRows ?? []
 
   const openStatus = isOpenNow(dentist.working_hours)
-  const approvedReviews = (dentist.reviews || []).filter((r: any) => r.status === 'approved')
   const avgRating = approvedReviews.length > 0
     ? (approvedReviews.reduce((sum: number, r: any) => sum + r.rating, 0) / approvedReviews.length).toFixed(1) : null
 

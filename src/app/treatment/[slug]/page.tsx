@@ -8,43 +8,40 @@ import { getCityBySlug, cityBrandName, cityBrandTld, cityOrigin } from '@/config
 // headers() forces dynamic rendering; ISR revalidate would be a no-op.
 export const dynamic = 'force-dynamic'
 
-interface Props { params: Promise<{ slug: string; 'treatment-slug': string }> }
+// This page was originally coded for an area+treatment combo route but lives
+// at /treatment/[slug] — the dynamic segment IS the treatment slug. There
+// is no area context here; this is the city-wide landing page for a single
+// treatment ("Best Dental Implants in Mumbai"). To filter by area use the
+// area-page links elsewhere.
+interface Props { params: Promise<{ slug: string }> }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { slug, 'treatment-slug': treatmentSlug } = await params
+  const { slug } = await params
   const supabase = await createClient()
   const h = await headers()
   const city = getCityBySlug(h.get('x-city-slug'))
-  const [{ data: area }, { data: treatment }] = await Promise.all([
-    supabase.from('areas').select('name').eq('slug', slug).eq('city', city.citySlug).single(),
-    supabase.from('treatments').select('name').eq('slug', treatmentSlug).single(),
-  ])
-  if (!area || !treatment) return {}
+  const { data: treatment } = await supabase.from('treatments').select('name').eq('slug', slug).single()
+  if (!treatment) return {}
   return {
-    title: `Best ${treatment.name} in ${area.name} ${city.cityName} | ${city.domain}`,
-    description: `Find top-rated dentists for ${treatment.name} in ${area.name}, ${city.cityName}. Compare fees, read reviews, book appointments online.`,
-    alternates: { canonical: `${cityOrigin(city)}/area/${slug}/${treatmentSlug}` },
+    title: `Best ${treatment.name} Dentists in ${city.cityName} | ${city.domain}`,
+    description: `Find top-rated dentists for ${treatment.name} in ${city.cityName}. Compare fees, read reviews, book appointments online.`,
+    alternates: { canonical: `${cityOrigin(city)}/treatment/${slug}` },
   }
 }
 
-export default async function AreaTreatmentPage({ params }: Props) {
-  const { slug, 'treatment-slug': treatmentSlug } = await params
+export default async function TreatmentPage({ params }: Props) {
+  const { slug } = await params
   const supabase = await createClient()
   const h = await headers()
   const city = getCityBySlug(h.get('x-city-slug'))
   const origin = cityOrigin(city)
 
-  const [{ data: area }, { data: treatment }] = await Promise.all([
-    supabase.from('areas').select('*').eq('slug', slug).eq('city', city.citySlug).single(),
-    supabase.from('treatments').select('*').eq('slug', treatmentSlug).single(),
-  ])
-
-  if (!area || !treatment) notFound()
+  const { data: treatment } = await supabase.from('treatments').select('*').eq('slug', slug).single()
+  if (!treatment) notFound()
 
   const { data: dentists } = await supabase
     .from('dentists')
-    .select(`id, slug, name, clinic_name, qualifications, experience_years, rating, review_count, consultation_fee, is_verified, tier, dentist_treatments!inner(fee_from, fee_to, treatments(name))`)
-    .eq('area_id', area.id)
+    .select(`id, slug, name, clinic_name, qualifications, experience_years, rating, review_count, consultation_fee, is_verified, tier, dentist_treatments!inner(fee_from, fee_to, treatments(name)), areas(name, slug)`)
     .eq('is_active', true)
     .eq('city', city.citySlug)
     .eq('dentist_treatments.treatment_id', treatment.id)
@@ -54,15 +51,14 @@ export default async function AreaTreatmentPage({ params }: Props) {
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'MedicalWebPage',
-    name: `${treatment.name} in ${area.name} ${city.cityName}`,
-    description: `Find verified dentists for ${treatment.name} in ${area.name}, ${city.cityName}`,
-    url: `${origin}/area/${slug}/${treatmentSlug}`,
+    name: `${treatment.name} in ${city.cityName}`,
+    description: `Find verified dentists for ${treatment.name} in ${city.cityName}`,
+    url: `${origin}/treatment/${slug}`,
     breadcrumb: {
       '@type': 'BreadcrumbList',
       itemListElement: [
         { '@type': 'ListItem', position: 1, name: 'Home', item: origin },
-        { '@type': 'ListItem', position: 2, name: area.name, item: `${origin}/area/${slug}` },
-        { '@type': 'ListItem', position: 3, name: treatment.name },
+        { '@type': 'ListItem', position: 2, name: treatment.name },
       ],
     },
   }
@@ -78,7 +74,6 @@ export default async function AreaTreatmentPage({ params }: Props) {
           </Link>
           <div style={{ fontSize: 12, color: 'var(--muted)', display: 'flex', gap: 6, alignItems: 'center' }}>
             <Link href="/" style={{ color: 'var(--muted)' }}>Home</Link> ›
-            <Link href={`/area/${slug}`} style={{ color: 'var(--muted)' }}>{area.name}</Link> ›
             <span style={{ color: 'var(--text)' }}>{treatment.name}</span>
           </div>
         </nav>
@@ -89,17 +84,17 @@ export default async function AreaTreatmentPage({ params }: Props) {
           <div className="container" style={{ textAlign: 'center' }}>
             <div style={{ fontSize: 48, marginBottom: 12 }}>{treatment.icon || '🦷'}</div>
             <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(1.6rem, 4vw, 2.5rem)', color: '#fff', marginBottom: 12, lineHeight: 1.2 }}>
-              Best {treatment.name} Dentists<br />in {area.name}, {city.cityName}
+              Best {treatment.name} Dentists<br />in {city.cityName}
             </h1>
             <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 16, marginBottom: 24 }}>
               {dentists?.length || 0} verified specialists · Compare fees & book appointments
             </p>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
-              <Link href={`/area/${slug}`} style={{ padding: '8px 16px', background: 'rgba(255,255,255,0.15)', color: '#fff', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 20, fontSize: 13, textDecoration: 'none' }}>
-                All Dentists in {area.name}
+              <Link href="/dentists" style={{ padding: '8px 16px', background: 'rgba(255,255,255,0.15)', color: '#fff', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 20, fontSize: 13, textDecoration: 'none' }}>
+                All Dentists in {city.cityName}
               </Link>
-              <Link href={`/treatment/${treatmentSlug}`} style={{ padding: '8px 16px', background: 'rgba(255,255,255,0.15)', color: '#fff', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 20, fontSize: 13, textDecoration: 'none' }}>
-                {treatment.name} Across {city.cityName}
+              <Link href={`/dentists?treatment=${slug}`} style={{ padding: '8px 16px', background: 'rgba(255,255,255,0.15)', color: '#fff', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 20, fontSize: 13, textDecoration: 'none' }}>
+                Filter by area & fee
               </Link>
             </div>
           </div>
@@ -111,6 +106,7 @@ export default async function AreaTreatmentPage({ params }: Props) {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 {dentists.map(d => {
                   const dt = (d.dentist_treatments as any)?.[0]
+                  const areaName = (d.areas as any)?.name
                   return (
                     <div key={d.id} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '20px 24px', display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
                       <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'var(--blue-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>👨‍⚕️</div>
@@ -120,7 +116,7 @@ export default async function AreaTreatmentPage({ params }: Props) {
                           {d.is_verified && <span style={{ fontSize: 10, fontWeight: 700, color: '#166534', background: '#DCFCE7', padding: '1px 6px', borderRadius: 10 }}>✓ Verified</span>}
                         </div>
                         <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 4 }}>{d.qualifications}{d.experience_years ? ` · ${d.experience_years} yrs exp` : ''}</div>
-                        <div style={{ fontSize: 13, color: 'var(--muted)' }}>{d.clinic_name}</div>
+                        <div style={{ fontSize: 13, color: 'var(--muted)' }}>{d.clinic_name}{areaName ? ` · ${areaName}` : ''}</div>
                         <div style={{ display: 'flex', gap: 12, marginTop: 6, fontSize: 13 }}>
                           {d.rating && <span style={{ color: '#F59E0B', fontWeight: 600 }}>★ {d.rating}</span>}
                           {dt?.fee_from && <span style={{ color: 'var(--green)', fontWeight: 600 }}>From ₹{dt.fee_from}</span>}
@@ -137,8 +133,8 @@ export default async function AreaTreatmentPage({ params }: Props) {
             ) : (
               <div style={{ textAlign: 'center', padding: '60px 20px', background: '#fff', borderRadius: 16, border: '1px solid var(--border)' }}>
                 <div style={{ fontSize: 48, marginBottom: 16 }}>🦷</div>
-                <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 20, marginBottom: 8 }}>Be the First {treatment.name} Specialist in {area.name}</h3>
-                <p style={{ color: 'var(--muted)', marginBottom: 20 }}>We're onboarding founding member dentists. Free forever.</p>
+                <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 20, marginBottom: 8 }}>Be the First {treatment.name} Specialist in {city.cityName}</h3>
+                <p style={{ color: 'var(--muted)', marginBottom: 20 }}>We&apos;re onboarding founding member dentists. Free forever.</p>
                 <Link href="/for-dentists" style={{ padding: '12px 24px', background: 'var(--blue)', color: '#fff', borderRadius: 10, fontWeight: 600, fontSize: 14, textDecoration: 'none' }}>List Your Clinic Free →</Link>
               </div>
             )}
@@ -149,13 +145,13 @@ export default async function AreaTreatmentPage({ params }: Props) {
         <section style={{ padding: '48px 20px', background: '#fff' }}>
           <div className="container" style={{ maxWidth: 720 }}>
             <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, marginBottom: 16 }}>
-              {treatment.name} in {area.name} — What to Expect
+              {treatment.name} in {city.cityName} — What to Expect
             </h2>
             <p style={{ fontSize: 15, color: 'var(--text-secondary)', lineHeight: 1.8, marginBottom: 16 }}>
-              {area.name} is one of {city.cityName}'s most sought-after areas for dental care, with a growing number of specialist clinics offering {treatment.name.toLowerCase()} treatments. Patients from nearby areas including {area.nearby_areas?.join(', ') || `across ${city.cityName}`} regularly visit {area.name} dentists for their expertise and modern facilities.
+              {city.cityName} has a growing number of specialist clinics offering {treatment.name.toLowerCase()} treatments. Compare verified dentists below by experience, fees, and patient ratings.
             </p>
             <p style={{ fontSize: 15, color: 'var(--text-secondary)', lineHeight: 1.8 }}>
-              All dentists listed on {city.domain} for {treatment.name} in {area.name} are MCI-verified and have been manually reviewed by our team before listing.
+              All dentists listed on {city.domain} for {treatment.name} are MCI-verified and have been manually reviewed by our team before listing.
             </p>
           </div>
         </section>

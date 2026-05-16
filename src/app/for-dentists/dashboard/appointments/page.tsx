@@ -82,53 +82,59 @@ export default function AppointmentsPage() {
   useEffect(() => {
     async function load() {
       const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/for-dentists/login'); return }
-      const { data: dentist } = await supabase
-        .from('dentists')
-        .select('id, name, clinic_name, whatsapp, phone')
-        .eq('email', user.email)
-        .single()
-      if (!dentist) return
-      setDentistId(dentist.id)
-      setDentistMeta({
-        name: dentist.name || '',
-        clinic_name: dentist.clinic_name || '',
-        whatsapp: dentist.whatsapp || dentist.phone || '',
-      })
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) { router.push('/for-dentists/login'); return }
+        const { data: dentist } = await supabase
+          .from('dentists')
+          .select('id, name, clinic_name, whatsapp, phone')
+          .eq('email', user.email)
+          .single()
+        if (!dentist) return
+        setDentistId(dentist.id)
+        setDentistMeta({
+          name: dentist.name || '',
+          clinic_name: dentist.clinic_name || '',
+          whatsapp: dentist.whatsapp || dentist.phone || '',
+        })
 
-      const [{ data: appts }, { data: invs }, { data: tx }] = await Promise.all([
-        supabase
-          .from('appointments')
-          .select('*, treatments(name, icon)')
-          .eq('dentist_id', dentist.id)
-          .order('appt_date', { ascending: false }),
-        supabase
-          .from('invoices')
-          .select('total, payment_status, patients(phone)')
-          .eq('dentist_id', dentist.id),
-        supabase
-          .from('dentist_treatments')
-          .select('treatments(id, name)')
-          .eq('dentist_id', dentist.id),
-      ])
+        const [{ data: appts }, { data: invs }, { data: tx }] = await Promise.all([
+          supabase
+            .from('appointments')
+            .select('*, treatments(name, icon)')
+            .eq('dentist_id', dentist.id)
+            .order('appt_date', { ascending: false }),
+          supabase
+            .from('invoices')
+            .select('total, payment_status, patients(phone)')
+            .eq('dentist_id', dentist.id),
+          supabase
+            .from('dentist_treatments')
+            .select('treatments(id, name)')
+            .eq('dentist_id', dentist.id),
+        ])
 
-      setAppointments(appts || [])
-      const phones = new Set<string>()
-      const unpaid = new Map<string, number>()
-      ;(invs || []).forEach((row: any) => {
-        const p = row.patients?.phone
-        if (!p) return
-        phones.add(p)
-        if (row.payment_status === 'pending' || row.payment_status === 'overdue') {
-          unpaid.set(p, (unpaid.get(p) ?? 0) + Number(row.total || 0))
-        }
-      })
-      setInvoicedPhones(phones)
-      setUnpaidByPhone(unpaid)
-      const tList = (tx || []).map((r: any) => r.treatments).filter(Boolean) as { id: string; name: string }[]
-      setTreatments(tList)
-      setLoading(false)
+        setAppointments(appts || [])
+        const phones = new Set<string>()
+        const unpaid = new Map<string, number>()
+        ;(invs || []).forEach((row: any) => {
+          const p = row.patients?.phone
+          if (!p) return
+          phones.add(p)
+          if (row.payment_status === 'pending' || row.payment_status === 'overdue') {
+            unpaid.set(p, (unpaid.get(p) ?? 0) + Number(row.total || 0))
+          }
+        })
+        setInvoicedPhones(phones)
+        setUnpaidByPhone(unpaid)
+        const tList = (tx || []).map((r: any) => r.treatments).filter(Boolean) as { id: string; name: string }[]
+        setTreatments(tList)
+      } finally {
+        // Always release the spinner — RLS denial, missing dentist row, or
+        // any thrown error in the parallel reads above must not leave the
+        // page stuck on "Loading…".
+        setLoading(false)
+      }
     }
     load()
   }, [])

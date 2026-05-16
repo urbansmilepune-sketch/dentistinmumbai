@@ -104,6 +104,7 @@ export default async function PublicBookingPage({ params }: Props) {
 
         <BookingFlow
           dentistId={dentist.id}
+          dentistSlug={dentist.slug}
           dentistName={dentist.name ?? ''}
           clinicName={dentist.clinic_name ?? ''}
           areaName={areaName}

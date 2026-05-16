@@ -14,15 +14,20 @@ export default function EnquiriesPage() {
 
   useEffect(() => {
     async function load() {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/for-dentists/login'); return }
-      const { data: dentist } = await supabase.from('dentists').select('id, city').eq('email', user.email).single()
-      if (!dentist) return
-      setCityDomain(getCityBySlug((dentist as any).city).domain)
-      const { data } = await supabase.from('enquiries').select('*').eq('dentist_id', dentist.id).order('created_at', { ascending: false })
-      setEnquiries(data || [])
-      setLoading(false)
+      try {
+        const supabase = createClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) { router.push('/for-dentists/login'); return }
+        const { data: dentist } = await supabase.from('dentists').select('id, city').eq('email', user.email).single()
+        if (!dentist) return
+        setCityDomain(getCityBySlug((dentist as any).city).domain)
+        const { data } = await supabase.from('enquiries').select('*').eq('dentist_id', dentist.id).order('created_at', { ascending: false })
+        setEnquiries(data || [])
+      } finally {
+        // Always release the spinner so RLS denial or a missing dentist row
+        // doesn't strand the page on "Loading…".
+        setLoading(false)
+      }
     }
     load()
   }, [])

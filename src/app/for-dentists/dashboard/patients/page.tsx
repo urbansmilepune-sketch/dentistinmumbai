@@ -22,15 +22,20 @@ export default function PatientsPage() {
 
   useEffect(() => {
     async function load() {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/for-dentists/login'); return }
-      const { data: dentist } = await supabase.from('dentists').select('id').eq('email', user.email).single()
-      if (!dentist) return
-      setDentistId(dentist.id)
-      const { data } = await supabase.from('patients').select('*').eq('dentist_id', dentist.id).order('created_at', { ascending: false })
-      setPatients(data || [])
-      setLoading(false)
+      try {
+        const supabase = createClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) { router.push('/for-dentists/login'); return }
+        const { data: dentist } = await supabase.from('dentists').select('id').eq('email', user.email).single()
+        if (!dentist) return
+        setDentistId(dentist.id)
+        const { data } = await supabase.from('patients').select('*').eq('dentist_id', dentist.id).order('created_at', { ascending: false })
+        setPatients(data || [])
+      } finally {
+        // Always release the spinner so RLS denial or a missing dentist row
+        // doesn't strand the page on "Loading…".
+        setLoading(false)
+      }
     }
     load()
   }, [])
