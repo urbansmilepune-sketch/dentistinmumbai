@@ -236,32 +236,54 @@ export default function DentistCard({ dentist: d, view }: DentistCardProps) {
           )}
         </div>
 
-        {/* Action buttons */}
-        <div className="dentist-card-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <Link href={`/dentist/${d.slug}`} style={{
-            padding: '10px 20px', background: 'var(--blue)', color: '#fff',
-            borderRadius: 8, fontSize: 13, fontWeight: 600, minHeight: 44,
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          }}>View Profile →</Link>
+        {/* Action buttons — three patient-facing CTAs always visible.
+            WhatsApp leads (highest-intent action), Call sits in the middle as
+            a blue-outline alternative, Book is the solid conversion button.
+            View Profile demotes to a subtle text link below. */}
+        <div className="dentist-cta-row">
           {waLink && (
-            <a href={waLink} target="_blank" rel="noopener noreferrer" style={{
-              padding: '10px 16px', background: '#DCFCE7', color: '#166534',
-              borderRadius: 8, fontSize: 13, fontWeight: 600, border: '1px solid #BBF7D0',
-              minHeight: 44, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            }}>💬 WhatsApp</a>
+            <a href={waLink} target="_blank" rel="noopener noreferrer" className="dentist-cta dentist-cta-whatsapp" aria-label={`WhatsApp ${d.name}`}>
+              <span aria-hidden="true">💬</span> WhatsApp
+            </a>
           )}
-          <Link href={`/book/${d.slug}`} style={{
-            padding: '10px 16px', background: 'var(--orange-light)', color: 'var(--orange)',
-            borderRadius: 8, fontSize: 13, fontWeight: 600, border: '1px solid #FECACA',
-            minHeight: 44, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          }}>📅 Book</Link>
+          {d.phone && (
+            <a href={`tel:${d.phone}`} className="dentist-cta dentist-cta-call" aria-label={`Call ${d.name}`}>
+              <span aria-hidden="true">📞</span> Call
+            </a>
+          )}
+          <Link href={`/book/${d.slug}`} className="dentist-cta dentist-cta-book" aria-label={`Book ${d.name}`}>
+            <span aria-hidden="true">📅</span> Book
+          </Link>
         </div>
+        <Link href={`/dentist/${d.slug}`} className="dentist-cta-profile-link">View full profile →</Link>
       </div>
       <style>{`
+        .dentist-cta-row {
+          display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px;
+        }
+        .dentist-cta {
+          flex: 1 1 0; min-width: 90px; min-height: 48px;
+          display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+          padding: 0 12px; border-radius: 10px;
+          font-family: var(--font-body); font-weight: 700; font-size: 14px;
+          text-decoration: none; transition: opacity 0.15s, transform 0.15s;
+        }
+        .dentist-cta:active { transform: scale(0.98); }
+        .dentist-cta-whatsapp { background: #25D366; color: #fff; }
+        .dentist-cta-call     { background: #fff; color: var(--blue); border: 2px solid var(--blue); }
+        .dentist-cta-book     { background: var(--blue); color: #fff; }
+        .dentist-cta-profile-link {
+          display: inline-block; font-size: 13px; color: var(--muted); font-weight: 500;
+          text-decoration: none;
+        }
         @media (max-width: 640px) {
-          .dentist-card-list { padding: 16px !important; gap: 12px !important; }
-          .dentist-card-list > div:first-child { width: 64px !important; height: 64px !important; }
-          .dentist-card-actions > a { flex: 1 1 calc(50% - 4px) !important; justify-content: center !important; }
+          .dentist-card-list { padding: 16px !important; gap: 12px !important; flex-direction: column !important; }
+          .dentist-card-list > div:first-child { width: 100% !important; height: 140px !important; border-radius: 12px !important; }
+          .dentist-cta { min-height: 52px; font-size: 14px; flex: 1 1 calc(33.333% - 6px); min-width: 86px; }
+        }
+        @media (max-width: 360px) {
+          /* Very narrow phones — stack the CTAs so each gets the full row. */
+          .dentist-cta { flex: 1 1 100%; }
         }
       `}</style>
     </div>
