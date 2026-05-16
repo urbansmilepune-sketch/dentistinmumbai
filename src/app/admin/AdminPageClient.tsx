@@ -270,11 +270,18 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
   }
 
   async function declineReg(id: string) {
-    const reason = prompt('Reason for declining (emailed to dentist):')
+    // Require a non-empty reason. The decline email lands in the dentist's
+    // inbox verbatim — an empty reason produces "We've declined your
+    // registration. Reason: " with a trailing space and no explanation,
+    // which is worse UX than no email at all. prompt() returns null on
+    // Cancel; a whitespace-only string is rejected with a re-try alert
+    // and we bail (admin clicks Decline again).
+    const reason = prompt('Reason for declining (emailed to dentist — required):')
     if (reason === null) return
+    if (!reason.trim()) { alert('A reason is required to decline a registration.'); return }
     setActionLoading(id)
     try {
-      const res = await fetch('/api/admin/registrations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registration_id: id, action: 'decline', reason }) })
+      const res = await fetch('/api/admin/registrations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registration_id: id, action: 'decline', reason: reason.trim() }) })
       const data = await res.json()
       if (data.success) { setRegList(prev => prev.map(r => r.id === id ? { ...r, status: 'rejected' } : r)); alert('Declined. Email sent.') }
       else alert('Error: ' + (data.error || 'Unknown'))

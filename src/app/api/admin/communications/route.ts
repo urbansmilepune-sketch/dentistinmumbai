@@ -98,21 +98,39 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ sent: 0, failed: 0, total: 0, error: 'No matching dentists' }, { status: 200 })
   }
 
-  // Fan out. Promise.allSettled so one failure doesn't poison the rest;
-  // we count fulfilled vs. rejected and return the totals. Failure detail
-  // gets logged for debugging but isn't returned per-recipient (admin
-  // doesn't need it; they can resend or check Resend logs).
-  const results = await Promise.allSettled(
-    list.map(r =>
-      sendAdminBulkMessage({
-        to_email: r.email,
-        dentist_name: r.name,
-        subject,
-        message,
-        city: r.city ?? undefined,
-      }),
-    ),
-  )
+  // Fan out in batches of 10 with a 1-second pause between batches. Resend's
+  // documented limits are 2 req/s (free) and 10 req/s (Pro). The previous
+  // implementation fired all recipients concurrently with Promise.allSettled —
+  // a 250-dentist blast would burst ~250 calls at once and drop most under
+  // a 429. Batching at 10/sec keeps us inside the Pro rate limit while
+  // still being parallel within each batch.
+  //
+  // No retry on failure — Resend rejections are counted as `failed` and
+  // returned to the admin. Retry would belong in a background queue, not
+  // inline in a request handler.
+  const BATCH_SIZE = 10
+  const BATCH_DELAY_MS = 1000
+  const results: PromiseSettledResult<unknown>[] = []
+  for (let i = 0; i < list.length; i += BATCH_SIZE) {
+    const batch = list.slice(i, i + BATCH_SIZE)
+    const batchResults = await Promise.allSettled(
+      batch.map(r =>
+        sendAdminBulkMessage({
+          to_email: r.email,
+          dentist_name: r.name,
+          subject,
+          message,
+          city: r.city ?? undefined,
+        }),
+      ),
+    )
+    results.push(...batchResults)
+    // Skip the sleep after the final batch — no point pausing before we
+    // return.
+    if (i + BATCH_SIZE < list.length) {
+      await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS))
+    }
+  }
   const sent = results.filter(r => r.status === 'fulfilled').length
   const failed = results.length - sent
   if (failed > 0) {

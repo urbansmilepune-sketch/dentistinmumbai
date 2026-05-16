@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
-import { getCityBySlug, cityBrandName, cityBrandTld } from '@/config/cities'
+import { getCityBySlug, cityBrandName, cityBrandTld, cityOrigin } from '@/config/cities'
 import FilterSidebar from './FilterSidebar'
 import DentistCard from './DentistCard'
 import Pagination from './Pagination'
@@ -19,9 +19,14 @@ export async function generateMetadata({ searchParams }: { searchParams: Promise
   const area = params.area?.split(',')[0] || ''
   const treatment = params.treatment?.split(',')[0] || ''
   const title = [treatment, area, `Dentists in ${city.cityName}`].filter(Boolean).join(' · ')
+  // Canonical points at the base /dentists URL with no query params so the
+  // many filter/sort/page combinations don't index as duplicate content.
+  // Patients still land on the filtered URL they followed; only the
+  // <link rel="canonical"> tag tells crawlers which version owns the rank.
   return {
     title,
     description: `Find verified dentists in ${city.cityName}${area ? ` in ${area}` : ''}${treatment ? ` for ${treatment}` : ''}. Compare fees, read reviews, book appointments.`,
+    alternates: { canonical: `${cityOrigin(city)}/dentists` },
   }
 }
 

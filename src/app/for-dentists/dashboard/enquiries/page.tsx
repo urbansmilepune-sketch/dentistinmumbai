@@ -11,6 +11,7 @@ export default function EnquiriesPage() {
   const [enquiries, setEnquiries] = useState<any[]>([])
   const [filter, setFilter] = useState('all')
   const [cityDomain, setCityDomain] = useState('dentistinmumbai.in')
+  const [statusError, setStatusError] = useState<string | null>(null)
 
   useEffect(() => {
     async function load() {
@@ -33,8 +34,21 @@ export default function EnquiriesPage() {
   }, [])
 
   async function updateStatus(id: string, status: string) {
+    setStatusError(null)
     const supabase = createClient()
-    await supabase.from('enquiries').update({ status }).eq('id', id)
+    // .select() to detect silent RLS denials (zero rows + no error). The
+    // old optimistic-mutation pattern lied to the dentist when policies
+    // rejected the write.
+    const { data, error } = await supabase
+      .from('enquiries').update({ status }).eq('id', id).select('id')
+    if (error) {
+      setStatusError(error.message)
+      return
+    }
+    if (!data || data.length === 0) {
+      setStatusError('Status change rejected — you may not have permission to edit this enquiry.')
+      return
+    }
     setEnquiries(prev => prev.map(e => e.id === id ? { ...e, status } : e))
   }
 
@@ -57,6 +71,13 @@ export default function EnquiriesPage() {
           </button>
         ))}
       </div>
+
+      {statusError && (
+        <div style={{ background: '#FEE2E2', border: '1px solid #FECACA', color: '#991B1B', padding: '12px 14px', borderRadius: 10, fontSize: 13, marginBottom: 16, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+          <span>{statusError}</span>
+          <button onClick={() => setStatusError(null)} style={{ background: 'none', border: 'none', color: '#991B1B', cursor: 'pointer', fontFamily: 'var(--font-body)', fontWeight: 700 }}>✕</button>
+        </div>
+      )}
 
       {filtered.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '60px', background: '#fff', borderRadius: 16, border: '1px solid var(--border)' }}>

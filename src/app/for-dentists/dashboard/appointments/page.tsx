@@ -65,6 +65,7 @@ export default function AppointmentsPage() {
   const [unpaidByPhone, setUnpaidByPhone] = useState<Map<string, number>>(new Map())
   const [filter, setFilter] = useState<FilterKey>('all')
   const [updating, setUpdating] = useState<string | null>(null)
+  const [statusError, setStatusError] = useState<string | null>(null)
   const [treatments, setTreatments] = useState<{ id: string; name: string }[]>([])
   const [showAdd, setShowAdd] = useState(() => searchParams.get('new') === '1')
   const [saving, setSaving] = useState(false)
@@ -175,11 +176,23 @@ export default function AppointmentsPage() {
   }
 
   async function updateStatus(id: string, status: string) {
-    setUpdating(id)
+    setUpdating(id); setStatusError(null)
     const supabase = createClient()
-    await supabase.from('appointments').update({ status }).eq('id', id)
-    setAppointments(prev => prev.map(a => a.id === id ? { ...a, status } : a))
+    // .select() forces RLS to return the updated row; without it a denied
+    // update returns no error and no rows, and the old optimistic mutation
+    // happily flipped the UI while the DB stayed put.
+    const { data, error } = await supabase
+      .from('appointments').update({ status }).eq('id', id).select('id')
     setUpdating(null)
+    if (error) {
+      setStatusError(error.message)
+      return
+    }
+    if (!data || data.length === 0) {
+      setStatusError('Status change rejected — you may not have permission to edit this appointment.')
+      return
+    }
+    setAppointments(prev => prev.map(a => a.id === id ? { ...a, status } : a))
   }
 
   const counts: Record<FilterKey, number> = {
@@ -218,6 +231,13 @@ export default function AppointmentsPage() {
           + Add Appointment
         </button>
       </div>
+
+      {statusError && (
+        <div style={{ background: '#FEE2E2', border: '1px solid #FECACA', color: '#991B1B', padding: '12px 14px', borderRadius: 10, fontSize: 13, marginBottom: 16, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+          <span>{statusError}</span>
+          <button onClick={() => setStatusError(null)} style={{ background: 'none', border: 'none', color: '#991B1B', cursor: 'pointer', fontFamily: 'var(--font-body)', fontWeight: 700 }}>✕</button>
+        </div>
+      )}
 
       {/* Add Appointment Modal */}
       {showAdd && (

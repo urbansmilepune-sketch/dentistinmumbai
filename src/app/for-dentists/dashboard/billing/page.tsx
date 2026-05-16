@@ -26,6 +26,7 @@ export default function BillingPage() {
   const [showAdd, setShowAdd] = useState(false)
   const [saving, setSaving] = useState(false)
   const [linkLoading, setLinkLoading] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const [form, setForm] = useState({
     patient_id: '', date: new Date().toISOString().split('T')[0],
     items: [{ description: '', amount: '' }],
@@ -85,8 +86,21 @@ export default function BillingPage() {
   }
 
   async function updatePaymentStatus(id: string, status: string) {
+    setActionError(null)
     const supabase = createClient()
-    await supabase.from('invoices').update({ payment_status: status }).eq('id', id)
+    // .select() so we know the DB actually accepted the write — RLS denial
+    // returns no error and no rows. Marking an invoice as paid is the kind
+    // of action where a fake-success would be especially damaging.
+    const { data, error } = await supabase
+      .from('invoices').update({ payment_status: status }).eq('id', id).select('id')
+    if (error) {
+      setActionError(error.message)
+      return
+    }
+    if (!data || data.length === 0) {
+      setActionError('Payment status update rejected — you may not have permission to edit this invoice.')
+      return
+    }
     setInvoices(prev => prev.map(inv => inv.id === id ? { ...inv, payment_status: status } : inv))
   }
 
@@ -313,6 +327,13 @@ export default function BillingPage() {
         </div>
         <button onClick={() => setShowAdd(true)} style={{ padding: '10px 20px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 14, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>+ New Invoice</button>
       </div>
+
+      {actionError && (
+        <div style={{ background: '#FEE2E2', border: '1px solid #FECACA', color: '#991B1B', padding: '12px 14px', borderRadius: 10, fontSize: 13, marginBottom: 16, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+          <span>{actionError}</span>
+          <button onClick={() => setActionError(null)} style={{ background: 'none', border: 'none', color: '#991B1B', cursor: 'pointer', fontFamily: 'var(--font-body)', fontWeight: 700 }}>✕</button>
+        </div>
+      )}
 
       {/* Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 16, marginBottom: 24 }}>

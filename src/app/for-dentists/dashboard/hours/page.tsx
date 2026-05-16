@@ -38,6 +38,7 @@ export default function WorkingHoursPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [dentistId, setDentistId] = useState('')
   const [hours, setHours] = useState<Record<string, any>>(DEFAULT_HOURS)
 
@@ -67,10 +68,27 @@ export default function WorkingHoursPage() {
   }
 
   async function handleSave() {
-    setSaving(true); setSaved(false)
+    setSaving(true); setSaved(false); setSaveError(null)
     const supabase = createClient()
-    await supabase.from('dentists').update({ working_hours: hours }).eq('id', dentistId)
-    setSaving(false); setSaved(true)
+    // .select() makes RLS denials observable. Without it, a denied write
+    // returns no error AND no rows; the old code happily reported "Saved!"
+    // while the DB was unchanged. With select, zero returned rows means
+    // the write didn't land.
+    const { data, error } = await supabase
+      .from('dentists')
+      .update({ working_hours: hours })
+      .eq('id', dentistId)
+      .select('id')
+    setSaving(false)
+    if (error) {
+      setSaveError(error.message)
+      return
+    }
+    if (!data || data.length === 0) {
+      setSaveError('Save failed — no row was updated. Check that you are signed in as the dentist whose hours you are editing.')
+      return
+    }
+    setSaved(true)
     setTimeout(() => setSaved(false), 3000)
   }
 
@@ -105,6 +123,13 @@ export default function WorkingHoursPage() {
           style={{ padding: '11px 24px', background: saved ? '#00A878' : 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: 14, cursor: saving ? 'not-allowed' : 'pointer', transition: 'background 0.3s' }}
         >{saving ? 'Saving...' : saved ? '✓ Saved!' : 'Save Hours'}</button>
       </div>
+
+      {saveError && (
+        <div style={{ background: '#FEE2E2', border: '1px solid #FECACA', color: '#991B1B', padding: '12px 14px', borderRadius: 10, fontSize: 13, marginBottom: 16, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+          <span>{saveError}</span>
+          <button onClick={() => setSaveError(null)} style={{ background: 'none', border: 'none', color: '#991B1B', cursor: 'pointer', fontFamily: 'var(--font-body)', fontWeight: 700 }}>✕</button>
+        </div>
+      )}
 
       <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden', marginBottom: 20 }}>
         {DAYS.map(({ key, label }, i) => (

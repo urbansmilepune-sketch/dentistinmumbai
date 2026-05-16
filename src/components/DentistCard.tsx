@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { istDayTime } from '@/lib/time'
+import { whatsappLink } from '@/lib/phone'
 
 interface Treatment {
   name: string
@@ -67,7 +68,10 @@ export default function DentistCard({ dentist: d, view }: DentistCardProps) {
   const open = isOpenNow(d.working_hours)
   const treatments = d.dentist_treatments?.map(dt => dt.treatments).filter(Boolean) || []
   const rating = d.avg_rating || 0
-  const waLink = d.whatsapp ? `https://wa.me/91${d.whatsapp.replace(/\D/g, '')}` : null
+  // Normalised wa.me link — handles raw, '+91…', '91…' and trunk-prefix
+  // numbers, returns null when the column is unusable so the WhatsApp
+  // button is skipped entirely.
+  const waLink = whatsappLink(d.whatsapp)
 
   if (view === 'grid') {
     return (
