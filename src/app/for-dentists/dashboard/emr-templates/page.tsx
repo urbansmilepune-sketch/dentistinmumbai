@@ -14,19 +14,19 @@ type Template = {
   procedures: ProcRow[] | null
   medications: MedRow[] | null
   advice: string | null
-  times_used: number | null
+  used_count: number | null
   last_used_at: string | null
   created_at: string
 }
 
 type SectionKey = 'procedures' | 'medications' | 'advice'
 
-// The emr_templates table stores procedures / medications / advice bundled
-// inside a single sections_json column (and the column is NOT NULL). The
-// rest of this page works with the unpacked shape because the UI renders
-// each section separately; these helpers translate at the supabase
-// boundary so the rest of the code stays clean.
-type SectionsJson = { procedures?: ProcRow[] | null; medications?: MedRow[] | null; advice?: string | null }
+// emr_templates schema (live):
+//   id, dentist_id, name, sections_json, advice, used_count, last_used_at, created_at
+// The procedures + medications arrays live inside sections_json; advice is
+// its own top-level column. used_count (not times_used) is the usage counter.
+// These helpers translate between the DB row and the UI's unpacked shape.
+type SectionsJson = { procedures?: ProcRow[] | null; medications?: MedRow[] | null }
 
 function unpackTemplateRow(row: any): Template {
   const s: SectionsJson = (row?.sections_json ?? {}) as SectionsJson
@@ -36,18 +36,17 @@ function unpackTemplateRow(row: any): Template {
     name: row.name,
     procedures: Array.isArray(s.procedures) ? s.procedures : null,
     medications: Array.isArray(s.medications) ? s.medications : null,
-    advice: typeof s.advice === 'string' ? s.advice : null,
-    times_used: row.times_used ?? 0,
+    advice: typeof row.advice === 'string' ? row.advice : null,
+    used_count: row.used_count ?? 0,
     last_used_at: row.last_used_at ?? null,
     created_at: row.created_at,
   }
 }
 
-function packSections(payload: Pick<Template, 'procedures' | 'medications' | 'advice'>): SectionsJson {
+function packSections(payload: Pick<Template, 'procedures' | 'medications'>): SectionsJson {
   return {
     procedures: payload.procedures ?? [],
     medications: payload.medications ?? [],
-    advice: payload.advice ?? null,
   }
 }
 
@@ -92,7 +91,7 @@ export default function EmrTemplatesPage() {
       setDentistId(dentist.id)
       const { data, error: e } = await supabase
         .from('emr_templates')
-        .select('id, dentist_id, name, sections_json, times_used, last_used_at, created_at')
+        .select('id, dentist_id, name, sections_json, advice, used_count, last_used_at, created_at')
         .eq('dentist_id', dentist.id)
         .order('created_at', { ascending: false })
       if (e) setError(e.message)
@@ -119,12 +118,13 @@ export default function EmrTemplatesPage() {
     setError(null)
     const supabase = createClient()
     const sections_json = packSections(payload)
+    const advice = payload.advice ?? null
     if (id) {
       const { data, error: e } = await supabase
         .from('emr_templates')
-        .update({ name: payload.name, sections_json })
+        .update({ name: payload.name, sections_json, advice })
         .eq('id', id)
-        .select('id, dentist_id, name, sections_json, times_used, last_used_at, created_at')
+        .select('id, dentist_id, name, sections_json, advice, used_count, last_used_at, created_at')
         .single()
       if (e) { setError(e.message); return }
       const next = unpackTemplateRow(data)
@@ -136,9 +136,10 @@ export default function EmrTemplatesPage() {
           dentist_id: dentistId,
           name: payload.name,
           sections_json,
-          times_used: 0,
+          advice,
+          used_count: 0,
         })
-        .select('id, dentist_id, name, sections_json, times_used, last_used_at, created_at')
+        .select('id, dentist_id, name, sections_json, advice, used_count, last_used_at, created_at')
         .single()
       if (e) { setError(e.message); return }
       setTemplates(prev => [unpackTemplateRow(data), ...prev])
@@ -249,7 +250,7 @@ export default function EmrTemplatesPage() {
                         </div>
                         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 12, color: 'var(--muted)' }}>
                           <span>Created {fmtDate(t.created_at)}</span>
-                          <span>Used {t.times_used ?? 0} time{(t.times_used ?? 0) !== 1 ? 's' : ''}</span>
+                          <span>Used {t.used_count ?? 0} time{(t.used_count ?? 0) !== 1 ? 's' : ''}</span>
                           <span>Last used {fmtDate(t.last_used_at)}</span>
                         </div>
                       </div>

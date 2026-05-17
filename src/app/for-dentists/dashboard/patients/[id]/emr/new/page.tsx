@@ -44,22 +44,22 @@ type DbTemplate = {
   procedures: ProcRow[] | null
   medications: MedRow[] | null
   advice: string | null
-  times_used: number | null
+  used_count: number | null
 }
 
-// emr_templates stores the three section arrays inside a single
-// sections_json jsonb column (and sections_json is NOT NULL). This file
-// uses the unpacked shape internally for clarity; conversion happens at
-// the supabase boundary.
+// emr_templates live schema: procedures + medications inside sections_json,
+// advice as its own top-level column, used_count as the usage counter
+// (not times_used). This page uses the unpacked shape internally;
+// conversion happens at the supabase boundary.
 function unpackTemplateRow(row: any): DbTemplate {
-  const s = (row?.sections_json ?? {}) as { procedures?: ProcRow[] | null; medications?: MedRow[] | null; advice?: string | null }
+  const s = (row?.sections_json ?? {}) as { procedures?: ProcRow[] | null; medications?: MedRow[] | null }
   return {
     id: row.id,
     name: row.name,
     procedures: Array.isArray(s.procedures) ? s.procedures : null,
     medications: Array.isArray(s.medications) ? s.medications : null,
-    advice: typeof s.advice === 'string' ? s.advice : null,
-    times_used: row.times_used ?? 0,
+    advice: typeof row.advice === 'string' ? row.advice : null,
+    used_count: row.used_count ?? 0,
   }
 }
 
@@ -115,8 +115,8 @@ export default function NewEmrPage() {
       const [{ data: p }, { data: tpls }, { data: customMeds }] = await Promise.all([
         supabase.from('patients').select('id, name, age, gender')
           .eq('id', patientId).eq('dentist_id', dentist.id).single(),
-        supabase.from('emr_templates').select('id, name, sections_json, times_used')
-          .eq('dentist_id', dentist.id).order('times_used', { ascending: false, nullsFirst: false }).order('created_at', { ascending: false }),
+        supabase.from('emr_templates').select('id, name, sections_json, advice, used_count')
+          .eq('dentist_id', dentist.id).order('used_count', { ascending: false, nullsFirst: false }).order('created_at', { ascending: false }),
         supabase.from('custom_medicines').select('name')
           .eq('dentist_id', dentist.id).order('created_at', { ascending: false }),
       ])
@@ -142,7 +142,7 @@ export default function NewEmrPage() {
     // Track usage (best-effort, non-blocking)
     const supabase = createClient()
     supabase.from('emr_templates')
-      .update({ times_used: (t.times_used ?? 0) + 1, last_used_at: new Date().toISOString() })
+      .update({ used_count: (t.used_count ?? 0) + 1, last_used_at: new Date().toISOString() })
       .eq('id', t.id)
       .then(() => {}, () => {})
   }
