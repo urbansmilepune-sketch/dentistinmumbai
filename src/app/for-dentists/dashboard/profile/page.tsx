@@ -88,14 +88,129 @@ export default function EditProfilePage() {
     return () => { cancelled = true }
   }, [slug, siteBase])
 
-  function downloadQr() {
-    if (!qrDataUrl) return
-    const a = document.createElement('a')
-    a.href = qrDataUrl
-    a.download = `book-${slug}-qr.png`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
+  // Draw a 400×600 portrait card on a canvas — blue header + footer, white
+  // body with doctor / clinic / tagline / QR / fallback URL — and trigger a
+  // PNG download. Dentists print this for reception or share the image on
+  // WhatsApp / Instagram, so it has to look brandable on its own without the
+  // rest of the page. Uses system-ui in the canvas: next/font web fonts
+  // (Sora/DM Sans) aren't reliably available to canvas drawText and would
+  // race against the click, while system-ui renders crisp on every device.
+  async function downloadCard() {
+    if (!slug) return
+    const cityDomain = siteBase.replace(/^https?:\/\//, '')
+    const bookingPath = `${cityDomain}/book/${slug}`
+    const fullBookingUrl = `${siteBase}/book/${slug}`
+
+    // Regenerate the QR at print resolution with high error correction so the
+    // 270px on-card render still scans reliably after WhatsApp re-compresses
+    // or the reception printout fades. The on-screen preview keeps its own
+    // qrDataUrl (smaller, faster) so we don't bottleneck the page load on this.
+    let qrUrl: string
+    try {
+      qrUrl = await QRCode.toDataURL(fullBookingUrl, {
+        width: 560,
+        margin: 1,
+        errorCorrectionLevel: 'H',
+        color: { dark: '#0F1923', light: '#FFFFFF' },
+      })
+    } catch { return }
+
+    const qrImg = new Image()
+    try {
+      await new Promise<void>((resolve, reject) => {
+        qrImg.onload = () => resolve()
+        qrImg.onerror = () => reject(new Error('qr image failed to load'))
+        qrImg.src = qrUrl
+      })
+    } catch { return }
+
+    const W = 400
+    const H = 600
+    const canvas = document.createElement('canvas')
+    canvas.width = W
+    canvas.height = H
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    const FONT_STACK = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif'
+    const BLUE = '#003F7A'
+    const INK = '#0F1923'
+    const MUTED = '#64748B'
+    const HAIRLINE = '#E2E8F0'
+
+    ctx.fillStyle = '#FFFFFF'
+    ctx.fillRect(0, 0, W, H)
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+
+    // Header band
+    const HEAD_H = 70
+    ctx.fillStyle = BLUE
+    ctx.fillRect(0, 0, W, HEAD_H)
+    ctx.fillStyle = '#FFFFFF'
+    ctx.font = `bold 22px ${FONT_STACK}`
+    ctx.fillText(cityDomain, W / 2, HEAD_H / 2)
+
+    // Doctor name — prepend "Dr." unless the dentist already typed it.
+    const drName = /^dr\.?\s/i.test(form.name) ? form.name : `Dr. ${form.name}`
+    ctx.fillStyle = INK
+    ctx.font = `bold 22px ${FONT_STACK}`
+    ctx.fillText(drName, W / 2, 102)
+
+    ctx.fillStyle = MUTED
+    ctx.font = `500 14px ${FONT_STACK}`
+    ctx.fillText(form.clinic_name, W / 2, 128)
+
+    // Divider hairline
+    ctx.strokeStyle = HAIRLINE
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.moveTo(80, 152)
+    ctx.lineTo(W - 80, 152)
+    ctx.stroke()
+
+    ctx.fillStyle = BLUE
+    ctx.font = `bold 15px ${FONT_STACK}`
+    ctx.fillText('Scan to Book Your Appointment', W / 2, 177)
+
+    // QR with a thin bordered frame so it reads as a "tile" on the card
+    const QR = 270
+    const QX = (W - QR) / 2
+    const QY = 200
+    ctx.fillStyle = '#FFFFFF'
+    ctx.fillRect(QX - 6, QY - 6, QR + 12, QR + 12)
+    ctx.strokeStyle = HAIRLINE
+    ctx.strokeRect(QX - 5.5, QY - 5.5, QR + 11, QR + 11)
+    ctx.drawImage(qrImg, QX, QY, QR, QR)
+
+    // Fallback URL block — small lead-in over the bold link
+    const URLY = QY + QR + 24
+    ctx.fillStyle = MUTED
+    ctx.font = `12px ${FONT_STACK}`
+    ctx.fillText('Or visit', W / 2, URLY)
+    ctx.fillStyle = BLUE
+    ctx.font = `bold 13px ${FONT_STACK}`
+    ctx.fillText(bookingPath, W / 2, URLY + 18)
+
+    // Footer band
+    const FOOT_H = 50
+    ctx.fillStyle = BLUE
+    ctx.fillRect(0, H - FOOT_H, W, FOOT_H)
+    ctx.fillStyle = 'rgba(255,255,255,0.9)'
+    ctx.font = `11px ${FONT_STACK}`
+    ctx.fillText(`Powered by ${cityDomain}`, W / 2, H - FOOT_H / 2)
+
+    canvas.toBlob(blob => {
+      if (!blob) return
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `book-${slug}-card.png`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    }, 'image/png')
   }
 
   function shareOnWhatsApp() {
@@ -375,9 +490,9 @@ export default function EditProfilePage() {
 
       {/* Booking QR */}
       <div style={sectionStyle}>
-        <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, marginBottom: 6 }}>Your Booking QR Code</h2>
+        <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, marginBottom: 6 }}>Your Booking QR Card</h2>
         <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 18 }}>
-          Patients scan this to land directly on your booking page. <strong>Print this and place at reception.</strong>
+          Download a branded card with your name, clinic, and booking QR — patients scan to land directly on your booking page. <strong>Print for reception, share on WhatsApp, or post on social.</strong>
         </p>
         {!slug ? (
           <p style={{ fontSize: 13, color: 'var(--muted)' }}>
@@ -404,9 +519,9 @@ export default function EditProfilePage() {
                 {`${siteBase}/book/${slug}`}
               </a>
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                <button type="button" onClick={downloadQr} disabled={!qrDataUrl}
-                  style={{ padding: '10px 18px', minHeight: 44, background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 14, cursor: qrDataUrl ? 'pointer' : 'not-allowed', opacity: qrDataUrl ? 1 : 0.6, fontFamily: 'var(--font-body)' }}>
-                  ⬇ Download QR
+                <button type="button" onClick={downloadCard} disabled={!qrDataUrl || !form.name || !form.clinic_name}
+                  style={{ padding: '10px 18px', minHeight: 44, background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 14, cursor: (qrDataUrl && form.name && form.clinic_name) ? 'pointer' : 'not-allowed', opacity: (qrDataUrl && form.name && form.clinic_name) ? 1 : 0.6, fontFamily: 'var(--font-body)' }}>
+                  ⬇ Download Card
                 </button>
                 <button type="button" onClick={shareOnWhatsApp}
                   style={{ padding: '10px 18px', minHeight: 44, background: '#25D366', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 14, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
