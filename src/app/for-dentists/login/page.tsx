@@ -140,6 +140,9 @@ async function handleGoogle() {
                   {showPass ? '🙈' : '👁️'}
                 </button>
               </div>
+              <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.5 }}>
+                Your browser may not autofill saved passwords here for security. Use the Show Password toggle if needed.
+              </p>
               <div style={{ textAlign: 'right', marginTop: 6 }}>
                 <Link href="/for-dentists/forgot-password" style={{ fontSize: 12, color: 'var(--blue)' }}>Forgot password?</Link>
               </div>

@@ -7,6 +7,7 @@
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { headers } from 'next/headers'
 import { getCityByDomain } from '@/config/cities'
+import { INVITE_TTL_MS } from '@/app/api/staff/accept/route'
 import AcceptForm from './AcceptForm'
 
 export const dynamic = 'force-dynamic'
@@ -38,7 +39,7 @@ export default async function StaffAcceptPage({ searchParams }: PageProps) {
   const db = admin()
   const { data: row } = await db
     .from('clinic_staff')
-    .select('id, email, role, status, dentist_id, dentists(clinic_name, name)')
+    .select('id, email, role, status, dentist_id, invited_at, dentists(clinic_name, name)')
     .eq('invite_token', token)
     .maybeSingle()
 
@@ -47,6 +48,14 @@ export default async function StaffAcceptPage({ searchParams }: PageProps) {
   }
   if (row.status !== 'invited') {
     return <Shell><Message kind="info" title="Invite already accepted" body="You've already set up your account. Use the regular sign-in page to log in." cta={{ href: '/for-dentists/login', label: 'Go to sign in' }} /></Shell>
+  }
+
+  // Mirror the 30-day expiry from /api/staff/accept so the staff
+  // member sees the friendly block here instead of typing a password
+  // and getting rejected at submit.
+  const invitedAtMs = row.invited_at ? new Date(row.invited_at).getTime() : 0
+  if (!invitedAtMs || Date.now() - invitedAtMs > INVITE_TTL_MS) {
+    return <Shell><Message kind="error" title="Invite link expired" body="Please ask your dentist to send a new invite. Invite links are valid for 30 days." /></Shell>
   }
 
   const dentistRow = row.dentists as any

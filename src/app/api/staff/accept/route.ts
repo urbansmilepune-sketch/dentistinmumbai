@@ -7,9 +7,11 @@
 //
 // Security notes:
 //   - The token IS the credential. We do not require any other proof
-//     of identity from the client — same shape as a magic link, but
-//     with no expiry. Compensation: the token is single-use (cleared
-//     when status flips to 'active') and uniformly random (32 bytes).
+//     of identity from the client — same shape as a magic link.
+//     Compensation: the token is single-use (cleared when status flips
+//     to 'active'), uniformly random (32 bytes), AND now expires
+//     30 days after invited_at as belt-and-suspenders. A leaked-but-
+//     not-yet-redeemed token from a year ago cannot be cashed in.
 //   - status='invited' is required at accept time. A redeem of a
 //     token that's already been used is impossible because the token
 //     is null'd; but if the row was activated through some other path
@@ -29,6 +31,13 @@ function admin() {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   )
 }
+
+// Invites are usable for 30 days from invited_at. Sized to be long
+// enough that vacation/leave doesn't strand a new hire but short
+// enough that a long-leaked link doesn't grant indefinite access.
+// The /staff-accept page applies the same check so the staff member
+// sees a friendly "expired" block before being asked for a password.
+export const INVITE_TTL_MS = 30 * 24 * 60 * 60 * 1000
 
 // supabase-js doesn't expose a getUserByEmail admin call, so we paginate.
 // At ~200/page this covers up to 1,000 users with a single round trip in
@@ -62,7 +71,7 @@ export async function POST(request: NextRequest) {
 
   const { data: row, error: lookupErr } = await db
     .from('clinic_staff')
-    .select('id, email, status, dentist_id, role')
+    .select('id, email, status, dentist_id, role, invited_at')
     .eq('invite_token', token)
     .maybeSingle()
   if (lookupErr) {
@@ -74,6 +83,13 @@ export async function POST(request: NextRequest) {
   }
   if (row.status !== 'invited') {
     return NextResponse.json({ error: 'This invite has already been accepted. Use the regular sign-in page.' }, { status: 409 })
+  }
+
+  // 30-day expiry. The token is single-use anyway, but this caps the
+  // window in which a leaked-but-unused link is dangerous.
+  const invitedAtMs = row.invited_at ? new Date(row.invited_at).getTime() : 0
+  if (!invitedAtMs || Date.now() - invitedAtMs > INVITE_TTL_MS) {
+    return NextResponse.json({ error: 'Invite link expired. Please ask your dentist to send a new invite.' }, { status: 410 })
   }
 
   // Create the auth.users row, or update an existing one if the email
