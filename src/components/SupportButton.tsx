@@ -1,0 +1,175 @@
+'use client'
+
+// Floating "Help" button mounted at the bottom-right of every page from the
+// root layout. Click expands a small popup with two-or-three CTAs: WhatsApp
+// admin, email support, and — on dashboard pages only — a pre-shaped Bug
+// Report WhatsApp link. The bug report path is hidden on public pages
+// because patients filing "bugs" via the same chat as paying dentists
+// creates triage noise.
+
+import { useEffect, useRef, useState } from 'react'
+import { usePathname } from 'next/navigation'
+
+const ADMIN_WHATSAPP = '917719903232'
+const SUPPORT_EMAIL = 'support@dentistinmumbai.in'
+
+function isDashboardPath(pathname: string | null): boolean {
+  return !!pathname && pathname.startsWith('/for-dentists/dashboard')
+}
+
+export default function SupportButton() {
+  const pathname = usePathname()
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  // Close on outside click / Esc — popup overlays page content so we want
+  // the same dismissal pattern as a menu.
+  useEffect(() => {
+    if (!open) return
+    function onDoc(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    function onEsc(e: KeyboardEvent) { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onEsc)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onEsc)
+    }
+  }, [open])
+
+  function currentUrl(): string {
+    if (typeof window === 'undefined') return ''
+    return window.location.href
+  }
+
+  function openWhatsApp() {
+    const text = `Hi, I need help with DentistIn. ${currentUrl()}`
+    window.open(`https://wa.me/${ADMIN_WHATSAPP}?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer')
+    setOpen(false)
+  }
+
+  function openEmail() {
+    window.location.href = `mailto:${SUPPORT_EMAIL}`
+    setOpen(false)
+  }
+
+  function openBugReport() {
+    const text = `🐛 Bug Report: [describe issue] Page: ${currentUrl()}`
+    window.open(`https://wa.me/${ADMIN_WHATSAPP}?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer')
+    setOpen(false)
+  }
+
+  const showBugReport = isDashboardPath(pathname)
+
+  return (
+    <div ref={wrapRef} style={wrapStyle}>
+      {open && (
+        <div role="dialog" aria-label="Support options" style={popupStyle}>
+          <div style={popupHeaderStyle}>
+            <span>How can we help?</span>
+            <button type="button" aria-label="Close support" onClick={() => setOpen(false)} style={closeBtnStyle}>✕</button>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <button type="button" onClick={openWhatsApp} style={{ ...optionStyle, background: '#25D366', color: '#fff' }}>
+              <span style={iconStyle}>💬</span>
+              <span style={{ flex: 1 }}>
+                <span style={labelStyle}>WhatsApp Us</span>
+                <span style={hintStyle}>Fastest — we usually reply in minutes</span>
+              </span>
+            </button>
+            <button type="button" onClick={openEmail} style={optionStyle}>
+              <span style={iconStyle}>📧</span>
+              <span style={{ flex: 1 }}>
+                <span style={labelStyle}>Email Us</span>
+                <span style={hintStyle}>{SUPPORT_EMAIL}</span>
+              </span>
+            </button>
+            {showBugReport && (
+              <button type="button" onClick={openBugReport} style={{ ...optionStyle, background: '#FEE2E2', borderColor: '#FECACA' }}>
+                <span style={iconStyle}>🐛</span>
+                <span style={{ flex: 1 }}>
+                  <span style={{ ...labelStyle, color: '#991B1B' }}>Report a Bug</span>
+                  <span style={hintStyle}>Pre-fills WhatsApp with this page URL</span>
+                </span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      <button
+        type="button"
+        aria-label={open ? 'Close help' : 'Open help'}
+        aria-expanded={open}
+        onClick={() => setOpen(v => !v)}
+        style={triggerStyle}
+      >
+        <span style={{ fontSize: 18 }}>{open ? '✕' : '💬'}</span>
+        <span style={{ fontWeight: 700, fontSize: 14 }}>{open ? 'Close' : 'Help'}</span>
+      </button>
+    </div>
+  )
+}
+
+const wrapStyle: React.CSSProperties = {
+  position: 'fixed',
+  right: 20,
+  bottom: 20,
+  zIndex: 9999,
+  fontFamily: 'var(--font-body)',
+  display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10,
+}
+
+const triggerStyle: React.CSSProperties = {
+  display: 'inline-flex', alignItems: 'center', gap: 8,
+  padding: '12px 18px', minHeight: 48,
+  background: '#003F7A', color: '#fff',
+  border: 'none', borderRadius: 999,
+  fontFamily: 'var(--font-body)',
+  cursor: 'pointer',
+  boxShadow: '0 8px 24px rgba(0, 63, 122, 0.32)',
+}
+
+const popupStyle: React.CSSProperties = {
+  background: '#fff',
+  borderRadius: 14,
+  border: '1px solid #E2E8F0',
+  boxShadow: '0 16px 40px rgba(15, 25, 35, 0.18)',
+  padding: 14,
+  width: 280,
+  maxWidth: 'calc(100vw - 40px)',
+}
+
+const popupHeaderStyle: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+  fontWeight: 700, fontSize: 14, color: '#0F1923',
+  marginBottom: 10,
+}
+
+const closeBtnStyle: React.CSSProperties = {
+  background: 'none', border: 'none', fontSize: 16, lineHeight: 1,
+  cursor: 'pointer', color: '#64748B', padding: 4,
+}
+
+const optionStyle: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', gap: 12,
+  width: '100%', padding: '10px 12px',
+  background: '#F8FAFC', border: '1px solid #E2E8F0',
+  borderRadius: 10,
+  cursor: 'pointer',
+  fontFamily: 'var(--font-body)',
+  textAlign: 'left',
+}
+
+const iconStyle: React.CSSProperties = {
+  fontSize: 20, lineHeight: 1, flexShrink: 0,
+}
+
+const labelStyle: React.CSSProperties = {
+  display: 'block', fontWeight: 700, fontSize: 13, color: '#0F1923', marginBottom: 2,
+}
+
+const hintStyle: React.CSSProperties = {
+  display: 'block', fontSize: 11, color: '#64748B',
+}

@@ -54,9 +54,27 @@ function autoApprovalFailureReason(input: AutoApprovalInput): string | null {
 }
 
 export async function POST(request: NextRequest) {
+  // Origin for internal fire-and-forget pings. Hoisted out of the try
+  // block so the catch handler can still reach the WhatsApp endpoint when
+  // an error happens during body parsing or DB writes.
+  const origin = new URL(request.url).origin
+  function notifyAdmin(msg: string) {
+    fetch(`${origin}/api/notifications/whatsapp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: msg }),
+    }).catch(err => console.error('[registrations] admin whatsapp failed', err))
+  }
+
+  // Hoisted so the catch handler can include the email in the failure
+  // ping — otherwise we'd alert "🚨 FAILED for undefined" on every
+  // upstream parse error.
+  let emailForAlert: string | undefined
+
   try {
     const body = await request.json()
     const { name, phone, email, clinic_name, area, qualification, mci_registration, founding_number, selected_plan, city } = body
+    emailForAlert = typeof email === 'string' ? email : undefined
     const rawAreaName = typeof body.area_name_raw === 'string' ? body.area_name_raw.trim() : null
     const area_name_raw = rawAreaName && rawAreaName.length > 0 ? rawAreaName : null
 
@@ -106,6 +124,12 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (error) throw error
+
+    // Monitoring ping — fires once per successful insert regardless of
+    // whether the row auto-approves or falls through to manual review.
+    // If these stop arriving during business hours for 2+ hours, something
+    // is wrong upstream (form, CDN, captcha, etc.).
+    notifyAdmin(`✅ New Registration: ${name} from ${cityValue} - ${data.ref_no}`)
 
     // Effective area name for downstream emails / alerts. "Other" path
     // registrations send area='' and area_name_raw=<typed>, so we collapse
@@ -157,6 +181,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ref_no: data.ref_no, success: true, auto_approved: false })
   } catch (error: any) {
     console.error('Registration error:', error)
+    notifyAdmin(`🚨 Registration FAILED for ${emailForAlert ?? 'unknown email'} - Error: ${error?.message ?? 'unknown'}`)
     return NextResponse.json({ error: 'Failed to submit registration' }, { status: 500 })
   }
 }

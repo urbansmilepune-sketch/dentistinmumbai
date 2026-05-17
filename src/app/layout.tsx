@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Sora, DM_Sans } from 'next/font/google'
 import { headers } from 'next/headers'
 import { getCityBySlug } from '@/config/cities'
+import SupportButton from '@/components/SupportButton'
 import './globals.css'
 
 // Self-hosted via next/font. The `variable` prop sets a CSS variable on
@@ -78,7 +79,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`${sora.variable} ${dmSans.variable}`}>
-      <body>{children}</body>
+      <body>
+        {children}
+        <SupportButton />
+      </body>
     </html>
   )
 }
