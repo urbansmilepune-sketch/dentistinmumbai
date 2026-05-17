@@ -8,7 +8,7 @@ type PhotoType = 'profile' | 'cover' | 'gallery'
 
 interface Photo {
   id: string
-  image_url: string
+  url: string
   caption: string | null
   category: string
 }
@@ -74,10 +74,11 @@ export default function PhotosPage() {
 
       if (type === 'profile') setProfilePhoto(data.url)
       else if (type === 'cover') setCoverPhoto(data.url)
-      else {
-        const supabase = createClient()
-        const { data: newPhoto } = await supabase.from('gallery_photos').select('*').eq('dentist_id', dentistId).order('created_at', { ascending: false }).limit(1).single()
-        if (newPhoto) setGallery(prev => [newPhoto, ...prev])
+      else if (data.photo) {
+        // The API now returns the inserted gallery_photos row directly,
+        // so we can prepend it without a racy "fetch the newest row"
+        // re-query that mis-attributes back-to-back uploads.
+        setGallery(prev => [data.photo as Photo, ...prev])
       }
     } catch { setError('Upload failed. Please try again.') }
     setUploading(null)
@@ -166,7 +167,7 @@ export default function PhotosPage() {
             {/* Photo tiles */}
             {gallery.map(photo => (
               <div key={photo.id} style={{ aspectRatio: '1', borderRadius: 12, overflow: 'hidden', position: 'relative', border: '1px solid var(--border)' }}>
-                <img src={photo.image_url} alt={photo.caption || 'Clinic photo'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <img src={photo.url} alt={photo.caption || 'Clinic photo'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 <button
                   onClick={() => deletePhoto(photo.id)}
                   style={{ position: 'absolute', top: 6, right: 6, width: 24, height: 24, borderRadius: '50%', background: 'rgba(0,0,0,0.6)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}

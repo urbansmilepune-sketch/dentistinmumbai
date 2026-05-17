@@ -84,11 +84,25 @@ export async function POST(request: NextRequest) {
       if (error) return NextResponse.json({ error: `DB save failed: ${error.message}` }, { status: 500 })
       if (!rows || rows.length === 0) return NextResponse.json({ error: 'DB save failed — row not updated (RLS denied or missing row).' }, { status: 500 })
     } else if (uploadType === 'gallery' || uploadType === 'xray') {
-      await supabase.from('gallery_photos').insert({
-        dentist_id: dentist.id,
-        image_url: result.secure_url,
-        category: uploadType === 'xray' ? 'xray' : 'clinic_interior',
-      })
+      // The DB column is `url`, not `image_url`. Old code wrote image_url
+      // here and the insert silently failed every time — the file landed in
+      // Cloudinary but no row was created, so the dashboard never showed
+      // the new photo. `.select('id, url, caption, category').single()`
+      // also makes RLS denial observable; without it a denied insert
+      // returns no error AND no rows.
+      const { data: photoRow, error: insertErr } = await supabase
+        .from('gallery_photos')
+        .insert({
+          dentist_id: dentist.id,
+          url: result.secure_url,
+          category: uploadType === 'xray' ? 'xray' : 'clinic_interior',
+        })
+        .select('id, url, caption, category')
+        .single()
+      if (insertErr) {
+        return NextResponse.json({ error: `DB save failed: ${insertErr.message}` }, { status: 500 })
+      }
+      return NextResponse.json({ success: true, url: result.secure_url, publicId: result.public_id, photo: photoRow })
     }
 
     return NextResponse.json({ success: true, url: result.secure_url, publicId: result.public_id })
