@@ -38,12 +38,34 @@ export default function PlanSelector({ defaultPlan }: Props = {}) {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20, maxWidth: 900, margin: '0 auto' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16, maxWidth: 1100, margin: '0 auto' }}>
         {/* Free */}
         <PlanCard
           name="Free" color="#6B7280" price="₹0" periodLabel="forever"
           features={['Full clinic profile', 'Booking system', 'Patient reviews', 'Google Maps', 'WhatsApp button', 'Basic analytics']}
           footer={<CurrentPill />}
+        />
+
+        {/* Silver — pricing is set via WhatsApp negotiation until we publish a
+            self-serve flow. Footer mirrors the Featured pattern. */}
+        <PlanCard
+          name="✦ Silver" color="#475569" price="On request" periodLabel=""
+          features={[
+            'Everything in Free',
+            'Up to 3 staff accounts',
+            '3 clinic locations',
+            'Bulk email blasts',
+            'All message templates',
+            'Send history & audit log',
+            '30-day analytics trends',
+          ]}
+          footer={
+            <a href={`https://wa.me/917719903232?text=${encodeURIComponent(`Hi, I want to upgrade my ${cityConfig.domain} listing to Silver. Please share pricing.`)}`}
+              target="_blank" rel="noopener noreferrer"
+              style={{ display: 'block', width: '100%', padding: '12px', background: '#475569', color: '#fff', borderRadius: 10, textAlign: 'center', fontSize: 14, fontWeight: 700, textDecoration: 'none' }}>
+              Get Silver →
+            </a>
+          }
         />
 
         {/* Gold (price + cta react to toggle) */}

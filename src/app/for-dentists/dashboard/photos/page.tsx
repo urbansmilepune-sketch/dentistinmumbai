@@ -3,6 +3,14 @@
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { normalizeTier, tierMeets, type Tier } from '@/lib/tier'
+
+// Gallery-tile budget per tier. The Cloudinary upload happens server-side
+// so this gate also needs a server-side mirror in /api/cloudinary/upload to
+// be authoritative — for now this is the UX-level limit only.
+const GALLERY_LIMIT: Record<Tier, number> = {
+  free: 5, silver: 20, gold: 20, featured: 20,
+}
 
 type PhotoType = 'profile' | 'cover' | 'gallery'
 
@@ -22,6 +30,7 @@ export default function PhotosPage() {
   const [gallery, setGallery] = useState<Photo[]>([])
   const [uploading, setUploading] = useState<string | null>(null)
   const [error, setError] = useState('')
+  const [tier, setTier] = useState<Tier>('free')
 
   const profileRef = useRef<HTMLInputElement>(null)
   const coverRef = useRef<HTMLInputElement>(null)
@@ -35,7 +44,7 @@ export default function PhotosPage() {
 
       const { data: dentist } = await supabase
         .from('dentists')
-        .select('id, profile_photo, cover_photo')
+        .select('id, profile_photo, cover_photo, tier')
         .eq('email', user.email)
         .single()
 
@@ -43,6 +52,7 @@ export default function PhotosPage() {
         setDentistId(dentist.id)
         setProfilePhoto(dentist.profile_photo)
         setCoverPhoto(dentist.cover_photo)
+        setTier(normalizeTier(dentist.tier))
 
         const { data: photos } = await supabase
           .from('gallery_photos')
@@ -142,13 +152,28 @@ export default function PhotosPage() {
         <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '24px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
             <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16 }}>Clinic Gallery</h3>
-            <span style={{ fontSize: 12, color: 'var(--muted)' }}>{gallery.length} / 20 photos</span>
+            <span style={{ fontSize: 12, color: 'var(--muted)' }}>{gallery.length} / {GALLERY_LIMIT[tier]} photos</span>
           </div>
           <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 20 }}>Clinic interior, equipment, treatment rooms, before/after photos</p>
 
+          {!tierMeets(tier, 'silver') && gallery.length >= GALLERY_LIMIT.free && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 12,
+              background: '#FEF3C7', border: '1px solid #FDE68A',
+              borderRadius: 10, padding: '12px 14px',
+              fontSize: 13, color: '#92400E', marginBottom: 16, flexWrap: 'wrap',
+            }}>
+              <span>🔒 Free plan caps the gallery at <strong>{GALLERY_LIMIT.free}</strong> photos.</span>
+              <a href="/for-dentists/dashboard/upgrade"
+                style={{ color: 'var(--blue)', fontWeight: 700, textDecoration: 'none', marginLeft: 'auto' }}>
+                Upgrade for {GALLERY_LIMIT.silver} photos →
+              </a>
+            </div>
+          )}
+
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12, marginBottom: 16 }}>
             {/* Upload tile */}
-            {gallery.length < 20 && (
+            {gallery.length < GALLERY_LIMIT[tier] && (
               <div
                 onClick={() => galleryRef.current?.click()}
                 style={{ aspectRatio: '1', border: '2px dashed var(--border)', borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--bg)', gap: 6 }}

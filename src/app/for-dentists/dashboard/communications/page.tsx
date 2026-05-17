@@ -10,10 +10,17 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import FeatureGate from '@/components/FeatureGate'
+import { normalizeTier, tierMeets, type Tier } from '@/lib/tier'
 
 type Mode = 'individual' | 'selected' | 'all'
 type Channel = 'email' | 'whatsapp'
 type LastVisitWindow = 'all' | '30' | '60' | '90'
+
+// Free dentists can use exactly three operational templates — reminder /
+// closure / follow-up. The marketing-shaped templates (offer, new service,
+// birthday) are silver+ along with the email channel and bulk modes.
+const FREE_TEMPLATE_IDS = new Set(['appointment-reminder', 'holiday', 'follow-up'])
 
 interface Patient {
   id: string
@@ -120,6 +127,17 @@ export default function CommunicationsPage() {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [result, setResult] = useState<{ sent: number; failed: number; total: number; message?: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [tier, setTier] = useState<Tier>('free')
+
+  const isFree = !tierMeets(tier, 'silver')
+
+  // Snap free dentists out of any locked initial state when their tier
+  // resolves: mode defaults to 'selected' (locked) and channel to 'email'
+  // (locked), so without this they'd see a highlighted-but-disabled UI on
+  // first paint.
+  useEffect(() => {
+    if (isFree) { setMode('individual'); setChannel('whatsapp') }
+  }, [isFree])
 
   useEffect(() => {
     async function load() {
@@ -128,9 +146,10 @@ export default function CommunicationsPage() {
       if (!user) { router.push('/for-dentists/login'); return }
 
       const { data: dentist } = await supabase
-        .from('dentists').select('id').eq('email', user.email).maybeSingle()
+        .from('dentists').select('id, tier').eq('email', user.email).maybeSingle()
       if (!dentist) { setLoading(false); return }
       setDentistId(dentist.id)
+      setTier(normalizeTier(dentist.tier))
 
       const [{ data: pts }, { data: appts }, { data: hist }] = await Promise.all([
         supabase.from('patients')
@@ -195,6 +214,10 @@ export default function CommunicationsPage() {
   }, [patients, search, lastVisitWindow, treatmentFilter])
 
   function applyTemplate(id: string) {
+    // Locked templates short-circuit silently for free dentists. The
+    // template chip itself shows a 🔒 + tooltip + greyed style so the
+    // click being a no-op isn't surprising.
+    if (isFree && id !== 'custom' && !FREE_TEMPLATE_IDS.has(id)) return
     setTemplateId(id)
     if (id === 'custom') {
       // Don't wipe what the dentist has typed if they're switching back
@@ -328,18 +351,27 @@ export default function CommunicationsPage() {
           {/* Channel switcher */}
           <SectionLabel>Channel</SectionLabel>
           <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
-            {(['email', 'whatsapp'] as Channel[]).map(c => (
-              <button key={c} type="button" onClick={() => setChannel(c)}
-                style={{
-                  padding: '10px 16px', borderRadius: 10, fontSize: 13, fontWeight: 600,
-                  background: channel === c ? 'var(--blue)' : 'var(--bg)',
-                  color: channel === c ? '#fff' : 'var(--text)',
-                  border: channel === c ? 'none' : '1px solid var(--border)',
-                  cursor: 'pointer', fontFamily: 'var(--font-body)',
-                }}>
-                {c === 'email' ? '📧 Email' : '💬 WhatsApp'}
-              </button>
-            ))}
+            {(['email', 'whatsapp'] as Channel[]).map(c => {
+              const locked = isFree && c === 'email'
+              return (
+                <button key={c} type="button"
+                  onClick={() => !locked && setChannel(c)}
+                  disabled={locked}
+                  title={locked ? 'Email blasts are a Silver feature — upgrade to enable' : ''}
+                  style={{
+                    padding: '10px 16px', borderRadius: 10, fontSize: 13, fontWeight: 600,
+                    background: channel === c ? 'var(--blue)' : 'var(--bg)',
+                    color: channel === c ? '#fff' : locked ? '#94A3B8' : 'var(--text)',
+                    border: channel === c ? 'none' : `1px solid ${locked ? '#E2E8F0' : 'var(--border)'}`,
+                    cursor: locked ? 'not-allowed' : 'pointer',
+                    fontFamily: 'var(--font-body)',
+                    opacity: locked ? 0.6 : 1,
+                  }}>
+                  {c === 'email' ? '📧 Email' : '💬 WhatsApp'}
+                  {locked && <span style={{ marginLeft: 6, fontSize: 11 }}>🔒</span>}
+                </button>
+              )
+            })}
           </div>
           {channel === 'whatsapp' && (
             <div style={{ background: '#FEF3C7', border: '1px solid #FDE68A', color: '#92400E', padding: '10px 12px', borderRadius: 8, fontSize: 12, lineHeight: 1.5, marginBottom: 18 }}>
@@ -354,35 +386,52 @@ export default function CommunicationsPage() {
               { v: 'individual', label: 'One patient' },
               { v: 'selected',   label: 'Selected patients' },
               { v: 'all',        label: 'All my patients' },
-            ] as Array<{ v: Mode; label: string }>).map(opt => (
-              <button key={opt.v} type="button" onClick={() => setMode(opt.v)}
-                style={{
-                  padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600,
-                  background: mode === opt.v ? 'var(--blue-light)' : '#fff',
-                  color: mode === opt.v ? 'var(--blue)' : 'var(--text)',
-                  border: `1.5px solid ${mode === opt.v ? 'var(--blue)' : 'var(--border)'}`,
-                  cursor: 'pointer', fontFamily: 'var(--font-body)',
-                }}>
-                {opt.label}
-              </button>
-            ))}
+            ] as Array<{ v: Mode; label: string }>).map(opt => {
+              const locked = isFree && opt.v !== 'individual'
+              return (
+                <button key={opt.v} type="button"
+                  onClick={() => !locked && setMode(opt.v)}
+                  disabled={locked}
+                  title={locked ? 'Bulk send is a Silver feature — upgrade to enable' : ''}
+                  style={{
+                    padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                    background: mode === opt.v ? 'var(--blue-light)' : '#fff',
+                    color: mode === opt.v ? 'var(--blue)' : locked ? '#94A3B8' : 'var(--text)',
+                    border: `1.5px solid ${mode === opt.v ? 'var(--blue)' : locked ? '#E2E8F0' : 'var(--border)'}`,
+                    cursor: locked ? 'not-allowed' : 'pointer',
+                    fontFamily: 'var(--font-body)',
+                    opacity: locked ? 0.6 : 1,
+                  }}>
+                  {opt.label}
+                  {locked && <span style={{ marginLeft: 6, fontSize: 11 }}>🔒</span>}
+                </button>
+              )
+            })}
           </div>
 
           {/* Template picker */}
           <SectionLabel>Template</SectionLabel>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 18 }}>
-            {TEMPLATES.map(t => (
-              <button key={t.id} type="button" onClick={() => applyTemplate(t.id)}
-                style={{
-                  padding: '7px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600,
-                  background: templateId === t.id ? 'var(--blue)' : '#fff',
-                  color: templateId === t.id ? '#fff' : 'var(--text)',
-                  border: `1.5px solid ${templateId === t.id ? 'var(--blue)' : 'var(--border)'}`,
-                  cursor: 'pointer', fontFamily: 'var(--font-body)',
-                }}>
-                {t.label}
-              </button>
-            ))}
+            {TEMPLATES.map(t => {
+              const locked = isFree && !FREE_TEMPLATE_IDS.has(t.id)
+              return (
+                <button key={t.id} type="button"
+                  onClick={() => applyTemplate(t.id)}
+                  disabled={locked}
+                  title={locked ? 'Upgrade to Silver to use this template' : ''}
+                  style={{
+                    padding: '7px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+                    background: templateId === t.id ? 'var(--blue)' : '#fff',
+                    color: templateId === t.id ? '#fff' : locked ? '#94A3B8' : 'var(--text)',
+                    border: `1.5px solid ${templateId === t.id ? 'var(--blue)' : locked ? '#E2E8F0' : 'var(--border)'}`,
+                    cursor: locked ? 'not-allowed' : 'pointer',
+                    fontFamily: 'var(--font-body)',
+                    opacity: locked ? 0.6 : 1,
+                  }}>
+                  {t.label}{locked && ' 🔒'}
+                </button>
+              )
+            })}
             <button type="button" onClick={() => applyTemplate('custom')}
               style={{
                 padding: '7px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600,
@@ -532,29 +581,39 @@ export default function CommunicationsPage() {
         </div>
       </div>
 
-      {/* History */}
-      <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: 18, marginTop: 18 }}>
-        <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16, marginBottom: 12 }}>Recent Sends</h2>
-        {history.length === 0 ? (
-          <p style={{ fontSize: 13, color: 'var(--muted)' }}>No messages sent yet.</p>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {history.map(h => (
-              <div key={h.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, padding: '10px 12px', background: 'var(--bg)', borderRadius: 8, fontSize: 12 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, color: 'var(--text)' }}>
-                    {h.channel === 'email' ? '📧' : '💬'} {h.subject || h.message.split('\n')[0].slice(0, 60)}
+      {/* History — Silver+. Free dentists see a blurred preview so they
+          know what audit trail they're trading away. */}
+      <div style={{ marginTop: 18 }}>
+        <FeatureGate
+          requiredTier="silver"
+          featureName="Send history"
+          benefitText="Every blast logged with channel, recipient count, and failures — for compliance and audit."
+          dentistTier={tier}
+        >
+          <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: 18 }}>
+            <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16, marginBottom: 12 }}>Recent Sends</h2>
+            {history.length === 0 ? (
+              <p style={{ fontSize: 13, color: 'var(--muted)' }}>No messages sent yet.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {history.map(h => (
+                  <div key={h.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, padding: '10px 12px', background: 'var(--bg)', borderRadius: 8, fontSize: 12 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, color: 'var(--text)' }}>
+                        {h.channel === 'email' ? '📧' : '💬'} {h.subject || h.message.split('\n')[0].slice(0, 60)}
+                      </div>
+                      <div style={{ color: 'var(--muted)', marginTop: 2 }}>
+                        {new Date(h.sent_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
+                        {' · '}{h.mode}{' · '}{h.recipients_count} sent{h.failed_count ? ` · ${h.failed_count} failed` : ''}
+                        {h.status !== 'sent' ? ` · ${h.status}` : ''}
+                      </div>
+                    </div>
                   </div>
-                  <div style={{ color: 'var(--muted)', marginTop: 2 }}>
-                    {new Date(h.sent_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
-                    {' · '}{h.mode}{' · '}{h.recipients_count} sent{h.failed_count ? ` · ${h.failed_count} failed` : ''}
-                    {h.status !== 'sent' ? ` · ${h.status}` : ''}
-                  </div>
-                </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
-        )}
+        </FeatureGate>
       </div>
 
       {/* Confirm modal */}

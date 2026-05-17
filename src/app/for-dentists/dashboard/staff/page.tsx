@@ -1,6 +1,18 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import FeatureGate from '@/components/FeatureGate'
+import UpgradeBanner from '@/components/UpgradeBanner'
+import { normalizeTier, tierMeets, type Tier } from '@/lib/tier'
+
+// Tier-based staff seat limits. Gating is enforced at the UI layer here and
+// must be mirrored on the API (POST /api/dentist/staff) once the server-side
+// counterpart lands — until then a determined dentist could bypass the UI by
+// hitting the endpoint directly, so don't treat this as a security boundary.
+const STAFF_LIMIT: Record<Tier, number> = {
+  free: 0, silver: 3, gold: Infinity, featured: Infinity,
+}
 
 type Role = 'owner' | 'associate_dentist' | 'reception'
 
@@ -50,6 +62,7 @@ export default function StaffPage() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  const [tier, setTier] = useState<Tier>('free')
 
   async function load() {
     setLoading(true)
@@ -60,6 +73,24 @@ export default function StaffPage() {
   }
 
   useEffect(() => { load() }, [])
+
+  // Read tier directly from the dentists row. The dashboard layout already
+  // fetched it server-side but we don't currently thread it down via context;
+  // a one-shot SELECT here keeps the wire-up local to the page.
+  useEffect(() => {
+    let cancelled = false
+    const supabase = createClient()
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user || cancelled) return
+      const { data } = await supabase.from('dentists').select('tier').eq('email', user.email).maybeSingle()
+      if (!cancelled) setTier(normalizeTier(data?.tier))
+    })
+    return () => { cancelled = true }
+  }, [])
+
+  const limit = STAFF_LIMIT[tier]
+  const atLimit = staff.length >= limit
+  const canInvite = tierMeets(tier, 'silver') && !atLimit
 
   function flashToast(msg: string) {
     setToast(msg)
@@ -99,6 +130,8 @@ export default function StaffPage() {
     await load()
   }
 
+  const isFreeLocked = !tierMeets(tier, 'silver')
+
   return (
     <div style={{ maxWidth: 880 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
@@ -106,8 +139,28 @@ export default function StaffPage() {
           <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 4 }}>Staff Access</h1>
           <p style={{ fontSize: 14, color: 'var(--muted)' }}>Invite your reception desk and associate dentists. Each gets their own login with the right permissions.</p>
         </div>
-        <button onClick={() => { setError(null); setInviteOpen(true) }} style={primaryBtn}>+ Invite Staff</button>
+        <button
+          onClick={() => { if (!canInvite) return; setError(null); setInviteOpen(true) }}
+          disabled={!canInvite}
+          title={isFreeLocked ? 'Upgrade to Silver to invite staff' : atLimit ? `Silver allows up to ${limit} staff — upgrade to Gold for unlimited` : ''}
+          style={{ ...primaryBtn, opacity: canInvite ? 1 : 0.55, cursor: canInvite ? 'pointer' : 'not-allowed' }}
+        >+ Invite Staff</button>
       </div>
+
+      {isFreeLocked && (
+        <UpgradeBanner
+          requiredTier="silver"
+          featureName="Staff accounts are a Silver feature"
+          benefitText="Give your reception and associates their own logins with role-based access."
+          dentistTier={tier}
+        />
+      )}
+
+      {tierMeets(tier, 'silver') && !tierMeets(tier, 'gold') && (
+        <div style={{ background: '#F1F5F9', border: '1px solid #CBD5E1', borderRadius: 10, padding: '10px 14px', marginBottom: 18, fontSize: 12, color: '#334155' }}>
+          Silver plan: <strong>{staff.length}/{limit}</strong> staff seats used. Upgrade to Gold for unlimited staff.
+        </div>
+      )}
 
       {/* Permissions cheat-sheet */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12, marginBottom: 24 }}>
@@ -126,7 +179,14 @@ export default function StaffPage() {
         })}
       </div>
 
-      {/* Staff list */}
+      {/* Staff list — wrapped in FeatureGate so free users see a blurred
+          preview of what the page looks like. Silver+ renders unchanged. */}
+      <FeatureGate
+        requiredTier="silver"
+        featureName="Staff & roles"
+        benefitText="Give your reception desk and associates their own logins with the right access — no shared passwords."
+        dentistTier={tier}
+      >
       {loading ? (
         <p style={{ color: 'var(--muted)', padding: 40, textAlign: 'center' }}>Loading…</p>
       ) : staff.length === 0 ? (
@@ -136,7 +196,8 @@ export default function StaffPage() {
           <p style={{ color: 'var(--muted)', fontSize: 14, maxWidth: 360, margin: '0 auto 18px' }}>
             Invite your reception desk so they can book appointments, and your associate dentists so they can write EMRs.
           </p>
-          <button onClick={() => setInviteOpen(true)} style={primaryBtn}>+ Invite First Staff Member</button>
+          <button onClick={() => canInvite && setInviteOpen(true)} disabled={!canInvite}
+            style={{ ...primaryBtn, opacity: canInvite ? 1 : 0.55, cursor: canInvite ? 'pointer' : 'not-allowed' }}>+ Invite First Staff Member</button>
         </div>
       ) : (
         <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden' }}>
@@ -178,6 +239,7 @@ export default function StaffPage() {
           </table>
         </div>
       )}
+      </FeatureGate>
 
       {inviteOpen && (
         <div style={modalBackdrop} onClick={() => !submitting && setInviteOpen(false)}>

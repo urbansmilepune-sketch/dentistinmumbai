@@ -1,6 +1,15 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import { normalizeTier, type Tier } from '@/lib/tier'
+
+// Per-tier branch limits. Surface the limit visually (count badge + tooltip
+// on a disabled Add button) but also enforce it on the server-side POST so
+// a determined free dentist can't bypass via direct API calls.
+const LOCATION_LIMIT: Record<Tier, number> = {
+  free: 2, silver: 3, gold: Infinity, featured: Infinity,
+}
 
 const DAYS = [
   { key: 'mon', label: 'Mon' },
@@ -53,6 +62,22 @@ export default function LocationsPage() {
   const [editing, setEditing] = useState<FormState | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [tier, setTier] = useState<Tier>('free')
+
+  useEffect(() => {
+    let cancelled = false
+    const supabase = createClient()
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user || cancelled) return
+      const { data } = await supabase.from('dentists').select('tier').eq('email', user.email).maybeSingle()
+      if (!cancelled) setTier(normalizeTier(data?.tier))
+    })
+    return () => { cancelled = true }
+  }, [])
+
+  const limit = LOCATION_LIMIT[tier]
+  const atLimit = locations.length >= limit
+  const limitLabel = limit === Infinity ? 'unlimited' : `${locations.length}/${limit}`
 
   async function load() {
     setLoading(true)
@@ -123,10 +148,30 @@ export default function LocationsPage() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 4 }}>Clinic Locations</h1>
-          <p style={{ fontSize: 14, color: 'var(--muted)' }}>Add every branch where you practice. Patients see all of them on your profile and pick when booking.</p>
+          <p style={{ fontSize: 14, color: 'var(--muted)' }}>
+            Add every branch where you practice. Patients see all of them on your profile and pick when booking.
+            {limit !== Infinity && <> · <strong style={{ color: 'var(--text)' }}>{limitLabel}</strong> locations</>}
+          </p>
         </div>
-        <button onClick={openCreate} style={primaryBtn}>+ Add Location</button>
+        {!atLimit && (
+          <button onClick={openCreate} style={primaryBtn}>+ Add Location</button>
+        )}
       </div>
+
+      {atLimit && limit !== Infinity && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 12,
+          background: '#FEF3C7', border: '1px solid #FDE68A',
+          borderRadius: 10, padding: '12px 14px',
+          fontSize: 13, color: '#92400E', marginBottom: 16, flexWrap: 'wrap',
+        }}>
+          <span>🔒 You&apos;ve used all <strong>{limit}</strong> locations on the {tier} plan.</span>
+          <a href="/for-dentists/dashboard/upgrade"
+            style={{ color: 'var(--blue)', fontWeight: 700, textDecoration: 'none', marginLeft: 'auto' }}>
+            Upgrade for more →
+          </a>
+        </div>
+      )}
 
       {loading ? (
         <p style={{ color: 'var(--muted)', padding: 40, textAlign: 'center' }}>Loading…</p>

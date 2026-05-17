@@ -5,13 +5,20 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { getCityByDomain, getCityBySlug, type CityConfig } from '@/config/cities'
+import { normalizeTier, tierMeets, type Tier } from '@/lib/tier'
 
-const NAV = [
+type NavItem = { href: string; icon: string; label: string; minTier?: 'silver' | 'gold' }
+
+// `minTier` marks a nav item that is FULLY locked below that tier — the
+// sidebar link redirects to /upgrade and the row gets a 🔒. Partially-gated
+// pages (Analytics shows basic stats to free, Communications shows limited
+// templates) have no minTier here; their gating lives inside the page.
+const NAV: NavItem[] = [
   { href: '/for-dentists/dashboard',              icon: '📊', label: 'Overview'      },
   { href: '/for-dentists/dashboard/profile',      icon: '✏️', label: 'Edit Profile'  },
   { href: '/for-dentists/dashboard/hours',        icon: '🕐', label: 'Working Hours' },
   { href: '/for-dentists/dashboard/locations',    icon: '🏥', label: 'Locations'     },
-  { href: '/for-dentists/dashboard/staff',        icon: '👥', label: 'Staff'         },
+  { href: '/for-dentists/dashboard/staff',        icon: '👥', label: 'Staff', minTier: 'silver' },
   { href: '/for-dentists/dashboard/appointments', icon: '📅', label: 'Appointments'  },
   { href: '/for-dentists/dashboard/calendar',     icon: '📆', label: 'Calendar'      },
   { href: '/for-dentists/dashboard/patients',     icon: '👥', label: 'Patients'      },
@@ -21,7 +28,7 @@ const NAV = [
   { href: '/for-dentists/dashboard/photos',       icon: '📸', label: 'Photos'        },
   { href: '/for-dentists/dashboard/treatments',   icon: '🦷', label: 'Treatments'    },
   { href: '/for-dentists/dashboard/emr-templates', icon: '📋', label: 'EMR Templates' },
-  { href: '/for-dentists/dashboard/analytics',    icon: '📈', label: 'Analytics',    gold: true },
+  { href: '/for-dentists/dashboard/analytics',    icon: '📈', label: 'Analytics'     },
   { href: '/for-dentists/dashboard/upgrade',      icon: '⭐', label: 'Upgrade Plan'  },
 ]
 
@@ -32,8 +39,15 @@ const MOBILE_NAV = [
   { href: '/for-dentists/dashboard/enquiries',    icon: '💬', label: 'Enquiries'    },
 ]
 
-const TIER_COLORS: Record<string, string> = {
-  free: '#6B7280', silver: '#475569', gold: '#92400E', featured: '#C2410C',
+// Sidebar tier-pill styling — colour-coded so a glance at the sidebar tells
+// the dentist (and us when we screen-share their dashboard) what plan they're
+// on. Free is grey/neutral; Silver picks up steel/slate; Gold uses the
+// familiar amber/champagne; Featured stays distinct from Gold on the brand.
+const TIER_PILL: Record<Tier, { label: string; color: string; bg: string; border: string }> = {
+  free:     { label: 'Free',       color: '#475569', bg: '#F1F5F9', border: '#CBD5E1' },
+  silver:   { label: '✦ Silver',   color: '#334155', bg: '#E2E8F0', border: '#94A3B8' },
+  gold:     { label: '⭐ Gold',    color: '#92400E', bg: '#FEF3C7', border: '#FDE68A' },
+  featured: { label: '🔥 Featured', color: '#C2410C', bg: '#FFEDD5', border: '#FDBA74' },
 }
 
 interface Props {
@@ -48,7 +62,7 @@ export default function DashboardShell({ dentist, completionPct, children }: Pro
   const [mobileOpen, setMobileOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
   const addRef = useRef<HTMLDivElement>(null)
-  const isGold = dentist.tier === 'gold' || dentist.tier === 'featured'
+  const tier: Tier = normalizeTier(dentist.tier)
   // Logo/brand follow the dentist's own city (set on the row, source of truth).
   // window.location.hostname is only used as a last-resort fallback for pre-
   // city-column legacy rows where dentist.city might be null.
@@ -100,8 +114,15 @@ export default function DashboardShell({ dentist, completionPct, children }: Pro
             <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{dentist.clinic_name}</div>
           </div>
         </div>
-        <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: '#FEF3C7', color: TIER_COLORS[dentist.tier] || '#6B7280', border: '1px solid #FDE68A', textTransform: 'capitalize' }}>
-          {dentist.tier || 'free'} plan
+        <span style={{
+          display: 'inline-flex', alignItems: 'center', gap: 4,
+          fontSize: 10, fontWeight: 700,
+          padding: '3px 9px', borderRadius: 20,
+          background: TIER_PILL[tier].bg,
+          color: TIER_PILL[tier].color,
+          border: `1px solid ${TIER_PILL[tier].border}`,
+        }}>
+          {TIER_PILL[tier].label}
         </span>
 
         {/* Completion bar */}
@@ -121,7 +142,7 @@ export default function DashboardShell({ dentist, completionPct, children }: Pro
       <nav style={{ flex: 1, padding: '8px 12px', overflowY: 'auto' }}>
         {NAV.map(item => {
           const isActive = pathname === item.href || (item.href !== '/for-dentists/dashboard' && pathname.startsWith(item.href))
-          const locked = item.gold && !isGold
+          const locked = item.minTier ? !tierMeets(tier, item.minTier) : false
           return (
             <Link
               key={item.href}

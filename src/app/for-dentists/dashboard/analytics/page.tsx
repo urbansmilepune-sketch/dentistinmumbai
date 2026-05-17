@@ -1,5 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import FeatureGate from '@/components/FeatureGate'
+import { normalizeTier } from '@/lib/tier'
 
 export const dynamic = 'force-dynamic'
 
@@ -63,14 +65,23 @@ export default async function AnalyticsPage() {
   const chartData = Object.entries(weeklyData).slice(0, 7).reverse()
   const maxVal = Math.max(...chartData.map(([, v]) => v), 1)
 
-  const STATS = [
+  const tier = normalizeTier(dentist.tier)
+
+  // Three headline stats every dentist gets — these are the "real numbers"
+  // the free tier sees so the page never feels empty even on the free plan.
+  const FREE_STATS = [
+    { icon: '👁️', label: 'Profile Views', value: dentist.profile_views || 0, color: 'var(--blue)' },
+    { icon: '💬', label: 'Total Enquiries', value: totalEnquiries || 0, color: 'var(--orange)' },
+    { icon: '💚', label: 'WhatsApp Clicks', value: dentist.whatsapp_clicks || 0, color: '#25D366' },
+  ]
+
+  // Six more stat cards revealed at Silver+ (appointment funnel + reviews +
+  // call/booking channel breakdown).
+  const SILVER_STATS = [
     { icon: '📅', label: 'Total Appointments', value: totalAppts || 0, color: 'var(--blue)' },
     { icon: '⏳', label: 'Pending', value: pendingAppts || 0, color: '#F59E0B' },
     { icon: '✅', label: 'Completed', value: completedAppts || 0, color: '#00A878' },
-    { icon: '💬', label: 'Total Enquiries', value: totalEnquiries || 0, color: 'var(--orange)' },
     { icon: '⭐', label: 'Reviews', value: totalReviews || 0, color: '#F59E0B' },
-    { icon: '👁️', label: 'Profile Views', value: dentist.profile_views || 0, color: 'var(--blue)' },
-    { icon: '💚', label: 'WhatsApp Clicks', value: dentist.whatsapp_clicks || 0, color: '#25D366' },
     { icon: '📞', label: 'Call Clicks', value: dentist.call_clicks || 0, color: '#0EA5E9' },
     { icon: '📅', label: 'Booking Clicks', value: dentist.booking_clicks || 0, color: '#92400E' },
   ]
@@ -90,18 +101,9 @@ export default async function AnalyticsPage() {
         <p style={{ fontSize: 14, color: 'var(--muted)' }}>Your profile performance overview</p>
       </div>
 
-      {dentist.tier === 'free' || dentist.tier === 'silver' ? (
-        <div style={{ background: 'linear-gradient(135deg, #003F7A, #0057A8)', borderRadius: 16, padding: '32px', marginBottom: 24, textAlign: 'center', color: '#fff' }}>
-          <div style={{ fontSize: 36, marginBottom: 12 }}>📊</div>
-          <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 20, marginBottom: 8 }}>Full Analytics on Gold Plan</h3>
-          <p style={{ color: 'rgba(255,255,255,0.8)', marginBottom: 20 }}>See profile views, WhatsApp clicks, call tracking, and weekly graphs.</p>
-          <a href="/for-dentists/dashboard/upgrade" style={{ padding: '12px 24px', background: '#FF6135', color: '#fff', borderRadius: 10, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>Upgrade to Gold →</a>
-        </div>
-      ) : null}
-
-      {/* Stats grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 16, marginBottom: 28 }}>
-        {STATS.map(stat => (
+      {/* Headline stats (visible to every tier) */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 16, marginBottom: 16 }}>
+        {FREE_STATS.map(stat => (
           <div key={stat.label} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '20px' }}>
             <div style={{ fontSize: 28, marginBottom: 8 }}>{stat.icon}</div>
             <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 28, color: stat.color }}>{stat.value}</div>
@@ -110,23 +112,54 @@ export default async function AnalyticsPage() {
         ))}
       </div>
 
-      {/* Bar chart */}
-      {chartData.length > 0 && (
-        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '24px', marginBottom: 24 }}>
-          <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16, marginBottom: 20 }}>Appointments — Last 30 Days</h3>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 120 }}>
-            {chartData.map(([label, value]) => (
-              <div key={label} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--blue)' }}>{value}</span>
-                <div style={{ width: '100%', background: 'var(--blue)', borderRadius: '4px 4px 0 0', height: `${(value / maxVal) * 80}px`, minHeight: 4 }} />
-                <span style={{ fontSize: 9, color: 'var(--muted)', textAlign: 'center', lineHeight: 1.2 }}>{label}</span>
-              </div>
-            ))}
-          </div>
+      {/* Silver-tier stat cards — appointment funnel + reviews + channel breakdown. */}
+      <FeatureGate
+        requiredTier="silver"
+        featureName="Full stats grid"
+        benefitText="Track appointments, conversions, reviews, and channel breakdown — not just headline numbers."
+        dentistTier={tier}
+      >
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 16, marginBottom: 28 }}>
+          {SILVER_STATS.map(stat => (
+            <div key={stat.label} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '20px' }}>
+              <div style={{ fontSize: 28, marginBottom: 8 }}>{stat.icon}</div>
+              <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 28, color: stat.color }}>{stat.value}</div>
+              <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 2 }}>{stat.label}</div>
+            </div>
+          ))}
         </div>
+      </FeatureGate>
+
+      {/* 30-day appointment trend — Silver+. */}
+      {chartData.length > 0 && (
+        <FeatureGate
+          requiredTier="silver"
+          featureName="30-day trend chart"
+          benefitText="See how your bookings move week-by-week to spot momentum and slow patches."
+          dentistTier={tier}
+        >
+          <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '24px', marginBottom: 24 }}>
+            <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16, marginBottom: 20 }}>Appointments — Last 30 Days</h3>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 120 }}>
+              {chartData.map(([label, value]) => (
+                <div key={label} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                  <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--blue)' }}>{value}</span>
+                  <div style={{ width: '100%', background: 'var(--blue)', borderRadius: '4px 4px 0 0', height: `${(value / maxVal) * 80}px`, minHeight: 4 }} />
+                  <span style={{ fontSize: 9, color: 'var(--muted)', textAlign: 'center', lineHeight: 1.2 }}>{label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </FeatureGate>
       )}
 
-      {/* Weekly engagement breakdown */}
+      {/* Weekly engagement breakdown — Gold-only (conversion-funnel adjacent). */}
+      <FeatureGate
+        requiredTier="gold"
+        featureName="Engagement funnel"
+        benefitText="Day-by-day breakdown of which channel — WhatsApp, call, or booking — actually converts your profile views."
+        dentistTier={tier}
+      >
       <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '24px', marginBottom: 24 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
           <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16 }}>Engagement — Last 7 Days</h3>
@@ -163,6 +196,7 @@ export default async function AnalyticsPage() {
           </div>
         )}
       </div>
+      </FeatureGate>
 
       {/* Tips */}
       <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 16, padding: '24px' }}>
