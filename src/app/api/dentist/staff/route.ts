@@ -58,8 +58,13 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json().catch(() => ({} as Record<string, unknown>))
   const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
-  const name = typeof body.name === 'string' ? body.name.trim() : null
+  const rawName = typeof body.name === 'string' ? body.name.trim() : ''
   const role = (typeof body.role === 'string' ? body.role : '') as Role
+  // The form treats Name as optional ("Name (optional)") but the
+  // clinic_staff table has name NOT NULL. Fall back to the email local-part
+  // so blank submissions still land. This matches what the staff list UI
+  // already shows when name is empty: `s.name || s.email.split('@')[0]`.
+  const name = rawName || (email ? email.split('@')[0] : '')
 
   if (!email || !email.includes('@')) {
     return NextResponse.json({ error: 'Valid email is required' }, { status: 400 })
