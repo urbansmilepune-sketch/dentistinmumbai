@@ -1,6 +1,6 @@
 
 import type { Metadata } from 'next'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
@@ -62,6 +62,16 @@ export default async function DentistProfilePage({ params }: Props) {
     .single()
 
   if (!dentist) notFound()
+
+  // Cross-city URLs always resolve to the dentist's own city domain. A
+  // Pune dentist linked from dentistinmumbai.in/dentist/<slug> would
+  // otherwise render under the Mumbai brand (wrong header, wrong logo,
+  // wrong "All Dentists" link) and split SEO between two hosts. 308 keeps
+  // the slug, swaps the origin.
+  const dentistCityConfig = getCityBySlug(dentist.city)
+  if (dentistCityConfig.domain !== city.domain) {
+    redirect(`https://${dentistCityConfig.domain}/dentist/${slug}`)
+  }
 
   // Reviews are fetched separately so the status filter applies server-side.
   // Previously they joined with the dentists row and we filtered approved in
