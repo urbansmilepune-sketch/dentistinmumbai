@@ -29,7 +29,7 @@ function parsePlan(v: string | null): Plan | null {
 export default function RegisterPage() {
   const [form, setForm] = useState({
     name: '', phone: '', email: '', clinic_name: '',
-    area: '', qualification: '', mci_registration: '',
+    area: '', area_name_raw: '', qualification: '', mci_registration: '',
   })
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess] = useState(false)
@@ -67,7 +67,7 @@ export default function RegisterPage() {
     let cancelled = false
     setAreaStatus('loading')
     setAreas([])
-    setForm(f => ({ ...f, area: '' }))
+    setForm(f => ({ ...f, area: '', area_name_raw: '' }))
     fetch(`/api/areas?city=${encodeURIComponent(city)}`)
       .then(async res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -95,6 +95,19 @@ export default function RegisterPage() {
     const missing = required.filter(k => !form[k as keyof typeof form])
     if (missing.length > 0) { setError('Please fill all required fields.'); return }
     if (!/^\d{10}$/.test(form.phone.replace(/\s/g, ''))) { setError('Please enter a valid 10-digit phone number.'); return }
+    // "Other" path: dropdown sets form.area='__other__' so we know to show
+    // the text input; the typed value lives in form.area_name_raw and is
+    // required before submit.
+    if (form.area === '__other__' && !form.area_name_raw.trim()) {
+      setError('Please type your area name.'); return
+    }
+
+    // Build the wire payload: when "Other" is selected we send area=''
+    // (the curated dropdown wasn't used) and area_name_raw=typed. When a
+    // curated area is selected we send the area name and leave
+    // area_name_raw null so analytics can tell the two paths apart.
+    const submittingArea = form.area === '__other__' ? '' : form.area
+    const submittingAreaRaw = form.area === '__other__' ? form.area_name_raw.trim() : null
 
     setSubmitting(true)
     try {
@@ -103,6 +116,8 @@ export default function RegisterPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...form,
+          area: submittingArea,
+          area_name_raw: submittingAreaRaw,
           city,
           selected_plan: planFromUrl,
           founding_number: Math.floor(Math.random() * 250) + 1,
@@ -238,10 +253,26 @@ export default function RegisterPage() {
                         </div>
                       </>
                     ) : (
-                      <select value={form.area} onChange={e => update('area', e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-                        <option value="">Select your area</option>
-                        {areas.map(a => <option key={a.name} value={a.name}>{a.name}</option>)}
-                      </select>
+                      <>
+                        <select value={form.area} onChange={e => update('area', e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
+                          <option value="">Select your area</option>
+                          {areas.map(a => <option key={a.name} value={a.name}>{a.name}</option>)}
+                          <option value="__other__">Other (not in this list)</option>
+                        </select>
+                        {form.area === '__other__' && (
+                          <div style={{ marginTop: 10 }}>
+                            <input
+                              value={form.area_name_raw}
+                              onChange={e => update('area_name_raw', e.target.value)}
+                              placeholder={`Type your area in ${cityConfig.cityName}`}
+                              style={inputStyle}
+                            />
+                            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
+                              We&apos;ll add this area to {cityConfig.cityName} once your registration is approved.
+                            </div>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
 
@@ -300,7 +331,7 @@ export default function RegisterPage() {
 
               <div style={{ background: 'var(--bg)', borderRadius: 14, padding: '24px', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 28 }}>
                 {[
-                  { icon: '✅', text: `We will build and activate your clinic profile for ${form.clinic_name} in ${form.area} within 24 hours.` },
+                  { icon: '✅', text: `We will build and activate your clinic profile for ${form.clinic_name} in ${form.area === '__other__' ? form.area_name_raw : form.area} within 24 hours.` },
                   { icon: '📱', text: `We'll call you on ${form.phone} to collect photos and more details.` },
                   { icon: '🏅', text: `Your Founding Member badge and priority placement are reserved permanently.` },
                 ].map((item, i) => (

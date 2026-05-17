@@ -71,7 +71,7 @@ export async function approveDentistRegistration(
 
   const { data: reg, error: regErr } = await admin_db
     .from('dentist_registrations')
-    .select('id, status, name, phone, email, clinic_name, area, qualification, mci_registration, selected_plan, city')
+    .select('id, status, name, phone, email, clinic_name, area, area_name_raw, qualification, mci_registration, selected_plan, city')
     .eq('id', registration_id)
     .single()
   if (regErr || !reg) {
@@ -94,9 +94,14 @@ export async function approveDentistRegistration(
   const city: CitySlug = normalizeCity(reg.city)
 
   // Resolve area_id: exact → case-insensitive → auto-create under zone='Other'.
+  // The "Other" registration path leaves reg.area empty and stashes the
+  // dentist-typed value in reg.area_name_raw, so we fall back to that
+  // before giving up. Once auto-created the area is curated for future
+  // dentists in this city via /api/areas, no admin action required.
+  const wantedAreaName = (reg.area && reg.area.trim()) || (reg.area_name_raw && reg.area_name_raw.trim()) || ''
   let area_id: string | null = null
-  if (reg.area) {
-    const wanted = reg.area.trim()
+  if (wantedAreaName) {
+    const wanted = wantedAreaName
     const { data: areaExact } = await admin_db
       .from('areas').select('id, name').eq('name', wanted).maybeSingle()
     if (areaExact) {

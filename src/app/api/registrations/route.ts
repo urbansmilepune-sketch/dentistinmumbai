@@ -27,6 +27,7 @@ interface AutoApprovalInput {
   phone: string
   clinic_name: string
   area: string
+  area_name_raw: string | null
   mci_registration: string
 }
 
@@ -36,6 +37,10 @@ interface AutoApprovalInput {
  * Keep this conservative — a false positive ships a dentist live without
  * human review. The signals here are low-effort to forge but also cheap to
  * undo: the admin can decline + delete the dentist row after the fact.
+ *
+ * "Other"-path registrations send area='' and area_name_raw=<typed>; we
+ * accept that as a non-empty area for the gate. The approval helper will
+ * auto-create the area row when it doesn't exist.
  */
 function autoApprovalFailureReason(input: AutoApprovalInput): string | null {
   const phoneDigits = (input.phone || '').replace(/\D/g, '')
@@ -43,7 +48,8 @@ function autoApprovalFailureReason(input: AutoApprovalInput): string | null {
   if (!(input.mci_registration || '').trim()) return 'mci_registration empty'
   if ((input.name || '').trim().length <= 3) return 'name too short (≤3 chars)'
   if ((input.clinic_name || '').trim().length <= 3) return 'clinic_name too short (≤3 chars)'
-  if (!(input.area || '').trim()) return 'area empty'
+  const effectiveArea = (input.area || '').trim() || (input.area_name_raw || '').trim()
+  if (!effectiveArea) return 'area empty'
   return null
 }
 
@@ -51,8 +57,16 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { name, phone, email, clinic_name, area, qualification, mci_registration, founding_number, selected_plan, city } = body
+    const rawAreaName = typeof body.area_name_raw === 'string' ? body.area_name_raw.trim() : null
+    const area_name_raw = rawAreaName && rawAreaName.length > 0 ? rawAreaName : null
 
-    if (!name || !phone || !email || !clinic_name || !area || !qualification || !mci_registration) {
+    // Either a curated area name or the free-text "Other" value is fine —
+    // the rest of the pipeline (auto-approval gate, approval helper) reads
+    // both columns and treats either one as the source of truth.
+    if (!name || !phone || !email || !clinic_name || !qualification || !mci_registration) {
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    }
+    if (!area && !area_name_raw) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
@@ -87,18 +101,23 @@ export async function POST(request: NextRequest) {
 
     const { data, error } = await supabase
       .from('dentist_registrations')
-      .insert({ ref_no, name, phone, email, clinic_name, area, qualification, mci_registration, founding_number, selected_plan: planValue, city: cityValue, status: 'pending' })
+      .insert({ ref_no, name, phone, email, clinic_name, area, area_name_raw, qualification, mci_registration, founding_number, selected_plan: planValue, city: cityValue, status: 'pending' })
       .select('id, ref_no')
       .single()
 
     if (error) throw error
+
+    // Effective area name for downstream emails / alerts. "Other" path
+    // registrations send area='' and area_name_raw=<typed>, so we collapse
+    // to whichever one is set.
+    const areaForDisplay = (area && area.trim()) || (area_name_raw || '')
 
     // ---- Auto-approval gate -------------------------------------------------
     // Decide whether we can promote this registration to 'approved' right now.
     // The check uses the values just submitted (no need to re-fetch the row).
     // If anything trips the gate we leave the row 'pending' and fall through
     // to the standard admin-alert path.
-    const failReason = autoApprovalFailureReason({ name, phone, clinic_name, area, mci_registration })
+    const failReason = autoApprovalFailureReason({ name, phone, clinic_name, area, area_name_raw, mci_registration })
     const cityDomain = CITY_CONFIGS[cityValue].domain
 
     if (failReason === null) {
@@ -110,7 +129,7 @@ export async function POST(request: NextRequest) {
         // review in 24h" email (the approval email already went out from the
         // helper). One focused admin alert is enough.
         sendAutoApprovedAdminAlert({
-          name, clinic_name, area, phone, email,
+          name, clinic_name, area: areaForDisplay, phone, email,
           ref_no: data.ref_no, slug: result.slug, city: cityValue,
         }).catch(err => console.error('[registrations] auto-approve admin alert failed:', err))
 
@@ -125,13 +144,13 @@ export async function POST(request: NextRequest) {
 
     // Manual-review path: pre-existing branded emails + new short alert email
     // + a wa.me click-to-chat ping so the admin gets a WhatsApp pop on their phone.
-    const adminMsg = `New dentist registration: ${name}, ${clinic_name}, ${area}, ${phone}. Approve here: https://${cityDomain}/admin`
+    const adminMsg = `New dentist registration: ${name}, ${clinic_name}, ${areaForDisplay}, ${phone}. Approve here: https://${cityDomain}/admin`
     const waUrl = `https://wa.me/${ADMIN_WHATSAPP}?text=${encodeURIComponent(adminMsg)}`
 
     Promise.all([
-      sendRegistrationEmailToAdmin({ name, clinic_name, area, phone, email, qualification, ref_no, city: cityValue }),
-      sendRegistrationEmailToDentist({ name, clinic_name, area, phone, ref_no, to_email: email, city: cityValue }),
-      sendNewRegistrationAdminAlert({ name, clinic_name, area, phone, city: cityValue }),
+      sendRegistrationEmailToAdmin({ name, clinic_name, area: areaForDisplay, phone, email, qualification, ref_no, city: cityValue }),
+      sendRegistrationEmailToDentist({ name, clinic_name, area: areaForDisplay, phone, ref_no, to_email: email, city: cityValue }),
+      sendNewRegistrationAdminAlert({ name, clinic_name, area: areaForDisplay, phone, city: cityValue }),
       fetch(waUrl, { method: 'GET' }).catch(() => null),
     ]).catch(err => console.error('Admin notification failed:', err))
 
