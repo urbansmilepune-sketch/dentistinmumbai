@@ -17,6 +17,7 @@ const NAV = [
   { href: '/for-dentists/dashboard/patients',     icon: '👥', label: 'Patients'      },
   { href: '/for-dentists/dashboard/billing',      icon: '💰', label: 'Billing'       },
   { href: '/for-dentists/dashboard/enquiries',    icon: '💬', label: 'Enquiries'     },
+  { href: '/for-dentists/dashboard/communications', icon: '📣', label: 'Communications' },
   { href: '/for-dentists/dashboard/photos',       icon: '📸', label: 'Photos'        },
   { href: '/for-dentists/dashboard/treatments',   icon: '🦷', label: 'Treatments'    },
   { href: '/for-dentists/dashboard/emr-templates', icon: '📋', label: 'EMR Templates' },

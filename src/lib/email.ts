@@ -484,6 +484,56 @@ export async function sendAdminBulkMessage(data: {
   })
 }
 
+/**
+ * Dentist → patient email used by the dashboard Communications tab.
+ * Branded with the clinic name in the header (not the city) so the
+ * patient sees "Dr. Smile Dental" rather than the platform brand. The
+ * city is still set on the from-address through getCityEmail so the
+ * Resend DKIM check passes.
+ *
+ * The message body is plain text with newlines preserved as <br/>;
+ * dentists are trusted but anything user-typed still passes through
+ * escapeHtml to keep stray `<` from breaking the template. Personalization
+ * tags (e.g. {patient_name}) are interpolated by the API route per
+ * recipient before calling this — keeping that responsibility outside
+ * lets the same helper handle "one to one" and "one to many" cases.
+ */
+export async function sendPatientMessage(data: {
+  to_email: string
+  subject: string
+  message: string
+  clinic_name: string
+  dentist_name?: string | null
+  clinic_phone?: string | null
+  city?: string
+}) {
+  const city = resolveCity(data.city)
+  const safeBody = escapeHtml(data.message).replace(/\n/g, '<br/>')
+  const safeClinic = escapeHtml(data.clinic_name || 'Your clinic')
+  const safeDentist = data.dentist_name ? escapeHtml(data.dentist_name) : ''
+  const safePhone = data.clinic_phone ? escapeHtml(data.clinic_phone) : ''
+  return resend.emails.send({
+    from: getCityEmail(city.citySlug),
+    to: data.to_email,
+    subject: data.subject,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #003F7A, #0057A8); padding: 24px 20px; border-radius: 10px 10px 0 0;">
+          <h1 style="color: #fff; margin: 0; font-size: 20px; font-family: Arial, sans-serif;">${safeClinic}</h1>
+          ${safeDentist ? `<p style="margin: 4px 0 0; color: rgba(255,255,255,0.8); font-size: 13px;">${safeDentist}</p>` : ''}
+        </div>
+        <div style="background: #fff; padding: 28px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 10px 10px;">
+          <div style="color: #374151; font-size: 15px; line-height: 1.7;">${safeBody}</div>
+          ${safePhone ? `<p style="color: #64748b; font-size: 13px; margin: 22px 0 0;">📞 ${safePhone}</p>` : ''}
+          <p style="color: #94a3b8; font-size: 11px; text-align: center; margin: 22px 0 0; padding-top: 18px; border-top: 1px solid #e2e8f0;">
+            You're receiving this because you're a patient of ${safeClinic}. Reply to this email or call the clinic to opt out of future messages.
+          </p>
+        </div>
+      </div>
+    `,
+  })
+}
+
 // Minimal HTML escape — covers the five characters that can break the
 // surrounding template. We're not trying to neutralise XSS for untrusted
 // input here; admins are trusted. The goal is to keep stray `<` `>` `&`
