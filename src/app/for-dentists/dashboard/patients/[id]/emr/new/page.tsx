@@ -47,6 +47,22 @@ type DbTemplate = {
   times_used: number | null
 }
 
+// emr_templates stores the three section arrays inside a single
+// sections_json jsonb column (and sections_json is NOT NULL). This file
+// uses the unpacked shape internally for clarity; conversion happens at
+// the supabase boundary.
+function unpackTemplateRow(row: any): DbTemplate {
+  const s = (row?.sections_json ?? {}) as { procedures?: ProcRow[] | null; medications?: MedRow[] | null; advice?: string | null }
+  return {
+    id: row.id,
+    name: row.name,
+    procedures: Array.isArray(s.procedures) ? s.procedures : null,
+    medications: Array.isArray(s.medications) ? s.medications : null,
+    advice: typeof s.advice === 'string' ? s.advice : null,
+    times_used: row.times_used ?? 0,
+  }
+}
+
 const inputStyle: React.CSSProperties = {
   width: '100%', padding: '9px 12px', borderRadius: 8,
   border: '1.5px solid var(--border)', fontSize: 13,
@@ -99,14 +115,14 @@ export default function NewEmrPage() {
       const [{ data: p }, { data: tpls }, { data: customMeds }] = await Promise.all([
         supabase.from('patients').select('id, name, age, gender')
           .eq('id', patientId).eq('dentist_id', dentist.id).single(),
-        supabase.from('emr_templates').select('id, name, procedures, medications, advice, times_used')
+        supabase.from('emr_templates').select('id, name, sections_json, times_used')
           .eq('dentist_id', dentist.id).order('times_used', { ascending: false, nullsFirst: false }).order('created_at', { ascending: false }),
         supabase.from('custom_medicines').select('name')
           .eq('dentist_id', dentist.id).order('created_at', { ascending: false }),
       ])
       if (!p) { router.push('/for-dentists/dashboard/patients'); return }
       setPatient(p)
-      setTemplates((tpls as DbTemplate[]) || [])
+      setTemplates((tpls ?? []).map(unpackTemplateRow))
       setCustomMedicines(((customMeds ?? []) as Array<{ name: string }>).map(r => r.name).filter(Boolean))
       setLoading(false)
     }

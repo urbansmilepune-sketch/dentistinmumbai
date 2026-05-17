@@ -21,6 +21,36 @@ type Template = {
 
 type SectionKey = 'procedures' | 'medications' | 'advice'
 
+// The emr_templates table stores procedures / medications / advice bundled
+// inside a single sections_json column (and the column is NOT NULL). The
+// rest of this page works with the unpacked shape because the UI renders
+// each section separately; these helpers translate at the supabase
+// boundary so the rest of the code stays clean.
+type SectionsJson = { procedures?: ProcRow[] | null; medications?: MedRow[] | null; advice?: string | null }
+
+function unpackTemplateRow(row: any): Template {
+  const s: SectionsJson = (row?.sections_json ?? {}) as SectionsJson
+  return {
+    id: row.id,
+    dentist_id: row.dentist_id,
+    name: row.name,
+    procedures: Array.isArray(s.procedures) ? s.procedures : null,
+    medications: Array.isArray(s.medications) ? s.medications : null,
+    advice: typeof s.advice === 'string' ? s.advice : null,
+    times_used: row.times_used ?? 0,
+    last_used_at: row.last_used_at ?? null,
+    created_at: row.created_at,
+  }
+}
+
+function packSections(payload: Pick<Template, 'procedures' | 'medications' | 'advice'>): SectionsJson {
+  return {
+    procedures: payload.procedures ?? [],
+    medications: payload.medications ?? [],
+    advice: payload.advice ?? null,
+  }
+}
+
 const inputStyle: React.CSSProperties = {
   width: '100%', padding: '9px 12px', borderRadius: 8,
   border: '1.5px solid var(--border)', fontSize: 13,
@@ -62,11 +92,11 @@ export default function EmrTemplatesPage() {
       setDentistId(dentist.id)
       const { data, error: e } = await supabase
         .from('emr_templates')
-        .select('id, dentist_id, name, procedures, medications, advice, times_used, last_used_at, created_at')
+        .select('id, dentist_id, name, sections_json, times_used, last_used_at, created_at')
         .eq('dentist_id', dentist.id)
         .order('created_at', { ascending: false })
       if (e) setError(e.message)
-      setTemplates((data as Template[]) || [])
+      setTemplates((data ?? []).map(unpackTemplateRow))
       setLoading(false)
     }
     load()
@@ -88,35 +118,30 @@ export default function EmrTemplatesPage() {
   async function handleSave(payload: Pick<Template, 'name' | 'procedures' | 'medications' | 'advice'>, id: string | null) {
     setError(null)
     const supabase = createClient()
+    const sections_json = packSections(payload)
     if (id) {
       const { data, error: e } = await supabase
         .from('emr_templates')
-        .update({
-          name: payload.name,
-          procedures: payload.procedures,
-          medications: payload.medications,
-          advice: payload.advice,
-        })
+        .update({ name: payload.name, sections_json })
         .eq('id', id)
-        .select()
+        .select('id, dentist_id, name, sections_json, times_used, last_used_at, created_at')
         .single()
       if (e) { setError(e.message); return }
-      setTemplates(prev => prev.map(t => t.id === id ? (data as Template) : t))
+      const next = unpackTemplateRow(data)
+      setTemplates(prev => prev.map(t => t.id === id ? next : t))
     } else {
       const { data, error: e } = await supabase
         .from('emr_templates')
         .insert({
           dentist_id: dentistId,
           name: payload.name,
-          procedures: payload.procedures,
-          medications: payload.medications,
-          advice: payload.advice,
+          sections_json,
           times_used: 0,
         })
-        .select()
+        .select('id, dentist_id, name, sections_json, times_used, last_used_at, created_at')
         .single()
       if (e) { setError(e.message); return }
-      setTemplates(prev => [data as Template, ...prev])
+      setTemplates(prev => [unpackTemplateRow(data), ...prev])
     }
     setEditing(null)
     setCreating(false)
