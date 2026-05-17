@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import AdminShell from './AdminShell'
 import CommunicationsTab from './CommunicationsTab'
-import { CITY_CONFIGS } from '@/config/cities'
+import { CITY_CONFIGS, cityOrigin, getCityBySlug } from '@/config/cities'
 
 interface AdminPageClientProps {
   stats: any
@@ -710,7 +710,7 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
                       </td>
                       <td style={tableCellStyle}>
                         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                          <a href={`/dentist/${d.slug}`} target="_blank" style={{ fontSize: 12, color: 'var(--blue)', fontWeight: 600 }}>View →</a>
+                          <a href={`${cityOrigin(getCityBySlug(d.city))}/dentist/${d.slug}`} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: 'var(--blue)', fontWeight: 600 }}>View →</a>
                           {(() => {
                             const status = linkStatus[d.id]
                             const sending = status?.state === 'sending'
