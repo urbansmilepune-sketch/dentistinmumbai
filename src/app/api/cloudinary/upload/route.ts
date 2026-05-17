@@ -144,7 +144,7 @@ export async function POST(request: NextRequest) {
       const insertPayload = {
         dentist_id: dentist.id,
         url: result.secure_url,
-        category: uploadType === 'xray' ? 'xray' : 'clinic_interior',
+        category: uploadType === 'xray' ? 'xray' : 'interior',
       }
       console.log('[upload] gallery_photos insert payload', insertPayload)
       const { data: photoRow, error: insertErr } = await supabase
