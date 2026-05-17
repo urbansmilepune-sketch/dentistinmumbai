@@ -171,6 +171,26 @@ export default function EditProfilePage() {
   const completionBg    = completionPct === 100 ? '#DCFCE7' : completionPct >= 50 ? '#FEF3C7' : '#FEE2E2'
   const completionBorder = completionPct === 100 ? '#BBF7D0' : completionPct >= 50 ? '#FDE68A' : '#FECACA'
 
+  // Decide what to do with the maps_embed value:
+  //  - <iframe …> from Google Maps "Embed a map" → render preview as-is
+  //  - A share URL (share.google / maps.app.goo.gl / google.com/maps) →
+  //    can't expand short URLs from the browser, so we show a warning that
+  //    asks the dentist to use the Embed option instead.
+  //  - Anything else → leave silent (likely empty or partial input).
+  const mapsRaw = form.maps_embed?.trim() || ''
+  const mapsIframeSrcMatch = mapsRaw.match(/<iframe[^>]+src=["']([^"']+)["']/i)
+  const mapsPreviewSrc = (() => {
+    if (!mapsIframeSrcMatch) return null
+    const src = mapsIframeSrcMatch[1]
+    // Only render Google Maps URLs to keep this from becoming a generic
+    // iframe injection point.
+    if (!/^https:\/\/(?:www\.)?google\.com\/maps\/embed/i.test(src)
+      && !/^https:\/\/maps\.google\.com\/maps\?/i.test(src)) return null
+    return src
+  })()
+  const mapsShareLinkWarning = !mapsIframeSrcMatch
+    && /https?:\/\/(?:share\.google|maps\.app\.goo\.gl|(?:www\.)?google\.com\/maps)/i.test(mapsRaw)
+
   const inputStyle = {
     width: '100%', padding: '11px 14px', borderRadius: 10,
     border: '1.5px solid var(--border)', fontSize: 14,
@@ -292,11 +312,28 @@ export default function EditProfilePage() {
             <textarea value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} placeholder="Full clinic address including area, city, PIN" rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
           </div>
           <div>
-            <label style={labelStyle}>Google Maps Embed Code</label>
-            <textarea value={form.maps_embed} onChange={e => setForm(f => ({ ...f, maps_embed: e.target.value }))} placeholder='Paste the <iframe> embed code from Google Maps here...' rows={4} style={{ ...inputStyle, resize: 'vertical', fontFamily: 'monospace', fontSize: 12 }} />
+            <label style={labelStyle}>Google Maps Location</label>
+            <textarea value={form.maps_embed} onChange={e => setForm(f => ({ ...f, maps_embed: e.target.value }))} placeholder='Paste your Google Maps share link OR embed code here...' rows={4} style={{ ...inputStyle, resize: 'vertical', fontFamily: 'monospace', fontSize: 12 }} />
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-              Go to Google Maps → Search your clinic → Share → Embed a map → Copy HTML
+              Paste your Google Maps share link OR embed code. To get it: Google Maps → Search your clinic → Click Share → Copy Link. We'll handle the rest.
             </div>
+            {mapsShareLinkWarning && (
+              <div style={{ marginTop: 8, padding: '10px 12px', background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: 8, fontSize: 12, color: '#92400E', lineHeight: 1.5 }}>
+                We detected a share link. Please use the Embed option instead: Google Maps → Share → Embed a map → Copy HTML.
+              </div>
+            )}
+            {mapsPreviewSrc && (
+              <div style={{ marginTop: 10, border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
+                <iframe
+                  src={mapsPreviewSrc}
+                  width="100%" height="240"
+                  style={{ border: 0, display: 'block' }}
+                  loading="lazy" allowFullScreen
+                  referrerPolicy="no-referrer-when-downgrade"
+                  title="Map preview"
+                />
+              </div>
+            )}
           </div>
         </div>
       </div>
