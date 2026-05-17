@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import * as Sentry from '@sentry/nextjs'
 import {
   sendRegistrationEmailToAdmin,
   sendRegistrationEmailToDentist,
@@ -181,6 +182,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ref_no: data.ref_no, success: true, auto_approved: false })
   } catch (error: any) {
     console.error('Registration error:', error)
+    // Ship the raw error to Sentry alongside the WhatsApp/log alerts — the
+    // admin ping gives a heads-up, Sentry gives the stack trace + breadcrumbs.
+    Sentry.captureException(error)
     notifyAdmin(`🚨 Registration FAILED for ${emailForAlert ?? 'unknown email'} - Error: ${error?.message ?? 'unknown'}`)
     return NextResponse.json({ error: 'Failed to submit registration' }, { status: 500 })
   }
