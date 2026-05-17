@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getCityBySlug, cityOrigin } from '@/config/cities'
 import { istDayTime } from '@/lib/time'
 import { whatsappLink } from '@/lib/phone'
+import { buildMapsIframe } from '@/lib/maps'
 import ProfileTabs from './ProfileTabs'
 import LocationTabs from './LocationTabs'
 import ViewTracker from './ViewTracker'
@@ -261,15 +262,22 @@ export default async function DentistProfilePage({ params }: Props) {
                   })}
                 </div>
               )}
-              {dentist.maps_embed && (
-                <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
-                  <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
-                    <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15 }}>📍 Location</h3>
+              {(() => {
+                // Tolerate old rows that stored a plain Google Maps URL by
+                // wrapping them into an iframe at render time. New rows
+                // already arrive iframe-shaped from the dashboard.
+                const mapsHtml = buildMapsIframe(dentist.maps_embed, dentist.clinic_name)
+                if (!mapsHtml) return null
+                return (
+                  <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
+                    <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
+                      <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15 }}>📍 Location</h3>
+                    </div>
+                    <div dangerouslySetInnerHTML={{ __html: mapsHtml }} style={{ width: '100%', height: 220, display: 'block' }} />
+                    {dentist.address && <div style={{ padding: '12px 20px' }}><p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{dentist.address}</p></div>}
                   </div>
-                  <div dangerouslySetInnerHTML={{ __html: dentist.maps_embed }} style={{ width: '100%', height: 220, display: 'block' }} />
-                  {dentist.address && <div style={{ padding: '12px 20px' }}><p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{dentist.address}</p></div>}
-                </div>
-              )}
+                )
+              })()}
               <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '20px', textAlign: 'center' }}>
                 <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 12 }}>Share this profile</p>
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
