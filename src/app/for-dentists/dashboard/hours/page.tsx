@@ -14,7 +14,7 @@ const DAYS = [
   { key: 'sun', label: 'Sunday' },
 ]
 
-const TIME_SLOTS = Array.from({ length: 28 }, (_, i) => {
+const TIME_SLOTS = Array.from({ length: 33 }, (_, i) => {
   const totalMins = 6 * 60 + i * 30
   const h = Math.floor(totalMins / 60)
   const m = totalMins % 60
