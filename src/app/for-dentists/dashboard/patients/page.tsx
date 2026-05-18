@@ -76,7 +76,7 @@ export default function PatientsPage() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 4 }}>Patient Records</h1>
-          <p style={{ fontSize: 14, color: 'var(--muted)' }}>{patients.length} patients total</p>
+          <p style={{ fontSize: 14, color: 'var(--muted)' }}>{patients.length} {patients.length === 1 ? 'patient' : 'patients'} total</p>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or phone..." style={{ ...inputStyle, width: 220 }} />

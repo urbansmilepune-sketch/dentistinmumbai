@@ -153,9 +153,20 @@ export default function TreatmentsPage() {
 
   return (
     <div style={{ maxWidth: 720 }}>
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 4 }}>Treatments & Fees</h1>
-        <p style={{ fontSize: 14, color: 'var(--muted)' }}>Add your treatments and set fee ranges. More treatments = more visibility in search.</p>
+      {/* Header — same flex-wrap pattern as Edit Profile / Working Hours /
+          Photos so the page reads as part of the same dashboard family
+          rather than a bare title floating on the content. The right-side
+          slot is empty here because saves happen per-row inline; the
+          wrapper just exists for layout consistency. */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 4 }}>Treatments &amp; Fees</h1>
+          <p style={{ fontSize: 14, color: 'var(--muted)' }}>
+            {dentistTreatments.length === 0
+              ? 'Add your treatments and set fee ranges. More treatments = more visibility in search.'
+              : `${dentistTreatments.length} treatment${dentistTreatments.length === 1 ? '' : 's'} listed · adding fees boosts your search ranking.`}
+          </p>
+        </div>
       </div>
 
       {error && (

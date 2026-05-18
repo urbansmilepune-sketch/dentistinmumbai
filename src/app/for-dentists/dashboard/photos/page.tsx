@@ -106,8 +106,29 @@ export default function PhotosPage() {
       <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 16 }}>{hint}</p>
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
         {current && (
-          <div style={{ width: type === 'profile' ? 80 : 160, height: type === 'profile' ? 80 : 60, borderRadius: type === 'profile' ? '50%' : 10, overflow: 'hidden', border: '2px solid var(--border)', flexShrink: 0 }}>
-            <img src={current} alt={label} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          // Profile thumbnails stay round; cover/gallery thumbnails use a
+          // 160×60 landscape tile with borderRadius:8 per the audit spec.
+          // objectPosition:center + display:block prevent the iframe-style
+          // inline-image baseline gap and keep the focal point of a wide
+          // banner photo centered inside the cropped thumbnail.
+          <div style={{
+            width: type === 'profile' ? 80 : 160,
+            height: type === 'profile' ? 80 : 60,
+            borderRadius: type === 'profile' ? '50%' : 8,
+            overflow: 'hidden',
+            border: '2px solid var(--border)',
+            flexShrink: 0,
+          }}>
+            <img
+              src={current}
+              alt={label}
+              style={{
+                width: '100%', height: '100%',
+                objectFit: 'cover',
+                objectPosition: 'center',
+                display: 'block',
+              }}
+            />
           </div>
         )}
         <div

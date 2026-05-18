@@ -328,8 +328,11 @@ const cardStyle: React.CSSProperties = {
   background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: 16,
 }
 const emptyStyle: React.CSSProperties = {
+  // Audit feedback: 48px of padding plus the inner emoji/text/button stack
+  // was leaving a noticeable empty band below the card on tall viewports.
+  // No minHeight here — height is content-driven only.
   background: '#fff', border: '1px solid var(--border)', borderRadius: 16,
-  padding: 48, textAlign: 'center',
+  padding: 40, textAlign: 'center',
 }
 const modalBackdrop: React.CSSProperties = {
   position: 'fixed', inset: 0, background: 'rgba(15, 25, 35, 0.45)',

@@ -174,7 +174,7 @@ export default function DashboardShell({ dentist, completionPct, children }: Pro
             >
               <span>{item.icon}</span>
               <span style={{ flex: 1 }}>{item.label}</span>
-              {locked && <span style={{ fontSize: 10 }}>🔒</span>}
+              {locked && <span style={{ fontSize: 11, marginLeft: 4, opacity: 0.6 }} aria-label="Locked — upgrade required">🔒</span>}
             </Link>
           )
         })}

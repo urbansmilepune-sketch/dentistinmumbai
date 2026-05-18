@@ -113,7 +113,11 @@ export default function WorkingHoursPage() {
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300 }}><p style={{ color: 'var(--muted)' }}>Loading...</p></div>
 
   return (
-    <div style={{ maxWidth: 680 }}>
+    // No maxWidth — the day-rows below use full content width so the
+    // time selects and "Apply to all" button have room to sit on one line
+    // at desktop widths. The dash-content padding around this still keeps
+    // the page from running edge-to-edge.
+    <div style={{ width: '100%' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 4 }}>Working Hours</h1>
