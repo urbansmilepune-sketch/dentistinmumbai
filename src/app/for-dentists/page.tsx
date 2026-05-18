@@ -94,7 +94,6 @@ export default async function ForDentistsPage() {
     { title: 'Free forever',        desc: 'Basic listing costs nothing. No credit card needed.' },
     { title: 'Your data stays yours', desc: 'We never sell or share your patient data.' },
     { title: 'Full PMS included',   desc: 'Appointments, prescriptions, billing — all in one place.' },
-    { title: '90-minute delivery',  desc: 'DentalSamaan integration for dental supplies at the clinic.' },
     { title: 'Multi-city presence', desc: 'List on all 13 city websites automatically.' },
   ]
 
