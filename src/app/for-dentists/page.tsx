@@ -87,6 +87,24 @@ export default async function ForDentistsPage() {
     { name: 'Dr. Sneha Kulkarni', clinic: 'Kulkarni Dental Care', area: 'Powai', text: 'The dashboard shows exactly how many people viewed my profile and clicked WhatsApp.' },
   ]
 
+  const OBJECTION_BUSTERS = [
+    { title: 'Zero commission', desc: 'Keep 100% of every appointment. We never take a cut.' },
+    { title: 'No app needed', desc: 'Patients book via WhatsApp — no downloads, no friction.' },
+    { title: '5 minute setup', desc: 'We pre-fill your profile from your MCI registration.' },
+    { title: 'Free forever', desc: 'Basic listing costs nothing. No credit card. No expiry.' },
+    { title: 'Unlike Practo', desc: "We don't sell your patient data to competing clinics." },
+    { title: 'Full PMS included', desc: 'Appointments, prescriptions, billing — all built-in.' },
+  ]
+
+  const FAQS = [
+    { q: 'Do you really take zero commission?', a: 'Yes. We never take a cut of your appointments, treatments, or billing. The basic listing is free forever and any future paid features will be flat-fee, not commission-based.' },
+    { q: 'Do my patients need to download an app?', a: 'No. Patients book and message you over WhatsApp using the number you already use. There is no app for them to install — that is why our booking conversion is so high.' },
+    { q: 'How long does setup actually take?', a: 'About 5 minutes from your side. You share your name, clinic, area and MCI registration; our team verifies and builds the full profile — hours, treatments, photos, map, booking — within 24 hours.' },
+    { q: 'Will the free plan stay free?', a: 'Yes. Founding members get a Free Forever guarantee — your basic profile stays free regardless of any pricing we introduce later for new signups.' },
+    { q: 'How is this different from Practo?', a: "We don't sell your patient enquiries to nearby clinics, we don't charge per lead, and we don't take commission. Your patients are yours. We also include a full practice management system at no extra cost." },
+    { q: 'Is the practice management system really included?', a: 'Yes — appointments with state-machine workflows, EMR and prescriptions with reusable templates, PDF invoices and payment tracking, dental charting, X-ray vault and WhatsApp reminders are all part of the free profile.' },
+  ]
+
   return (
     <>
       {/* Ticker */}
@@ -280,6 +298,53 @@ export default async function ForDentistsPage() {
                   </div>
                 </div>
               </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* WHY DENTISTS CHOOSE US */}
+      <section style={{ padding: '80px 20px', background: '#fff' }}>
+        <div className="container">
+          <div style={{ textAlign: 'center', marginBottom: 40 }}>
+            <p style={{ color: 'var(--blue)', fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Why Dentists Choose Us</p>
+            <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(1.6rem, 3vw, 2.25rem)', maxWidth: 600, margin: '0 auto 16px' }}>
+              No commission. No data resale. No catch.
+            </h2>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 18px', background: 'var(--blue-light)', border: '1px solid #BFDBFE', borderRadius: 40 }}>
+              <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--blue-dark)' }}>👥 Join 25+ dentists across Mumbai, Pune, Nagpur already on DentistIn</span>
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16, maxWidth: 960, margin: '0 auto' }}>
+            {OBJECTION_BUSTERS.map(item => (
+              <div key={item.title} style={{ display: 'flex', gap: 14, padding: '20px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 14 }}>
+                <span style={{ fontSize: 22, flexShrink: 0, lineHeight: 1.2 }}>✅</span>
+                <div>
+                  <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16, marginBottom: 6 }}>{item.title}</h3>
+                  <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6 }}>{item.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section style={{ padding: '80px 20px', background: 'var(--bg)' }}>
+        <div className="container" style={{ maxWidth: 760 }}>
+          <div style={{ textAlign: 'center', marginBottom: 40 }}>
+            <p style={{ color: 'var(--blue)', fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Frequently Asked</p>
+            <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(1.6rem, 3vw, 2.25rem)' }}>Your questions, answered</h2>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {FAQS.map(faq => (
+              <details key={faq.q} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '18px 22px' }}>
+                <summary style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16, cursor: 'pointer', listStyle: 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 14 }}>
+                  <span>{faq.q}</span>
+                  <span aria-hidden="true" style={{ fontSize: 20, color: 'var(--blue)', fontWeight: 400, flexShrink: 0 }}>+</span>
+                </summary>
+                <p style={{ marginTop: 12, fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.7 }}>{faq.a}</p>
+              </details>
             ))}
           </div>
         </div>
