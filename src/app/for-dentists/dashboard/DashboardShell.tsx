@@ -200,6 +200,27 @@ export default function DashboardShell({ dentist, completionPct, children }: Pro
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {/* Header */}
         <div className="dash-header" style={{ height: 56, background: '#fff', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', padding: '0 20px', gap: 12, flexShrink: 0, position: 'relative', zIndex: 60 }}>
+          {/* Hamburger — visible only on mobile (see .dash-hamburger media rule
+              below). Opens the same overlay sidebar the bottom-nav More button
+              opens, so the dentist can reach every page even when the bottom
+              nav only surfaces 4 of them. */}
+          <button
+            type="button"
+            onClick={() => setMobileOpen(true)}
+            aria-label="Open navigation menu"
+            className="dash-hamburger"
+            style={{
+              display: 'none',
+              width: 44, height: 44,
+              alignItems: 'center', justifyContent: 'center',
+              background: 'transparent', border: 'none',
+              borderRadius: 8, cursor: 'pointer',
+              fontSize: 22, color: 'var(--text)',
+              fontFamily: 'var(--font-body)',
+              padding: 0,
+            }}>
+            ☰
+          </button>
           <div style={{ flex: 1 }} />
           {/* Quick-add */}
           <div ref={addRef} style={{ position: 'relative' }}>
@@ -287,6 +308,7 @@ export default function DashboardShell({ dentist, completionPct, children }: Pro
         .dash-bottom-nav { display: none; }
         @media (max-width: 768px) {
           .dash-sidebar { display: none !important; }
+          .dash-hamburger { display: inline-flex !important; }
           .dash-content { padding: 16px !important; padding-bottom: 88px !important; }
           .dash-bottom-nav {
             display: flex;

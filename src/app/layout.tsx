@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Sora, DM_Sans } from 'next/font/google'
 import { headers } from 'next/headers'
 import { getCityBySlug } from '@/config/cities'
@@ -23,6 +23,16 @@ const dmSans = DM_Sans({
   display: 'swap',
   variable: '--font-body',
 })
+
+// Without this, mobile browsers render the desktop layout at desktop width
+// and let users pinch-zoom — which makes touch targets unusably small and
+// breaks every @media (max-width:768px) rule in the app.
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+  themeColor: '#0057A8',
+}
 
 export async function generateMetadata(): Promise<Metadata> {
   const h = await headers()

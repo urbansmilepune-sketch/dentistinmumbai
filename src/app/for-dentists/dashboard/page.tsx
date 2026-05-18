@@ -258,7 +258,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* Primary CTAs — Walk-in is the dominant action */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 16, marginBottom: 24 }}>
+      <div className="dash-primary-ctas" style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 16, marginBottom: 24 }}>
         <Link href="/for-dentists/dashboard/patients?new=1"
           style={{
             display: 'flex', alignItems: 'center', gap: 16,
@@ -323,7 +323,8 @@ export default async function DashboardPage() {
           <Link href="/for-dentists/dashboard/appointments" style={{ fontSize: 13, color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>View all →</Link>
         </div>
         {recentAppts && recentAppts.length > 0 ? (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div className="table-wrapper">
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
             <thead>
               <tr>
                 {['Reference', 'Patient', 'Date', 'Time', 'Status'].map(h => (
@@ -348,6 +349,7 @@ export default async function DashboardPage() {
               })}
             </tbody>
           </table>
+          </div>
         ) : (
           <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)' }}>
             <div style={{ fontSize: 36, marginBottom: 8 }}>📅</div>
@@ -355,6 +357,12 @@ export default async function DashboardPage() {
           </div>
         )}
       </div>
+
+      <style>{`
+        @media (max-width: 640px) {
+          .dash-primary-ctas { grid-template-columns: 1fr !important; gap: 12px !important; }
+        }
+      `}</style>
 
       {/* Quick actions */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>

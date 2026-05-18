@@ -318,7 +318,7 @@ export default function EditProfilePage() {
   )
 
   return (
-    <div style={{ maxWidth: 720 }}>
+    <div className="profile-edit-root" style={{ maxWidth: 720 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 4 }}>Edit Profile</h1>
@@ -536,17 +536,35 @@ export default function EditProfilePage() {
         )}
       </div>
 
-      {/* Save button bottom */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, paddingBottom: 40 }}>
+      {/* Save button bottom — on mobile this lifts off the page into a
+          sticky footer bar so the dentist can save without scrolling back. */}
+      <div className="profile-save-bar" style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, paddingBottom: 40 }}>
         <button
           onClick={handleSave} disabled={saving}
-          style={{ padding: '13px 32px', background: saved ? '#00A878' : 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: 15, cursor: saving ? 'not-allowed' : 'pointer', transition: 'background 0.3s' }}
+          className="profile-save-btn"
+          style={{ padding: '13px 32px', minHeight: 48, background: saved ? '#00A878' : 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: 15, cursor: saving ? 'not-allowed' : 'pointer', transition: 'background 0.3s' }}
         >{saving ? 'Saving...' : saved ? '✓ Saved!' : 'Save Changes'}</button>
       </div>
 
       <style>{`
         @media (max-width: 640px) {
           .profile-grid-2 { grid-template-columns: 1fr !important; }
+          /* Reserve space for the sticky save bar (~80px) on top of the
+             dashboard bottom nav (64px) so the QR-card section isn't trapped
+             under the bar at the end of the page. */
+          .profile-edit-root { padding-bottom: 80px; }
+          .profile-save-bar {
+            position: fixed !important;
+            left: 0; right: 0;
+            bottom: 64px;
+            background: #fff;
+            border-top: 1px solid var(--border);
+            padding: 10px 16px env(safe-area-inset-bottom, 10px) !important;
+            margin: 0;
+            z-index: 80;
+            box-shadow: 0 -4px 12px rgba(0,0,0,0.06);
+          }
+          .profile-save-btn { width: 100%; }
         }
       `}</style>
     </div>

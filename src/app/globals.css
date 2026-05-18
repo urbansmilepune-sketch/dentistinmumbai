@@ -191,6 +191,15 @@ input, select, textarea {
   font-size: 10px;
 }
 
+/* Responsive table wrapper — wraps any <table> that would otherwise burst
+   out of a 375px viewport. Add the class to the parent div and the table
+   keeps its full width while the user scrolls horizontally. */
+.table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* Mobile base rules — apply across the site */
 @media (max-width: 768px) {
   html, body { overflow-x: hidden; }
@@ -199,4 +208,22 @@ input, select, textarea {
   .btn { min-height: 44px; padding: 12px 20px; font-size: 14px; }
   .btn-sm { min-height: 40px; padding: 10px 16px; font-size: 13px; }
   .btn-lg { padding: 14px 24px; font-size: 15px; }
+  /* iOS Safari zooms into any input/select/textarea whose font-size is
+     under 16px when it receives focus. Force 16px here even though body
+     drops to 15px above — the inputs themselves must stay 16px. */
+  input, select, textarea { font-size: 16px; }
+  /* Universal touch-target floor for form controls. */
+  input:not([type='checkbox']):not([type='radio']),
+  select,
+  textarea,
+  button { min-height: 44px; }
+  textarea { min-height: 88px; }
+
+  /* Mobile utility classes — opt-in helpers callers can sprinkle on
+     elements that need to behave differently on small screens. */
+  .hide-mobile { display: none !important; }
+  .show-mobile { display: block !important; }
+  .mobile-full { width: 100% !important; }
+  .mobile-stack { flex-direction: column !important; }
+  .mobile-p { padding: 12px !important; }
 }
