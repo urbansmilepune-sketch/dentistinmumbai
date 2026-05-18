@@ -1,22 +1,32 @@
 'use client'
 
+// Admin sidebar. Light-slate panel sitting against the white content area —
+// matches the SaaS-admin aesthetic the redesign targets (Vercel / Linear).
+// Mobile collapses behind a slide-over drawer triggered from a sticky top
+// bar that doubles as the page-section heading host on small screens.
+
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { getCityByDomain, CITY_CONFIGS, DEFAULT_CITY, type CityConfig } from '@/config/cities'
 
+// Nav order matches the redesign brief: the six "core" tabs (Overview,
+// Dentists, Registrations, Reviews, Communications, Analytics) lead, with
+// operational tabs (Appointments, Enquiries, Areas, Blog, Settings) trailing.
+// `id` keys mirror the section state keys in AdminPageClient — don't rename
+// without updating both sides.
 const NAV_ITEMS = [
-  { id: 'dashboard', label: 'Dashboard', icon: '📊' },
-  { id: 'analytics', label: 'Analytics', icon: '📈' },
-  { id: 'registrations', label: 'Registrations', icon: '📋' },
-  { id: 'dentists', label: 'Dentists', icon: '🦷' },
-  { id: 'appointments', label: 'Appointments', icon: '📅' },
-  { id: 'enquiries', label: 'Enquiries', icon: '💬' },
-  { id: 'reviews', label: 'Reviews', icon: '⭐' },
+  { id: 'dashboard',      label: 'Overview',       icon: '📊' },
+  { id: 'dentists',       label: 'Dentists',       icon: '🦷' },
+  { id: 'registrations',  label: 'Registrations',  icon: '📋' },
+  { id: 'reviews',        label: 'Reviews',        icon: '⭐' },
   { id: 'communications', label: 'Communications', icon: '📣' },
-  { id: 'areas', label: 'Areas', icon: '📍' },
-  { id: 'blog', label: 'Blog', icon: '✍️' },
-  { id: 'settings', label: 'Settings', icon: '⚙️' },
+  { id: 'analytics',      label: 'Analytics',      icon: '📈' },
+  { id: 'appointments',   label: 'Appointments',   icon: '📅' },
+  { id: 'enquiries',      label: 'Enquiries',      icon: '💬' },
+  { id: 'areas',          label: 'Areas',          icon: '📍' },
+  { id: 'blog',           label: 'Blog',           icon: '✍️' },
+  { id: 'settings',       label: 'Settings',       icon: '⚙️' },
 ]
 
 interface AdminShellProps {
@@ -44,53 +54,72 @@ export default function AdminShell({ activeSection, onSectionChange, stats }: Ad
     router.push('/admin/login')
   }
 
+  const activeLabel = NAV_ITEMS.find(n => n.id === activeSection)?.label ?? 'Admin'
+
   const sidebar = (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Logo */}
-      <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 15, color: '#fff' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#F8FAFC' }}>
+      {/* Brand header */}
+      <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid #E2E8F0' }}>
+        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 15, color: '#0F1923' }}>
           {cityConfig.domain}
         </div>
-        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>Admin Panel</div>
+        <div style={{ fontSize: 11, color: '#64748B', marginTop: 2, fontWeight: 500 }}>Admin Panel</div>
       </div>
 
-      {/* Nav */}
-      <nav style={{ flex: 1, padding: '12px 12px', overflowY: 'auto' }}>
-        {NAV_ITEMS.map(item => (
-          <button
-            key={item.id}
-            onClick={() => { onSectionChange(item.id); setSidebarOpen(false) }}
-            style={{
-              width: '100%', display: 'flex', alignItems: 'center', gap: 10,
-              padding: '10px 12px', borderRadius: 8, marginBottom: 2,
-              background: activeSection === item.id ? 'rgba(255,255,255,0.15)' : 'transparent',
-              color: activeSection === item.id ? '#fff' : 'rgba(255,255,255,0.65)',
-              border: 'none', cursor: 'pointer', fontFamily: 'var(--font-body)',
-              fontSize: 14, fontWeight: activeSection === item.id ? 600 : 400,
-              textAlign: 'left', transition: 'all 0.15s',
-            }}
-          >
-            <span>{item.icon}</span>
-            <span>{item.label}</span>
-            {item.id === 'reviews' && stats.reviewPendingCount > 0 && (
-              <span style={{ marginLeft: 'auto', background: '#EF4444', color: '#fff', fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 10 }}>
-                {stats.reviewPendingCount}
-              </span>
-            )}
-            {item.id === 'registrations' && stats.registrationCount > 0 && (
-              <span style={{ marginLeft: 'auto', background: '#F59E0B', color: '#fff', fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 10 }}>
-                {stats.registrationCount}
-              </span>
-            )}
-          </button>
-        ))}
+      {/* Nav list. Active row gets a soft blue tint + a 2px left rail so it
+          reads as "selected" without the heavy filled-pill treatment that
+          made the old dark sidebar feel cramped. */}
+      <nav style={{ flex: 1, padding: '12px 8px', overflowY: 'auto' }}>
+        {NAV_ITEMS.map(item => {
+          const active = activeSection === item.id
+          return (
+            <button
+              key={item.id}
+              onClick={() => { onSectionChange(item.id); setSidebarOpen(false) }}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                padding: '9px 12px', borderRadius: 8, marginBottom: 2,
+                background: active ? '#EFF6FF' : 'transparent',
+                color: active ? '#1D4ED8' : '#475569',
+                border: 'none',
+                borderLeft: `3px solid ${active ? '#1D4ED8' : 'transparent'}`,
+                cursor: 'pointer', fontFamily: 'var(--font-body)',
+                fontSize: 14, fontWeight: active ? 600 : 500,
+                textAlign: 'left', transition: 'background 0.15s, color 0.15s',
+                paddingLeft: 9,
+              }}
+              onMouseEnter={e => { if (!active) e.currentTarget.style.background = '#F1F5F9' }}
+              onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent' }}
+            >
+              <span style={{ fontSize: 16, lineHeight: 1 }}>{item.icon}</span>
+              <span style={{ flex: 1 }}>{item.label}</span>
+              {item.id === 'reviews' && stats.reviewPendingCount > 0 && (
+                <span style={{ background: '#DC2626', color: '#fff', fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 10, minWidth: 18, textAlign: 'center' }}>
+                  {stats.reviewPendingCount}
+                </span>
+              )}
+              {item.id === 'registrations' && stats.registrationCount > 0 && (
+                <span style={{ background: '#F59E0B', color: '#fff', fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 10, minWidth: 18, textAlign: 'center' }}>
+                  {stats.registrationCount}
+                </span>
+              )}
+            </button>
+          )
+        })}
       </nav>
 
       {/* Logout */}
-      <div style={{ padding: '12px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+      <div style={{ padding: '12px', borderTop: '1px solid #E2E8F0' }}>
         <button
           onClick={handleLogout}
-          style={{ width: '100%', padding: '10px', borderRadius: 8, background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: 13, fontWeight: 500 }}
+          style={{
+            width: '100%', padding: '10px 12px', borderRadius: 8,
+            background: '#fff', color: '#475569',
+            border: '1px solid #E2E8F0',
+            cursor: 'pointer', fontFamily: 'var(--font-body)',
+            fontSize: 13, fontWeight: 600,
+            display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center',
+          }}
         >🚪 Logout</button>
       </div>
     </div>
@@ -99,21 +128,55 @@ export default function AdminShell({ activeSection, onSectionChange, stats }: Ad
   return (
     <>
       {/* Desktop sidebar */}
-      <div style={{ width: 220, background: '#0F1923', flexShrink: 0, position: 'fixed', left: 0, top: 0, bottom: 0, zIndex: 50 }} className="admin-sidebar">
+      <div
+        style={{
+          width: 240, flexShrink: 0,
+          position: 'fixed', left: 0, top: 0, bottom: 0,
+          zIndex: 50,
+          borderRight: '1px solid #E2E8F0',
+        }}
+        className="admin-sidebar"
+      >
         {sidebar}
       </div>
 
-      {/* Mobile header */}
-      <div style={{ display: 'none', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: '#0F1923', position: 'sticky', top: 0, zIndex: 50 }} className="admin-mobile-header">
-        <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, color: '#fff', fontSize: 15 }}>Admin</span>
-        <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{ color: '#fff', background: 'none', border: 'none', fontSize: 20, cursor: 'pointer' }}>☰</button>
+      {/* Mobile sticky header — shows the current section name and the
+          hamburger that opens the slide-over. Sits flush at the top so the
+          page header inside the content scrolls under it. */}
+      <div
+        style={{
+          display: 'none',
+          alignItems: 'center', justifyContent: 'space-between',
+          padding: '12px 16px',
+          background: '#fff',
+          borderBottom: '1px solid #E2E8F0',
+          position: 'sticky', top: 0, zIndex: 50,
+        }}
+        className="admin-mobile-header"
+      >
+        <div>
+          <div style={{ fontSize: 11, color: '#64748B', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Admin</div>
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, color: '#0F1923', fontSize: 15 }}>{activeLabel}</div>
+        </div>
+        <button
+          aria-label="Open menu"
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          style={{
+            color: '#0F1923', background: '#F1F5F9',
+            border: '1px solid #E2E8F0', borderRadius: 8,
+            width: 40, height: 40, fontSize: 18, cursor: 'pointer',
+          }}
+        >☰</button>
       </div>
 
-      {/* Mobile sidebar overlay */}
+      {/* Mobile slide-over */}
       {sidebarOpen && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 100 }}>
-          <div onClick={() => setSidebarOpen(false)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)' }} />
-          <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 240, background: '#0F1923' }}>
+          <div
+            onClick={() => setSidebarOpen(false)}
+            style={{ position: 'absolute', inset: 0, background: 'rgba(15, 25, 35, 0.45)' }}
+          />
+          <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 260, boxShadow: '0 10px 40px rgba(0,0,0,0.18)' }}>
             {sidebar}
           </div>
         </div>

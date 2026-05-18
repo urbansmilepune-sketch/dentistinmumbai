@@ -1,10 +1,162 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import AdminShell from './AdminShell'
 import CommunicationsTab from './CommunicationsTab'
 import { CITY_CONFIGS, cityOrigin, getCityBySlug } from '@/config/cities'
+
+// Shared style tokens. Inline-styled cards reach for these so spacing,
+// borders, and the SaaS-flat shadow stack stay consistent across tabs.
+const CARD_BORDER = '#E2E8F0'
+// Bumped from a barely-visible 1px shadow to a soft two-layer elevation
+// so cards read as actual cards on the white admin background rather than
+// flat boxes. Still subtle — closer to Vercel/Linear than to Material.
+const CARD_SHADOW = '0 4px 12px rgba(15, 25, 35, 0.04), 0 1px 3px rgba(15, 25, 35, 0.06)'
+const cardStyle: React.CSSProperties = {
+  background: '#fff',
+  border: `1px solid ${CARD_BORDER}`,
+  borderRadius: 14,
+  boxShadow: CARD_SHADOW,
+}
+
+// ----- Toast + Confirm modal primitives -----------------------------------
+// Native alert()/prompt() were what made the admin feel like a "child site" —
+// they're OS popups, unstyleable, and break the SaaS aesthetic the rest of
+// the panel is going for. These two primitives replace them. ConfirmModal
+// renders a backdropped, centered dialog with an optional reason field;
+// ToastStack stacks transient feedback in the top-right corner.
+
+type ToastVariant = 'success' | 'error' | 'info'
+interface ToastItem { id: number; variant: ToastVariant; message: string }
+
+function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id: number) => void }) {
+  if (toasts.length === 0) return null
+  return (
+    <div className="admin-toast-stack" style={{ position: 'fixed', top: 20, right: 20, zIndex: 1100, display: 'flex', flexDirection: 'column', gap: 10, pointerEvents: 'none' }}>
+      {toasts.map(t => {
+        const palette = t.variant === 'success'
+          ? { bg: '#F0FDF4', border: '#BBF7D0', accent: '#15803D', icon: '✓' }
+          : t.variant === 'error'
+            ? { bg: '#FEF2F2', border: '#FECACA', accent: '#B91C1C', icon: '✕' }
+            : { bg: '#EFF6FF', border: '#BFDBFE', accent: '#1D4ED8', icon: 'ℹ' }
+        return (
+          <div key={t.id} role="status" style={{
+            pointerEvents: 'auto',
+            display: 'flex', alignItems: 'flex-start', gap: 10,
+            minWidth: 280, maxWidth: 380,
+            background: palette.bg, border: `1px solid ${palette.border}`,
+            borderRadius: 12, padding: '12px 14px',
+            boxShadow: '0 12px 32px rgba(15, 25, 35, 0.12)',
+            animation: 'admin-toast-in 0.18s ease-out',
+          }}>
+            <span style={{ width: 22, height: 22, flexShrink: 0, borderRadius: '50%', background: palette.accent, color: '#fff', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{palette.icon}</span>
+            <div style={{ flex: 1, fontSize: 13, color: palette.accent, fontWeight: 600, lineHeight: 1.5, wordBreak: 'break-word' }}>{t.message}</div>
+            <button onClick={() => onDismiss(t.id)} aria-label="Dismiss" style={{ background: 'none', border: 'none', cursor: 'pointer', color: palette.accent, opacity: 0.65, fontSize: 18, lineHeight: 1, padding: 0, marginTop: -2 }}>×</button>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+interface ConfirmModalProps {
+  title: string
+  description?: string
+  confirmLabel: string
+  confirmVariant?: 'primary' | 'danger'
+  requireReason?: boolean
+  reasonLabel?: string
+  reasonPlaceholder?: string
+  onCancel: () => void
+  onConfirm: (reason: string) => void
+}
+
+function ConfirmModal({
+  title, description, confirmLabel, confirmVariant = 'primary',
+  requireReason = false, reasonLabel = 'Reason', reasonPlaceholder,
+  onCancel, onConfirm,
+}: ConfirmModalProps) {
+  const [reason, setReason] = useState('')
+  const [error, setError] = useState('')
+
+  // Esc closes, body scroll locks while the dialog is open so the page
+  // behind the backdrop doesn't move under the user.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onCancel() }
+    document.addEventListener('keydown', onKey)
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prevOverflow
+    }
+  }, [onCancel])
+
+  function handleConfirm() {
+    if (requireReason && !reason.trim()) {
+      setError('A reason is required.')
+      return
+    }
+    onConfirm(reason.trim())
+  }
+
+  const confirmBg = confirmVariant === 'danger' ? '#DC2626' : 'var(--blue)'
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div onClick={onCancel} style={{ position: 'absolute', inset: 0, background: 'rgba(15, 25, 35, 0.5)' }} />
+      <div role="dialog" aria-modal="true" aria-labelledby="admin-modal-title" style={{
+        position: 'relative', width: '100%', maxWidth: 440,
+        background: '#fff', borderRadius: 16, padding: 24,
+        boxShadow: '0 25px 60px rgba(0, 0, 0, 0.18)',
+        animation: 'admin-modal-in 0.18s ease-out',
+      }}>
+        <h3 id="admin-modal-title" style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 18, marginBottom: 6, color: 'var(--text)' }}>{title}</h3>
+        {description && <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 18, lineHeight: 1.6 }}>{description}</p>}
+        {requireReason && (
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>{reasonLabel}</label>
+            <textarea
+              value={reason}
+              onChange={e => { setReason(e.target.value); if (error) setError('') }}
+              autoFocus
+              rows={3}
+              placeholder={reasonPlaceholder ?? 'Add a short explanation…'}
+              style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: `1.5px solid ${error ? '#DC2626' : '#E2E8F0'}`, fontSize: 13, fontFamily: 'var(--font-body)', outline: 'none', resize: 'vertical', minHeight: 72, background: '#fff', color: 'var(--text)', boxSizing: 'border-box' }}
+            />
+            {error && <div style={{ fontSize: 12, color: '#DC2626', marginTop: 6, fontWeight: 600 }}>{error}</div>}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <button onClick={onCancel} style={{ padding: '9px 18px', minHeight: 40, background: '#fff', color: 'var(--text-secondary)', border: '1px solid #E2E8F0', borderRadius: 8, fontFamily: 'var(--font-body)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+          <button onClick={handleConfirm} style={{ padding: '9px 18px', minHeight: 40, background: confirmBg, color: '#fff', border: 'none', borderRadius: 8, fontFamily: 'var(--font-body)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>{confirmLabel}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// PageHeader — consistent top-of-tab pattern: bigger H1, subtle muted
+// subtitle line below, and a right-aligned slot for actions like the
+// Dentists search input. Replaces the ad-hoc `<h1>` blocks each tab was
+// writing independently.
+function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: React.ReactNode }) {
+  return (
+    <div className="admin-page-header" style={{
+      display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between',
+      gap: 16, flexWrap: 'wrap',
+      marginBottom: 24, paddingBottom: 18,
+      borderBottom: '1px solid #E2E8F0',
+    }}>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 28, lineHeight: 1.15, color: 'var(--text)', marginBottom: subtitle ? 6 : 0 }}>{title}</h1>
+        {subtitle && <p style={{ fontSize: 14, color: 'var(--muted)', lineHeight: 1.5 }}>{subtitle}</p>}
+      </div>
+      {actions && <div className="admin-page-header-actions" style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10 }}>{actions}</div>}
+    </div>
+  )
+}
 
 interface AdminPageClientProps {
   stats: any
@@ -92,7 +244,7 @@ function CityBadge({ slug }: { slug: string | null | undefined }) {
 
 function StatCard({ icon, label, value, color }: { icon: string; label: string; value: string | number; color?: string }) {
   return (
-    <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '20px 24px' }}>
+    <div style={{ ...cardStyle, padding: '20px 24px' }}>
       <div style={{ fontSize: 28, marginBottom: 8 }}>{icon}</div>
       <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 28, color: color || 'var(--text)' }}>{value}</div>
       <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 2 }}>{label}</div>
@@ -110,7 +262,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 
 function MetricCard({ icon, label, value, sub, color }: { icon: string; label: string; value: string | number; sub?: string; color?: string }) {
   return (
-    <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '18px 20px' }}>
+    <div style={{ ...cardStyle, padding: '18px 20px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
         <span style={{ fontSize: 22 }}>{icon}</span>
       </div>
@@ -123,7 +275,7 @@ function MetricCard({ icon, label, value, sub, color }: { icon: string; label: s
 
 function LeaderboardCard({ title, rows, valueLabel }: { title: string; rows: { name: string; clinic: string | null; slug: string; value: number }[]; valueLabel: string }) {
   return (
-    <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
+    <div style={{ ...cardStyle, borderRadius: 16, overflow: 'hidden' }}>
       <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15 }}>{title}</h3>
         <span style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>{valueLabel}</span>
@@ -203,6 +355,15 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
   // dentist id; auto-clears after 4–6s via setTimeout in sendLoginLink so
   // the row reverts to its idle button.
   const [linkStatus, setLinkStatus] = useState<Record<string, { state: 'sending' | 'sent' | 'error'; error?: string }>>({})
+  const [toasts, setToasts] = useState<ToastItem[]>([])
+  const [declineTarget, setDeclineTarget] = useState<{ regId: string; name: string } | null>(null)
+
+  function pushToast(variant: ToastVariant, message: string) {
+    const id = Date.now() + Math.random()
+    setToasts(t => [...t, { id, variant, message }])
+    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 4500)
+  }
+  function dismissToast(id: number) { setToasts(t => t.filter(x => x.id !== id)) }
 
   async function adminAction(endpoint: string, body: any, id: string) {
     setActionLoading(id)
@@ -263,29 +424,32 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
     try {
       const res = await fetch('/api/admin/registrations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registration_id: id, action: 'approve' }) })
       const data = await res.json()
-      if (data.success) { setRegList(prev => prev.map(r => r.id === id ? { ...r, status: 'approved' } : r)); alert('Approved! Profile: /dentist/' + data.slug) }
-      else alert('Error: ' + (data.error || 'Unknown'))
-    } catch { alert('Network error') }
+      if (data.success) {
+        setRegList(prev => prev.map(r => r.id === id ? { ...r, status: 'approved' } : r))
+        pushToast('success', `Approved. Public profile is live at /dentist/${data.slug}`)
+      } else {
+        pushToast('error', data.error || 'Approval failed.')
+      }
+    } catch { pushToast('error', 'Network error — please try again.') }
     setActionLoading(null)
   }
 
-  async function declineReg(id: string) {
-    // Require a non-empty reason. The decline email lands in the dentist's
-    // inbox verbatim — an empty reason produces "We've declined your
-    // registration. Reason: " with a trailing space and no explanation,
-    // which is worse UX than no email at all. prompt() returns null on
-    // Cancel; a whitespace-only string is rejected with a re-try alert
-    // and we bail (admin clicks Decline again).
-    const reason = prompt('Reason for declining (emailed to dentist — required):')
-    if (reason === null) return
-    if (!reason.trim()) { alert('A reason is required to decline a registration.'); return }
-    setActionLoading(id)
+  // The decline button no longer triggers a native prompt(). It opens the
+  // ConfirmModal, which collects the required reason in a proper styled
+  // textarea, validates non-empty, and then calls performDecline below.
+  async function performDecline(regId: string, reason: string) {
+    setDeclineTarget(null)
+    setActionLoading(regId)
     try {
-      const res = await fetch('/api/admin/registrations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registration_id: id, action: 'decline', reason: reason.trim() }) })
+      const res = await fetch('/api/admin/registrations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registration_id: regId, action: 'decline', reason }) })
       const data = await res.json()
-      if (data.success) { setRegList(prev => prev.map(r => r.id === id ? { ...r, status: 'rejected' } : r)); alert('Declined. Email sent.') }
-      else alert('Error: ' + (data.error || 'Unknown'))
-    } catch { alert('Network error') }
+      if (data.success) {
+        setRegList(prev => prev.map(r => r.id === regId ? { ...r, status: 'rejected' } : r))
+        pushToast('success', 'Declined. Email with your reason has been sent to the dentist.')
+      } else {
+        pushToast('error', data.error || 'Decline failed.')
+      }
+    } catch { pushToast('error', 'Network error — please try again.') }
     setActionLoading(null)
   }
 
@@ -298,19 +462,17 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
   )
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
+    <div className="admin-root" style={{ display: 'flex', minHeight: '100vh', background: '#FFFFFF' }}>
       <AdminShell activeSection={section} onSectionChange={setSection} stats={stats} />
 
-      {/* Main content */}
-      <div style={{ flex: 1, marginLeft: 220, padding: '28px', minWidth: 0 }} className="admin-main">
+      {/* Main content. `admin-content` is the scoping class for the global
+          CSS at the bottom — table zebra, table hover, etc. */}
+      <div className="admin-main admin-content" style={{ flex: 1, marginLeft: 240, padding: '32px 36px', minWidth: 0 }}>
 
         {/* DASHBOARD */}
         {section === 'dashboard' && (
           <div>
-            <div style={{ marginBottom: 28 }}>
-              <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 4 }}>Dashboard</h1>
-              <p style={{ fontSize: 14, color: 'var(--muted)' }}>Welcome back. Here's what's happening.</p>
-            </div>
+            <PageHeader title="Overview" subtitle="Welcome back. Here's what's happening across the platform today." />
 
             {/* Founding counter */}
             <div style={{ background: 'linear-gradient(135deg, #003F7A, #0057A8)', borderRadius: 16, padding: '24px', marginBottom: 24, color: '#fff' }}>
@@ -340,7 +502,7 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
 
             {/* Recent registrations */}
             {registrations.slice(0, 5).length > 0 && (
-              <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden', marginBottom: 24 }}>
+              <div style={{ background: '#fff', border: `1px solid ${CARD_BORDER}`, borderRadius: 16, boxShadow: CARD_SHADOW, overflow: 'hidden', marginBottom: 24 }}>
                 <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16 }}>Latest Registrations</h3>
                   <button onClick={() => setSection('registrations')} style={{ fontSize: 13, color: 'var(--blue)', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer' }}>View all →</button>
@@ -369,7 +531,7 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
 
             {/* Recent reviews pending */}
             {reviews.filter(r => r.status === 'pending').slice(0, 3).length > 0 && (
-              <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
+              <div style={{ background: '#fff', border: `1px solid ${CARD_BORDER}`, borderRadius: 16, boxShadow: CARD_SHADOW, overflow: 'hidden' }}>
                 <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16 }}>⭐ Reviews Awaiting Approval</h3>
                   <button onClick={() => setSection('reviews')} style={{ fontSize: 13, color: 'var(--blue)', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer' }}>View all →</button>
@@ -381,8 +543,8 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
                       <div style={{ fontSize: 13, color: 'var(--muted)' }}>{r.review_text?.slice(0, 80)}...</div>
                     </div>
                     <div style={{ display: 'flex', gap: 6 }}>
-                      <button onClick={() => reviewAction(r.id, 'approved')} style={{ padding: '6px 12px', background: '#DCFCE7', color: '#166534', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>✓ Approve</button>
-                      <button onClick={() => reviewAction(r.id, 'rejected')} style={{ padding: '6px 12px', background: '#FEE2E2', color: '#991B1B', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>✕ Reject</button>
+                      <button onClick={() => reviewAction(r.id, 'approved')} style={{ padding: '7px 14px', background: '#DCFCE7', color: '#166534', border: '1px solid #BBF7D0', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap' }}>✓ Approve</button>
+                      <button onClick={() => reviewAction(r.id, 'rejected')} style={{ padding: '7px 14px', background: '#FEE2E2', color: '#991B1B', border: '1px solid #FECACA', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap' }}>✕ Reject</button>
                     </div>
                   </div>
                 ))}
@@ -394,16 +556,12 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
         {/* ANALYTICS */}
         {section === 'analytics' && (
           <div>
-            <div style={{ marginBottom: 24 }}>
-              <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 4 }}>Analytics</h1>
-              <p style={{ fontSize: 14, color: 'var(--muted)' }}>Platform health, revenue, engagement, and growth — all in one place.</p>
-            </div>
-
+            <PageHeader title="Analytics" subtitle="Platform health, revenue, engagement, and growth — all in one place." />
             <CityFilterBar cityFilter={cityFilter} label="Scope metrics to city" />
 
             {/* CITY OVERVIEW — always all-cities, regardless of the filter above. */}
             <SectionTitle>City Overview <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>· every city, all-time</span></SectionTitle>
-            <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden', marginBottom: 28 }}>
+            <div style={{ background: '#fff', border: `1px solid ${CARD_BORDER}`, borderRadius: 16, boxShadow: CARD_SHADOW, overflow: 'hidden', marginBottom: 28 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ background: 'var(--bg)' }}>
@@ -558,7 +716,7 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
 
             {/* ROW 5 — Registration Funnel */}
             <SectionTitle>Registration Funnel <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>· this week</span></SectionTitle>
-            <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '24px', marginBottom: 28 }}>
+            <div style={{ background: '#fff', border: `1px solid ${CARD_BORDER}`, borderRadius: 16, boxShadow: CARD_SHADOW, padding: '24px', marginBottom: 28 }}>
               {(() => {
                 const f = analytics.funnel
                 const stages: { label: string; value: number; color: string }[] = [
@@ -588,7 +746,7 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
             <SectionTitle>Area Coverage <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>· dentists per area</span></SectionTitle>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 16, marginBottom: 28 }}>
               {/* Top areas */}
-              <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
+              <div style={{ background: '#fff', border: `1px solid ${CARD_BORDER}`, borderRadius: 16, boxShadow: CARD_SHADOW, overflow: 'hidden' }}>
                 <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15 }}>📍 Most Populated</h3>
                   <span style={{ fontSize: 12, color: 'var(--muted)' }}>{(analytics.areas.populated as any[]).length} areas live</span>
@@ -615,7 +773,7 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
               </div>
 
               {/* Opportunity (empty) areas */}
-              <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
+              <div style={{ background: '#fff', border: `1px solid ${CARD_BORDER}`, borderRadius: 16, boxShadow: CARD_SHADOW, overflow: 'hidden' }}>
                 <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15 }}>🎯 Opportunity Map</h3>
                   <span style={{ fontSize: 12, color: 'var(--muted)' }}>{(analytics.areas.empty as any[]).length} areas with 0 dentists</span>
@@ -639,9 +797,9 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
         {/* REGISTRATIONS */}
         {section === 'registrations' && (
           <div>
-            <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 16 }}>Dentist Registrations</h1>
+            <PageHeader title="Dentist Registrations" subtitle="Review incoming sign-ups, verify their MCI numbers, and approve or decline with a reason." />
             <CityFilterBar cityFilter={cityFilter} />
-            <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'auto' }}>
+            <div style={{ background: '#fff', border: `1px solid ${CARD_BORDER}`, borderRadius: 16, boxShadow: CARD_SHADOW, overflow: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
                 <thead><tr>{['Ref', 'Name', 'Clinic', 'City', 'Area', 'Phone', 'Qualification', 'MCI No.', 'Spot #', 'Status', 'Actions'].map(h => <th key={h} style={tableHeaderStyle}>{h}</th>)}</tr></thead>
                 <tbody>
@@ -665,8 +823,8 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
                       <td style={tableCellStyle}>
                         {r.status === 'pending' && (
                           <div style={{ display: 'flex', gap: 6 }}>
-                            <button onClick={() => approveReg(r.id)} disabled={actionLoading === r.id} style={{ padding: '5px 10px', background: '#DCFCE7', color: '#166534', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>✓ Approve</button>
-                            <button onClick={() => declineReg(r.id)} disabled={actionLoading === r.id} style={{ padding: '5px 10px', background: '#FEE2E2', color: '#991B1B', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>✕ Decline</button>
+                            <button onClick={() => approveReg(r.id)} disabled={actionLoading === r.id} style={{ padding: '7px 14px', background: '#DCFCE7', color: '#166534', border: '1px solid #BBF7D0', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: actionLoading === r.id ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap', opacity: actionLoading === r.id ? 0.6 : 1 }}>✓ Approve</button>
+                            <button onClick={() => setDeclineTarget({ regId: r.id, name: r.name })} disabled={actionLoading === r.id} style={{ padding: '7px 14px', background: '#FEE2E2', color: '#991B1B', border: '1px solid #FECACA', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: actionLoading === r.id ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap', opacity: actionLoading === r.id ? 0.6 : 1 }}>✕ Decline</button>
                           </div>
                         )}
                       </td>
@@ -682,12 +840,20 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
         {/* DENTISTS */}
         {section === 'dentists' && (
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
-              <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24 }}>Dentists</h1>
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or clinic..." style={{ ...inputStyle, width: 280 }} />
-            </div>
+            <PageHeader
+              title="Dentists"
+              subtitle={`${filteredDentists.length} of ${dentistList.length} listed dentists${search ? ' matching your search' : ''}.`}
+              actions={
+                <input
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="🔍  Search by name or clinic…"
+                  style={{ ...inputStyle, width: 320, padding: '10px 14px', fontSize: 14, borderRadius: 10 }}
+                />
+              }
+            />
             <CityFilterBar cityFilter={cityFilter} />
-            <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'auto' }}>
+            <div style={{ background: '#fff', border: `1px solid ${CARD_BORDER}`, borderRadius: 16, boxShadow: CARD_SHADOW, overflow: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
                 <thead><tr>{['Name', 'Clinic', 'City', 'Area', 'Phone', 'Tier', 'Verified', 'Actions'].map(h => <th key={h} style={tableHeaderStyle}>{h}</th>)}</tr></thead>
                 <tbody>
@@ -751,8 +917,8 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
         {/* APPOINTMENTS */}
         {section === 'appointments' && (
           <div>
-            <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 24 }}>Appointments</h1>
-            <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'auto' }}>
+            <PageHeader title="Appointments" subtitle="Every appointment booked through the platform, newest first." />
+            <div style={{ background: '#fff', border: `1px solid ${CARD_BORDER}`, borderRadius: 16, boxShadow: CARD_SHADOW, overflow: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
                 <thead><tr>{['Reference', 'Patient', 'Dentist', 'Date', 'Time', 'Treatment', 'Status'].map(h => <th key={h} style={tableHeaderStyle}>{h}</th>)}</tr></thead>
                 <tbody>
@@ -777,8 +943,8 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
         {/* ENQUIRIES */}
         {section === 'enquiries' && (
           <div>
-            <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 24 }}>Enquiries</h1>
-            <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'auto' }}>
+            <PageHeader title="Enquiries" subtitle="Patient messages submitted via clinic profile pages." />
+            <div style={{ background: '#fff', border: `1px solid ${CARD_BORDER}`, borderRadius: 16, boxShadow: CARD_SHADOW, overflow: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
                 <thead><tr>{['Patient', 'Dentist', 'Treatment', 'Message', 'Source', 'Status', 'Date'].map(h => <th key={h} style={tableHeaderStyle}>{h}</th>)}</tr></thead>
                 <tbody>
@@ -803,8 +969,7 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
         {/* REVIEWS */}
         {section === 'reviews' && (
           <div>
-            <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 16 }}>Reviews</h1>
-
+            <PageHeader title="Reviews" subtitle="Moderate patient reviews before they appear on public dentist profiles." />
             <CityFilterBar cityFilter={cityFilter} />
 
             {/* Status filter pills */}
@@ -877,8 +1042,8 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
         {/* AREAS */}
         {section === 'areas' && (
           <div>
-            <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 24 }}>Areas</h1>
-            <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
+            <PageHeader title="Areas" subtitle="Geographic coverage areas across all city websites." />
+            <div style={{ background: '#fff', border: `1px solid ${CARD_BORDER}`, borderRadius: 16, boxShadow: CARD_SHADOW, overflow: 'hidden' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead><tr>{['Area', 'Zone', 'Slug', 'Dentist Count', 'Area Page'].map(h => <th key={h} style={tableHeaderStyle}>{h}</th>)}</tr></thead>
                 <tbody>
@@ -900,9 +1065,9 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
         {/* SETTINGS */}
         {section === 'settings' && (
           <div>
-            <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 24 }}>Settings</h1>
+            <PageHeader title="Settings" subtitle="Platform-wide configuration and shortcuts." />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 600 }}>
-              <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '24px' }}>
+              <div style={{ background: '#fff', border: `1px solid ${CARD_BORDER}`, borderRadius: 16, boxShadow: CARD_SHADOW, padding: '24px' }}>
                 <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, marginBottom: 16 }}>Founding Member Config</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: 'var(--bg)', borderRadius: 10 }}>
@@ -924,7 +1089,7 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
                 </div>
               </div>
 
-              <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '24px' }}>
+              <div style={{ background: '#fff', border: `1px solid ${CARD_BORDER}`, borderRadius: 16, boxShadow: CARD_SHADOW, padding: '24px' }}>
                 <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, marginBottom: 16 }}>Site Links</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {[
@@ -945,7 +1110,7 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
         {/* BLOG placeholder */}
         {section === 'blog' && (
           <div>
-            <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 24 }}>Blog</h1>
+            <PageHeader title="Blog" subtitle="Content management for the public blog." />
             <div style={{ textAlign: 'center', padding: '80px', background: '#fff', borderRadius: 16, border: '1px solid var(--border)' }}>
               <div style={{ fontSize: 48, marginBottom: 16 }}>✍️</div>
               <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 20, marginBottom: 8 }}>Blog Editor Coming Soon</h3>
@@ -956,10 +1121,67 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
       </div>
 
       <style>{`
+        /* Tables: every tbody row gets a hover state, even-numbered rows
+           get a subtle alternate background. We override inline-styled
+           tbody cells (which set their own borderTop) with !important so
+           the zebra wins consistently across the existing tables. */
+        .admin-content table { border-collapse: collapse; }
+        .admin-content table tbody tr { transition: background 0.12s; }
+        .admin-content table tbody tr:nth-child(even) { background: #FAFBFC; }
+        .admin-content table tbody tr:hover { background: #EFF6FF; }
+
+        /* Style for the th cells that come from the inline tableHeaderStyle
+           constant — give them a sticky top border treatment so the head
+           reads as a distinct band. */
+        .admin-content table thead th {
+          border-bottom: 1px solid ${CARD_BORDER};
+          background: #F8FAFC !important;
+        }
+
+        /* Generic action-button hover for the inline-styled .approve / .reject
+           buttons — they don't have a class, so we target every button inside
+           a tbody and bump the brightness slightly on hover. Cards / nav
+           buttons aren't in tbody, so they aren't affected. */
+        .admin-content table tbody button:not(:disabled):hover { filter: brightness(0.96); }
+
+        /* Modal animation */
+        @keyframes admin-modal-in {
+          from { opacity: 0; transform: translateY(8px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes admin-toast-in {
+          from { opacity: 0; transform: translateX(20px); }
+          to   { opacity: 1; transform: translateX(0); }
+        }
+
         @media (max-width: 768px) {
           .admin-main { margin-left: 0 !important; padding: 16px !important; }
+          .admin-content h1 { font-size: 22px !important; }
+          .admin-page-header { padding-bottom: 14px !important; margin-bottom: 18px !important; }
+          .admin-page-header-actions { width: 100%; }
+          .admin-page-header-actions > input { width: 100% !important; }
+          .admin-toast-stack { top: 12px !important; right: 12px !important; left: 12px !important; }
+          .admin-toast-stack > * { min-width: 0 !important; max-width: 100% !important; }
         }
       `}</style>
+
+      {/* Confirm modals + toast stack live at the root of the admin tree so
+          they overlay everything (sidebar, mobile header) regardless of
+          which tab is rendering. */}
+      {declineTarget && (
+        <ConfirmModal
+          title={`Decline ${declineTarget.name}'s registration?`}
+          description="The dentist will receive an email with your reason. This cannot be undone from the panel."
+          confirmLabel="Decline & Send Email"
+          confirmVariant="danger"
+          requireReason
+          reasonLabel="Reason for declining"
+          reasonPlaceholder="e.g. MCI number could not be verified. Please re-register with a clear photo of your council registration certificate."
+          onCancel={() => setDeclineTarget(null)}
+          onConfirm={(reason) => performDecline(declineTarget.regId, reason)}
+        />
+      )}
+      <ToastStack toasts={toasts} onDismiss={dismissToast} />
     </div>
   )
 }
