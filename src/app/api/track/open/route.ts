@@ -1,12 +1,13 @@
-// 1x1 transparent GIF that records an email open against a contact + campaign.
-// Cache headers are set to disable every layer of caching we can name so a
-// reopen counts.
+// 1x1 transparent GIF that records an email open against a contact +
+// campaign. Cache headers are set to disable every layer of caching we can
+// name so a re-open counts.
 //
-//   GET /api/track/open?id=<contact_id>&campaign=<campaign_id>
+//   GET /api/track/open?contact_id=<uuid>&campaign_id=<uuid>
 //
-// Status walks pending → sent → opened → clicked → registered. A contact in
-// 'clicked' or 'registered' state shouldn't downgrade — only fresh "sent"
-// rows flip to "opened".
+// The contact's status enum doesn't include "opened" — engagement state is
+// captured by opened_at / clicked_at / registered_at timestamps. Only "sent"
+// rows have their opened_at stamped (re-opens just refresh the field; the
+// campaign open_count only bumps on the first open).
 import { NextRequest } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 
@@ -17,14 +18,11 @@ const TRANSPARENT_GIF = Buffer.from(
 
 export async function GET(request: NextRequest) {
   const url = new URL(request.url)
-  const id = url.searchParams.get('id')
-  const campaign = url.searchParams.get('campaign')
+  const contactId = url.searchParams.get('contact_id')
+  const campaignId = url.searchParams.get('campaign_id')
 
-  if (id && campaign) {
-    // Fire-and-forget — we still want to return the pixel even if the DB
-    // write fails (e.g. the row was deleted by a bulk delete). The admin
-    // sees no degraded UX from a hiccup here.
-    void recordOpen(id, campaign).catch(err => {
+  if (contactId && campaignId) {
+    void recordOpen(contactId, campaignId).catch(err => {
       console.error('[track/open] update failed', err)
     })
   }
@@ -48,28 +46,17 @@ async function recordOpen(contactId: string, campaignId: string) {
   )
   const { data: contact } = await db
     .from('outreach_contacts')
-    .select('id, status, opened_at')
+    .select('id, opened_at')
     .eq('id', contactId)
     .maybeSingle()
   if (!contact) return
 
-  const updates: Record<string, unknown> = {}
-  // Only stamp opened_at the first time. Re-opens don't bump the campaign
-  // counter; they just refresh the contact-level timestamp for the dashboard.
   if (!contact.opened_at) {
-    updates.opened_at = new Date().toISOString()
-  }
-  if (contact.status === 'sent') {
-    updates.status = 'opened'
-  }
-  if (Object.keys(updates).length > 0) {
-    await db.from('outreach_contacts').update(updates).eq('id', contactId)
-  }
+    await db
+      .from('outreach_contacts')
+      .update({ opened_at: new Date().toISOString() })
+      .eq('id', contactId)
 
-  // Bump the campaign counter only on the first open per contact, regardless
-  // of whether the contact had already advanced to clicked/registered (in
-  // which case opened_at can be backfilled).
-  if (!contact.opened_at) {
     const { data: campaign } = await db
       .from('outreach_campaigns')
       .select('id, open_count')

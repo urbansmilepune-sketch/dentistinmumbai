@@ -126,6 +126,41 @@ export async function POST(request: NextRequest) {
 
     if (error) throw error
 
+    // Cold-outreach attribution. If we previously cold-emailed this dentist,
+    // mark the contact as 'registered' and bump the source campaign's
+    // registration_count. Wrapped in a try/catch so a missing table /
+    // schema-drift can't 500 the registration flow — attribution loss is
+    // strictly worse than a 500 here, but neither is acceptable.
+    try {
+      const lower = String(email).trim().toLowerCase()
+      const { data: contact } = await supabase
+        .from('outreach_contacts')
+        .select('id, campaign_id, registered_at')
+        .eq('email', lower)
+        .maybeSingle()
+      if (contact && !contact.registered_at) {
+        await supabase
+          .from('outreach_contacts')
+          .update({ status: 'registered', registered_at: new Date().toISOString() })
+          .eq('id', contact.id)
+        if (contact.campaign_id) {
+          const { data: campaign } = await supabase
+            .from('outreach_campaigns')
+            .select('id, registration_count')
+            .eq('id', contact.campaign_id)
+            .maybeSingle()
+          if (campaign) {
+            await supabase
+              .from('outreach_campaigns')
+              .update({ registration_count: (campaign.registration_count || 0) + 1 })
+              .eq('id', campaign.id)
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[registrations] outreach attribution skipped:', err)
+    }
+
     // Monitoring ping — fires once per successful insert regardless of
     // whether the row auto-approves or falls through to manual review.
     // If these stop arriving during business hours for 2+ hours, something

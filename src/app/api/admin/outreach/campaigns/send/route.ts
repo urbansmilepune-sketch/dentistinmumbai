@@ -1,17 +1,15 @@
-// Send a campaign in a single 50-recipient batch. The UI polls this route in
-// a loop until the campaign's status flips to 'sent', which gives us the
-// "send in batches of 50 per minute" cadence without needing a background
-// queue.
+// Send one 50-recipient batch for a campaign. The Outreach tab polls this
+// route in a loop until the campaign's status flips to 'sent', which gives
+// us "50 emails per minute" pacing without needing a background queue.
 //
-//   POST { campaign_id, batch_size? }  → sends up to <batch_size> pending
-//                                        contacts for this campaign's city
+//   POST { campaign_id, batch_size? }  → send the next batch of pending
+//                                        contacts (default 50)
 //   POST { campaign_id, action: 'pause' | 'resume' }
-//                                      → flips campaign status only; does
-//                                        not block further send calls
+//                                      → flip the campaign status only
 //
-// Resend's transactional limit on Pro is 10 req/s. 50 sends in parallel here
-// would burst; we throttle inside the route to ≤10/sec by chunking the
-// batch and pausing 1s between chunks.
+// Resend Pro is rated at ~10 req/sec. 50 sends in parallel would burst; we
+// throttle inside the route to ≤10/sec by chunking the batch and pausing 1s
+// between chunks.
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { createClient as createUserClient } from '@/lib/supabase/server'
@@ -42,8 +40,6 @@ function originFromCity(slug: string | null): string {
   if (slug && Object.prototype.hasOwnProperty.call(CITY_CONFIGS, slug)) {
     return `https://${CITY_CONFIGS[slug as CitySlug].domain}`
   }
-  // Fall back to a public env if set, otherwise mumbai. The origin only
-  // matters for the tracking-pixel / click-redirect URLs.
   const publicUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim()
   if (publicUrl) return publicUrl.replace(/\/$/, '')
   return `https://${CITY_CONFIGS.mumbai.domain}`
@@ -62,7 +58,6 @@ export async function POST(request: NextRequest) {
 
   const db = admin()
 
-  // Pause / resume — flip the campaign status only.
   if (action === 'pause' || action === 'resume') {
     const nextStatus = action === 'pause' ? 'paused' : 'sending'
     const { error } = await db
@@ -73,7 +68,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, status: nextStatus })
   }
 
-  // Load campaign + verify it can send.
   const { data: campaign, error: cErr } = await db
     .from('outreach_campaigns')
     .select('*')
@@ -89,27 +83,26 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ done: true, status: 'sent', sent_in_batch: 0 })
   }
 
-  // Flip to 'sending' on the first batch so the UI reflects in-progress state.
   if (campaign.status === 'draft') {
     await db.from('outreach_campaigns').update({ status: 'sending' }).eq('id', campaign_id)
   }
 
-  // Pick the next batch of pending contacts for the campaign's city.
+  // Pick the next batch of pending contacts. campaign.city = null means
+  // "all cities" — no .eq filter applied.
   let q = db
     .from('outreach_contacts')
-    .select('id, name, clinic_name, email, city, area')
+    .select('id, name, clinic_name, email, city')
     .eq('status', 'pending')
     .order('created_at', { ascending: true })
     .limit(batchSize)
   if (campaign.city) q = q.eq('city', campaign.city)
   const { data: batch, error: bErr } = await q
   if (bErr) {
-    console.error('[outreach/send] batch fetch failed', bErr)
+    console.error('[outreach/campaigns/send] batch fetch failed', bErr)
     return NextResponse.json({ error: bErr.message }, { status: 500 })
   }
 
   if (!batch || batch.length === 0) {
-    // Nothing left to send — finalise the campaign.
     await db
       .from('outreach_campaigns')
       .update({ status: 'sent', sent_at: new Date().toISOString() })
@@ -117,7 +110,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ done: true, status: 'sent', sent_in_batch: 0 })
   }
 
-  // Resend Pro is rated at ~10 req/sec. Chunk within the batch to stay under.
   const origin = originFromCity(campaign.city)
   const RESEND_CHUNK = 10
   const RESEND_DELAY_MS = 1000
@@ -129,7 +121,7 @@ export async function POST(request: NextRequest) {
     const chunk = batch.slice(i, i + RESEND_CHUNK)
     const results = await Promise.allSettled(
       chunk.map(async (c) => {
-        const ctx = { name: c.name, clinic_name: c.clinic_name, city: campaign.city, area: c.area }
+        const ctx = { name: c.name, clinic_name: c.clinic_name, city: c.city || campaign.city, email: c.email }
         const subject = renderOutreachTemplate(campaign.subject, ctx)
         const body    = renderOutreachTemplate(campaign.body, ctx)
         await sendOutreachEmail({
@@ -138,7 +130,7 @@ export async function POST(request: NextRequest) {
           campaign_id: campaign.id,
           subject,
           body,
-          city: campaign.city,
+          city: c.city || campaign.city,
           origin,
         })
         await db
@@ -151,11 +143,9 @@ export async function POST(request: NextRequest) {
     sentNow   += results.filter(r => r.status === 'fulfilled').length
     failedNow += results.filter(r => r.status === 'rejected').length
 
-    // First rejection per chunk — log once so the admin can see why a batch
-    // dropped without dumping 10 identical lines.
     const firstReject = results.find(r => r.status === 'rejected') as PromiseRejectedResult | undefined
     if (firstReject) {
-      console.error('[outreach/send] resend chunk had failures', { campaign_id, count: failedNow, reason: firstReject.reason })
+      console.error('[outreach/campaigns/send] resend chunk had failures', { campaign_id, count: failedNow, reason: firstReject.reason })
     }
 
     if (i + RESEND_CHUNK < batch.length) {
@@ -163,7 +153,6 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Bump the campaign's sent_count by the rows that actually went out.
   if (sentNow > 0) {
     await db
       .from('outreach_campaigns')
@@ -171,8 +160,6 @@ export async function POST(request: NextRequest) {
       .eq('id', campaign_id)
   }
 
-  // If this batch drained the queue, finalise. Otherwise the UI loops back
-  // for the next batch on its own.
   let finalStatus = 'sending'
   if (batch.length < batchSize) {
     await db
