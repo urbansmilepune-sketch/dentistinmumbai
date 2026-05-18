@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import AdminShell from './AdminShell'
 import CommunicationsTab from './CommunicationsTab'
+import OutreachTab from './OutreachTab'
 import { CITY_CONFIGS, cityOrigin, getCityBySlug } from '@/config/cities'
 
 // Shared style tokens. Inline-styled cards reach for these so spacing,
@@ -1037,6 +1038,11 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
         {/* COMMUNICATIONS */}
         {section === 'communications' && (
           <CommunicationsTab dentists={commsDentists} />
+        )}
+
+        {/* OUTREACH — cold-email funnel against CSV-imported prospect lists. */}
+        {section === 'outreach' && (
+          <OutreachTab />
         )}
 
         {/* AREAS */}

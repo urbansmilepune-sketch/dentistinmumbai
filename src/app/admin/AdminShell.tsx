@@ -21,6 +21,7 @@ const NAV_ITEMS = [
   { id: 'registrations',  label: 'Registrations',  icon: '📋' },
   { id: 'reviews',        label: 'Reviews',        icon: '⭐' },
   { id: 'communications', label: 'Communications', icon: '📣' },
+  { id: 'outreach',       label: 'Outreach',       icon: '📧' },
   { id: 'analytics',      label: 'Analytics',      icon: '📈' },
   { id: 'appointments',   label: 'Appointments',   icon: '📅' },
   { id: 'enquiries',      label: 'Enquiries',      icon: '💬' },
