@@ -5,7 +5,7 @@ import QRCode from 'qrcode'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { getCityBySlug } from '@/config/cities'
-import { buildMapsIframe, extractMapsIframeSrc } from '@/lib/maps'
+import { buildMapsIframe, classifyMapsInput, extractMapsIframeSrc } from '@/lib/maps'
 
 const LANGUAGES = ['English', 'Hindi', 'Marathi', 'Gujarati', 'Tamil', 'Telugu', 'Kannada', 'Bengali', 'Urdu']
 const SPECIALTIES = ['General Dentistry', 'Orthodontics', 'Endodontics', 'Periodontology', 'Prosthodontics', 'Oral Surgery', 'Pediatric Dentistry', 'Cosmetic Dentistry', 'Implantology', 'Oral Medicine']
@@ -301,6 +301,10 @@ export default function EditProfilePage() {
   // on submit. Empty input → no preview.
   const mapsResolved = buildMapsIframe(form.maps_embed, form.clinic_name)
   const mapsPreviewSrc = extractMapsIframeSrc(mapsResolved)
+  // Drives the inline warning/instructions block: short links can't be
+  // embedded and unrecognised pastes need a clear "this isn't a Maps URL"
+  // signal so the dentist doesn't think it just silently saved.
+  const mapsKind = classifyMapsInput(form.maps_embed)
 
   const inputStyle = {
     width: '100%', padding: '11px 14px', borderRadius: 10,
@@ -423,12 +427,74 @@ export default function EditProfilePage() {
             <textarea value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} placeholder="Full clinic address including area, city, PIN" rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
           </div>
           <div>
-            <label style={labelStyle}>Google Maps Link</label>
-            <textarea value={form.maps_embed} onChange={e => setForm(f => ({ ...f, maps_embed: e.target.value }))} placeholder='https://maps.google.com/... or paste an embed <iframe>' rows={3} style={{ ...inputStyle, resize: 'vertical', fontFamily: 'monospace', fontSize: 12 }} />
-            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-              Paste your Google Maps share link (from phone or desktop). On Google Maps tap Share → Copy Link, then paste it here.
+            <label style={labelStyle}>Google Maps Embed</label>
+            <textarea
+              value={form.maps_embed}
+              onChange={e => setForm(f => ({ ...f, maps_embed: e.target.value }))}
+              placeholder='Paste the full <iframe> from Google Maps → Share → Embed a map'
+              rows={3}
+              style={{ ...inputStyle, resize: 'vertical', fontFamily: 'monospace', fontSize: 12 }}
+            />
+
+            {/* How-to instructions — always visible so the dentist knows
+                what shape of paste actually works. Google blocks
+                X-Frame-Options on every Maps URL except the canonical
+                /maps/embed?pb= one served by the Embed flow. */}
+            <div style={{ marginTop: 10, padding: '12px 14px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>
+                How to get your Google Maps embed code
+              </div>
+              <ol style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                <li>Open <strong>google.com/maps</strong> on a <strong>desktop</strong> (not mobile).</li>
+                <li>Search for your clinic.</li>
+                <li>Click <strong>Share</strong> → <strong>Embed a map</strong>.</li>
+                <li>Copy the full <code>&lt;iframe&gt;</code> code.</li>
+                <li>Paste it in the box above.</li>
+              </ol>
             </div>
-            {mapsPreviewSrc && (
+
+            {/* Short link warning — share.google / maps.app.goo.gl / goo.gl
+                can't be expanded in the browser and the redirect target
+                blocks framing, so the iframe simply won't render. Tell the
+                dentist before they hit Save expecting a working map. */}
+            {mapsKind === 'shortLink' && (
+              <div style={{ marginTop: 10, padding: '12px 14px', background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: 10, fontSize: 13, color: '#92400E', lineHeight: 1.6 }}>
+                <strong>⚠ Short links can't be embedded.</strong> Google Maps share links
+                (<code>maps.app.goo.gl</code>, <code>share.google</code>, <code>goo.gl/maps</code>) redirect
+                in a way browsers block inside an iframe. Please use the <strong>Embed a map</strong> option
+                on desktop Google Maps and paste the full <code>&lt;iframe&gt;</code> code instead.
+              </div>
+            )}
+
+            {/* Search-based fallback — we'll save it and the public profile
+                will attempt the maps.google.com/maps?q=… form, but Google
+                may refuse to frame it in some browsers. Skip the iframe
+                preview entirely and just tell the dentist what to expect,
+                rather than show a frame that may be blank or X-Frame-blocked. */}
+            {mapsKind === 'searchEmbed' && (
+              <div style={{ marginTop: 10, padding: '12px 14px', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 10, fontSize: 13, color: '#1E40AF', lineHeight: 1.6 }}>
+                <strong>ℹ Search-based map saved.</strong> We'll attempt to show a map for the clinic
+                name on your public profile, but Google blocks this format in some browsers — the map
+                area may appear blank for those patients. For a guaranteed embed, follow the steps above
+                and paste the full <code>&lt;iframe&gt;</code> code.
+              </div>
+            )}
+
+            {/* Unknown paste — covers an HTML blob that isn't a Maps
+                iframe and any non-Maps URL. */}
+            {mapsKind === 'invalid' && (
+              <div style={{ marginTop: 10, padding: '12px 14px', background: '#FEE2E2', border: '1px solid #FECACA', borderRadius: 10, fontSize: 13, color: '#991B1B', lineHeight: 1.6 }}>
+                <strong>✕ Unrecognised input.</strong> This doesn't look like a Google Maps embed
+                iframe or a Maps URL. Follow the steps above to copy the embed code from desktop Google Maps.
+              </div>
+            )}
+
+            {/* Live preview — only when the paste is the trusted
+                /maps/embed?pb= iframe form. That's the one URL with a
+                permissive X-Frame-Options, so we can render it with
+                confidence. Other shapes get a message instead of a
+                potentially blank frame. */}
+            {mapsKind === 'iframe' && mapsPreviewSrc && (
               <div style={{ marginTop: 10, border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
                 <iframe
                   src={mapsPreviewSrc}
