@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
-import { getCityBySlug } from '@/config/cities'
+import { getCityBySlug, CITY_CONFIGS } from '@/config/cities'
 import TickerBar from './TickerBar'
 import ExpoPricingSection from './ExpoPricingSection'
 import ProgressBar from './ProgressBar'
@@ -88,21 +88,26 @@ export default async function ForDentistsPage() {
   ]
 
   const OBJECTION_BUSTERS = [
-    { title: 'Zero commission', desc: 'Keep 100% of every appointment. We never take a cut.' },
-    { title: 'No app needed', desc: 'Patients book via WhatsApp — no downloads, no friction.' },
-    { title: '5 minute setup', desc: 'We pre-fill your profile from your MCI registration.' },
-    { title: 'Free forever', desc: 'Basic listing costs nothing. No credit card. No expiry.' },
-    { title: 'Unlike Practo', desc: "We don't sell your patient data to competing clinics." },
-    { title: 'Full PMS included', desc: 'Appointments, prescriptions, billing — all built-in.' },
+    { title: 'Zero commission',     desc: 'Keep 100% of every appointment fee. We never take a cut.' },
+    { title: 'No app needed',       desc: 'Patients book via WhatsApp or web — no downloads, no friction.' },
+    { title: '5 minute setup',      desc: 'Your profile is ready to go live instantly.' },
+    { title: 'Free forever',        desc: 'Basic listing costs nothing. No credit card needed.' },
+    { title: 'Your data stays yours', desc: 'We never sell or share your patient data.' },
+    { title: 'Full PMS included',   desc: 'Appointments, prescriptions, billing — all in one place.' },
+    { title: '90-minute delivery',  desc: 'DentalSamaan integration for dental supplies at the clinic.' },
+    { title: 'Multi-city presence', desc: 'List on all 13 city websites automatically.' },
   ]
 
+  const CITY_PILLS = Object.values(CITY_CONFIGS).map(c => c.cityName)
+
   const FAQS = [
-    { q: 'Do you really take zero commission?', a: 'Yes. We never take a cut of your appointments, treatments, or billing. The basic listing is free forever and any future paid features will be flat-fee, not commission-based.' },
-    { q: 'Do my patients need to download an app?', a: 'No. Patients book and message you over WhatsApp using the number you already use. There is no app for them to install — that is why our booking conversion is so high.' },
-    { q: 'How long does setup actually take?', a: 'About 5 minutes from your side. You share your name, clinic, area and MCI registration; our team verifies and builds the full profile — hours, treatments, photos, map, booking — within 24 hours.' },
-    { q: 'Will the free plan stay free?', a: 'Yes. Founding members get a Free Forever guarantee — your basic profile stays free regardless of any pricing we introduce later for new signups.' },
-    { q: 'How is this different from Practo?', a: "We don't sell your patient enquiries to nearby clinics, we don't charge per lead, and we don't take commission. Your patients are yours. We also include a full practice management system at no extra cost." },
-    { q: 'Is the practice management system really included?', a: 'Yes — appointments with state-machine workflows, EMR and prescriptions with reusable templates, PDF invoices and payment tracking, dental charting, X-ray vault and WhatsApp reminders are all part of the free profile.' },
+    { q: 'Is DentistIn really free?', a: 'Yes. Your basic listing, profile, and booking page are completely free forever. We offer Silver and Gold plans with advanced features like bulk patient messaging, staff management, and detailed analytics.' },
+    { q: 'How long does setup take?', a: 'Most dentists complete their profile in under 5 minutes. We pre-fill your details from registration — just add your photo and you’re live.' },
+    { q: 'Will I get patient enquiries immediately?', a: 'Most dentists receive their first enquiry within 2 weeks of completing their profile. Dentists with photos and reviews get 5x more enquiries.' },
+    { q: 'Do I need to download any app?', a: 'No app needed — for you or your patients. Everything works through your browser. Patients can book via WhatsApp link with a single tap.' },
+    { q: 'Can I import my existing patient records?', a: 'Yes! You can upload photos of your clinic register or export from other software. Our team will migrate your data within 48 hours.' },
+    { q: 'What if I want to cancel?', a: 'There is no contract or lock-in. You can remove your listing anytime. Your patient data export is always available.' },
+    { q: 'Is my patient data safe?', a: 'Yes. All data is encrypted and stored securely in India. We never share or sell your data to third parties. You own your patient records completely.' },
   ]
 
   return (
@@ -303,19 +308,17 @@ export default async function ForDentistsPage() {
         </div>
       </section>
 
-      {/* WHY DENTISTS CHOOSE US */}
+      {/* WHY DENTISTIN */}
       <section style={{ padding: '80px 20px', background: '#fff' }}>
         <div className="container">
           <div style={{ textAlign: 'center', marginBottom: 40 }}>
-            <p style={{ color: 'var(--blue)', fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Why Dentists Choose Us</p>
-            <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(1.6rem, 3vw, 2.25rem)', maxWidth: 600, margin: '0 auto 16px' }}>
-              No commission. No data resale. No catch.
+            <p style={{ color: 'var(--blue)', fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Why DentistIn?</p>
+            <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(1.6rem, 3vw, 2.25rem)', maxWidth: 600, margin: '0 auto' }}>
+              No commission. No lock-in. No catch.
             </h2>
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 18px', background: 'var(--blue-light)', border: '1px solid #BFDBFE', borderRadius: 40 }}>
-              <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--blue-dark)' }}>👥 Join 25+ dentists across Mumbai, Pune, Nagpur already on DentistIn</span>
-            </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16, maxWidth: 960, margin: '0 auto' }}>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16, maxWidth: 960, margin: '0 auto 48px' }}>
             {OBJECTION_BUSTERS.map(item => (
               <div key={item.title} style={{ display: 'flex', gap: 14, padding: '20px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 14 }}>
                 <span style={{ fontSize: 22, flexShrink: 0, lineHeight: 1.2 }}>✅</span>
@@ -325,6 +328,20 @@ export default async function ForDentistsPage() {
                 </div>
               </div>
             ))}
+          </div>
+
+          {/* Social-proof bar */}
+          <div style={{ maxWidth: 960, margin: '0 auto', padding: '28px 24px', background: 'var(--blue-light)', border: '1px solid #BFDBFE', borderRadius: 16, textAlign: 'center' }}>
+            <p style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, color: 'var(--blue-dark)', marginBottom: 16 }}>
+              👥 Join 25+ dentists across Mumbai, Pune &amp; Nagpur already growing with DentistIn
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 8 }}>
+              {CITY_PILLS.map(name => (
+                <span key={name} style={{ display: 'inline-block', padding: '6px 14px', background: '#fff', border: '1px solid #BFDBFE', borderRadius: 40, fontSize: 13, fontWeight: 600, color: 'var(--blue-dark)' }}>
+                  {name}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
       </section>
