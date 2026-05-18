@@ -101,12 +101,14 @@ export default async function DentistProfilePage({ params }: Props) {
   // joins four tables. Dentists with zero rows here keep using the original
   // single-location fields (address, working_hours) on the dentists table —
   // no backfill, no migration of legacy data.
+  // The DB column is `clinic_name`; LocationTabs expects `name`, so we
+  // alias on the select. `sort_order` was removed from the schema —
+  // ordering is is_primary DESC then created_at ASC.
   const { data: locationRows } = await supabase
     .from('clinic_locations')
-    .select('id, name, address, phone, working_hours, is_primary, sort_order, areas(name)')
+    .select('id, name:clinic_name, address, phone, working_hours, is_primary, areas(name)')
     .eq('dentist_id', dentist.id)
     .order('is_primary', { ascending: false })
-    .order('sort_order')
     .order('created_at')
   const locations = locationRows ?? []
 

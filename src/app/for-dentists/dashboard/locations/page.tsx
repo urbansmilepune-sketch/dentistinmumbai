@@ -36,7 +36,6 @@ interface Location {
   phone: string | null
   working_hours: any
   is_primary: boolean
-  sort_order: number
   areas?: { name: string; slug: string } | null
 }
 
