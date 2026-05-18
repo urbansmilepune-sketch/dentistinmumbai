@@ -95,7 +95,7 @@ export default function DashboardShell({ dentist, completionPct, children }: Pro
   const initials = dentist.name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2) || 'D'
 
   const sidebar = (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#fff', borderRight: '1px solid var(--border)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#fff', borderRight: '1px solid var(--border)', overflowY: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none' as any }}>
       {/* Logo */}
       <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid var(--border)' }}>
         <Link href="/" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none' }}>
@@ -139,7 +139,7 @@ export default function DashboardShell({ dentist, completionPct, children }: Pro
       </div>
 
       {/* Nav */}
-      <nav style={{ flex: 1, padding: '8px 12px', overflowY: 'auto' }}>
+      <nav style={{ flex: 1, padding: '8px 12px', overflowY: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none' as any }}>
         {NAV.map(item => {
           const isActive = pathname === item.href || (item.href !== '/for-dentists/dashboard' && pathname.startsWith(item.href))
           const locked = item.minTier ? !tierMeets(tier, item.minTier) : false
@@ -165,8 +165,9 @@ export default function DashboardShell({ dentist, completionPct, children }: Pro
         })}
       </nav>
 
-      {/* Bottom actions */}
-      <div style={{ padding: '12px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+      {/* Bottom actions — marginTop:auto pins these to the bottom even when
+          the nav list above is short and doesn't grow to fill its flex:1. */}
+      <div style={{ marginTop: 'auto', padding: '12px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
         <a href={`/dentist/${dentist.slug}`} target="_blank" rel="noopener noreferrer"
           style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 8, fontSize: 12, color: 'var(--muted)', textDecoration: 'none' }}>
           🔗 View my profile
@@ -181,8 +182,10 @@ export default function DashboardShell({ dentist, completionPct, children }: Pro
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
-      {/* Desktop sidebar */}
-      <div style={{ width: 240, flexShrink: 0, height: '100%' }} className="dash-sidebar">
+      {/* Desktop sidebar — width hardcoded to 256 across desktop AND the
+          mobile slide-over so the layout never drifts when content forces
+          a re-layout (e.g. long appointment titles in the main area). */}
+      <div style={{ width: 256, minWidth: 256, maxWidth: 256, flexShrink: 0, height: '100%' }} className="dash-sidebar">
         {sidebar}
       </div>
 
@@ -190,7 +193,7 @@ export default function DashboardShell({ dentist, completionPct, children }: Pro
       {mobileOpen && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 200 }}>
           <div onClick={() => setMobileOpen(false)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)' }} />
-          <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 260 }}>
+          <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 256 }}>
             {sidebar}
           </div>
         </div>

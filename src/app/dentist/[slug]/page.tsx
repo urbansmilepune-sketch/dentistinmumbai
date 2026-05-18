@@ -143,7 +143,22 @@ export default async function DentistProfilePage({ params }: Props) {
         </nav>
       </header>
       <main className="profile-main" style={{ background: 'var(--bg)', minHeight: '100vh' }}>
-        <div className="profile-cover" style={{ height: 220, background: dentist.cover_photo ? `url(${cloudinaryDeliveryUrl(dentist.cover_photo)}) center/cover` : 'linear-gradient(135deg, #003F7A, #0057A8)', position: 'relative', backgroundRepeat: 'no-repeat' }}>
+        <div className="profile-cover" style={{
+          width: '100%',
+          height: 220,
+          overflow: 'hidden',
+          position: 'relative',
+          // Background shorthand below resolves to: image at center, sized
+          // cover, no-repeat. Explicit longhand sits below too in case a
+          // browser interprets the shorthand differently for very wide
+          // viewports where the image would otherwise overflow.
+          background: dentist.cover_photo
+            ? `url(${cloudinaryDeliveryUrl(dentist.cover_photo)}) center / cover no-repeat`
+            : 'linear-gradient(135deg, #003F7A, #0057A8)',
+          backgroundSize: dentist.cover_photo ? 'cover' : undefined,
+          backgroundPosition: dentist.cover_photo ? 'center' : undefined,
+          backgroundRepeat: 'no-repeat',
+        }}>
           {!dentist.cover_photo && <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span style={{ fontSize: 64, opacity: 0.3 }}>🦷</span></div>}
         </div>
         <div className="container" style={{ position: 'relative' }}>

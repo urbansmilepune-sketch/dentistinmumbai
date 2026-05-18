@@ -71,21 +71,28 @@ export default function FeatureGate({
         {children}
       </div>
 
-      {/* Lock overlay sitting above the blurred content. */}
+      {/* Lock overlay sitting above the blurred content. The overlay itself
+          is a 85%-white frosted layer with backdrop-blur — this dims the
+          locked content beneath without fully covering it, so the dentist
+          still sees a hint of what they're missing. No onClick to dismiss
+          on the backdrop: this is a tier-gated feature, not a modal. */}
       <div
         style={{
           position: 'absolute', inset: 0,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           padding: compact ? 8 : 16,
           zIndex: 5,
+          background: 'rgba(255, 255, 255, 0.85)',
+          backdropFilter: 'blur(4px)',
+          WebkitBackdropFilter: 'blur(4px)',
         }}
       >
         <div
           style={{
-            background: 'rgba(255,255,255,0.96)',
+            background: '#fff',
             border: '1px solid var(--border)',
             borderRadius: compact ? 10 : 14,
-            boxShadow: '0 6px 24px rgba(15, 25, 35, 0.12)',
+            boxShadow: '0 12px 32px rgba(15, 25, 35, 0.18), 0 4px 12px rgba(15, 25, 35, 0.08)',
             padding: compact ? '10px 14px' : '20px 22px',
             maxWidth: compact ? 280 : 380,
             textAlign: 'center',

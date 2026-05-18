@@ -126,7 +126,7 @@ export default async function HomePage() {
         </nav>
       </header>
 
-      <main>
+      <main style={{ overflowX: 'hidden' }}>
         {/* HERO */}
         <section className="home-hero" style={{
           background: 'linear-gradient(135deg, #003F7A 0%, #0057A8 50%, #1A6FC4 100%)',
@@ -544,6 +544,21 @@ export default async function HomePage() {
           .home-cta-card { padding: 28px 20px !important; flex-direction: column !important; align-items: stretch !important; gap: 24px !important; text-align: left !important; }
           .home-cta-card .btn { width: 100% !important; }
           .home-footer-grid { gap: 28px !important; }
+        }
+        @media (max-width: 390px) {
+          /* iPhone SE / 360-390 viewports — tighter padding, single-column
+             stat tiles, full-width hero CTAs. */
+          .home-hero { padding: 32px 14px 44px !important; }
+          .home-hero h1 { font-size: 1.7rem !important; line-height: 1.18 !important; }
+          .home-hero-sub { font-size: 14px !important; margin-bottom: 20px !important; }
+          .home-stats-grid { grid-template-columns: repeat(2, 1fr) !important; }
+          .home-section { padding: 36px 14px !important; }
+          .home-section h2 { font-size: 1.35rem !important; }
+          .home-cta-card .btn { width: 100% !important; }
+          /* Hide quick area chips on the narrowest screens so the hero
+             stays compact — patients can still pick an area from the
+             search bar's first select. */
+          .home-hero a[href^="/area/"] { font-size: 12px !important; padding: 6px 12px !important; }
         }
       `}</style>
     </>
