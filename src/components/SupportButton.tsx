@@ -13,8 +13,12 @@ import { usePathname } from 'next/navigation'
 const ADMIN_WHATSAPP = '917719903232'
 const SUPPORT_EMAIL = 'support@dentistinmumbai.in'
 
+// Permissive on purpose — any pathname that mentions `dashboard` lights
+// up the help bubble. Avoids edge cases (trailing slash, alternate
+// subpaths, redirects mid-mount) that were hiding the button entirely
+// before.
 function isDashboardPath(pathname: string | null): boolean {
-  return !!pathname && pathname.startsWith('/for-dentists/dashboard')
+  return !!pathname && pathname.includes('dashboard')
 }
 
 export default function SupportButton() {
@@ -25,7 +29,23 @@ export default function SupportButton() {
   // actually notice the support entry point exists. After the timer
   // elapses the pulse class drops off and the button stays static.
   const [pulsing, setPulsing] = useState(true)
+  // Mounted guard — `usePathname()` is available in SSR, but rendering
+  // the button server-side and then hiding it on the client (or vice
+  // versa) would cause a flash of the wrong state and hydration noise.
+  // We commit to client-only visibility so the SSR markup always renders
+  // hidden and the client decides whether to show it after mount.
+  const [mounted, setMounted] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => { setMounted(true) }, [])
+
+  // Diagnostic — surfaces in the browser console so the support team can
+  // verify on a screen-share which path the dentist is on if the button
+  // ever appears to be missing again.
+  if (typeof window !== 'undefined') {
+    // eslint-disable-next-line no-console
+    console.log('[SupportButton] pathname:', pathname, 'mounted:', mounted)
+  }
 
   // Close on outside click / Esc — popup overlays page content so we want
   // the same dismissal pattern as a menu.
@@ -53,10 +73,11 @@ export default function SupportButton() {
     return () => clearTimeout(t)
   }, [pathname])
 
-  // Render nothing on public pages. usePathname() can be null during the
-  // very first render in certain Next.js scenarios — treat null as "not
-  // a dashboard route" and hide.
-  if (!isDashboardPath(pathname)) return null
+  // Visibility flag — we always render the wrapper, but toggle
+  // `display: none` based on this so React never unmounts the tree.
+  // Avoids re-running the mount-state effect on every dashboard nav and
+  // sidesteps SSR/CSR mismatches.
+  const show = mounted && isDashboardPath(pathname)
 
   function currentUrl(): string {
     if (typeof window === 'undefined') return ''
@@ -81,7 +102,14 @@ export default function SupportButton() {
   }
 
   return (
-    <div ref={wrapRef} style={wrapStyle}>
+    <div
+      ref={wrapRef}
+      aria-hidden={!show}
+      // `display` is the only style that changes per-route. Everything
+      // else lives in wrapStyle so React doesn't re-spread a fresh
+      // object on every render.
+      style={{ ...wrapStyle, display: show ? 'flex' : 'none' }}
+    >
       {open && (
         <div role="dialog" aria-label="Support options" style={popupStyle}>
           <div style={popupHeaderStyle}>

@@ -94,17 +94,22 @@ export default function DashboardShell({ dentist, completionPct, children }: Pro
 
   const initials = dentist.name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2) || 'D'
 
-  const sidebar = (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#fff', borderRight: '1px solid var(--border)', overflowY: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none' as any }}>
+  // Sidebar contents only (logo + dentist info + nav + bottom actions).
+  // The outer wrapper that hosts these children is the flex-column
+  // container with `overflow: hidden` — only the inner <nav> scrolls,
+  // so the bottom actions never disappear under a scroll region and
+  // the wrapper itself never shows a scrollbar.
+  const sidebarContents = (
+    <>
       {/* Logo */}
-      <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid var(--border)' }}>
+      <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
         <Link href="/" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none' }}>
           <img src={cityConfig.logoPath} alt={cityConfig.domain} style={{ height: 40, width: 'auto', display: 'block' }} />
         </Link>
       </div>
 
       {/* Dentist info */}
-      <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
+      <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
           <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--blue-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: 'var(--blue)', flexShrink: 0, overflow: 'hidden' }}>
             {dentist.profile_photo ? <img src={dentist.profile_photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials}
@@ -138,8 +143,14 @@ export default function DashboardShell({ dentist, completionPct, children }: Pro
         )}
       </div>
 
-      {/* Nav */}
-      <nav style={{ flex: 1, padding: '8px 12px', overflowY: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none' as any }}>
+      {/* Nav — the ONLY scroll surface in the sidebar. flex:1 fills the
+          space between the dentist-info block above and the bottom
+          actions below; overflowY:auto scrolls the link list when it's
+          taller than the gap; scrollbar-width/-ms-overflow-style hide
+          the scrollbar on Firefox and legacy IE/Edge. WebKit
+          (Chrome/Safari) is covered by .dash-sidebar nav::-webkit-scrollbar
+          in globals.css. */}
+      <nav style={{ flex: 1, minHeight: 0, padding: '8px 12px', overflowY: 'auto', scrollbarWidth: 'none' as any, msOverflowStyle: 'none' as any }}>
         {NAV.map(item => {
           const isActive = pathname === item.href || (item.href !== '/for-dentists/dashboard' && pathname.startsWith(item.href))
           const locked = item.minTier ? !tierMeets(tier, item.minTier) : false
@@ -166,7 +177,8 @@ export default function DashboardShell({ dentist, completionPct, children }: Pro
       </nav>
 
       {/* Bottom actions — marginTop:auto pins these to the bottom even when
-          the nav list above is short and doesn't grow to fill its flex:1. */}
+          the nav list above is short and doesn't grow to fill its flex:1.
+          flexShrink:0 means they never compress when the nav list pushes. */}
       <div style={{ marginTop: 'auto', padding: '12px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
         <a href={`/dentist/${dentist.slug}`} target="_blank" rel="noopener noreferrer"
           style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 8, fontSize: 12, color: 'var(--muted)', textDecoration: 'none' }}>
@@ -177,24 +189,40 @@ export default function DashboardShell({ dentist, completionPct, children }: Pro
           🚪 Sign out
         </button>
       </div>
-    </div>
+    </>
   )
+
+  // Shared shell style for both desktop and the mobile slide-over. Outer
+  // wrapper IS the flex-column container with `overflow: hidden` so the
+  // sidebar never shows its own scrollbar regardless of OS/browser, and
+  // only the inner <nav> can scroll.
+  const sidebarShellStyle: React.CSSProperties = {
+    width: 256, minWidth: 256, maxWidth: 256, flexShrink: 0,
+    height: '100vh',
+    display: 'flex', flexDirection: 'column',
+    overflow: 'hidden',
+    background: '#fff',
+    borderRight: '1px solid var(--border)',
+    scrollbarWidth: 'none' as any,
+    msOverflowStyle: 'none' as any,
+  }
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
-      {/* Desktop sidebar — width hardcoded to 256 across desktop AND the
-          mobile slide-over so the layout never drifts when content forces
-          a re-layout (e.g. long appointment titles in the main area). */}
-      <div style={{ width: 256, minWidth: 256, maxWidth: 256, flexShrink: 0, height: '100%' }} className="dash-sidebar">
-        {sidebar}
+      {/* Desktop sidebar — single wrapper that owns the flex column,
+          fixed 256 width, and the hidden-overflow rules. */}
+      <div className="dash-sidebar" style={sidebarShellStyle}>
+        {sidebarContents}
       </div>
 
-      {/* Mobile sidebar overlay */}
+      {/* Mobile sidebar overlay — same shell, same 256 width, just
+          absolute-positioned over the page so it slides over the main
+          content instead of taking a fixed column. */}
       {mobileOpen && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 200 }}>
           <div onClick={() => setMobileOpen(false)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)' }} />
-          <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 256 }}>
-            {sidebar}
+          <div style={{ ...sidebarShellStyle, position: 'absolute', left: 0, top: 0, bottom: 0, borderRight: '1px solid var(--border)' }}>
+            {sidebarContents}
           </div>
         </div>
       )}
