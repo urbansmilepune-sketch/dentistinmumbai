@@ -18,6 +18,18 @@ export const dynamic = 'force-dynamic'
 
 interface Props { params: Promise<{ slug: string }> }
 
+// Cloudinary URLs are stored as the raw upload secure_url. Injecting
+// f_auto,q_auto here asks Cloudinary to serve WebP/AVIF at an optimised
+// quality at delivery time, which removes the soft/blurred look the cover
+// had on retina + wide desktop displays (the browser was upscaling and
+// then re-decoding a baseline JPEG).
+function cloudinaryDeliveryUrl(url: string | null | undefined, transforms = 'f_auto,q_auto'): string | null {
+  if (!url) return null
+  if (!url.includes('/image/upload/')) return url
+  if (url.includes('/upload/f_auto') || url.includes('/upload/q_auto')) return url
+  return url.replace('/image/upload/', `/image/upload/${transforms}/`)
+}
+
 function isOpenNow(working_hours: any): { open: boolean; label: string } {
   if (!working_hours) return { open: false, label: 'Hours not set' }
   const { dayKey, hour, minute } = istDayTime(new Date())
@@ -129,7 +141,7 @@ export default async function DentistProfilePage({ params }: Props) {
         </nav>
       </header>
       <main className="profile-main" style={{ background: 'var(--bg)', minHeight: '100vh' }}>
-        <div className="profile-cover" style={{ height: 220, background: dentist.cover_photo ? `url(${dentist.cover_photo}) center/cover` : 'linear-gradient(135deg, #003F7A, #0057A8)', position: 'relative' }}>
+        <div className="profile-cover" style={{ height: 220, background: dentist.cover_photo ? `url(${cloudinaryDeliveryUrl(dentist.cover_photo)}) center/cover` : 'linear-gradient(135deg, #003F7A, #0057A8)', position: 'relative', backgroundRepeat: 'no-repeat' }}>
           {!dentist.cover_photo && <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span style={{ fontSize: 64, opacity: 0.3 }}>🦷</span></div>}
         </div>
         <div className="container" style={{ position: 'relative' }}>

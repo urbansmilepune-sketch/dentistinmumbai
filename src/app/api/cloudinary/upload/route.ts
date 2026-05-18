@@ -26,7 +26,7 @@ const MAX_SIZE = 10 * 1024 * 1024
 
 const TRANSFORMS: Record<UploadType, object[]> = {
   profile:       [{ width: 400, height: 400, crop: 'fill', gravity: 'face' }],
-  cover:         [{ width: 1200, height: 300, crop: 'fill' }],
+  cover:         [{ width: 1200, height: 400, crop: 'fill', gravity: 'center', quality: 'auto:good' }],
   gallery:       [{ width: 1200, crop: 'limit' }],
   xray:          [{ width: 1200, crop: 'limit' }],
   patient_photo: [{ width: 1600, crop: 'limit' }],

@@ -146,7 +146,47 @@ export default function PhotosPage() {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
         <UploadZone type="profile" current={profilePhoto} inputRef={profileRef} label="Profile Photo" hint="Your headshot. 400×400px recommended. This appears on your listing card." />
-        <UploadZone type="cover" current={coverPhoto} inputRef={coverRef} label="Cover Photo" hint="Clinic banner. 1200×300px recommended. Appears at the top of your profile." />
+        <div>
+          <UploadZone
+            type="cover"
+            current={coverPhoto}
+            inputRef={coverRef}
+            label="Cover Photo"
+            hint="Clinic banner photo. Recommended size: 1200×400px (landscape/wide format). Use a high-quality photo of your clinic exterior, reception area, or treatment room. Avoid portrait/vertical photos — they will appear cropped. Minimum width: 800px for best quality."
+          />
+          {/* Visual aspect-ratio guide — the cover renders at 3:1 on the public
+              profile, so portrait uploads get heavily cropped. Showing a 3:1
+              rectangle makes that constraint obvious before upload. */}
+          <div style={{
+            marginTop: 12,
+            background: '#fff',
+            border: '1px solid var(--border)',
+            borderRadius: 12,
+            padding: '16px 18px',
+          }}>
+            <div style={{
+              width: '100%',
+              aspectRatio: '3 / 1',
+              background: 'linear-gradient(135deg, #BFDBFE 0%, #DBEAFE 100%)',
+              border: '2px dashed #93C5FD',
+              borderRadius: 8,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 12,
+              color: 'var(--blue-dark)',
+              fontWeight: 700,
+              fontSize: 13,
+            }}>
+              1200 × 400 · 3 : 1
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: 'var(--text-secondary)' }}>
+              <div>📐 Ideal ratio: 3:1 (wide landscape like a Facebook cover photo)</div>
+              <div>✅ Good: clinic exterior, reception, team photo</div>
+              <div>❌ Avoid: portrait shots, selfies, small images</div>
+            </div>
+          </div>
+        </div>
 
         {/* Gallery */}
         <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '24px' }}>
