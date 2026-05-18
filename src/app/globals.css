@@ -200,18 +200,21 @@ input, select, textarea {
   -webkit-overflow-scrolling: touch;
 }
 
-/* Dashboard sidebar scrollbar — hidden in every browser engine. The
-   nav inside scrolls when the menu is taller than the viewport but the
-   scrollbar itself is purely visual noise against the white sidebar
-   panel, so we hide it across WebKit, Firefox, and legacy IE/Edge. */
+/* Dashboard sidebar scrollbar — hidden in every browser engine across
+   the sidebar AND every descendant. Catches any nested scroll container
+   we didn't explicitly mark (e.g. an inner card that someone later wraps
+   the dentist info in). !important wins against the inline-styled
+   `scrollbar-width: none` so it survives style merges and CSS purges. */
 .dash-sidebar,
-.dash-sidebar nav {
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE / old Edge */
+.dash-sidebar * {
+  scrollbar-width: none !important; /* Firefox */
+  -ms-overflow-style: none !important; /* IE / old Edge */
 }
 .dash-sidebar::-webkit-scrollbar,
-.dash-sidebar nav::-webkit-scrollbar {
-  display: none; /* WebKit / Blink */
+.dash-sidebar *::-webkit-scrollbar {
+  display: none !important; /* WebKit / Blink */
+  width: 0 !important;
+  height: 0 !important;
 }
 
 /* Mobile base rules — apply across the site */

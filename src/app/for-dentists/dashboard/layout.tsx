@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import DashboardShell from './DashboardShell'
+import SupportButton from '@/components/SupportButton'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -37,8 +38,14 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const pct = Math.round((checks.filter(Boolean).length / checks.length) * 100)
 
   return (
-    <DashboardShell dentist={dentist} completionPct={pct}>
-      {children}
-    </DashboardShell>
+    <>
+      <DashboardShell dentist={dentist} completionPct={pct}>
+        {children}
+      </DashboardShell>
+      {/* Mounted here (not in root layout) so the help button is scoped
+          to authenticated dashboard routes by virtue of file-system
+          layout, no client-side pathname matching required. */}
+      <SupportButton />
+    </>
   )
 }

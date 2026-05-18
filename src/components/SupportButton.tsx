@@ -1,51 +1,29 @@
 'use client'
 
 // Floating "Help" button mounted at the bottom-right of the dashboard.
-// Click expands a small popup with two-or-three CTAs: WhatsApp admin,
-// email support, and a pre-shaped Bug Report WhatsApp link. The button
-// is intentionally hidden on every public page — patients don't need
-// support chat and surfacing it there would muddle the dentist-support
-// triage queue.
+// Click expands a small popup with three CTAs: WhatsApp admin, email
+// support, and a pre-shaped Bug Report WhatsApp link.
+//
+// This component renders unconditionally. Visibility is controlled by
+// WHERE it's mounted, not WHAT it returns — it's imported from
+// src/app/for-dentists/dashboard/layout.tsx so it only appears under
+// authenticated dashboard routes. Public pages and admin don't mount
+// it at all. This removes every previous source of "button missing"
+// bugs (pathname null on first render, hydration mismatches, route
+// transitions wiping mounted state).
 
 import { useEffect, useRef, useState } from 'react'
-import { usePathname } from 'next/navigation'
 
 const ADMIN_WHATSAPP = '917719903232'
 const SUPPORT_EMAIL = 'support@dentistinmumbai.in'
 
-// Permissive on purpose — any pathname that mentions `dashboard` lights
-// up the help bubble. Avoids edge cases (trailing slash, alternate
-// subpaths, redirects mid-mount) that were hiding the button entirely
-// before.
-function isDashboardPath(pathname: string | null): boolean {
-  return !!pathname && pathname.includes('dashboard')
-}
-
 export default function SupportButton() {
-  const pathname = usePathname()
   const [open, setOpen] = useState(false)
   // Drives a 5-second pulse on the trigger when the button first mounts
-  // (or when the dentist lands on a fresh dashboard page) so they
-  // actually notice the support entry point exists. After the timer
-  // elapses the pulse class drops off and the button stays static.
+  // so the dentist actually notices it exists. After the timer elapses
+  // the pulse class drops off and the button stays static.
   const [pulsing, setPulsing] = useState(true)
-  // Mounted guard — `usePathname()` is available in SSR, but rendering
-  // the button server-side and then hiding it on the client (or vice
-  // versa) would cause a flash of the wrong state and hydration noise.
-  // We commit to client-only visibility so the SSR markup always renders
-  // hidden and the client decides whether to show it after mount.
-  const [mounted, setMounted] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => { setMounted(true) }, [])
-
-  // Diagnostic — surfaces in the browser console so the support team can
-  // verify on a screen-share which path the dentist is on if the button
-  // ever appears to be missing again.
-  if (typeof window !== 'undefined') {
-    // eslint-disable-next-line no-console
-    console.log('[SupportButton] pathname:', pathname, 'mounted:', mounted)
-  }
 
   // Close on outside click / Esc — popup overlays page content so we want
   // the same dismissal pattern as a menu.
@@ -63,21 +41,14 @@ export default function SupportButton() {
     }
   }, [open])
 
-  // Stop pulsing after 5s. Resets whenever the dentist navigates to a
-  // different dashboard page so the attention-getter re-fires once per
-  // route (it does NOT re-fire on the same route or on inner navigation
-  // that doesn't change pathname).
+  // Stop pulsing after 5s. Mount-only effect — fires once when the user
+  // lands on any dashboard route. We don't reset it on inner navigation
+  // because the dashboard layout doesn't unmount this component as the
+  // dentist clicks between sub-pages.
   useEffect(() => {
-    setPulsing(true)
     const t = setTimeout(() => setPulsing(false), 5000)
     return () => clearTimeout(t)
-  }, [pathname])
-
-  // Visibility flag — we always render the wrapper, but toggle
-  // `display: none` based on this so React never unmounts the tree.
-  // Avoids re-running the mount-state effect on every dashboard nav and
-  // sidesteps SSR/CSR mismatches.
-  const show = mounted && isDashboardPath(pathname)
+  }, [])
 
   function currentUrl(): string {
     if (typeof window === 'undefined') return ''
@@ -102,14 +73,7 @@ export default function SupportButton() {
   }
 
   return (
-    <div
-      ref={wrapRef}
-      aria-hidden={!show}
-      // `display` is the only style that changes per-route. Everything
-      // else lives in wrapStyle so React doesn't re-spread a fresh
-      // object on every render.
-      style={{ ...wrapStyle, display: show ? 'flex' : 'none' }}
-    >
+    <div ref={wrapRef} style={wrapStyle}>
       {open && (
         <div role="dialog" aria-label="Support options" style={popupStyle}>
           <div style={popupHeaderStyle}>

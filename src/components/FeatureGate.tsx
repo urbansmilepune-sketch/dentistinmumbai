@@ -71,28 +71,33 @@ export default function FeatureGate({
         {children}
       </div>
 
-      {/* Lock overlay sitting above the blurred content. The overlay itself
-          is a 85%-white frosted layer with backdrop-blur — this dims the
-          locked content beneath without fully covering it, so the dentist
-          still sees a hint of what they're missing. No onClick to dismiss
-          on the backdrop: this is a tier-gated feature, not a modal. */}
+      {/* Lock overlay sitting above the blurred content. The overlay is a
+          88%-white frosted layer with backdrop-blur — dims the locked
+          content underneath without fully obscuring it so the dentist
+          still sees a hint of what they're missing. No onClick on the
+          backdrop: this is a tier-gated feature, not a dismissible modal.
+          z-index split (overlay 10 / card 11) ensures the upgrade card
+          paints over its own backdrop even when sibling content is
+          itself stacking-context-elevated. */}
       <div
         style={{
           position: 'absolute', inset: 0,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           padding: compact ? 8 : 16,
-          zIndex: 5,
-          background: 'rgba(255, 255, 255, 0.85)',
-          backdropFilter: 'blur(4px)',
-          WebkitBackdropFilter: 'blur(4px)',
+          zIndex: 10,
+          background: 'rgba(255, 255, 255, 0.88)',
+          backdropFilter: 'blur(6px)',
+          WebkitBackdropFilter: 'blur(6px)',
         }}
       >
         <div
           style={{
+            position: 'relative',
+            zIndex: 11,
             background: '#fff',
             border: '1px solid var(--border)',
             borderRadius: compact ? 10 : 14,
-            boxShadow: '0 12px 32px rgba(15, 25, 35, 0.18), 0 4px 12px rgba(15, 25, 35, 0.08)',
+            boxShadow: '0 20px 60px rgba(0, 0, 0, 0.15), 0 4px 12px rgba(15, 25, 35, 0.08)',
             padding: compact ? '10px 14px' : '20px 22px',
             maxWidth: compact ? 280 : 380,
             textAlign: 'center',

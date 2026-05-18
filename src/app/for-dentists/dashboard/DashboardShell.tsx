@@ -114,9 +114,13 @@ export default function DashboardShell({ dentist, completionPct, children }: Pro
           <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--blue-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: 'var(--blue)', flexShrink: 0, overflow: 'hidden' }}>
             {dentist.profile_photo ? <img src={dentist.profile_photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials}
           </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 700, fontSize: 13, fontFamily: 'var(--font-heading)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{dentist.name}</div>
-            <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{dentist.clinic_name}</div>
+          {/* minWidth: 0 lets the ellipsis lines below shrink instead of
+              pushing the avatar around. maxWidth: '100%' is belt-and-
+              suspenders against a really long clinic name that could
+              otherwise force a horizontal scrollbar on the sidebar. */}
+          <div style={{ flex: 1, minWidth: 0, maxWidth: '100%', overflow: 'hidden' }}>
+            <div style={{ fontWeight: 700, fontSize: 13, fontFamily: 'var(--font-heading)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }} title={dentist.name}>{dentist.name}</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }} title={dentist.clinic_name}>{dentist.clinic_name}</div>
           </div>
         </div>
         <span style={{

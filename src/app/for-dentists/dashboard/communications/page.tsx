@@ -582,8 +582,16 @@ export default function CommunicationsPage() {
       </div>
 
       {/* History — Silver+. Free dentists see a blurred preview so they
-          know what audit trail they're trading away. */}
-      <div style={{ marginTop: 18 }}>
+          know what audit trail they're trading away.
+          Bottom padding + scrollMarginTop reserve breathing room so the
+          FeatureGate's upgrade card isn't clipped by the dash-content
+          scroll edge or hidden under the 64px mobile bottom nav. */}
+      <div style={{
+        marginTop: 18,
+        marginBottom: 40,
+        paddingBottom: 120,
+        scrollMarginTop: 80,
+      }}>
         <FeatureGate
           requiredTier="silver"
           featureName="Send history"

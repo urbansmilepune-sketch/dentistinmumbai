@@ -2,8 +2,13 @@ import type { Metadata, Viewport } from 'next'
 import { Sora, DM_Sans } from 'next/font/google'
 import { headers } from 'next/headers'
 import { getCityBySlug } from '@/config/cities'
-import SupportButton from '@/components/SupportButton'
 import './globals.css'
+// SupportButton was previously mounted here for every route and gated its
+// own visibility via usePathname. That conditional kept tripping over
+// hydration edge cases and the button intermittently disappeared on
+// valid dashboard routes. It now mounts inside the dashboard layout
+// (src/app/for-dentists/dashboard/layout.tsx) so it appears purely by
+// virtue of where it's mounted — no client-side path matching needed.
 
 // Self-hosted via next/font. The `variable` prop sets a CSS variable on
 // whichever element gets the returned className — we apply both to <html>
@@ -91,7 +96,6 @@ export default function RootLayout({
     <html lang="en" className={`${sora.variable} ${dmSans.variable}`}>
       <body>
         {children}
-        <SupportButton />
       </body>
     </html>
   )
