@@ -73,7 +73,10 @@ export default function SupportButton() {
   }
 
   return (
-    <div ref={wrapRef} style={wrapStyle}>
+    // .support-button-wrap in globals.css applies `display: flex !important`
+    // so no upstream rule can hide the wrapper. wrapStyle below still sets
+    // display:flex as the inline default — the class is belt-and-suspenders.
+    <div ref={wrapRef} className="support-button-wrap" style={wrapStyle}>
       {open && (
         <div role="dialog" aria-label="Support options" style={popupStyle}>
           <div style={popupHeaderStyle}>

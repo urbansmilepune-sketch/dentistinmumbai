@@ -217,6 +217,16 @@ input, select, textarea {
   height: 0 !important;
 }
 
+/* SupportButton wrapper — forced visibility via !important so no parent
+   stylesheet, browser extension, or stale CSS layer can flip display
+   back to none. React's `style` prop can't carry !important, which is
+   how the float-button was disappearing in production even after the
+   conditional render logic was removed. This class is the source of
+   truth for the wrapper's display value. */
+.support-button-wrap {
+  display: flex !important;
+}
+
 /* Mobile base rules — apply across the site */
 @media (max-width: 768px) {
   html, body { overflow-x: hidden; }
