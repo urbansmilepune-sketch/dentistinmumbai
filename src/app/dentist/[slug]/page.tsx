@@ -12,6 +12,7 @@ import ProfileTabs from './ProfileTabs'
 import LocationTabs from './LocationTabs'
 import ViewTracker from './ViewTracker'
 import TrackedLink from './TrackedLink'
+import ClinicContactButton from './ClinicContactButton'
 import ReviewForm from '@/components/ReviewForm'
 
 export const dynamic = 'force-dynamic'
@@ -117,7 +118,12 @@ export default async function DentistProfilePage({ params }: Props) {
   // numbers, returns null when the column is unusable so we can skip
   // rendering the button entirely.
   const waPrefill = `Hi ${dentist.name}, I found you on ${city.domain} and would like to book an appointment.`
-  const waUrl = whatsappLink(dentist.whatsapp, waPrefill)
+  // Fall back to the regular phone number when the dedicated whatsapp column
+  // is empty — most dentists don't bother to fill in both, and treating the
+  // primary phone as a WhatsApp target is correct for >99% of Indian clinics.
+  // whatsappLink returns null on unusable input, so the buttons still hide
+  // when there's truly no number to dial.
+  const waUrl = whatsappLink(dentist.whatsapp || dentist.phone, waPrefill)
   const avgRating = approvedReviews.length > 0
     ? (approvedReviews.reduce((sum: number, r: any) => sum + r.rating, 0) / approvedReviews.length).toFixed(1) : null
 
@@ -302,10 +308,25 @@ export default async function DentistProfilePage({ params }: Props) {
                 </div>
               )}
               {(() => {
-                // Tolerate old rows that stored a plain Google Maps URL by
-                // wrapping them into an iframe at render time. New rows
-                // already arrive iframe-shaped from the dashboard.
-                const mapsHtml = buildMapsIframe(dentist.maps_embed, dentist.clinic_name)
+                // Permissive map rendering on the public profile. The
+                // dashboard's stricter classifyMapsInput() is meant to keep
+                // dentists from saving an iframe whose src doesn't match
+                // /maps/embed?, but it also caused old saved iframes (the
+                // legacy ?output=embed form, hand-rolled variants, etc.) to
+                // disappear from public profiles where they had been
+                // rendering fine for months. Here we let any iframe through
+                // as long as it points at google.com/maps — the dentist
+                // saved it, the patient should see it. URL-shaped inputs
+                // still go through buildMapsIframe for the wrapping step.
+                const raw = (dentist.maps_embed ?? '').trim()
+                let mapsHtml = ''
+                if (raw) {
+                  if (raw.includes('<iframe') && raw.includes('google.com/maps')) {
+                    mapsHtml = raw
+                  } else {
+                    mapsHtml = buildMapsIframe(raw, dentist.clinic_name)
+                  }
+                }
                 if (!mapsHtml) return null
                 return (
                   <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
@@ -361,6 +382,16 @@ export default async function DentistProfilePage({ params }: Props) {
           📅 Book
         </Link>
       </div>
+
+      {/* Floating clinic-contact button — public-profile-only, talks to the
+          dentist (not platform support). Hidden on mobile because the sticky
+          action bar already covers WhatsApp/Call/Book. */}
+      <ClinicContactButton
+        dentistId={dentist.id}
+        clinicName={dentist.clinic_name ?? 'this clinic'}
+        whatsappUrl={waUrl}
+        phone={dentist.phone ?? null}
+      />
 
       <footer style={{ background: '#0A1628', padding: '24px 20px', color: 'rgba(255,255,255,0.6)', textAlign: 'center', marginTop: 40 }}>
         <p style={{ fontSize: 13 }}>© {new Date().getFullYear()} {city.domain} · A Dentaura Prime LLP initiative</p>
