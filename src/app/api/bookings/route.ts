@@ -50,13 +50,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      console.error('[bookings] missing supabase env vars', {
+        has_url: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+        has_service_key: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+      })
+      return NextResponse.json({ error: 'Bookings backend not configured' }, { status: 500 })
+    }
+
+    const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
     // Double-booking guard. This is a check-then-insert and still has a small
     // race window — for stronger guarantees add a partial unique index on
     // (dentist_id, appt_date, time_slot) WHERE status != 'cancelled' and let
     // the constraint surface 23505 here.
-    const { data: clash } = await supabase
+    const { data: clash, error: clashErr } = await supabase
       .from('appointments')
       .select('id')
       .eq('dentist_id', dentist_id)
@@ -64,13 +72,39 @@ export async function POST(request: NextRequest) {
       .eq('time_slot', time_slot)
       .neq('status', 'cancelled')
       .maybeSingle()
+    if (clashErr) {
+      console.error('[bookings] clash check failed', {
+        dentist_id, appt_date, time_slot,
+        code: clashErr.code, message: clashErr.message, details: clashErr.details, hint: clashErr.hint,
+      })
+      return NextResponse.json({
+        error: 'Could not check slot availability',
+        code: clashErr.code, message: clashErr.message, details: clashErr.details, hint: clashErr.hint,
+      }, { status: 500 })
+    }
     if (clash) {
       return NextResponse.json({ error: 'This slot is already booked. Please choose another time.' }, { status: 409 })
     }
 
     const reference_no = generateRef()
 
-    const { data: dentist } = await supabase.from('dentists').select('name, phone, whatsapp, clinic_name, city').eq('id', dentist_id).single()
+    const { data: dentist, error: dentistErr } = await supabase
+      .from('dentists').select('name, phone, whatsapp, clinic_name, city').eq('id', dentist_id).single()
+    if (dentistErr) {
+      console.error('[bookings] dentist lookup failed', {
+        dentist_id,
+        code: dentistErr.code, message: dentistErr.message, details: dentistErr.details, hint: dentistErr.hint,
+      })
+      // Don't 500 the patient on a dentist lookup failure — the notify step
+      // below already skips when `dentist` is null. But surface the issue
+      // if it's a real error rather than just a missing row.
+      if (dentistErr.code !== 'PGRST116') {
+        return NextResponse.json({
+          error: 'Could not look up dentist',
+          code: dentistErr.code, message: dentistErr.message, details: dentistErr.details, hint: dentistErr.hint,
+        }, { status: 500 })
+      }
+    }
 
     let treatmentName = 'General Consultation'
     if (treatment_id) {
@@ -78,24 +112,64 @@ export async function POST(request: NextRequest) {
       if (treatment) treatmentName = treatment.name
     }
 
+    const insertPayload = {
+      dentist_id,
+      patient_name,
+      patient_phone,
+      appt_date,
+      time_slot,
+      treatment_id: treatment_id || null,
+      notes: notes || null,
+      status: 'scheduled',
+      reference_no,
+    }
+
     const { data, error } = await supabase.from('appointments')
-      .insert({ dentist_id, patient_name, patient_phone, appt_date, time_slot, treatment_id: treatment_id || null, notes: notes || null, status: 'scheduled', reference_no })
+      .insert(insertPayload)
       .select('id, reference_no').single()
 
-    if (error) throw error
+    if (error) {
+      // Log the full Postgres-shaped error so a) the Vercel logs name the
+      // failing column/constraint and b) the response includes the same
+      // detail so the patient can be told what to retry. The status echo is
+      // intentional — if a CHECK constraint on `status` rejects 'scheduled',
+      // we want to see that immediately, not after grepping logs.
+      console.error('[bookings] insert failed', {
+        code: error.code, message: error.message, details: error.details, hint: error.hint,
+        payload_keys: Object.keys(insertPayload),
+      })
+      return NextResponse.json({
+        error: 'Failed to create booking',
+        code: error.code, message: error.message, details: error.details, hint: error.hint,
+      }, { status: 500 })
+    }
 
     if (dentist) {
       const dentistPhone = dentist.whatsapp || dentist.phone
       const formattedDate = new Date(appt_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
       const cityCfg = getCityBySlug((dentist as any).city)
       const message = `🦷 New Appointment — ${cityCfg.domain}\n\nRef: ${reference_no}\nPatient: ${patient_name}\nPhone: ${patient_phone}\nTreatment: ${treatmentName}\nDate: ${formattedDate} at ${time_slot}${notes ? `\nNote: ${notes}` : ''}\n\nManage: ${cityCfg.domain}/for-dentists/dashboard`
-      if (dentistPhone) await notifyDentist(dentistPhone, message)
+      // Don't let an SMS-provider hiccup nuke the booking response — the
+      // appointment row is already committed. Catch + log + carry on.
+      if (dentistPhone) {
+        try { await notifyDentist(dentistPhone, message) }
+        catch (notifyErr) { console.error('[bookings] notifyDentist failed (booking succeeded)', notifyErr) }
+      }
     }
 
     return NextResponse.json({ success: true, reference_no: data.reference_no, id: data.id })
   } catch (error: any) {
-    console.error('Booking error:', error)
-    return NextResponse.json({ error: 'Failed to create booking' }, { status: 500 })
+    console.error('[bookings] unexpected error', {
+      name: error?.name, message: error?.message, stack: error?.stack,
+      code: error?.code, details: error?.details, hint: error?.hint,
+    })
+    return NextResponse.json({
+      error: 'Failed to create booking',
+      message: error?.message,
+      code: error?.code,
+      details: error?.details,
+      hint: error?.hint,
+    }, { status: 500 })
   }
 }
 
