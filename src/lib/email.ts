@@ -629,6 +629,55 @@ export async function sendAppointmentConfirmedToPatient(data: {
   })
 }
 
+export async function sendAppointmentCancelledToPatient(data: {
+  to_email: string
+  patient_name: string
+  clinic_name: string
+  clinic_phone: string | null
+  appt_date: string
+  time_slot: string
+  reference_no: string
+  city?: string
+}) {
+  const city = resolveCity(data.city)
+  const dateLabel = formatApptDate(data.appt_date)
+  const rebookLine = data.clinic_phone
+    ? `Please call <a href="tel:${escapeHtml(data.clinic_phone)}" style="color: #0057A8;">${escapeHtml(data.clinic_phone)}</a> or visit <a href="${city.origin}" style="color: #0057A8;">${city.domain}</a> to rebook.`
+    : `Please visit <a href="${city.origin}" style="color: #0057A8;">${city.domain}</a> to rebook.`
+  return resend.emails.send({
+    from: getCityEmail(city.citySlug),
+    to: data.to_email,
+    subject: `Appointment cancelled — ${data.clinic_name}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #475569, #0F1923); padding: 26px 20px; border-radius: 12px 12px 0 0; text-align: center;">
+          <h1 style="color: white; margin: 0; font-size: 22px;">Appointment cancelled</h1>
+          <p style="color: rgba(255,255,255,0.85); margin: 8px 0 0; font-size: 14px;">${city.domain}</p>
+        </div>
+        <div style="background: #fff; padding: 28px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 12px 12px;">
+          <p style="color: #374151; font-size: 15px; line-height: 1.6; margin: 0 0 16px;">
+            Hi ${escapeHtml(data.patient_name)}, your appointment at <strong>${escapeHtml(data.clinic_name)}</strong> on <strong>${dateLabel}</strong> at <strong>${escapeHtml(data.time_slot)}</strong> has been cancelled.
+          </p>
+
+          <div style="background: #FEF2F2; border: 1px solid #FECACA; border-radius: 10px; padding: 14px 16px; margin-bottom: 18px;">
+            <p style="color: #7F1D1D; margin: 0; font-size: 13px; line-height: 1.55;">
+              ${rebookLine}
+            </p>
+          </div>
+
+          <table style="width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 8px;">
+            <tr><td style="padding: 8px 0; color: #64748b; width: 38%;">Reference</td><td style="padding: 8px 0; font-weight: 700; color: #0057A8; font-family: monospace;">${data.reference_no}</td></tr>
+          </table>
+
+          <div style="margin-top: 22px; padding-top: 16px; border-top: 1px solid #e2e8f0; text-align: center;">
+            <p style="color: #94a3b8; font-size: 12px; margin: 0;">© ${new Date().getFullYear()} ${city.domain} · A Dentaura Prime LLP initiative</p>
+          </div>
+        </div>
+      </div>
+    `,
+  })
+}
+
 // Feature bullets advertised in the upgrade-confirmation email. Kept here
 // so a tier rename / feature shuffle is a one-place edit; mirrors what the
 // dashboard's PlanSelector lists so the email never promises something the
