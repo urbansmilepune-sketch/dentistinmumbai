@@ -120,7 +120,11 @@ export async function POST(request: NextRequest) {
       time_slot,
       treatment_id: treatment_id || null,
       notes: notes || null,
-      status: 'scheduled',
+      // CHECK constraint on appointments.status only allows pending, confirmed,
+      // completed, cancelled, no_show. 'scheduled' was rejected, surfacing as
+      // 23514 on every booking. New patient-booked rows start as 'pending'
+      // until the dentist confirms in the dashboard.
+      status: 'pending',
       reference_no,
     }
 
