@@ -8,6 +8,8 @@ import { createHmac } from 'crypto'
 import Razorpay from 'razorpay'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { createClient as createUserClient } from '@/lib/supabase/server'
+import { sendUpgradeConfirmationEmail } from '@/lib/email'
+import { getCityBySlug } from '@/config/cities'
 
 const FALLBACK_PERIOD_DAYS = 30
 const VALID_TIERS = ['silver', 'gold'] as const
@@ -71,7 +73,7 @@ export async function POST(request: NextRequest) {
 
   const { data: dentist, error: dentistErr } = await admin
     .from('dentists')
-    .select('id, tier, tier_expires_at')
+    .select('id, name, email, city, tier, tier_expires_at')
     .eq('email', user.email)
     .single()
   if (dentistErr || !dentist) {
@@ -112,5 +114,38 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Payment verified but upgrade failed — please contact support with payment id ' + razorpay_payment_id }, { status: 500 })
   }
 
-  return NextResponse.json({ success: true, tier: paidTier, tier_expires_at: newExpiry.toISOString(), period_days: periodDays })
+  // Notifications are intentionally fire-and-forget after the tier has been
+  // updated. The dentist has already paid and their tier is correct in the
+  // DB; a Resend hiccup or the WhatsApp stub returning slow must NOT make
+  // this route 500, because that would surface as "your payment failed"
+  // in CheckoutButton and the dentist would assume their money is stuck.
+  // Both helpers log their own failures.
+  const tierExpiresIso = newExpiry.toISOString()
+  const periodLabel = periodDays === 365 ? 'Annual' : 'Monthly'
+  const amountInr = Math.round(amountPaise / 100)
+  const cityCfg = getCityBySlug(dentist.city)
+  if (dentist.email) {
+    sendUpgradeConfirmationEmail({
+      to_email: dentist.email,
+      name: dentist.name || 'there',
+      tier: paidTier,
+      tier_expires_at: tierExpiresIso,
+      city: dentist.city || undefined,
+    }).catch(err => console.error('[razorpay verify] upgrade email failed', err))
+  }
+
+  const validUntilHuman = newExpiry.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
+  const tierLabel = paidTier === 'silver' ? 'Silver' : 'Gold'
+  const adminMessage = `💰 New Payment!\n\nDentist: ${dentist.name || 'Unknown'}\nPlan: ${tierLabel} ${periodLabel}\nAmount: ₹${amountInr}\nValid until: ${validUntilHuman}\nCity: ${cityCfg.cityName}`
+  // Reuse the platform's existing WhatsApp endpoint. It currently logs but
+  // does not deliver until a WATI/Twilio/MSG91 backend is wired into
+  // /api/notifications/whatsapp — same pattern the registrations route uses.
+  const origin = new URL(request.url).origin
+  fetch(`${origin}/api/notifications/whatsapp`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: adminMessage }),
+  }).catch(err => console.error('[razorpay verify] admin whatsapp failed', err))
+
+  return NextResponse.json({ success: true, tier: paidTier, tier_expires_at: tierExpiresIso, period_days: periodDays })
 }

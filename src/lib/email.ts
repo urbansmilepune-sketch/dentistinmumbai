@@ -437,6 +437,94 @@ export async function sendApprovalEmail(data: {
   })
 }
 
+// Feature bullets advertised in the upgrade-confirmation email. Kept here
+// so a tier rename / feature shuffle is a one-place edit; mirrors what the
+// dashboard's PlanSelector lists so the email never promises something the
+// dashboard doesn't deliver.
+const UPGRADE_FEATURES: Record<'silver' | 'gold', string[]> = {
+  silver: [
+    'Bulk patient messaging (WhatsApp + Email)',
+    'All message templates',
+    'Staff management (up to 3 accounts)',
+    '30-day analytics trends',
+    'Send history & audit log',
+    '3 clinic locations',
+  ],
+  gold: [
+    'Everything in Silver',
+    'Priority placement in search',
+    'Full analytics dashboard',
+    'Profile views tracking',
+    'WhatsApp click tracking',
+    'Call tracking',
+    'Leaderboard access',
+    'Featured badge on listing',
+  ],
+}
+
+const TIER_DISPLAY: Record<'silver' | 'gold', { label: string; emoji: string }> = {
+  silver: { label: 'Silver', emoji: '✦' },
+  gold:   { label: 'Gold',   emoji: '⭐' },
+}
+
+export async function sendUpgradeConfirmationEmail(data: {
+  to_email: string
+  name: string
+  tier: 'silver' | 'gold'
+  /** ISO timestamp from dentists.tier_expires_at — formatted to "DD Month YYYY" inline. */
+  tier_expires_at: string
+  city?: string
+}) {
+  const city = resolveCity(data.city)
+  const t = TIER_DISPLAY[data.tier]
+  const firstName = data.name?.split(' ')[0] || 'there'
+  // en-IN gives "18 June 2026" — matches the local convention dentists are
+  // used to seeing on every other email template in this file.
+  const validUntil = new Date(data.tier_expires_at).toLocaleDateString('en-IN', {
+    day: 'numeric', month: 'long', year: 'numeric',
+  })
+  const featureRows = UPGRADE_FEATURES[data.tier].map(f => `
+        <div style="display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; color: #374151; font-size: 14px; line-height: 1.55;">
+          <span style="color: #15803D; flex-shrink: 0; font-weight: 700;">✅</span>
+          <span>${f}</span>
+        </div>
+      `).join('')
+
+  return resend.emails.send({
+    from: getCityEmail(city.citySlug),
+    to: data.to_email,
+    subject: `🎉 Your ${city.domain} ${t.label} plan is now active!`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #003F7A, #0057A8); padding: 32px 20px; border-radius: 12px 12px 0 0; text-align: center;">
+          <h1 style="color: white; margin: 0; font-size: 26px;">${t.emoji} You're on ${t.label}!</h1>
+          <p style="color: rgba(255,255,255,0.85); margin: 10px 0 0; font-size: 15px;">Hi ${firstName}, your ${t.label} plan is now active on ${city.domain}.</p>
+        </div>
+        <div style="background: #fff; padding: 28px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 12px 12px;">
+          <div style="background: #ECFDF5; border: 1px solid #A7F3D0; border-radius: 10px; padding: 16px 20px; text-align: center; margin-bottom: 22px;">
+            <p style="color: #065F46; margin: 0 0 4px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700;">Valid until</p>
+            <p style="color: #064E3B; margin: 0; font-size: 20px; font-weight: 800;">${validUntil}</p>
+          </div>
+
+          <h3 style="margin: 0 0 12px; color: #0F1923; font-size: 15px;">Features unlocked</h3>
+          <div style="border-top: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; padding: 4px 0; margin-bottom: 24px;">
+            ${featureRows}
+          </div>
+
+          <div style="text-align: center; margin: 22px 0 18px;">
+            <a href="${city.origin}/for-dentists/dashboard" style="display: inline-block; background: #0057A8; color: white; padding: 14px 30px; border-radius: 10px; text-decoration: none; font-weight: 700; font-size: 15px;">Go to Dashboard →</a>
+          </div>
+
+          <div style="margin-top: 24px; padding-top: 18px; border-top: 1px solid #e2e8f0; text-align: center;">
+            <p style="color: #475569; font-size: 13px; margin: 0 0 4px;">Thank you for being a ${city.domain} founding member! 🏅</p>
+            <p style="color: #94a3b8; font-size: 12px; margin: 6px 0 0;">© ${new Date().getFullYear()} ${city.domain} · A Dentaura Prime LLP initiative</p>
+          </div>
+        </div>
+      </div>
+    `,
+  })
+}
+
 /**
  * Sends an ad-hoc admin-authored message to a single dentist. Used by the
  * Communications tab — the API route fans these out, one call per recipient,

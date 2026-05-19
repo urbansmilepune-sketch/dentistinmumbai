@@ -40,7 +40,23 @@ export default function CheckoutButton({ plan, billing, color, label }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [cityConfig, setCityConfig] = useState<CityConfig>(CITY_CONFIGS[DEFAULT_CITY])
+  // Post-verify success state: when set, the button slot is replaced by an
+  // in-page green confirmation card showing the new expiry and a 3-second
+  // countdown to /for-dentists/dashboard. Replaces the previous alert() flow
+  // so the dentist gets a real receipt-style confirmation, not a native
+  // dialog they have to dismiss.
+  const [succeeded, setSucceeded] = useState<{ tierExpiresAt: string } | null>(null)
+
   useEffect(() => { setCityConfig(getCityByDomain(window.location.hostname)) }, [])
+
+  // 3-second redirect once the success card mounts. Separate effect from the
+  // verify handler so React reliably tears the timer down if the component
+  // unmounts before the timeout fires.
+  useEffect(() => {
+    if (!succeeded) return
+    const t = setTimeout(() => router.push('/for-dentists/dashboard'), 3000)
+    return () => clearTimeout(t)
+  }, [succeeded, router])
 
   async function handlePay() {
     setError('')
@@ -87,8 +103,11 @@ export default function CheckoutButton({ plan, billing, color, label }: Props) {
           setLoading(false)
           return
         }
+        // router.refresh() so the dashboard layout re-fetches the dentists
+        // row before the 3s redirect lands — the new tier pill shows up the
+        // moment the user arrives at /for-dentists/dashboard.
         router.refresh()
-        alert(`Welcome to ${TIER_LABEL[plan]}! Your account is upgraded.`)
+        setSucceeded({ tierExpiresAt: verifyBody.tier_expires_at })
         setLoading(false)
       },
       modal: {
@@ -102,6 +121,35 @@ export default function CheckoutButton({ plan, billing, color, label }: Props) {
     })
 
     rzp.open()
+  }
+
+  if (succeeded) {
+    // en-IN: "18 June 2026" — same format the email uses, kept consistent
+    // so the dentist sees one canonical "valid until" string across surfaces.
+    const validUntil = new Date(succeeded.tierExpiresAt).toLocaleDateString('en-IN', {
+      day: 'numeric', month: 'long', year: 'numeric',
+    })
+    return (
+      <div
+        role="status"
+        style={{
+          padding: 16, borderRadius: 12,
+          background: '#ECFDF5', border: '1px solid #A7F3D0', color: '#065F46',
+          textAlign: 'center', fontFamily: 'var(--font-body)',
+        }}
+      >
+        <div style={{ fontSize: 26, marginBottom: 6 }}>🎉</div>
+        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 16, color: '#064E3B', marginBottom: 4 }}>
+          Welcome to {TIER_LABEL[plan]}!
+        </div>
+        <div style={{ fontSize: 13, color: '#047857', lineHeight: 1.5 }}>
+          Your plan is active until <strong>{validUntil}</strong>.
+        </div>
+        <div style={{ fontSize: 12, color: '#059669', marginTop: 8 }}>
+          Redirecting to dashboard in 3 seconds…
+        </div>
+      </div>
+    )
   }
 
   return (
