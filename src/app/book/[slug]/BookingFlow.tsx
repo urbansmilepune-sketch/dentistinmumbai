@@ -56,10 +56,23 @@ function nextDays(n: number): { iso: string; label: string; sub: string }[] {
 }
 
 export default function BookingFlow({ dentistId, dentistSlug, dentistName, clinicName, areaName, dentistPhone, workingHours, treatments }: Props) {
-  const days = useMemo(() => nextDays(7), [])
-  const [selectedDate, setSelectedDate] = useState<string>(days[0].iso)
+  // `days`, `selectedDate`, `nowHour` are derived from `new Date()` — if we
+  // computed them during render the server (UTC) and client (IST) would
+  // produce different values for "today" + current hour, causing a React
+  // hydration mismatch (#418) on first paint. Initialise to neutral defaults,
+  // then populate in a mount-only effect so server and client agree on the
+  // empty state, and the date-dependent UI shows up after hydration.
+  const [days, setDays] = useState<{ iso: string; label: string; sub: string }[]>([])
+  const [selectedDate, setSelectedDate] = useState<string>('')
+  const [nowHour, setNowHour] = useState<number>(-1)
+  const [mounted, setMounted] = useState(false)
+
   const [booked, setBooked] = useState<Set<string>>(new Set())
-  const [loadingSlots, setLoadingSlots] = useState(false)
+  // Initial true: server and client first paint both show "Checking
+  // availability…" while we wait for the mount effect to compute today's date
+  // and fire the slot fetch. Otherwise this would briefly read "No slots
+  // available" on first render because availableSlots is [] until then.
+  const [loadingSlots, setLoadingSlots] = useState(true)
   const [selectedSlot, setSelectedSlot] = useState<string>('')
 
   const [name, setName] = useState('')
@@ -70,10 +83,18 @@ export default function BookingFlow({ dentistId, dentistSlug, dentistName, clini
   const [error, setError] = useState<string | null>(null)
   const [confirmed, setConfirmed] = useState<{ reference_no: string; date: string; slot: string; treatmentName: string | null } | null>(null)
 
-  const todayIso = days[0].iso
-  const nowHour = useMemo(() => new Date().getHours(), [])
+  useEffect(() => {
+    const ds = nextDays(7)
+    setDays(ds)
+    setSelectedDate(ds[0].iso)
+    setNowHour(new Date().getHours())
+    setMounted(true)
+  }, [])
+
+  const todayIso = days[0]?.iso ?? ''
 
   useEffect(() => {
+    if (!selectedDate) return
     let cancelled = false
     async function load() {
       setLoadingSlots(true)
@@ -90,6 +111,7 @@ export default function BookingFlow({ dentistId, dentistSlug, dentistName, clini
   }, [dentistId, selectedDate])
 
   const availableSlots = useMemo(() => {
+    if (!selectedDate) return []
     // Resolve the selected date's day-of-week key (sun..sat) so we can look up
     // the matching entry in working_hours. Parsing the ISO directly with the UTC
     // suffix would shift Sunday → Saturday for early-morning IST loads.
@@ -100,7 +122,7 @@ export default function BookingFlow({ dentistId, dentistSlug, dentistName, clini
     return HOURLY_SLOTS.filter(slot => {
       if (!isSlotInsideHours(slot, dayHours)) return false
       if (booked.has(slot)) return false
-      if (selectedDate === todayIso) {
+      if (selectedDate === todayIso && nowHour >= 0) {
         const hour = parseInt(slot.split(':')[0], 10)
         if (hour <= nowHour) return false
       }
@@ -198,7 +220,18 @@ export default function BookingFlow({ dentistId, dentistSlug, dentistName, clini
           Select a Day
         </h2>
         <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'thin' }}>
-          {days.map(d => {
+          {!mounted ? (
+            // Hydration-safe placeholder: deterministic 7 grey skeleton tiles
+            // that look like the real date strip. No Date calls means server
+            // and client render the identical DOM here.
+            Array.from({ length: 7 }, (_, i) => (
+              <div key={i} aria-hidden style={{
+                flexShrink: 0, minWidth: 76, minHeight: 64,
+                background: 'var(--bg)', border: '1.5px solid var(--border)',
+                borderRadius: 12,
+              }} />
+            ))
+          ) : days.map(d => {
             const on = d.iso === selectedDate
             return (
               <button key={d.iso} type="button" onClick={() => setSelectedDate(d.iso)}
