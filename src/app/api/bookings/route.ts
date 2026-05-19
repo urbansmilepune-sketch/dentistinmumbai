@@ -7,6 +7,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getCityBySlug } from '@/config/cities'
+import {
+  sendBookingRequestToPatient,
+  sendBookingRequestToDentist,
+} from '@/lib/email'
 
 function generateRef(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
@@ -44,10 +48,21 @@ async function notifyDentist(phone: string, message: string) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { dentist_id, patient_name, patient_phone, appt_date, time_slot, treatment_id, notes } = body
+    const { dentist_id, patient_name, patient_phone, patient_email, appt_date, time_slot, treatment_id, notes } = body
 
     if (!dentist_id || !patient_name || !patient_phone || !appt_date || !time_slot) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    }
+
+    // Email is optional. We accept null/empty, but if the patient typed
+    // something, run a basic shape check so we don't pollute the column with
+    // obvious junk (the client already validates this, but the server is the
+    // source of truth — direct API callers bypass the form).
+    const normalizedEmail: string | null = typeof patient_email === 'string' && patient_email.trim()
+      ? patient_email.trim()
+      : null
+    if (normalizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      return NextResponse.json({ error: 'Invalid email address' }, { status: 400 })
     }
 
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -89,7 +104,7 @@ export async function POST(request: NextRequest) {
     const reference_no = generateRef()
 
     const { data: dentist, error: dentistErr } = await supabase
-      .from('dentists').select('name, phone, whatsapp, clinic_name, city').eq('id', dentist_id).single()
+      .from('dentists').select('name, phone, whatsapp, clinic_name, address, city, email').eq('id', dentist_id).single()
     if (dentistErr) {
       console.error('[bookings] dentist lookup failed', {
         dentist_id,
@@ -116,6 +131,7 @@ export async function POST(request: NextRequest) {
       dentist_id,
       patient_name,
       patient_phone,
+      patient_email: normalizedEmail,
       appt_date,
       time_slot,
       treatment_id: treatment_id || null,
@@ -158,6 +174,40 @@ export async function POST(request: NextRequest) {
       if (dentistPhone) {
         try { await notifyDentist(dentistPhone, message) }
         catch (notifyErr) { console.error('[bookings] notifyDentist failed (booking succeeded)', notifyErr) }
+      }
+
+      // Fire-and-forget email side: row is committed, the patient already
+      // has the on-screen reference card, a Resend hiccup here must not
+      // make this response 500. Both helpers log their own failures.
+      const dentistName = dentist.name || 'the dentist'
+      const clinicName = dentist.clinic_name || `${cityCfg.cityName} clinic`
+      const clinicPhone = dentist.phone || dentist.whatsapp || null
+      const citySlug = (dentist as any).city || undefined
+      if (normalizedEmail) {
+        sendBookingRequestToPatient({
+          to_email: normalizedEmail,
+          patient_name,
+          dentist_name: dentistName,
+          clinic_name: clinicName,
+          clinic_phone: clinicPhone,
+          appt_date,
+          time_slot,
+          reference_no,
+          city: citySlug,
+        }).catch(err => console.error('[bookings] patient ack email failed', err))
+      }
+      if ((dentist as any).email) {
+        sendBookingRequestToDentist({
+          to_email: (dentist as any).email,
+          dentist_name: dentistName,
+          patient_name,
+          patient_phone,
+          appt_date,
+          time_slot,
+          treatment_name: treatmentName,
+          reference_no,
+          city: citySlug,
+        }).catch(err => console.error('[bookings] dentist new-request email failed', err))
       }
     }
 

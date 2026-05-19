@@ -77,6 +77,11 @@ export default function BookingFlow({ dentistId, dentistSlug, dentistName, clini
 
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
+  // Optional. When the patient provides it, /api/bookings stores it on the
+  // appointments row and fires (a) a request-received ack now and (b) a
+  // confirmed email later when the dentist confirms. Skipping it still
+  // creates the booking — no email goes out in that case.
+  const [email, setEmail] = useState('')
   const [treatmentId, setTreatmentId] = useState<string>('')
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -134,6 +139,12 @@ export default function BookingFlow({ dentistId, dentistSlug, dentistName, clini
     if (!name.trim()) return 'Please enter your name'
     const digits = phone.replace(/\D/g, '')
     if (digits.length < 10) return 'Please enter a 10-digit phone number'
+    // Email is optional — only validate the format when the patient typed
+    // something. Don't reject empty.
+    const trimmedEmail = email.trim()
+    if (trimmedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      return 'Please enter a valid email address (or leave the field empty).'
+    }
     if (!selectedSlot) return 'Pick a time slot'
     return null
   }
@@ -151,6 +162,7 @@ export default function BookingFlow({ dentistId, dentistSlug, dentistName, clini
           dentist_id: dentistId,
           patient_name: name.trim(),
           patient_phone: phone.replace(/\D/g, ''),
+          patient_email: email.trim() || null,
           appt_date: selectedDate,
           time_slot: selectedSlot,
           treatment_id: treatmentId || null,
@@ -300,6 +312,11 @@ export default function BookingFlow({ dentistId, dentistSlug, dentistName, clini
             <input value={phone} onChange={e => setPhone(e.target.value)}
               placeholder="10-digit number" inputMode="tel" autoComplete="tel"
               style={inputStyle} />
+          </Field>
+          <Field label="Email (for confirmation)">
+            <input value={email} onChange={e => setEmail(e.target.value)}
+              placeholder="you@example.com" inputMode="email" autoComplete="email"
+              type="email" style={inputStyle} />
           </Field>
           <Field label="Treatment">
             <select value={treatmentId} onChange={e => setTreatmentId(e.target.value)}

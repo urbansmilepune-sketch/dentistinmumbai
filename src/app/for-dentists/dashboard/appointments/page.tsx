@@ -177,6 +177,29 @@ export default function AppointmentsPage() {
 
   async function updateStatus(id: string, status: string) {
     setUpdating(id); setStatusError(null)
+
+    // Confirm/decline transitions route through the server so the API can
+    // attach side effects — most importantly emailing the patient when the
+    // appointment is confirmed. Other transitions (completed, no_show,
+    // back-to-pending, the dentist-added 'waiting' starts) keep using the
+    // direct RLS-gated supabase update path for now; if those grow their
+    // own side effects, expand the PATCH route.
+    if (status === 'confirmed' || status === 'cancelled') {
+      const res = await fetch(`/api/dentist/appointments/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      })
+      setUpdating(null)
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        setStatusError(body.error || body.message || 'Status change failed.')
+        return
+      }
+      setAppointments(prev => prev.map(a => a.id === id ? { ...a, status } : a))
+      return
+    }
+
     const supabase = createClient()
     // .select() forces RLS to return the updated row; without it a denied
     // update returns no error and no rows, and the old optimistic mutation

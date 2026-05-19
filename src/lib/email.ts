@@ -437,6 +437,198 @@ export async function sendApprovalEmail(data: {
   })
 }
 
+// ─── Appointment notification helpers ────────────────────────────────────
+// Three shapes covering the booking lifecycle:
+//   - sendBookingRequestToPatient: ack after the patient submits a booking
+//   - sendBookingRequestToDentist: heads-up so the dentist knows to act
+//   - sendAppointmentConfirmedToPatient: fired when the dentist confirms
+// All three share the en-IN date format the rest of email.ts uses so dentists
+// and patients see the same string everywhere.
+
+function formatApptDate(iso: string): string {
+  // appt_date is stored as a plain YYYY-MM-DD; Date(iso) parses it as UTC
+  // midnight which is fine for date-only display in IST.
+  return new Date(iso).toLocaleDateString('en-IN', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+  })
+}
+
+export async function sendBookingRequestToPatient(data: {
+  to_email: string
+  patient_name: string
+  dentist_name: string
+  clinic_name: string
+  clinic_phone: string | null
+  appt_date: string
+  time_slot: string
+  reference_no: string
+  city?: string
+}) {
+  const city = resolveCity(data.city)
+  const dateLabel = formatApptDate(data.appt_date)
+  const cancelLine = data.clinic_phone
+    ? `To cancel: reply to this email or call ${escapeHtml(data.clinic_phone)}.`
+    : 'To cancel: reply to this email and the clinic will get back to you.'
+  return resend.emails.send({
+    from: getCityEmail(city.citySlug),
+    to: data.to_email,
+    subject: `Appointment request received — Ref: ${data.reference_no}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #003F7A, #0057A8); padding: 26px 20px; border-radius: 12px 12px 0 0; text-align: center;">
+          <h1 style="color: white; margin: 0; font-size: 22px;">Appointment request received</h1>
+          <p style="color: rgba(255,255,255,0.85); margin: 8px 0 0; font-size: 14px;">${city.domain}</p>
+        </div>
+        <div style="background: #fff; padding: 28px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 12px 12px;">
+          <p style="color: #374151; font-size: 15px; line-height: 1.6; margin: 0 0 16px;">
+            Hi ${escapeHtml(data.patient_name)}, your appointment request has been received.
+          </p>
+
+          <table style="width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 20px;">
+            <tr><td style="padding: 8px 0; color: #64748b; width: 38%;">Clinic</td><td style="padding: 8px 0; font-weight: 600; color: #0F1923;">${escapeHtml(data.clinic_name)}</td></tr>
+            <tr><td style="padding: 8px 0; color: #64748b;">Doctor</td><td style="padding: 8px 0; font-weight: 600; color: #0F1923;">${escapeHtml(data.dentist_name)}</td></tr>
+            <tr><td style="padding: 8px 0; color: #64748b;">Date</td><td style="padding: 8px 0; font-weight: 600; color: #0F1923;">${dateLabel}</td></tr>
+            <tr><td style="padding: 8px 0; color: #64748b;">Time</td><td style="padding: 8px 0; font-weight: 600; color: #0F1923;">${escapeHtml(data.time_slot)}</td></tr>
+            <tr><td style="padding: 8px 0; color: #64748b;">Reference</td><td style="padding: 8px 0; font-weight: 700; color: #0057A8; font-family: monospace;">${data.reference_no}</td></tr>
+          </table>
+
+          <div style="background: #FEF3C7; border: 1px solid #FDE68A; border-radius: 10px; padding: 14px 16px; margin-bottom: 18px;">
+            <p style="color: #7C2D12; margin: 0; font-size: 13px; line-height: 1.55;">
+              ⏳ <strong>Pending confirmation from the clinic.</strong> You will receive another email once the clinic confirms.
+            </p>
+          </div>
+
+          <p style="color: #64748b; font-size: 13px; line-height: 1.6; margin: 0;">
+            ${cancelLine}
+          </p>
+
+          <div style="margin-top: 22px; padding-top: 16px; border-top: 1px solid #e2e8f0; text-align: center;">
+            <p style="color: #94a3b8; font-size: 12px; margin: 0;">© ${new Date().getFullYear()} ${city.domain} · A Dentaura Prime LLP initiative</p>
+          </div>
+        </div>
+      </div>
+    `,
+  })
+}
+
+export async function sendBookingRequestToDentist(data: {
+  to_email: string
+  dentist_name: string
+  patient_name: string
+  patient_phone: string
+  appt_date: string
+  time_slot: string
+  treatment_name: string
+  reference_no: string
+  city?: string
+}) {
+  const city = resolveCity(data.city)
+  const dateLabel = formatApptDate(data.appt_date)
+  const dashboardUrl = `${city.origin}/for-dentists/dashboard/appointments`
+  return resend.emails.send({
+    from: getCityEmail(city.citySlug),
+    to: data.to_email,
+    subject: `New appointment request — ${data.patient_name} on ${dateLabel}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #003F7A, #0057A8); padding: 26px 20px; border-radius: 12px 12px 0 0; text-align: center;">
+          <h1 style="color: white; margin: 0; font-size: 22px;">🦷 New appointment request</h1>
+          <p style="color: rgba(255,255,255,0.85); margin: 8px 0 0; font-size: 14px;">${city.domain}</p>
+        </div>
+        <div style="background: #fff; padding: 28px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 12px 12px;">
+          <p style="color: #374151; font-size: 15px; line-height: 1.6; margin: 0 0 16px;">
+            Hi ${escapeHtml(data.dentist_name.split(' ')[0] || 'Doctor')}, you have a new appointment request.
+          </p>
+
+          <table style="width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 22px;">
+            <tr><td style="padding: 8px 0; color: #64748b; width: 38%;">Patient</td><td style="padding: 8px 0; font-weight: 600; color: #0F1923;">${escapeHtml(data.patient_name)}</td></tr>
+            <tr><td style="padding: 8px 0; color: #64748b;">Phone</td><td style="padding: 8px 0; font-weight: 600; color: #0F1923;">${escapeHtml(data.patient_phone)}</td></tr>
+            <tr><td style="padding: 8px 0; color: #64748b;">Date</td><td style="padding: 8px 0; font-weight: 600; color: #0F1923;">${dateLabel}</td></tr>
+            <tr><td style="padding: 8px 0; color: #64748b;">Time</td><td style="padding: 8px 0; font-weight: 600; color: #0F1923;">${escapeHtml(data.time_slot)}</td></tr>
+            <tr><td style="padding: 8px 0; color: #64748b;">Treatment</td><td style="padding: 8px 0; color: #0F1923;">${escapeHtml(data.treatment_name)}</td></tr>
+            <tr><td style="padding: 8px 0; color: #64748b;">Reference</td><td style="padding: 8px 0; font-weight: 700; color: #0057A8; font-family: monospace;">${data.reference_no}</td></tr>
+          </table>
+
+          <!-- Two CTAs that land on the same dashboard route — we don't have a
+               signed-token confirm/decline yet, so the buttons are visual cues
+               that direct the dentist to confirm or decline in-app. -->
+          <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px;">
+            <a href="${dashboardUrl}" style="flex: 1; min-width: 160px; display: inline-block; text-align: center; background: #16A34A; color: #fff; padding: 13px 18px; border-radius: 10px; text-decoration: none; font-weight: 700; font-size: 14px;">✅ Confirm</a>
+            <a href="${dashboardUrl}" style="flex: 1; min-width: 160px; display: inline-block; text-align: center; background: #DC2626; color: #fff; padding: 13px 18px; border-radius: 10px; text-decoration: none; font-weight: 700; font-size: 14px;">❌ Decline</a>
+          </div>
+          <p style="color: #64748b; font-size: 12px; text-align: center; margin: 0 0 18px;">
+            Login to dashboard to confirm or decline.
+          </p>
+
+          <div style="margin-top: 22px; padding-top: 16px; border-top: 1px solid #e2e8f0; text-align: center;">
+            <p style="color: #94a3b8; font-size: 12px; margin: 0;">© ${new Date().getFullYear()} ${city.domain} · A Dentaura Prime LLP initiative</p>
+          </div>
+        </div>
+      </div>
+    `,
+  })
+}
+
+export async function sendAppointmentConfirmedToPatient(data: {
+  to_email: string
+  patient_name: string
+  dentist_name: string
+  clinic_name: string
+  clinic_address: string | null
+  clinic_phone: string | null
+  appt_date: string
+  time_slot: string
+  reference_no: string
+  city?: string
+}) {
+  const city = resolveCity(data.city)
+  const dateLabel = formatApptDate(data.appt_date)
+  const addressRow = data.clinic_address
+    ? `<tr><td style="padding: 8px 0; color: #64748b; width: 38%; vertical-align: top;">Address</td><td style="padding: 8px 0; color: #0F1923; line-height: 1.55;">${escapeHtml(data.clinic_address)}</td></tr>`
+    : ''
+  const closingLine = data.clinic_phone
+    ? `We'll see you then. To cancel or reschedule, reply to this email or call ${escapeHtml(data.clinic_phone)}.`
+    : `We'll see you then. To cancel or reschedule, reply to this email and the clinic will get back to you.`
+  return resend.emails.send({
+    from: getCityEmail(city.citySlug),
+    to: data.to_email,
+    subject: `Appointment confirmed ✅ — ${data.clinic_name}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #00A878, #0057A8); padding: 28px 20px; border-radius: 12px 12px 0 0; text-align: center;">
+          <h1 style="color: white; margin: 0; font-size: 24px;">✅ Appointment confirmed</h1>
+          <p style="color: rgba(255,255,255,0.88); margin: 8px 0 0; font-size: 14px;">${city.domain}</p>
+        </div>
+        <div style="background: #fff; padding: 28px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 12px 12px;">
+          <p style="color: #065F46; font-size: 16px; font-weight: 700; margin: 0 0 8px;">
+            Your appointment has been confirmed!
+          </p>
+          <p style="color: #374151; font-size: 14px; line-height: 1.6; margin: 0 0 18px;">
+            Hi ${escapeHtml(data.patient_name)}, the clinic confirmed your appointment. Here are the details:
+          </p>
+
+          <table style="width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 22px;">
+            <tr><td style="padding: 8px 0; color: #64748b; width: 38%;">Doctor</td><td style="padding: 8px 0; font-weight: 600; color: #0F1923;">${escapeHtml(data.dentist_name)}</td></tr>
+            <tr><td style="padding: 8px 0; color: #64748b;">Clinic</td><td style="padding: 8px 0; font-weight: 600; color: #0F1923;">${escapeHtml(data.clinic_name)}</td></tr>
+            ${addressRow}
+            <tr><td style="padding: 8px 0; color: #64748b;">Date</td><td style="padding: 8px 0; font-weight: 600; color: #0F1923;">${dateLabel}</td></tr>
+            <tr><td style="padding: 8px 0; color: #64748b;">Time</td><td style="padding: 8px 0; font-weight: 600; color: #0F1923;">${escapeHtml(data.time_slot)}</td></tr>
+            <tr><td style="padding: 8px 0; color: #64748b;">Reference</td><td style="padding: 8px 0; font-weight: 700; color: #0057A8; font-family: monospace;">${data.reference_no}</td></tr>
+          </table>
+
+          <p style="color: #374151; font-size: 14px; line-height: 1.6; margin: 0;">
+            ${closingLine}
+          </p>
+
+          <div style="margin-top: 22px; padding-top: 16px; border-top: 1px solid #e2e8f0; text-align: center;">
+            <p style="color: #94a3b8; font-size: 12px; margin: 0;">© ${new Date().getFullYear()} ${city.domain} · A Dentaura Prime LLP initiative</p>
+          </div>
+        </div>
+      </div>
+    `,
+  })
+}
+
 // Feature bullets advertised in the upgrade-confirmation email. Kept here
 // so a tier rename / feature shuffle is a one-place edit; mirrors what the
 // dashboard's PlanSelector lists so the email never promises something the
