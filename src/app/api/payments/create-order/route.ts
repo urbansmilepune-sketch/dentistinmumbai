@@ -5,14 +5,22 @@ import { NextRequest, NextResponse } from 'next/server'
 import Razorpay from 'razorpay'
 import { createClient } from '@/lib/supabase/server'
 
+// (plan, billing) → server-authoritative price + period. The verify route
+// re-reads these from the order's `notes` so the client never gets to dictate
+// what they paid for.
 const PLANS = {
-  monthly: { amount_paise: 99900,  period_days: 30,  label: 'Gold — Monthly (30 days)' },
-  annual:  { amount_paise: 999900, period_days: 365, label: 'Gold — Annual (365 days)' },
+  silver_monthly: { tier: 'silver', amount_paise: 49900,  period_days: 30,  label: 'Silver — Monthly (30 days)' },
+  silver_annual:  { tier: 'silver', amount_paise: 499900, period_days: 365, label: 'Silver — Annual (365 days)' },
+  gold_monthly:   { tier: 'gold',   amount_paise: 99900,  period_days: 30,  label: 'Gold — Monthly (30 days)' },
+  gold_annual:    { tier: 'gold',   amount_paise: 999900, period_days: 365, label: 'Gold — Annual (365 days)' },
 } as const
 type PlanKey = keyof typeof PLANS
 
-function normalizePlan(input: unknown): PlanKey {
-  return input === 'annual' ? 'annual' : 'monthly'
+function planKey(plan: unknown, billing: unknown): PlanKey | null {
+  const p = plan === 'silver' || plan === 'gold' ? plan : null
+  const b = billing === 'monthly' || billing === 'annual' ? billing : null
+  if (!p || !b) return null
+  return `${p}_${b}` as PlanKey
 }
 
 export async function POST(request: NextRequest) {
@@ -32,8 +40,11 @@ export async function POST(request: NextRequest) {
   if (!dentist) return NextResponse.json({ error: 'Dentist profile not found' }, { status: 404 })
 
   const body = await request.json().catch(() => ({} as Record<string, unknown>))
-  const planKey = normalizePlan(body?.plan)
-  const plan = PLANS[planKey]
+  const key = planKey(body?.plan, body?.billing)
+  if (!key) {
+    return NextResponse.json({ error: 'Invalid plan or billing period' }, { status: 400 })
+  }
+  const plan = PLANS[key]
 
   const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID,
@@ -44,14 +55,14 @@ export async function POST(request: NextRequest) {
     const order = await razorpay.orders.create({
       amount: plan.amount_paise,
       currency: 'INR',
-      receipt: `gold_${planKey}_${dentist.id.slice(0, 8)}_${Date.now()}`,
+      receipt: `${key}_${dentist.id.slice(0, 8)}_${Date.now()}`,
       // notes are the trusted server-side record of what was sold; verify reads
       // them back from Razorpay so the client can't claim a different plan after
       // paying for a smaller one.
       notes: {
         dentist_id: dentist.id,
-        plan: 'gold',
-        plan_period: planKey,
+        plan: plan.tier,
+        plan_period: key.endsWith('_annual') ? 'annual' : 'monthly',
         period_days: String(plan.period_days),
       },
     })
@@ -64,7 +75,7 @@ export async function POST(request: NextRequest) {
       dentist_name: dentist.name,
       dentist_email: dentist.email,
       plan_label: plan.label,
-      plan_period: planKey,
+      plan_tier: plan.tier,
     })
   } catch (err: any) {
     console.error('[razorpay create-order] failed', err)

@@ -1,14 +1,20 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import GoldCheckoutButton from './GoldCheckoutButton'
+import CheckoutButton from './CheckoutButton'
 import { getCityByDomain, CITY_CONFIGS, DEFAULT_CITY, type CityConfig } from '@/config/cities'
 
 type Period = 'monthly' | 'annual'
 
+const SILVER_MONTHLY = 499
+const SILVER_ANNUAL = 4999
 const MONTHLY_PRICE = 999
 const ANNUAL_PRICE = 9999
+// Annual-vs-12x-monthly delta shown on the toggle. Computed from Gold since
+// that's the headline "most popular" plan; Silver's annual saving is signalled
+// in-card via the price reactivity.
 const ANNUAL_SAVINGS = MONTHLY_PRICE * 12 - ANNUAL_PRICE // ₹1,989
+const SILVER_ANNUAL_SAVINGS = SILVER_MONTHLY * 12 - SILVER_ANNUAL
 
 interface Props {
   defaultPlan?: Period | null
@@ -21,6 +27,8 @@ export default function PlanSelector({ defaultPlan }: Props = {}) {
 
   const goldPrice = period === 'annual' ? `₹${ANNUAL_PRICE.toLocaleString('en-IN')}` : `₹${MONTHLY_PRICE.toLocaleString('en-IN')}`
   const goldPeriodLabel = period === 'annual' ? '/year' : '/month'
+  const silverPrice = period === 'annual' ? `₹${SILVER_ANNUAL.toLocaleString('en-IN')}` : `₹${SILVER_MONTHLY.toLocaleString('en-IN')}`
+  const silverPeriodLabel = period === 'annual' ? '/year' : '/month'
 
   return (
     <>
@@ -46,10 +54,15 @@ export default function PlanSelector({ defaultPlan }: Props = {}) {
           footer={<CurrentPill />}
         />
 
-        {/* Silver — pricing is set via WhatsApp negotiation until we publish a
-            self-serve flow. Footer mirrors the Featured pattern. */}
+        {/* Silver — self-serve checkout via Razorpay. Price reacts to the
+            monthly/annual toggle the same way Gold does. */}
         <PlanCard
-          name="✦ Silver" color="#475569" price="On request" periodLabel=""
+          name="✦ Silver" color="#475569" price={silverPrice} periodLabel={silverPeriodLabel}
+          subPrice={period === 'annual' ? (
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 6, padding: '4px 10px', background: '#DCFCE7', color: '#166534', border: '1px solid #BBF7D0', borderRadius: 20, fontSize: 12, fontWeight: 700 }}>
+              ✓ Save ₹{SILVER_ANNUAL_SAVINGS.toLocaleString('en-IN')}/yr
+            </div>
+          ) : null}
           features={[
             'Everything in Free',
             'Up to 3 staff accounts',
@@ -59,13 +72,7 @@ export default function PlanSelector({ defaultPlan }: Props = {}) {
             'Send history & audit log',
             '30-day analytics trends',
           ]}
-          footer={
-            <a href={`https://wa.me/917719903232?text=${encodeURIComponent(`Hi, I want to upgrade my ${cityConfig.domain} listing to Silver. Please share pricing.`)}`}
-              target="_blank" rel="noopener noreferrer"
-              style={{ display: 'block', width: '100%', padding: '12px', background: '#475569', color: '#fff', borderRadius: 10, textAlign: 'center', fontSize: 14, fontWeight: 700, textDecoration: 'none' }}>
-              Get Silver →
-            </a>
-          }
+          footer={<CheckoutButton plan="silver" billing={period} color="#475569" />}
         />
 
         {/* Gold (price + cta react to toggle) */}
@@ -87,7 +94,7 @@ export default function PlanSelector({ defaultPlan }: Props = {}) {
             'Leaderboard access',
             'Featured badge on listing',
           ]}
-          footer={<GoldCheckoutButton color="#92400E" plan={period} />}
+          footer={<CheckoutButton plan="gold" billing={period} color="#92400E" />}
         />
 
         {/* Featured (stays monthly — handled via WhatsApp negotiation) */}

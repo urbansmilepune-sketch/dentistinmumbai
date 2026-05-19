@@ -22,13 +22,20 @@ function loadRazorpay(): Promise<boolean> {
   })
 }
 
+type Tier = 'silver' | 'gold'
+type Billing = 'monthly' | 'annual'
+
+const TIER_LABEL: Record<Tier, string> = { silver: 'Silver', gold: 'Gold' }
+const TIER_THEME: Record<Tier, string> = { silver: '#475569', gold: '#92400E' }
+
 interface Props {
+  plan: Tier
+  billing: Billing
   color: string
-  plan?: 'monthly' | 'annual'
   label?: string
 }
 
-export default function GoldCheckoutButton({ color, plan = 'monthly', label }: Props) {
+export default function CheckoutButton({ plan, billing, color, label }: Props) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -49,7 +56,7 @@ export default function GoldCheckoutButton({ color, plan = 'monthly', label }: P
     const orderRes = await fetch('/api/payments/create-order', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ plan }),
+      body: JSON.stringify({ plan, billing }),
     })
     if (!orderRes.ok) {
       const body = await orderRes.json().catch(() => ({}))
@@ -64,10 +71,10 @@ export default function GoldCheckoutButton({ color, plan = 'monthly', label }: P
       amount: order.amount,
       currency: order.currency,
       name: cityConfig.domain,
-      description: order.plan_label || (plan === 'annual' ? 'Gold Plan — Annual (365 days)' : 'Gold Plan — Monthly (30 days)'),
+      description: order.plan_label || `${TIER_LABEL[plan]} Plan — ${billing === 'annual' ? 'Annual (365 days)' : 'Monthly (30 days)'}`,
       order_id: order.order_id,
       prefill: { name: order.dentist_name, email: order.dentist_email },
-      theme: { color: '#92400E' },
+      theme: { color: TIER_THEME[plan] },
       handler: async (response: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => {
         const verifyRes = await fetch('/api/payments/verify', {
           method: 'POST',
@@ -81,7 +88,7 @@ export default function GoldCheckoutButton({ color, plan = 'monthly', label }: P
           return
         }
         router.refresh()
-        alert('Welcome to Gold! Your account is upgraded.')
+        alert(`Welcome to ${TIER_LABEL[plan]}! Your account is upgraded.`)
         setLoading(false)
       },
       modal: {
@@ -104,7 +111,7 @@ export default function GoldCheckoutButton({ color, plan = 'monthly', label }: P
         disabled={loading}
         style={{ display: 'block', width: '100%', padding: '12px', background: color, color: '#fff', borderRadius: 10, textAlign: 'center', fontSize: 14, fontWeight: 700, border: 'none', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1, fontFamily: 'var(--font-body)' }}
       >
-        {loading ? 'Opening Razorpay…' : (label ?? (plan === 'annual' ? 'Upgrade to Gold (Annual) →' : 'Upgrade to Gold (Monthly) →'))}
+        {loading ? 'Opening Razorpay…' : (label ?? `Upgrade to ${TIER_LABEL[plan]} (${billing === 'annual' ? 'Annual' : 'Monthly'}) →`)}
       </button>
       {error && (
         <p style={{ marginTop: 10, fontSize: 12, color: '#991B1B', background: '#FEE2E2', border: '1px solid #FECACA', borderRadius: 8, padding: '8px 10px' }}>

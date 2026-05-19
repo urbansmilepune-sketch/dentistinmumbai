@@ -10,6 +10,8 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { createClient as createUserClient } from '@/lib/supabase/server'
 
 const FALLBACK_PERIOD_DAYS = 30
+const VALID_TIERS = ['silver', 'gold'] as const
+type PaidTier = typeof VALID_TIERS[number]
 
 export async function POST(request: NextRequest) {
   if (!process.env.RAZORPAY_KEY_SECRET || !process.env.RAZORPAY_KEY_ID) {
@@ -33,9 +35,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 400 })
   }
 
-  // Pull the trusted order from Razorpay so we extend the tier by the period the
-  // dentist actually paid for. We never trust the client to tell us which plan
-  // they bought — a malicious caller could pay monthly and claim annual.
+  // Pull the trusted order from Razorpay so we extend the tier by the period
+  // and tier the dentist actually paid for. We never trust the client to tell
+  // us which plan they bought — a malicious caller could pay Silver-monthly
+  // and claim Gold-annual otherwise.
   const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID,
     key_secret: process.env.RAZORPAY_KEY_SECRET,
@@ -43,14 +46,22 @@ export async function POST(request: NextRequest) {
 
   let amountPaise = 0
   let periodDays = FALLBACK_PERIOD_DAYS
+  let paidTier: PaidTier | null = null
   try {
     const order: any = await razorpay.orders.fetch(razorpay_order_id)
     amountPaise = Number(order?.amount) || 0
     const noteDays = Number(order?.notes?.period_days)
     if (Number.isFinite(noteDays) && noteDays > 0) periodDays = noteDays
+    const notePlan = order?.notes?.plan
+    if (notePlan === 'silver' || notePlan === 'gold') paidTier = notePlan
   } catch (err) {
     console.error('[razorpay verify] order fetch failed', { razorpay_order_id, err })
     return NextResponse.json({ error: 'Could not verify order — please contact support with payment id ' + razorpay_payment_id }, { status: 500 })
+  }
+
+  if (!paidTier) {
+    console.error('[razorpay verify] order missing trusted plan note', { razorpay_order_id, razorpay_payment_id })
+    return NextResponse.json({ error: 'Order is missing plan info — please contact support with payment id ' + razorpay_payment_id }, { status: 500 })
   }
 
   const admin = createServiceClient(
@@ -75,7 +86,7 @@ export async function POST(request: NextRequest) {
     razorpay_order_id,
     dentist_id: dentist.id,
     amount_paise: amountPaise,
-    plan: 'gold',
+    plan: paidTier,
   })
   if (paymentErr) {
     if (paymentErr.code === '23505') {
@@ -93,7 +104,7 @@ export async function POST(request: NextRequest) {
 
   const { error: updateErr } = await admin
     .from('dentists')
-    .update({ tier: 'gold', tier_expires_at: newExpiry.toISOString() })
+    .update({ tier: paidTier, tier_expires_at: newExpiry.toISOString() })
     .eq('id', dentist.id)
 
   if (updateErr) {
@@ -101,5 +112,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Payment verified but upgrade failed — please contact support with payment id ' + razorpay_payment_id }, { status: 500 })
   }
 
-  return NextResponse.json({ success: true, tier: 'gold', tier_expires_at: newExpiry.toISOString(), period_days: periodDays })
+  return NextResponse.json({ success: true, tier: paidTier, tier_expires_at: newExpiry.toISOString(), period_days: periodDays })
 }
