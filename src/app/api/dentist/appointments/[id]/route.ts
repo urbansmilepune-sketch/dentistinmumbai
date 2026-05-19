@@ -14,6 +14,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { getDentistOwner } from '@/lib/dentistSession'
 import { sendAppointmentConfirmedToPatient } from '@/lib/email'
+import { sendSMS } from '@/lib/sms'
 
 const VALID_STATUSES = ['confirmed', 'cancelled'] as const
 type Status = typeof VALID_STATUSES[number]
@@ -48,7 +49,7 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
   // for any appointment in the DB just by knowing the id.
   const { data: appt, error: lookupErr } = await db
     .from('appointments')
-    .select('id, dentist_id, patient_name, patient_email, appt_date, time_slot, reference_no, status')
+    .select('id, dentist_id, patient_name, patient_email, patient_phone, appt_date, time_slot, reference_no, status')
     .eq('id', id)
     .maybeSingle()
   if (lookupErr) {
@@ -68,11 +69,12 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
     return NextResponse.json({ error: 'Update failed', message: updateErr.message, code: updateErr.code }, { status: 500 })
   }
 
-  // Side effect: confirmation email to the patient. Only when the new state
-  // is `confirmed`, only when the patient actually gave us an email at
-  // booking time, and only fire-and-forget so a Resend hiccup can't 500
-  // a status change that already committed.
-  if ((status as Status) === 'confirmed' && appt.patient_email) {
+  // Side effect: confirmation email + SMS to the patient. Only when the new
+  // state is `confirmed`, only fire-and-forget so a Resend/MSG91 hiccup
+  // can't 500 a status change that already committed. Email needs an email
+  // address on the booking; SMS needs a phone number plus the template-id
+  // env var so it stays inert in environments without MSG91 set up.
+  if ((status as Status) === 'confirmed') {
     // Pull a wider dentist profile for the email body. We do this here rather
     // than in getDentistOwner so its return shape stays minimal for callers
     // that don't need every column.
@@ -82,18 +84,35 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
       .eq('id', owner.id)
       .maybeSingle()
 
-    sendAppointmentConfirmedToPatient({
-      to_email: appt.patient_email,
-      patient_name: appt.patient_name || 'there',
-      dentist_name: dentistFull?.name || owner.name || 'your dentist',
-      clinic_name: dentistFull?.clinic_name || owner.clinic_name || 'the clinic',
-      clinic_address: dentistFull?.address || null,
-      clinic_phone: dentistFull?.phone || dentistFull?.whatsapp || null,
-      appt_date: appt.appt_date,
-      time_slot: appt.time_slot,
-      reference_no: appt.reference_no,
-      city: dentistFull?.city || owner.city || undefined,
-    }).catch(err => console.error('[dentist appointments PATCH] patient confirmation email failed', err))
+    if (appt.patient_email) {
+      sendAppointmentConfirmedToPatient({
+        to_email: appt.patient_email,
+        patient_name: appt.patient_name || 'there',
+        dentist_name: dentistFull?.name || owner.name || 'your dentist',
+        clinic_name: dentistFull?.clinic_name || owner.clinic_name || 'the clinic',
+        clinic_address: dentistFull?.address || null,
+        clinic_phone: dentistFull?.phone || dentistFull?.whatsapp || null,
+        appt_date: appt.appt_date,
+        time_slot: appt.time_slot,
+        reference_no: appt.reference_no,
+        city: dentistFull?.city || owner.city || undefined,
+      }).catch(err => console.error('[dentist appointments PATCH] patient confirmation email failed', err))
+    }
+
+    const confirmTpl = process.env.MSG91_TEMPLATE_ID_APPOINTMENT_CONFIRMED
+    if (confirmTpl && appt.patient_phone) {
+      const clinicName = dentistFull?.clinic_name || owner.clinic_name || 'the clinic'
+      const formattedDate = new Date(appt.appt_date).toLocaleDateString('en-IN', {
+        day: 'numeric', month: 'short', year: 'numeric',
+      })
+      try {
+        void sendSMS(appt.patient_phone, confirmTpl, [
+          clinicName, formattedDate, appt.time_slot, appt.reference_no,
+        ])
+          .then(r => { if (!r.success) console.error('[dentist appointments PATCH] confirmation SMS failed', r) })
+          .catch(err => console.error('[dentist appointments PATCH] confirmation SMS threw', err))
+      } catch (err) { console.error('[dentist appointments PATCH] confirmation SMS dispatch error', err) }
+    }
   }
 
   return NextResponse.json({ success: true, status })

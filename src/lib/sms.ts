@@ -1,0 +1,81 @@
+// MSG91 Flow SMS integration. The Flow API renders DLT-registered template
+// text on the server using positional variables (var1..varN) passed per
+// recipient — the template body lives in the MSG91 console, the variables
+// are the only thing the app supplies.
+//
+// Required env:
+//   MSG91_AUTH_KEY                 — authkey for the MSG91 account
+//   MSG91_SENDER_ID                — DLT-registered 6-char header (default 'DNTPRM')
+//
+// Optional, per-callsite (template ids):
+//   MSG91_TEMPLATE_ID_BOOKING_PATIENT
+//   MSG91_TEMPLATE_ID_BOOKING_DENTIST
+//   MSG91_TEMPLATE_ID_APPOINTMENT_CONFIRMED
+//
+// When MSG91_AUTH_KEY is missing the helper logs and no-ops so dev/staging
+// without credentials doesn't blow up.
+
+const MSG91_AUTH_KEY = process.env.MSG91_AUTH_KEY
+const MSG91_SENDER_ID = process.env.MSG91_SENDER_ID || 'DNTPRM'
+
+export type SmsResult =
+  | { success: true }
+  | { success: false; error: string; status?: number }
+
+/**
+ * Send an SMS via MSG91 Flow. The phone must be the 10-digit subscriber
+ * number — the country code "91" is prepended here. Variables are mapped
+ * positionally onto var1..var4 as the template expects; pass an empty
+ * string for any slot the template doesn't use.
+ */
+export async function sendSMS(
+  phone: string,
+  templateId: string,
+  variables: string[],
+): Promise<SmsResult> {
+  if (!MSG91_AUTH_KEY) {
+    console.log('[MSG91] auth key not set; skipping send to', phone)
+    return { success: false, error: 'MSG91_AUTH_KEY not configured' }
+  }
+  if (!templateId) {
+    console.log('[MSG91] no template id provided; skipping send to', phone)
+    return { success: false, error: 'template id missing' }
+  }
+
+  const digits = phone.replace(/\D/g, '')
+  const mobiles = digits.startsWith('91') ? digits : `91${digits}`
+
+  const body = {
+    template_id: templateId,
+    sender: MSG91_SENDER_ID,
+    short_url: 0,
+    recipients: [{
+      mobiles,
+      var1: variables[0] ?? '',
+      var2: variables[1] ?? '',
+      var3: variables[2] ?? '',
+      var4: variables[3] ?? '',
+    }],
+  }
+
+  try {
+    const res = await fetch('https://api.msg91.com/api/v5/flow/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        authkey: MSG91_AUTH_KEY,
+      },
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      console.error('[MSG91] send failed', { status: res.status, mobiles, templateId, body: text })
+      return { success: false, error: text || `HTTP ${res.status}`, status: res.status }
+    }
+    console.log('[MSG91] sent', { mobiles, templateId })
+    return { success: true }
+  } catch (err: any) {
+    console.error('[MSG91] request error', { mobiles, templateId, message: err?.message, err })
+    return { success: false, error: err?.message || 'Unknown error' }
+  }
+}

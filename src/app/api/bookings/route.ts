@@ -11,6 +11,7 @@ import {
   sendBookingRequestToPatient,
   sendBookingRequestToDentist,
 } from '@/lib/email'
+import { sendSMS } from '@/lib/sms'
 
 function generateRef(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
@@ -208,6 +209,28 @@ export async function POST(request: NextRequest) {
           reference_no,
           city: citySlug,
         }).catch(err => console.error('[bookings] dentist new-request email failed', err))
+      }
+
+      // Fire-and-forget SMS via MSG91. Same rules as the email side: only
+      // fire when the corresponding template id is configured, never let an
+      // SMS failure bubble back into the response.
+      const patientTpl = process.env.MSG91_TEMPLATE_ID_BOOKING_PATIENT
+      if (patientTpl && patient_phone) {
+        try {
+          void sendSMS(patient_phone, patientTpl, [clinicName, formattedDate, time_slot, reference_no])
+            .then(r => { if (!r.success) console.error('[bookings] patient SMS failed', r) })
+            .catch(err => console.error('[bookings] patient SMS threw', err))
+        } catch (err) { console.error('[bookings] patient SMS dispatch error', err) }
+      }
+
+      const dentistTpl = process.env.MSG91_TEMPLATE_ID_BOOKING_DENTIST
+      const dentistSmsPhone = dentist.phone || dentist.whatsapp
+      if (dentistTpl && dentistSmsPhone) {
+        try {
+          void sendSMS(dentistSmsPhone, dentistTpl, [patient_name, formattedDate, time_slot, ''])
+            .then(r => { if (!r.success) console.error('[bookings] dentist SMS failed', r) })
+            .catch(err => console.error('[bookings] dentist SMS threw', err))
+        } catch (err) { console.error('[bookings] dentist SMS dispatch error', err) }
       }
     }
 
