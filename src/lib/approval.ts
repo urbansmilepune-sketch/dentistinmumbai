@@ -140,6 +140,10 @@ export async function approveDentistRegistration(
   let slug: string
   if (existing) {
     slug = existing.slug
+    // Re-approval: don't reset trial_started_at — that would hand a second
+    // trial to a dentist whose first one already elapsed (or worse, restart
+    // a paying dentist's trial timer). The stamp is set once, on first
+    // approval, and never moved by this code path.
     const { error: updateErr } = await admin_db
       .from('dentists')
       .update({
@@ -190,6 +194,10 @@ export async function approveDentistRegistration(
         website: '',
         is_active: true,
         tier: 'free',
+        // 30-day free trial. The dashboard reads this column via
+        // src/lib/tier.ts#effectiveTier, which treats a free-tier dentist
+        // inside their trial window as Gold for gating purposes.
+        trial_started_at: new Date().toISOString(),
         selected_plan: plan,
         city,
       })

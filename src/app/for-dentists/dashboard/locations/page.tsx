@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { normalizeTier, type Tier } from '@/lib/tier'
+import { effectiveTier, type Tier } from '@/lib/tier'
 
 // Per-tier branch limits. Surface the limit visually (count badge + tooltip
 // on a disabled Add button) but also enforce it on the server-side POST so
@@ -68,8 +68,8 @@ export default function LocationsPage() {
     const supabase = createClient()
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user || cancelled) return
-      const { data } = await supabase.from('dentists').select('tier').eq('email', user.email).maybeSingle()
-      if (!cancelled) setTier(normalizeTier(data?.tier))
+      const { data } = await supabase.from('dentists').select('tier, trial_started_at').eq('email', user.email).maybeSingle()
+      if (!cancelled) setTier(effectiveTier(data?.tier, data?.trial_started_at))
     })
     return () => { cancelled = true }
   }, [])

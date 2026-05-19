@@ -5,7 +5,11 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { getCityByDomain, getCityBySlug, type CityConfig } from '@/config/cities'
-import { normalizeTier, tierMeets, type Tier } from '@/lib/tier'
+import {
+  normalizeTier, tierMeets,
+  effectiveTier, isInTrial, trialDaysLeft, TRIAL_DURATION_DAYS,
+  type Tier,
+} from '@/lib/tier'
 
 type NavItem = { href: string; icon: string; label: string; minTier?: 'silver' | 'gold' }
 
@@ -62,7 +66,20 @@ export default function DashboardShell({ dentist, completionPct, children }: Pro
   const [mobileOpen, setMobileOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
   const addRef = useRef<HTMLDivElement>(null)
+  // `tier` is the dentist's STORED tier (what they actually own — drives the
+  // sidebar pill and the upgrade-page state). `effective` is what they get
+  // access to RIGHT NOW, factoring in the 30-day free trial. The nav lock
+  // icons + page-level FeatureGates key off `effective` so trial users see
+  // everything unlocked; once the trial elapses, `effective` collapses back
+  // to `tier`.
   const tier: Tier = normalizeTier(dentist.tier)
+  const effective: Tier = effectiveTier(dentist.tier, dentist.trial_started_at)
+  const inTrial = isInTrial(dentist.trial_started_at)
+  const daysLeft = trialDaysLeft(dentist.trial_started_at)
+  // "Trial expired" = a trial was started, the window has elapsed, AND the
+  // dentist hasn't upgraded since. We only show the red banner in that
+  // specific case so paid dentists never see a stale "trial ended" prompt.
+  const trialExpired = !!dentist.trial_started_at && !inTrial && tier === 'free'
   // Logo/brand follow the dentist's own city (set on the row, source of truth).
   // window.location.hostname is only used as a last-resort fallback for pre-
   // city-column legacy rows where dentist.city might be null.
@@ -157,7 +174,7 @@ export default function DashboardShell({ dentist, completionPct, children }: Pro
       <nav style={{ flex: 1, minHeight: 0, padding: '8px 12px', overflowY: 'auto', scrollbarWidth: 'none' as any, msOverflowStyle: 'none' as any }}>
         {NAV.map(item => {
           const isActive = pathname === item.href || (item.href !== '/for-dentists/dashboard' && pathname.startsWith(item.href))
-          const locked = item.minTier ? !tierMeets(tier, item.minTier) : false
+          const locked = item.minTier ? !tierMeets(effective, item.minTier) : false
           return (
             <Link
               key={item.href}
@@ -317,6 +334,9 @@ export default function DashboardShell({ dentist, completionPct, children }: Pro
 
         {/* Content */}
         <div className="dash-content" style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
+          {(inTrial || trialExpired) && (
+            <TrialBanner inTrial={inTrial} daysLeft={daysLeft} />
+          )}
           {children}
         </div>
       </div>
@@ -372,6 +392,61 @@ export default function DashboardShell({ dentist, completionPct, children }: Pro
           .dash-bottom-label { font-size: 11px; font-weight: 600; line-height: 1; }
         }
       `}</style>
+    </div>
+  )
+}
+
+// Trial-state banner. Two visual modes from the same component because the
+// layout (icon + headline + sub + progress bar + CTA) is identical — only
+// the palette and copy differ. We compute progress from daysLeft against
+// TRIAL_DURATION_DAYS so the bar fills as the trial elapses; the expired
+// state shows a full bar in the red palette as a visual "you've used it
+// all" cue rather than going to 0 and looking like nothing happened.
+function TrialBanner({ inTrial, daysLeft }: { inTrial: boolean; daysLeft: number }) {
+  const daysUsed = Math.max(0, TRIAL_DURATION_DAYS - daysLeft)
+  const pct = inTrial
+    ? Math.min(100, Math.round((daysUsed / TRIAL_DURATION_DAYS) * 100))
+    : 100
+
+  const palette = inTrial
+    ? { bg: '#FEF3C7', border: '#FDE68A', text: '#92400E', bar: '#92400E', barTrack: '#FDE68A' }
+    : { bg: '#FEE2E2', border: '#FECACA', text: '#991B1B', bar: '#991B1B', barTrack: '#FECACA' }
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap',
+      background: palette.bg, border: `1px solid ${palette.border}`,
+      borderRadius: 14, padding: '14px 18px', marginBottom: 20,
+      color: palette.text,
+    }}>
+      <div style={{ fontSize: 28, lineHeight: 1, flexShrink: 0 }}>
+        {inTrial ? '🎉' : '⚠️'}
+      </div>
+      <div style={{ flex: 1, minWidth: 240 }}>
+        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 15, marginBottom: 2 }}>
+          {inTrial
+            ? <>Free Trial — <span style={{ fontSize: 18 }}>{daysLeft}</span> day{daysLeft === 1 ? '' : 's'} left</>
+            : <>Trial ended</>}
+        </div>
+        <div style={{ fontSize: 12, opacity: 0.9 }}>
+          {inTrial
+            ? 'All features unlocked. Upgrade before your trial ends to keep premium access.'
+            : 'Upgrade to keep access to Silver and Gold features.'}
+        </div>
+        <div style={{ marginTop: 10, height: 6, background: palette.barTrack, borderRadius: 3, overflow: 'hidden' }}
+          aria-label={inTrial ? `${daysUsed} of ${TRIAL_DURATION_DAYS} trial days used` : 'Trial complete'}>
+          <div style={{ height: '100%', width: `${pct}%`, background: palette.bar, transition: 'width 0.4s' }} />
+        </div>
+      </div>
+      <Link href="/for-dentists/dashboard/upgrade" style={{
+        display: 'inline-block', flexShrink: 0,
+        padding: '10px 16px', minHeight: 40,
+        background: palette.text, color: '#fff',
+        borderRadius: 8, fontFamily: 'var(--font-body)',
+        fontWeight: 700, fontSize: 13, textDecoration: 'none',
+      }}>
+        {inTrial ? 'Upgrade now →' : 'Upgrade →'}
+      </Link>
     </div>
   )
 }

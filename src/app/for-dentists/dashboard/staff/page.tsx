@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FeatureGate from '@/components/FeatureGate'
 import UpgradeBanner from '@/components/UpgradeBanner'
-import { normalizeTier, tierMeets, type Tier } from '@/lib/tier'
+import { effectiveTier, tierMeets, type Tier } from '@/lib/tier'
 
 // Tier-based staff seat limits. Gating is enforced at the UI layer here and
 // must be mirrored on the API (POST /api/dentist/staff) once the server-side
@@ -82,8 +82,8 @@ export default function StaffPage() {
     const supabase = createClient()
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user || cancelled) return
-      const { data } = await supabase.from('dentists').select('tier').eq('email', user.email).maybeSingle()
-      if (!cancelled) setTier(normalizeTier(data?.tier))
+      const { data } = await supabase.from('dentists').select('tier, trial_started_at').eq('email', user.email).maybeSingle()
+      if (!cancelled) setTier(effectiveTier(data?.tier, data?.trial_started_at))
     })
     return () => { cancelled = true }
   }, [])

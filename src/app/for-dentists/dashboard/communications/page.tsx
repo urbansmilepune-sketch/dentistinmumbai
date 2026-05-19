@@ -11,7 +11,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import FeatureGate from '@/components/FeatureGate'
-import { normalizeTier, tierMeets, type Tier } from '@/lib/tier'
+import { effectiveTier, tierMeets, type Tier } from '@/lib/tier'
 
 type Mode = 'individual' | 'selected' | 'all'
 type Channel = 'email' | 'whatsapp'
@@ -146,10 +146,10 @@ export default function CommunicationsPage() {
       if (!user) { router.push('/for-dentists/login'); return }
 
       const { data: dentist } = await supabase
-        .from('dentists').select('id, tier').eq('email', user.email).maybeSingle()
+        .from('dentists').select('id, tier, trial_started_at').eq('email', user.email).maybeSingle()
       if (!dentist) { setLoading(false); return }
       setDentistId(dentist.id)
-      setTier(normalizeTier(dentist.tier))
+      setTier(effectiveTier(dentist.tier, dentist.trial_started_at))
 
       const [{ data: pts }, { data: appts }, { data: hist }] = await Promise.all([
         supabase.from('patients')

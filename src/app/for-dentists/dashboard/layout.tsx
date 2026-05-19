@@ -17,7 +17,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // the dentist's data is always their own row.
   const { data: dentist } = await supabase
     .from('dentists')
-    .select('id, slug, name, clinic_name, tier, is_active, profile_photo, cover_photo, bio, whatsapp, maps_embed, city')
+    .select('id, slug, name, clinic_name, tier, trial_started_at, is_active, profile_photo, cover_photo, bio, whatsapp, maps_embed, city')
     .eq('email', user.email)
     .single()
 

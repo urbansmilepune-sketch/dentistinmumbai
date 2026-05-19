@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import FeatureGate from '@/components/FeatureGate'
-import { normalizeTier } from '@/lib/tier'
+import { effectiveTier } from '@/lib/tier'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,7 +12,7 @@ export default async function AnalyticsPage() {
 
   const { data: dentist } = await supabase
     .from('dentists')
-    .select('id, name, tier, profile_views, whatsapp_clicks, call_clicks, booking_clicks')
+    .select('id, name, tier, trial_started_at, profile_views, whatsapp_clicks, call_clicks, booking_clicks')
     .eq('email', user.email)
     .single()
   if (!dentist) redirect('/for-dentists/login')
@@ -65,7 +65,9 @@ export default async function AnalyticsPage() {
   const chartData = Object.entries(weeklyData).slice(0, 7).reverse()
   const maxVal = Math.max(...chartData.map(([, v]) => v), 1)
 
-  const tier = normalizeTier(dentist.tier)
+  // Use the effective tier so trial-period free dentists see Silver/Gold
+  // stat cards as unlocked. Once the trial elapses they fall back to free.
+  const tier = effectiveTier(dentist.tier, dentist.trial_started_at)
 
   // Three headline stats every dentist gets — these are the "real numbers"
   // the free tier sees so the page never feels empty even on the free plan.

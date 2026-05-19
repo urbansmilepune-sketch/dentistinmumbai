@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { normalizeTier, tierMeets, type Tier } from '@/lib/tier'
+import { effectiveTier, tierMeets, type Tier } from '@/lib/tier'
 
 // Gallery-tile budget per tier. The Cloudinary upload happens server-side
 // so this gate also needs a server-side mirror in /api/cloudinary/upload to
@@ -44,7 +44,7 @@ export default function PhotosPage() {
 
       const { data: dentist } = await supabase
         .from('dentists')
-        .select('id, profile_photo, cover_photo, tier')
+        .select('id, profile_photo, cover_photo, tier, trial_started_at')
         .eq('email', user.email)
         .single()
 
@@ -52,7 +52,7 @@ export default function PhotosPage() {
         setDentistId(dentist.id)
         setProfilePhoto(dentist.profile_photo)
         setCoverPhoto(dentist.cover_photo)
-        setTier(normalizeTier(dentist.tier))
+        setTier(effectiveTier(dentist.tier, dentist.trial_started_at))
 
         const { data: photos } = await supabase
           .from('gallery_photos')
