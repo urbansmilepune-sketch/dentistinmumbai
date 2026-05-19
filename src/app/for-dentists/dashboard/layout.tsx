@@ -44,8 +44,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
       </DashboardShell>
       {/* Mounted here (not in root layout) so the help button is scoped
           to authenticated dashboard routes by virtue of file-system
-          layout, no client-side pathname matching required. */}
-      <SupportButton />
+          layout, no client-side pathname matching required. The
+          fixed-position wrapper lives in this layout so the parent
+          owns positioning and the inner component can't hide itself. */}
+      <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 9999, display: 'flex' }}>
+        <SupportButton />
+      </div>
     </>
   )
 }

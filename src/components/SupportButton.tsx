@@ -135,13 +135,12 @@ export default function SupportButton() {
   )
 }
 
+// Parent (dashboard layout) owns position: fixed + bottom/right/zIndex.
+// This wrapper only controls its own inner layout — display is hardcoded
+// to flex so nothing inside the component can hide it.
 const wrapStyle: React.CSSProperties = {
-  position: 'fixed',
-  right: 24,
-  bottom: 24,
-  zIndex: 9999,
-  fontFamily: 'var(--font-body)',
   display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10,
+  fontFamily: 'var(--font-body)',
 }
 
 const triggerStyle: React.CSSProperties = {
