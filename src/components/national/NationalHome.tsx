@@ -3,6 +3,9 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { CITY_CONFIGS, NATIONAL_ORIGIN } from '@/config/cities'
 import { COMING_SOON_CITIES } from '@/config/citiesNational'
 import NationalMapSection from './NationalMapSection'
+// Server-only projection of the India GeoJSON. Imported HERE (server
+// component) so d3-geo + the GeoJSON stay out of the client bundle.
+import { STATE_PATHS, LIVE_DOTS, SOON_DOTS } from './indiaMapData'
 
 // National parent homepage. Server component — fetches everything the map
 // + live counters need in a single Promise.all and hands them to the
@@ -172,7 +175,12 @@ export default async function NationalHome() {
         {/* Map + counters */}
         <section style={{ padding: '20px 20px 60px' }}>
           <div style={{ maxWidth: 1100, margin: '0 auto' }}>
-            <NationalMapSection dentistCountByCity={dentistCountByCity} />
+            <NationalMapSection
+              statePaths={STATE_PATHS}
+              liveDots={LIVE_DOTS}
+              soonDots={SOON_DOTS}
+              dentistCountByCity={dentistCountByCity}
+            />
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginTop: 36, maxWidth: 880, marginLeft: 'auto', marginRight: 'auto' }}>
               <CounterCard value={totalDentists.toLocaleString('en-IN')} label="Dentists Listed" />
