@@ -81,7 +81,12 @@ export async function sendOutreachEmail(input: OutreachSendInput) {
   const renderedSubject = renderOutreachTemplate(input.subject, ctx)
   const renderedBody    = renderOutreachTemplate(input.body, ctx)
 
+  // Two unsubscribe URLs: the visible link in the body goes to the
+  // confirmation page (better UX for the recipient), while the
+  // List-Unsubscribe header points at the POST API so Gmail's RFC 8058
+  // one-click can flip the row directly without a confirmation step.
   const unsubUrl = `${input.origin}/unsubscribe?email=${encodeURIComponent(input.to_email)}`
+  const unsubPostUrl = `${input.origin}/api/unsubscribe?email=${encodeURIComponent(input.to_email)}`
   const pixel = `<img src="${input.origin}/api/track/open?contact_id=${encodeURIComponent(input.contact_id)}&campaign_id=${encodeURIComponent(input.campaign_id)}" width="1" height="1" style="display:none" alt="" />`
 
   // Convert the plain-text body to minimal HTML. Blank line → new <p>,
@@ -133,8 +138,10 @@ export async function sendOutreachEmail(input: OutreachSendInput) {
     headers: {
       // RFC 8058 one-click unsubscribe. Gmail / Yahoo / Apple all use this
       // to surface the native unsubscribe link AND to bias toward Primary
-      // when the sender clearly supports unsubscribing.
-      'List-Unsubscribe': `<${unsubUrl}>`,
+      // when the sender clearly supports unsubscribing. Header points at
+      // the POST API so the one-click flip happens server-side; the visible
+      // body link still goes to the confirmation page.
+      'List-Unsubscribe': `<${unsubPostUrl}>`,
       'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
       // Per-campaign correlation id for ESP-side dedupe/grouping.
       'X-Entity-Ref-ID': input.campaign_id,
