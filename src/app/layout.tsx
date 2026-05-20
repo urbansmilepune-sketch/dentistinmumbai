@@ -1,7 +1,8 @@
 import type { Metadata, Viewport } from 'next'
 import { Sora, DM_Sans } from 'next/font/google'
 import { headers } from 'next/headers'
-import { getCityBySlug } from '@/config/cities'
+import { getCityBySlug, NATIONAL_HOST, NATIONAL_ORIGIN } from '@/config/cities'
+import { COMING_SOON_CITIES } from '@/config/citiesNational'
 import './globals.css'
 // SupportButton was previously mounted here for every route and gated its
 // own visibility via usePathname. That conditional kept tripping over
@@ -41,6 +42,32 @@ export const viewport: Viewport = {
 
 export async function generateMetadata(): Promise<Metadata> {
   const h = await headers()
+  // National parent (dentistinindia.in) gets its own title/keywords +
+  // canonical origin. Everything below the conditional is the existing
+  // per-city metadata for the 13 city domains.
+  if (h.get('x-is-national') === '1') {
+    const liveCount = 13
+    const totalCount = liveCount + COMING_SOON_CITIES.length
+    const nationalTitle = `Find Verified Dentists in ${totalCount} Indian Cities | Dentist In India`
+    const nationalDesc = `India's dental network across ${liveCount} live cities and ${COMING_SOON_CITIES.length} more launching soon. MCI-registered dentists, zero commission, 30-second booking.`
+    return {
+      title: { default: nationalTitle, template: `%s | ${NATIONAL_HOST}` },
+      description: nationalDesc,
+      icons: { icon: '/favicon.svg', shortcut: '/favicon.svg', apple: '/favicon.svg' },
+      verification: { google: '1T1WaA-nRtq8w-GycybOoricYbjTqql3D-au0VzFm98' },
+      keywords: ['dentist in india', 'verified dentists india', 'dental clinic india', 'dental tourism india', 'mci registered dentist'],
+      metadataBase: new URL(NATIONAL_ORIGIN),
+      alternates: { canonical: NATIONAL_ORIGIN },
+      openGraph: {
+        type: 'website', locale: 'en_IN',
+        url: NATIONAL_ORIGIN, siteName: NATIONAL_HOST,
+        title: nationalTitle, description: nationalDesc,
+      },
+      twitter: { card: 'summary_large_image' },
+      robots: { index: true, follow: true },
+    }
+  }
+
   const city = getCityBySlug(h.get('x-city-slug'))
   const origin = `https://${city.domain}`
   const cityLower = city.cityName.toLowerCase()

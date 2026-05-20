@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import SearchBar from '@/components/SearchBar'
 import FaqAccordion from '@/components/FaqAccordion'
 import { getCityBySlug, cityBrandName, cityBrandTld } from '@/config/cities'
+import NationalHome from '@/components/national/NationalHome'
 
 function faqItemsFor(cityName: string, domain: string) {
   return [
@@ -42,8 +43,16 @@ const ZONE_COLORS: Record<string, { bg: string; text: string; border: string }> 
 }
 
 export default async function HomePage() {
-  const supabase = await createClient()
   const h = await headers()
+  // National parent (dentistinindia.in) gets a separate homepage that
+  // surfaces the network of city sites rather than a single-city listing.
+  // proxy.ts sets x-is-national:1 for that host; everything else falls
+  // through to the existing city homepage below.
+  if (h.get('x-is-national') === '1') {
+    return <NationalHome />
+  }
+
+  const supabase = await createClient()
   const city = getCityBySlug(h.get('x-city-slug'))
   const brandName = cityBrandName(city)
   const brandTld = cityBrandTld(city)

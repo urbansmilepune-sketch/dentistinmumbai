@@ -1,12 +1,33 @@
 import { MetadataRoute } from 'next'
 import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
-import { getCityByDomain, cityOrigin } from '@/config/cities'
+import { getCityByDomain, cityOrigin, CITY_CONFIGS, isNationalHost, NATIONAL_ORIGIN } from '@/config/cities'
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const supabase = await createClient()
   const h = await headers()
-  const city = getCityByDomain(h.get('x-forwarded-host') || h.get('host'))
+  const host = h.get('x-forwarded-host') || h.get('host')
+
+  // National parent. The sitemap surfaces the network homepage + /cities,
+  // and lists every city domain as a dofollow link so Google crawls the
+  // city sites through the parent. Per-city sitemaps still live at each
+  // city domain's own /sitemap.xml — this is just the discovery layer.
+  if (isNationalHost(host)) {
+    const now = new Date()
+    const nationalPages: MetadataRoute.Sitemap = [
+      { url: NATIONAL_ORIGIN,                lastModified: now, changeFrequency: 'daily',  priority: 1.0 },
+      { url: `${NATIONAL_ORIGIN}/cities`,    lastModified: now, changeFrequency: 'weekly', priority: 0.9 },
+    ]
+    const cityHomes: MetadataRoute.Sitemap = Object.values(CITY_CONFIGS).map(c => ({
+      url: `https://${c.domain}`,
+      lastModified: now,
+      changeFrequency: 'daily' as const,
+      priority: 0.8,
+    }))
+    return [...nationalPages, ...cityHomes]
+  }
+
+  const supabase = await createClient()
+  const city = getCityByDomain(host)
   const BASE = cityOrigin(city)
 
   // Each city's sitemap lists only its own areas + dentists. Dentist profile
