@@ -6,6 +6,7 @@ import NationalShell from '@/components/national/NationalShell'
 import { SPECIALTIES, getSpecialty } from '@/lib/dentalSpecialties'
 import SaveButton from './[id]/SaveButton'
 import SearchBox from './SearchBox'
+import ShareButton from '@/components/national/ShareButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,6 +33,7 @@ const TRENDING_LIMIT = 6
 
 interface CaseCard {
   id: string
+  dentist_id: string | null
   title: string
   specialty: string
   complexity: number
@@ -39,7 +41,7 @@ interface CaseCard {
   like_count: number
   comment_count: number
   view_count: number
-  dentists: { name: string; slug: string; clinic_name: string | null; city: string | null } | null
+  dentists: { name: string; slug: string; clinic_name: string | null; city: string | null; profile_photo: string | null } | null
   thumb: string | null
 }
 
@@ -97,7 +99,7 @@ export default async function CasesBrowsePage({ searchParams }: { searchParams: 
   const trendingCutoff = new Date(Date.now() - TRENDING_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString()
   const { data: trendingPool } = await admin
     .from('cases')
-    .select('id, title, specialty, complexity, created_at, like_count, comment_count, view_count, dentists(name, slug, clinic_name, city)')
+    .select('id, dentist_id, title, specialty, complexity, created_at, like_count, comment_count, view_count, dentists(name, slug, clinic_name, city, profile_photo)')
     .eq('status', 'approved')
     .gte('created_at', trendingCutoff)
     .order('created_at', { ascending: false })
@@ -111,7 +113,7 @@ export default async function CasesBrowsePage({ searchParams }: { searchParams: 
 
   // ── Main grid query ──────────────────────────────────────────────────
   let q = admin.from('cases')
-    .select('id, title, specialty, complexity, created_at, like_count, comment_count, view_count, dentists(name, slug, clinic_name, city)')
+    .select('id, dentist_id, title, specialty, complexity, created_at, like_count, comment_count, view_count, dentists(name, slug, clinic_name, city, profile_photo)')
     .eq('status', 'approved')
     .order('created_at', { ascending: false })
     .limit(PAGE_SIZE)
@@ -152,7 +154,8 @@ export default async function CasesBrowsePage({ searchParams }: { searchParams: 
     photoRows = (ph || []) as any
   }
   const buildCard = (r: any): CaseCard => ({
-    id: r.id, title: r.title, specialty: r.specialty, complexity: r.complexity,
+    id: r.id, dentist_id: r.dentist_id ?? null,
+    title: r.title, specialty: r.specialty, complexity: r.complexity,
     created_at: r.created_at, like_count: r.like_count || 0,
     comment_count: r.comment_count || 0, view_count: r.view_count || 0,
     dentists: r.dentists,
@@ -272,15 +275,17 @@ export default async function CasesBrowsePage({ searchParams }: { searchParams: 
 
 function Card({ c, saved, signedIn }: { c: CaseCard; saved: boolean; signedIn: boolean }) {
   const spec = getSpecialty(c.specialty)
+  const initials = c.dentists?.name?.split(' ').map(p => p[0]).filter(Boolean).slice(0, 2).join('').toUpperCase() || 'D'
   return (
-    <div style={{ position: 'relative', background: '#fff', border: '1px solid #E2E8F0', borderRadius: 14, overflow: 'hidden', boxShadow: '0 2px 6px rgba(15, 25, 35, 0.04)' }}>
+    <div style={{ position: 'relative', background: '#fff', border: '1px solid #E2E8F0', borderRadius: 14, overflow: 'hidden', boxShadow: '0 2px 6px rgba(15, 25, 35, 0.04)', display: 'flex', flexDirection: 'column' }}>
+      {/* Photo + case body — clickable area lands on the case detail. */}
       <Link href={`/cases/${c.id}`} style={{ textDecoration: 'none', color: '#0F1923', display: 'flex', flexDirection: 'column' }}>
         <div style={{ width: '100%', aspectRatio: '4 / 3', background: '#F1F5F9', overflow: 'hidden' }}>
           {c.thumb
             ? <img src={c.thumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} loading="lazy" />
             : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#CBD5E1', fontSize: 32 }}>🦷</div>}
         </div>
-        <div style={{ padding: '14px 16px', flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ padding: '14px 16px 10px', display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             {spec && <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', padding: '2px 8px', background: spec.bg, color: spec.color, borderRadius: 999 }}>{spec.label}</span>}
             <span style={{ fontSize: 11, color: '#F59E0B' }}>
@@ -288,24 +293,44 @@ function Card({ c, saved, signedIn }: { c: CaseCard; saved: boolean; signedIn: b
             </span>
           </div>
           <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, lineHeight: 1.3, color: '#0F1923' }}>{c.title}</h3>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto' }}>
-            {c.dentists && (
-              <div style={{ fontSize: 12, color: '#64748B' }}>
-                Dr. {c.dentists.name}{c.dentists.city ? ' · ' + c.dentists.city : ''}
-              </div>
-            )}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: '#94A3B8' }}>
-              {c.like_count > 0 && <span title="Likes">♥ {c.like_count}</span>}
-              {c.comment_count > 0 && <span title="Comments">💬 {c.comment_count}</span>}
-            </div>
-          </div>
         </div>
       </Link>
-      {/* SaveButton lives outside the Link wrapper so its click handler
-          can stopPropagation; visually anchored to the top-right corner
-          of the thumbnail. */}
-      <div style={{ position: 'absolute', top: 8, right: 8 }}>
+      {/* Dentist row — its own anchor so clicks land on the profile, not
+          the case. Lives outside the outer Link to avoid nested <a>. */}
+      {c.dentists && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px 14px', marginTop: 'auto' }}>
+          <Link
+            href={`/professional/${c.dentists.slug}`}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none', color: '#0F1923', minWidth: 0, flex: 1 }}
+          >
+            <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#EFF6FF', color: '#1D4ED8', fontWeight: 700, fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+              {c.dentists.profile_photo
+                ? <img src={c.dentists.profile_photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                : initials}
+            </div>
+            <div style={{ minWidth: 0, lineHeight: 1.25 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#0F1923', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Dr. {c.dentists.name}</div>
+              {c.dentists.city && <div style={{ fontSize: 11, color: '#94A3B8' }}>{c.dentists.city}</div>}
+            </div>
+          </Link>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: '#94A3B8', flexShrink: 0 }}>
+            {c.like_count > 0 && <span title="Likes">♥ {c.like_count}</span>}
+            {c.comment_count > 0 && <span title="Comments">💬 {c.comment_count}</span>}
+          </div>
+        </div>
+      )}
+      {/* Save + Share buttons live outside the Link wrapper so their click
+          handlers can stopPropagation; anchored to the top-right corner of
+          the thumbnail. */}
+      <div style={{ position: 'absolute', top: 8, right: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
         <SaveButton caseId={c.id} initialSaved={saved} signedIn={signedIn} compact nextHref={`/cases/${c.id}`} />
+        <ShareButton
+          caseId={c.id}
+          caseTitle={c.title}
+          dentistName={c.dentists?.name || 'a verified dentist'}
+          dentistId={c.dentist_id}
+          compact
+        />
       </div>
     </div>
   )

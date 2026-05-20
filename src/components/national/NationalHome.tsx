@@ -7,7 +7,6 @@ import NationalMapSection from './NationalMapSection'
 // Server-only projection of the India GeoJSON. Imported HERE (server
 // component) so d3-geo + the GeoJSON stay out of the client bundle.
 import { STATE_PATHS, LIVE_DOTS, SOON_DOTS } from './indiaMapData'
-import { getSpecialty } from '@/lib/dentalSpecialties'
 import BrandLogo from './BrandLogo'
 
 // National parent homepage — re-positioned as India's professional
@@ -24,22 +23,15 @@ const DENTIST_STEPS = [
   { n: 3, title: 'Build your network',        body: 'Follow peers, get followed, take part in case discussions. Featured on dentistin[city].in too.' },
 ]
 
-interface RecentCase {
-  id: string
-  title: string
-  specialty: string
-  complexity: number
-  thumb: string | null
-  dentist: { name: string; slug: string; city: string | null } | null
-}
-
 interface TopDentist {
   id: string
   slug: string
   name: string
   city: string | null
+  specialties: string[] | null
   profile_photo: string | null
   follower_count: number
+  case_count: number
 }
 
 export default async function NationalHome() {
@@ -59,23 +51,16 @@ export default async function NationalHome() {
     { data: allDentistSlim },
     { count: totalDentistsRaw },
     { count: totalCasesRaw },
-    { data: recentRows },
     { data: followsRaw },
     { data: dentistDirRaw },
   ] = await Promise.all([
     adminClient.from('dentists').select('city, is_active'),
     adminClient.from('dentists').select('*', { count: 'exact', head: true }).eq('is_active', true),
     adminClient.from('cases').select('*', { count: 'exact', head: true }).eq('status', 'approved'),
-    // 3 most recent approved cases for the live feed preview
-    adminClient.from('cases')
-      .select('id, title, specialty, complexity, created_at, dentists(name, slug, city)')
-      .eq('status', 'approved')
-      .order('created_at', { ascending: false })
-      .limit(3),
-    // Every dentist_follows row so we can derive top-3-by-followers.
+    // Every dentist_follows row so we can derive top-6-by-followers.
     // At platform scale this is < 10k rows — cheap to fetch once.
     adminClient.from('dentist_follows').select('following_id'),
-    adminClient.from('dentists').select('id, slug, name, city, profile_photo').eq('is_active', true).limit(2000),
+    adminClient.from('dentists').select('id, slug, name, city, specialties, profile_photo').eq('is_active', true).limit(2000),
   ])
 
   const totalDentists = totalDentistsRaw || 0
@@ -89,38 +74,34 @@ export default async function NationalHome() {
     dentistCountByCity[d.city] = (dentistCountByCity[d.city] || 0) + 1
   }
 
-  // Top 3 dentists by follower count. Aggregate JS-side from the
-  // dentist_follows fetch above; cap at 3.
+  // Top 6 dentists by follower count, tie-break by name. Aggregate
+  // JS-side from the dentist_follows fetch above.
   const followerCountById = new Map<string, number>()
   for (const f of (followsRaw || []) as Array<{ following_id: string }>) {
     followerCountById.set(f.following_id, (followerCountById.get(f.following_id) || 0) + 1)
   }
-  const topDentists: TopDentist[] = (dentistDirRaw || [])
+  const topDentistsBase = (dentistDirRaw || [])
     .map((d: any) => ({
-      id: d.id, slug: d.slug, name: d.name, city: d.city,
-      profile_photo: d.profile_photo,
+      id: d.id as string, slug: d.slug as string, name: d.name as string, city: (d.city ?? null) as string | null,
+      specialties: (d.specialties ?? null) as string[] | null,
+      profile_photo: (d.profile_photo ?? null) as string | null,
       follower_count: followerCountById.get(d.id) || 0,
     }))
     .sort((a, b) => b.follower_count - a.follower_count || a.name.localeCompare(b.name))
-    .slice(0, 3)
+    .slice(0, 6)
 
-  // Thumbnails for the recent-case feed preview cards.
-  const recentIds = (recentRows || []).map((r: any) => r.id as string)
-  const thumbs = new Map<string, string>()
-  if (recentIds.length) {
-    const { data: photos } = await adminClient
-      .from('case_photos').select('case_id, url, kind, display_order')
-      .in('case_id', recentIds).order('display_order')
-    for (const p of (photos || []) as Array<{ case_id: string; url: string; kind: string }>) {
-      if (!thumbs.has(p.case_id) || p.kind === 'before' || p.kind === 'after') {
-        thumbs.set(p.case_id, p.url)
-      }
+  // Case counts for just the top-6 — one round-trip, JS-side reduce.
+  const topIds = topDentistsBase.map(d => d.id)
+  const caseCountById = new Map<string, number>()
+  if (topIds.length) {
+    const { data: caseRows } = await adminClient
+      .from('cases').select('dentist_id').in('dentist_id', topIds).eq('status', 'approved')
+    for (const c of (caseRows || []) as Array<{ dentist_id: string }>) {
+      caseCountById.set(c.dentist_id, (caseCountById.get(c.dentist_id) || 0) + 1)
     }
   }
-  const recentCases: RecentCase[] = (recentRows || []).map((r: any) => ({
-    id: r.id, title: r.title, specialty: r.specialty, complexity: r.complexity,
-    thumb: thumbs.get(r.id) ?? null,
-    dentist: r.dentists,
+  const topDentists: TopDentist[] = topDentistsBase.map(d => ({
+    ...d, case_count: caseCountById.get(d.id) || 0,
   }))
 
   // JSON-LD — organisation reframed as a ProfessionalService for the
@@ -146,7 +127,7 @@ export default async function NationalHome() {
               <BrandLogo height={32} />
             </Link>
             <div style={{ display: 'flex', alignItems: 'center', gap: 18, fontSize: 14, fontWeight: 600 }}>
-              <Link href="/cases"        style={{ color: '#475569', textDecoration: 'none' }}>Cases</Link>
+              <Link href="/cases"        style={{ color: '#475569', textDecoration: 'none' }}>Discover</Link>
               <Link href="/dentists"     style={{ color: '#475569', textDecoration: 'none' }}>Dentists</Link>
               <Link href="/cities"       style={{ color: '#475569', textDecoration: 'none' }}>Cities</Link>
               {signedIn && <Link href="/feed" style={{ color: '#1D4ED8', textDecoration: 'none', fontWeight: 700 }}>My Feed</Link>}
@@ -235,80 +216,42 @@ export default async function NationalHome() {
           </div>
         </section>
 
-        {/* Feed preview — recent cases. Blurred for logged-out viewers
-            as a teaser with a Join CTA layered on top. */}
-        {recentCases.length > 0 && (
-          <section style={{ padding: '24px 20px 64px', background: '#F8FAFC', position: 'relative' }}>
-            <div style={{ maxWidth: 1100, margin: '0 auto' }}>
-              <SectionEyebrow>{signedIn ? 'Latest from the network' : 'Live from the feed'}</SectionEyebrow>
-              <SectionHeadline>Clinical cases shared this week</SectionHeadline>
-              <div style={{ position: 'relative', marginTop: 28 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 18, filter: signedIn ? 'none' : 'blur(3.5px)', pointerEvents: signedIn ? 'auto' : 'none' }}>
-                  {recentCases.map(c => {
-                    const spec = getSpecialty(c.specialty)
-                    const cfg = c.dentist?.city ? (CITY_CONFIGS as any)[c.dentist.city] : null
-                    return (
-                      <Link key={c.id} href={`/cases/${c.id}`} style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 14, overflow: 'hidden', textDecoration: 'none', color: '#0F1923' }}>
-                        <div style={{ width: '100%', aspectRatio: '16 / 9', background: '#F1F5F9', overflow: 'hidden' }}>
-                          {c.thumb ? <img src={c.thumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} loading="lazy" /> : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, color: '#CBD5E1' }}>🦷</div>}
-                        </div>
-                        <div style={{ padding: '14px 18px' }}>
-                          {spec && <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', padding: '2px 8px', background: spec.bg, color: spec.color, borderRadius: 999 }}>{spec.label}</span>}
-                          <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, color: '#0F1923', marginTop: 6, lineHeight: 1.35 }}>{c.title}</h3>
-                          <div style={{ fontSize: 12, color: '#94A3B8', marginTop: 8 }}>
-                            {c.dentist?.name ? `Dr. ${c.dentist.name}` : ''}{cfg ? ' · ' + cfg.cityName : ''}
-                          </div>
-                        </div>
-                      </Link>
-                    )
-                  })}
-                </div>
-                {!signedIn && (
-                  <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <div style={{ background: 'rgba(255,255,255,0.96)', border: '1px solid #E2E8F0', borderRadius: 14, padding: '28px 32px', textAlign: 'center', boxShadow: '0 12px 32px rgba(15,25,35,0.08)', maxWidth: 460 }}>
-                      <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 18, color: '#0F1923', marginBottom: 6 }}>
-                        Sign in to see the full feed
-                      </div>
-                      <p style={{ fontSize: 13, color: '#475569', lineHeight: 1.55, marginBottom: 16 }}>
-                        Cases from India's top dental professionals. Free to join.
-                      </p>
-                      <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
-                        <Link href="/join" style={{ padding: '10px 20px', background: '#1D4ED8', color: '#fff', borderRadius: 8, fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>Join Free →</Link>
-                        <Link href="/for-dentists/login" style={{ padding: '10px 20px', background: '#fff', color: '#0F1923', border: '1px solid #E2E8F0', borderRadius: 8, fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>Sign in</Link>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </section>
-        )}
-
-        {/* Top dentists */}
+        {/* Top dentists — the homepage's main "who's on the network"
+            surface. Replaces the older recent-cases preview: cases live
+            on each dentist's profile, so the homepage routes there
+            instead of showcasing case rows on their own. */}
         {topDentists.length > 0 && (
-          <section style={{ padding: '64px 20px 32px' }}>
+          <section style={{ padding: '24px 20px 64px', background: '#F8FAFC' }}>
             <div style={{ maxWidth: 1100, margin: '0 auto' }}>
               <SectionEyebrow>Top dental professionals</SectionEyebrow>
               <SectionHeadline>Most-followed on the network</SectionHeadline>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 14, marginTop: 28 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginTop: 28 }}>
                 {topDentists.map(d => {
                   const cfg = d.city ? (CITY_CONFIGS as any)[d.city] : null
                   const initials = d.name.split(' ').map(p => p[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
+                  const primarySpecialty = (d.specialties && d.specialties[0]) || null
                   return (
-                    <Link key={d.id} href={`/professional/${d.slug}`} style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 14, padding: 20, display: 'flex', gap: 12, alignItems: 'center', textDecoration: 'none', color: '#0F1923' }}>
-                      <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#EFF6FF', color: '#1D4ED8', fontWeight: 800, fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
-                        {d.profile_photo ? <img src={d.profile_photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials}
+                    <Link key={d.id} href={`/professional/${d.slug}`} style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 14, padding: 20, display: 'flex', flexDirection: 'column', gap: 12, textDecoration: 'none', color: '#0F1923' }}>
+                      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                        <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#EFF6FF', color: '#1D4ED8', fontWeight: 800, fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+                          {d.profile_photo ? <img src={d.profile_photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Dr. {d.name}</div>
+                          {primarySpecialty && <div style={{ fontSize: 12, color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{primarySpecialty}</div>}
+                          {cfg && <div style={{ fontSize: 12, color: '#94A3B8' }}>{cfg.cityName}</div>}
+                        </div>
                       </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 15 }}>Dr. {d.name}</div>
-                        {cfg && <div style={{ fontSize: 12, color: '#64748B' }}>{cfg.cityName}</div>}
-                        <div style={{ fontSize: 12, color: '#1D4ED8', fontWeight: 700, marginTop: 4 }}>{d.follower_count} follower{d.follower_count === 1 ? '' : 's'}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid #F1F5F9', paddingTop: 12, fontSize: 12, color: '#64748B', fontWeight: 600 }}>
+                        <span>{d.case_count} case{d.case_count === 1 ? '' : 's'}</span>
+                        <span>{d.follower_count} follower{d.follower_count === 1 ? '' : 's'}</span>
                       </div>
+                      <span style={{ fontSize: 13, color: '#1D4ED8', fontWeight: 700, marginTop: -2 }}>View Profile →</span>
                     </Link>
                   )
                 })}
               </div>
-              <div style={{ textAlign: 'center', marginTop: 24 }}>
+              <div style={{ textAlign: 'center', marginTop: 28 }}>
                 <Link href="/dentists" style={{ fontSize: 13, color: '#1D4ED8', fontWeight: 700, textDecoration: 'none' }}>Discover all dentists →</Link>
               </div>
             </div>

@@ -7,6 +7,7 @@ import NationalShell from '@/components/national/NationalShell'
 import { CITY_CONFIGS } from '@/config/cities'
 import { getSpecialty } from '@/lib/dentalSpecialties'
 import FollowButton from './FollowButton'
+import ShareButton from '@/components/national/ShareButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,6 +41,8 @@ interface CaseRow {
   title: string
   specialty: string
   complexity: number
+  like_count: number
+  comment_count: number
   thumb: string | null
 }
 
@@ -57,7 +60,7 @@ async function load(slug: string): Promise<{ dentist: DentistRow; cases: CaseRow
 
   const { data: cases } = await admin
     .from('cases')
-    .select('id, title, specialty, complexity')
+    .select('id, title, specialty, complexity, like_count, comment_count')
     .eq('dentist_id', dentist.id)
     .eq('status', 'approved')
     .order('created_at', { ascending: false })
@@ -82,6 +85,7 @@ async function load(slug: string): Promise<{ dentist: DentistRow; cases: CaseRow
     dentist: dentist as unknown as DentistRow,
     cases: (cases || []).map((c: any) => ({
       id: c.id, title: c.title, specialty: c.specialty, complexity: c.complexity,
+      like_count: c.like_count || 0, comment_count: c.comment_count || 0,
       thumb: thumbs.get(c.id) ?? null,
     })),
   }
@@ -227,15 +231,26 @@ export default async function ProfessionalProfilePage({ params }: { params: Prom
               {cases.map(c => {
                 const spec = getSpecialty(c.specialty)
                 return (
-                  <Link key={c.id} href={`/cases/${c.id}`} style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 14, overflow: 'hidden', textDecoration: 'none', color: '#0F1923' }}>
-                    <div style={{ width: '100%', aspectRatio: '4 / 3', background: '#F1F5F9', overflow: 'hidden' }}>
-                      {c.thumb ? <img src={c.thumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} loading="lazy" /> : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#CBD5E1', fontSize: 28 }}>🦷</div>}
+                  <div key={c.id} style={{ position: 'relative', background: '#fff', border: '1px solid #E2E8F0', borderRadius: 14, overflow: 'hidden' }}>
+                    <Link href={`/cases/${c.id}`} style={{ textDecoration: 'none', color: '#0F1923', display: 'block' }}>
+                      <div style={{ width: '100%', aspectRatio: '4 / 3', background: '#F1F5F9', overflow: 'hidden' }}>
+                        {c.thumb ? <img src={c.thumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} loading="lazy" /> : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#CBD5E1', fontSize: 28 }}>🦷</div>}
+                      </div>
+                      <div style={{ padding: 14 }}>
+                        {spec && <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', padding: '2px 8px', background: spec.bg, color: spec.color, borderRadius: 999 }}>{spec.label}</span>}
+                        <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 14, color: '#0F1923', marginTop: 6, lineHeight: 1.35 }}>{c.title}</h3>
+                        {(c.like_count > 0 || c.comment_count > 0) && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, fontSize: 11, color: '#94A3B8' }}>
+                            {c.like_count > 0 && <span title="Likes">♥ {c.like_count}</span>}
+                            {c.comment_count > 0 && <span title="Comments">💬 {c.comment_count}</span>}
+                          </div>
+                        )}
+                      </div>
+                    </Link>
+                    <div style={{ position: 'absolute', top: 8, right: 8 }}>
+                      <ShareButton caseId={c.id} caseTitle={c.title} dentistName={dentist.name} dentistId={dentist.id} compact />
                     </div>
-                    <div style={{ padding: 14 }}>
-                      {spec && <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', padding: '2px 8px', background: spec.bg, color: spec.color, borderRadius: 999 }}>{spec.label}</span>}
-                      <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 14, color: '#0F1923', marginTop: 6, lineHeight: 1.35 }}>{c.title}</h3>
-                    </div>
-                  </Link>
+                  </div>
                 )
               })}
             </div>

@@ -9,6 +9,8 @@ import ReportButton from './ReportButton'
 import LikeButton from './LikeButton'
 import SaveButton from './SaveButton'
 import Comments from './Comments'
+import ShareButton from '@/components/national/ShareButton'
+import { NATIONAL_ORIGIN } from '@/config/cities'
 
 export const dynamic = 'force-dynamic'
 
@@ -85,9 +87,33 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
     return { title: 'Case | Dentist In India', robots: { index: false, follow: false } }
   }
   const spec = getSpecialty(data.row.specialty)
+  const dentistName = data.row.dentists?.name ?? 'an MCI-verified dentist'
+  const ogTitle = `${data.row.title} by Dr. ${dentistName}`
+  const ogDescription = data.row.description?.slice(0, 160)
+    || `${spec?.label || 'Clinical case'} · ${'★'.repeat(data.row.complexity)} complexity · Shared on DentistIn India`
+  // Prefer a clinical (before/after) photo for the share preview; fall
+  // back to whatever photo is first. Photo URLs are already absolute
+  // (Supabase storage), so they work directly as og:image.
+  const ogPhoto = data.photos.find(p => p.kind === 'before' || p.kind === 'after') || data.photos[0]
+  const ogImage = ogPhoto?.url
+  const ogUrl = `${NATIONAL_ORIGIN}/cases/${data.row.id}`
   return {
     title: `${data.row.title} | Dentist In India`,
-    description: data.row.description?.slice(0, 160) || `A ${spec?.label || 'clinical'} case by Dr. ${data.row.dentists?.name ?? 'an MCI-verified dentist'}.`,
+    description: ogDescription,
+    openGraph: {
+      title: ogTitle,
+      description: ogDescription,
+      url: ogUrl,
+      siteName: 'Dentist In India',
+      type: 'article',
+      ...(ogImage ? { images: [{ url: ogImage }] } : {}),
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: ogTitle,
+      description: ogDescription,
+      ...(ogImage ? { images: [ogImage] } : {}),
+    },
   }
 }
 
@@ -210,6 +236,12 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
                 caseId={data.row.id}
                 initialSaved={mySaved}
                 signedIn={!!user?.email}
+              />
+              <ShareButton
+                caseId={data.row.id}
+                caseTitle={data.row.title}
+                dentistName={data.row.dentists?.name || 'a verified dentist'}
+                dentistId={data.row.dentist_id}
               />
             </div>
           )}

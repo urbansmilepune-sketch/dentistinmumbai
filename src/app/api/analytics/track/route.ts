@@ -9,13 +9,17 @@ const supabase = createClient(
 export async function POST(request: NextRequest) {
   try {
     const { dentist_id, event_type } = await request.json()
-    // event_type: 'profile_view' | 'whatsapp_click' | 'call_click' | 'booking_click'
+    // event_type: 'profile_view' | 'whatsapp_click' | 'call_click' | 'booking_click' | 'case_share'
+    // case_share is attributed to the case's *author* — the sharer can be
+    // anyone, but the signal we care about is "this dentist's work got
+    // amplified". No per-channel counter on the dentists table yet, so
+    // the increment_counter step below skips it.
 
     if (!dentist_id || !event_type) {
       return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
     }
 
-    const validEvents = ['profile_view', 'whatsapp_click', 'call_click', 'booking_click']
+    const validEvents = ['profile_view', 'whatsapp_click', 'call_click', 'booking_click', 'case_share']
     if (!validEvents.includes(event_type)) {
       return NextResponse.json({ error: 'Invalid event type' }, { status: 400 })
     }

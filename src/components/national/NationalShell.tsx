@@ -39,7 +39,7 @@ export default async function NationalShell({ badge, children }: Props) {
             )}
           </Link>
           <div style={{ display: 'flex', alignItems: 'center', gap: 18, fontSize: 14, fontWeight: 600 }}>
-            <Link href="/cases"        style={{ color: '#475569', textDecoration: 'none' }}>Cases</Link>
+            <Link href="/cases"        style={{ color: '#475569', textDecoration: 'none' }}>Discover</Link>
             <Link href="/dentists"     style={{ color: '#475569', textDecoration: 'none' }}>Dentists</Link>
             <Link href="/cities"       style={{ color: '#475569', textDecoration: 'none' }}>Cities</Link>
             <Link href="/for-dentists" style={{ color: '#475569', textDecoration: 'none' }}>For Dentists</Link>
