@@ -6,6 +6,7 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 import NationalShell from '@/components/national/NationalShell'
 import { CITY_CONFIGS } from '@/config/cities'
 import { getSpecialty } from '@/lib/dentalSpecialties'
+import FollowButton from './FollowButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -106,6 +107,34 @@ export default async function ProfessionalProfilePage({ params }: { params: Prom
   const { data: { user } } = await supabase.auth.getUser()
   const isOwner = !!user?.email && user.email.toLowerCase() === dentist.email.toLowerCase()
 
+  // Follow counts + my-follow state. Service-role read because
+  // dentist_follows allows public select via policy but we keep the
+  // single client to match the rest of the page. Three counts in one
+  // round-trip via Promise.all.
+  const followAdmin = createServiceClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  )
+  let followerCount = 0
+  let followingCount = 0
+  let viewerFollowing = false
+  let viewerDentistId: string | null = null
+  if (user?.email) {
+    const { data: viewer } = await supabase
+      .from('dentists').select('id').eq('email', user.email).single()
+    viewerDentistId = viewer?.id ?? null
+  }
+  const [{ count: fCount }, { count: fgCount }, { data: meFollow }] = await Promise.all([
+    followAdmin.from('dentist_follows').select('*', { count: 'exact', head: true }).eq('following_id', dentist.id),
+    followAdmin.from('dentist_follows').select('*', { count: 'exact', head: true }).eq('follower_id', dentist.id),
+    viewerDentistId
+      ? followAdmin.from('dentist_follows').select('id').eq('follower_id', viewerDentistId).eq('following_id', dentist.id).maybeSingle()
+      : Promise.resolve({ data: null } as any),
+  ])
+  followerCount = fCount ?? 0
+  followingCount = fgCount ?? 0
+  viewerFollowing = !!meFollow
+
   const cityCfg = dentist.city ? (CITY_CONFIGS as any)[dentist.city] : null
   const initials = dentist.name.split(' ').map(p => p[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
 
@@ -148,6 +177,13 @@ export default async function ProfessionalProfilePage({ params }: { params: Prom
               )}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <FollowButton
+                slug={dentist.slug}
+                signedIn={!!user?.email}
+                isOwn={isOwner}
+                initialFollowing={viewerFollowing}
+                initialFollowerCount={followerCount}
+              />
               {cityCfg && (
                 <a href={`https://${cityCfg.domain}/dentist/${dentist.slug}`} target="_blank" rel="noopener" style={{ padding: '9px 16px', minHeight: 38, background: '#1D4ED8', color: '#fff', borderRadius: 8, fontSize: 13, fontWeight: 700, textDecoration: 'none', textAlign: 'center' }}>
                   Book on {cityCfg.cityName} →
@@ -220,11 +256,14 @@ export default async function ProfessionalProfilePage({ params }: { params: Prom
           />
         </div>
 
-        {/* Coming soon panels */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, marginTop: 18 }}>
+        {/* Stats row — followers + following are real (Phase 1b);
+            CPD + courses stay as coming-soon placeholders until those
+            products ship. */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginTop: 18 }}>
+          <RealStat label="Followers"   value={followerCount} />
+          <RealStat label="Following"   value={followingCount} />
           <ComingSoon label="CPD points earned"  value="0" hint="Continuing dental education tracking is coming soon." />
           <ComingSoon label="Courses"             value="0" hint="Course creation + enrolment is coming soon." />
-          <ComingSoon label="Followers"           value="0" hint="Following + feed is coming in Phase 1b." />
         </div>
       </main>
     </NationalShell>
@@ -238,6 +277,15 @@ function ProfileBlock({ title, value, emptyHint }: { title: string; value: strin
       {value
         ? <p style={{ fontSize: 13, color: '#475569', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{value}</p>
         : <p style={{ fontSize: 12, color: '#94A3B8', lineHeight: 1.6, fontStyle: 'italic' }}>{emptyHint}</p>}
+    </div>
+  )
+}
+
+function RealStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12, padding: '14px 18px' }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: '#94A3B8', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 4 }}>{label}</div>
+      <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, color: '#0F1923', lineHeight: 1 }}>{value.toLocaleString('en-IN')}</div>
     </div>
   )
 }
