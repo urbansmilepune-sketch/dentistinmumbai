@@ -51,12 +51,48 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const supabase = await createClient()
   const h = await headers()
   const city = getCityBySlug(h.get('x-city-slug'))
-  const { data: d } = await supabase.from('dentists').select('name, clinic_name, areas(name), bio').eq('slug', slug).single()
+  const { data: d } = await supabase
+    .from('dentists')
+    .select('name, clinic_name, areas(name), bio, profile_photo, qualifications, specialties')
+    .eq('slug', slug)
+    .single()
   if (!d) return {}
+
+  const brand = `DentistIn${city.cityName.replace(/\s+/g, '')}`
+  const areaName = (d.areas as any)?.name || city.cityName
+  // Pick the most search-friendly qualifier for the title — first listed
+  // specialty if any, otherwise the qualifications string. Falls back to
+  // "Dentist" so the title stays grammatical when the row is sparse.
+  const specialization = (Array.isArray(d.specialties) && d.specialties[0])
+    || d.qualifications
+    || 'Dentist'
+  const bioSnippet = d.bio ? d.bio.slice(0, 150).trim() : ''
+  const description = bioSnippet
+    ? `Book appointment with ${d.name} at ${d.clinic_name} in ${areaName}. ${bioSnippet}${d.bio && d.bio.length > 150 ? '…' : ''}`
+    : `Book appointment with ${d.name} at ${d.clinic_name} in ${areaName}.`
+  const url = `${cityOrigin(city)}/dentist/${slug}`
+  const ogImage = d.profile_photo || undefined
+
   return {
-    title: `${d.name} — ${d.clinic_name} | ${city.domain}`,
-    description: d.bio || `Book an appointment with ${d.name} at ${d.clinic_name} in ${(d.areas as any)?.name || city.cityName}.`,
-    alternates: { canonical: `${cityOrigin(city)}/dentist/${slug}` },
+    title: `${d.name} - ${specialization} in ${city.cityName} | ${brand}`,
+    description,
+    alternates: { canonical: url },
+    openGraph: {
+      title: `${d.name} - ${specialization} in ${city.cityName}`,
+      description,
+      url,
+      siteName: brand,
+      locale: 'en_IN',
+      type: 'profile',
+      ...(ogImage ? { images: [{ url: ogImage }] } : {}),
+    },
+    twitter: {
+      card: ogImage ? 'summary_large_image' : 'summary',
+      title: `${d.name} - ${specialization} in ${city.cityName}`,
+      description,
+      ...(ogImage ? { images: [ogImage] } : {}),
+    },
+    robots: { index: true, follow: true, googleBot: { index: true, follow: true } },
   }
 }
 
@@ -127,11 +163,17 @@ export default async function DentistProfilePage({ params }: Props) {
   const avgRating = approvedReviews.length > 0
     ? (approvedReviews.reduce((sum: number, r: any) => sum + r.rating, 0) / approvedReviews.length).toFixed(1) : null
 
+  // Dentist is a Schema.org subtype of MedicalBusiness → LocalBusiness, so
+  // this satisfies both rich-snippet eligibility and Google's local pack
+  // requirements. image enables the dentist's photo to surface in the
+  // knowledge-panel / search-result thumbnail.
   const jsonLd = {
     '@context': 'https://schema.org', '@type': ['Dentist', 'Physician'],
     name: dentist.name, medicalSpecialty: 'Dentistry',
     description: dentist.bio || `Dentist at ${dentist.clinic_name}`,
+    ...(dentist.profile_photo ? { image: dentist.profile_photo } : {}),
     address: { '@type': 'PostalAddress', addressLocality: (dentist.areas as any)?.name || city.cityName, addressCountry: 'IN' },
+    areaServed: { '@type': 'City', name: city.cityName },
     telephone: dentist.phone, url: `${origin}/dentist/${slug}`,
     ...(avgRating && { aggregateRating: { '@type': 'AggregateRating', ratingValue: avgRating, reviewCount: approvedReviews.length } }),
   }

@@ -1,10 +1,55 @@
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import SearchBar from '@/components/SearchBar'
 import FaqAccordion from '@/components/FaqAccordion'
-import { getCityBySlug, cityBrandName, cityBrandTld } from '@/config/cities'
+import { CITY_CONFIGS, NATIONAL_ORIGIN, cityOrigin, getCityBySlug, cityBrandName, cityBrandTld, isNationalHost } from '@/config/cities'
 import NationalHome from '@/components/national/NationalHome'
+
+// Per-host metadata. dentistinindia.in gets network-framed copy; every
+// city domain gets a "Dentist in <City>" search title tuned for the
+// "dentist in <city>" intent. proxy.ts has already tagged the request
+// with x-is-national / x-city-slug by the time this runs.
+export async function generateMetadata(): Promise<Metadata> {
+  const h = await headers()
+  if (h.get('x-is-national') === '1' || isNationalHost(h.get('x-forwarded-host') || h.get('host'))) {
+    const liveCityCount = Object.keys(CITY_CONFIGS).length
+    return {
+      title: `DentistIn India | India's Dental Professional Network | ${liveCityCount} Cities`,
+      description: "India's largest dental professional network. Find verified dentists across India, book appointments, share clinical cases, and connect with dental professionals.",
+      alternates: { canonical: NATIONAL_ORIGIN },
+      openGraph: {
+        title: "DentistIn India | India's Dental Professional Network",
+        description: 'Find verified dentists across India. Book appointments. Share clinical cases. Connect with peers.',
+        url: NATIONAL_ORIGIN,
+        siteName: 'Dentist In India',
+        locale: 'en_IN',
+        type: 'website',
+      },
+      robots: { index: true, follow: true, googleBot: { index: true, follow: true } },
+    }
+  }
+
+  const city = getCityBySlug(h.get('x-city-slug'))
+  const origin = cityOrigin(city)
+  const brand = cityBrandName(city) // e.g. DentistInPune
+  return {
+    title: `Dentist in ${city.cityName} | Book Verified Dentists | ${brand}`,
+    description: `Find and book verified dentists in ${city.cityName}. Browse ${city.cityName}'s top dental clinics for implants, braces, root canal, teeth whitening and more. Book appointment in 30 seconds.`,
+    keywords: `dentist in ${city.cityName}, dental clinic ${city.cityName}, best dentist ${city.cityName}, dental implants ${city.cityName}, orthodontist ${city.cityName}`,
+    alternates: { canonical: origin },
+    openGraph: {
+      title: `Dentist in ${city.cityName} | ${brand}`,
+      description: `Book verified dentists in ${city.cityName} online`,
+      url: origin,
+      siteName: brand,
+      locale: 'en_IN',
+      type: 'website',
+    },
+    robots: { index: true, follow: true, googleBot: { index: true, follow: true } },
+  }
+}
 
 function faqItemsFor(cityName: string, domain: string) {
   return [
@@ -118,8 +163,21 @@ export default async function HomePage() {
   const flatAreas    = isMumbai ? [] : areaList.slice(0, 16)
   const topTreatments = treatmentList.slice(0, 12)
 
+  // MedicalOrganization JSON-LD for the city directory. Google uses this
+  // for local-business rich results and the "About this result" panel.
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'MedicalOrganization',
+    name: brandName,
+    url: `https://${city.domain}`,
+    description: `Verified dental directory for ${city.cityName}, India.`,
+    areaServed: { '@type': 'City', name: city.cityName, address: { '@type': 'PostalAddress', addressCountry: 'IN' } },
+    medicalSpecialty: 'Dentistry',
+  }
+
   return (
     <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       {/* NAV */}
       <header style={{ background: '#fff', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 100, backdropFilter: 'blur(8px)' }}>
         <nav className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 68 }}>
