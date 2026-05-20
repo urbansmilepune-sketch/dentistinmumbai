@@ -150,9 +150,21 @@ export default async function NationalHome() {
               <Link href="/dentists"     style={{ color: '#475569', textDecoration: 'none' }}>Dentists</Link>
               <Link href="/cities"       style={{ color: '#475569', textDecoration: 'none' }}>Cities</Link>
               {signedIn && <Link href="/feed" style={{ color: '#1D4ED8', textDecoration: 'none', fontWeight: 700 }}>My Feed</Link>}
-              {signedIn
-                ? <Link href="/professional/me" style={{ padding: '8px 16px', background: '#0F1923', color: '#fff', borderRadius: 8, textDecoration: 'none' }}>My Profile</Link>
-                : <Link href="/join" style={{ padding: '8px 16px', background: '#1D4ED8', color: '#fff', borderRadius: 8, textDecoration: 'none' }}>Join the Network</Link>}
+              {signedIn ? (
+                <>
+                  <Link href="/professional/me" style={{ padding: '8px 16px', background: '#0F1923', color: '#fff', borderRadius: 8, textDecoration: 'none' }}>My Profile</Link>
+                  <form action="/auth/signout" method="post" style={{ margin: 0 }}>
+                    <button type="submit" style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, font: 'inherit', fontSize: 14, fontWeight: 600, color: '#475569' }}>
+                      Sign out
+                    </button>
+                  </form>
+                </>
+              ) : (
+                <>
+                  <Link href="/login" style={{ color: '#475569', textDecoration: 'none' }}>Login</Link>
+                  <Link href="/join" style={{ padding: '8px 16px', background: '#1D4ED8', color: '#fff', borderRadius: 8, textDecoration: 'none' }}>Join Free →</Link>
+                </>
+              )}
             </div>
           </div>
         </nav>
@@ -193,6 +205,12 @@ export default async function NationalHome() {
                 </>
               )}
             </div>
+            {!signedIn && (
+              <div style={{ marginTop: 18, fontSize: 14, color: '#64748B' }}>
+                Already a member?{' '}
+                <Link href="/login" style={{ color: '#1D4ED8', fontWeight: 700, textDecoration: 'none' }}>Sign in →</Link>
+              </div>
+            )}
           </div>
         </section>
 

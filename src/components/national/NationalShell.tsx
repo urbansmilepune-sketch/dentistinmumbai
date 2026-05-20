@@ -49,11 +49,19 @@ export default async function NationalShell({ badge, children }: Props) {
                 <Link href="/professional/me" style={{ padding: '8px 16px', background: '#0F1923', color: '#fff', borderRadius: 8, textDecoration: 'none' }}>
                   My Profile
                 </Link>
+                <form action="/auth/signout" method="post" style={{ margin: 0 }}>
+                  <button type="submit" style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, font: 'inherit', fontSize: 14, fontWeight: 600, color: '#475569' }}>
+                    Sign out
+                  </button>
+                </form>
               </>
             ) : (
-              <Link href="/join" style={{ padding: '8px 16px', background: '#1D4ED8', color: '#fff', borderRadius: 8, textDecoration: 'none' }}>
-                Join the Network
-              </Link>
+              <>
+                <Link href="/login" style={{ color: '#475569', textDecoration: 'none' }}>Login</Link>
+                <Link href="/join" style={{ padding: '8px 16px', background: '#1D4ED8', color: '#fff', borderRadius: 8, textDecoration: 'none' }}>
+                  Join Free →
+                </Link>
+              </>
             )}
           </div>
         </div>
