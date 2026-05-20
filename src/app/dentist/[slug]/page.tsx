@@ -14,6 +14,7 @@ import ViewTracker from './ViewTracker'
 import TrackedLink from './TrackedLink'
 import ClinicContactButton from './ClinicContactButton'
 import ReviewForm from '@/components/ReviewForm'
+import CitiesFooterLinks from '@/components/CitiesFooterLinks'
 
 export const dynamic = 'force-dynamic'
 
@@ -434,6 +435,8 @@ export default async function DentistProfilePage({ params }: Props) {
         whatsappUrl={waUrl}
         phone={dentist.phone ?? null}
       />
+
+      <CitiesFooterLinks currentSlug={dentist.city} />
 
       <footer style={{ background: '#0A1628', padding: '24px 20px', color: 'rgba(255,255,255,0.6)', textAlign: 'center', marginTop: 40 }}>
         <p style={{ fontSize: 13 }}>© {new Date().getFullYear()} DentistIn. All rights reserved.</p>

@@ -6,6 +6,8 @@ import SearchBar from '@/components/SearchBar'
 import FaqAccordion from '@/components/FaqAccordion'
 import { CITY_CONFIGS, NATIONAL_ORIGIN, cityOrigin, getCityBySlug, cityBrandName, cityBrandTld, isNationalHost } from '@/config/cities'
 import NationalHome from '@/components/national/NationalHome'
+import CitiesFooterLinks from '@/components/CitiesFooterLinks'
+import PopularSearches from '@/components/PopularSearches'
 
 // Per-host metadata. dentistinindia.in gets network-framed copy; every
 // city domain gets a "Dentist in <City>" search title tuned for the
@@ -536,6 +538,9 @@ export default async function HomePage() {
           </div>
         </section>
       </main>
+
+      <PopularSearches citySlug={city.citySlug} cityName={city.cityName} />
+      <CitiesFooterLinks currentSlug={city.citySlug} />
 
       {/* FOOTER */}
       <footer style={{ background: '#0A1628', padding: '56px 20px 24px', color: 'rgba(255,255,255,0.7)' }}>

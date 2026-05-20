@@ -330,7 +330,25 @@ export default async function NationalHome() {
               </FooterColumn>
             </div>
           </div>
-          <div style={{ maxWidth: 1100, margin: '24px auto 0', paddingTop: 18, borderTop: '1px solid #1E293B', fontSize: 12, color: '#64748B' }}>
+
+          {/* Explore by City — reciprocal dofollow links back to each
+              city domain. Inline row so the link juice stays compact
+              rather than competing with the brand columns above. */}
+          <div style={{ maxWidth: 1100, margin: '24px auto 0', paddingTop: 18, borderTop: '1px solid #1E293B' }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#fff', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 10 }}>
+              Explore by City
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 14px', fontSize: 13, color: '#94A3B8' }}>
+              {Object.values(CITY_CONFIGS).map((c, i) => (
+                <span key={c.citySlug} style={{ display: 'inline-flex', alignItems: 'center' }}>
+                  <a href={`https://${c.domain}`} style={{ color: '#94A3B8', textDecoration: 'none' }}>{c.cityName}</a>
+                  {i < Object.values(CITY_CONFIGS).length - 1 && <span aria-hidden="true" style={{ margin: '0 8px', color: '#475569' }}>|</span>}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ maxWidth: 1100, margin: '20px auto 0', paddingTop: 14, borderTop: '1px solid #1E293B', fontSize: 12, color: '#64748B' }}>
             © {new Date().getFullYear()} DentistIn. All rights reserved.
           </div>
         </footer>
