@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import DashboardShell from './DashboardShell'
 import SupportButton from '@/components/SupportButton'
+import { completionPct } from '@/lib/profileCompletion'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -27,15 +28,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   }
   if (!dentist.is_active) redirect('/for-dentists/pending')
 
-  // Profile completion
-  const checks = [
-    !!dentist.profile_photo,
-    !!dentist.cover_photo,
-    !!(dentist.bio && dentist.bio.length >= 50),
-    !!dentist.whatsapp,
-    !!dentist.maps_embed,
-  ]
-  const pct = Math.round((checks.filter(Boolean).length / checks.length) * 100)
+  const pct = completionPct(dentist)
 
   return (
     <>

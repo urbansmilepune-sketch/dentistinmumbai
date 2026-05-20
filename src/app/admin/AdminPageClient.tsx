@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import AdminShell from './AdminShell'
 import CommunicationsTab from './CommunicationsTab'
@@ -159,6 +159,25 @@ function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: st
   )
 }
 
+interface DentistHealthRow {
+  id: string
+  slug: string
+  name: string
+  clinic_name: string | null
+  email: string | null
+  phone: string | null
+  whatsapp: string | null
+  city: string | null
+  tier: string | null
+  tier_expires_at: string | null
+  created_at: string
+  area: string | null
+  completion: number
+  flags: { zeroBookings30d: boolean; lowCompletion: boolean; noPhoto: boolean; noMaps: boolean; noGallery: boolean }
+  gallery_count: number
+  risk_score: number
+}
+
 interface AdminPageClientProps {
   stats: any
   dentists: any[]
@@ -174,6 +193,10 @@ interface AdminPageClientProps {
    * specifically by the Communications tab — independent of the cityFilter
    * URL param and not capped at 100 rows. */
   commsDentists: any[]
+  /** Active-roster health snapshot used by the new "Dentist Health" tab
+   * + the analytics rollup. Pre-computed on the server so the client tab
+   * just sorts / filters; no extra round-trip. */
+  dentistHealth: DentistHealthRow[]
 }
 
 // User-requested display order for the city dropdown — All Cities first,
@@ -344,7 +367,218 @@ function ApprovalSourceBadge({ autoApproved }: { autoApproved: boolean }) {
   )
 }
 
-export default function AdminPageClient({ stats, dentists, registrations, appointments, enquiries, reviews, areas, foundingConfig, analytics, cityFilter, commsDentists }: AdminPageClientProps) {
+// ────────────────────────────────────────────────────────────────────────
+// Dentist Health tab
+//
+// Surfaces every active dentist with at-risk signals from the server-side
+// rollup (zero bookings in 30d, sub-60% completion, missing photo/maps/
+// gallery). Inline so the rest of the admin stays in one client component;
+// the data is pre-aggregated server-side so this just sorts/filters.
+// Quick actions are mailto: + wa.me links — no extra API endpoints needed.
+// ────────────────────────────────────────────────────────────────────────
+type HealthSort = 'risk' | 'recent' | 'alpha'
+
+function buildWhatsAppNumber(input: string | null | undefined): string | null {
+  if (!input) return null
+  // Strip everything but digits; if 10 digits assume India (+91), else trust
+  // the caller supplied an already-prefixed international number.
+  const digits = input.replace(/\D/g, '')
+  if (!digits) return null
+  if (digits.length === 10) return '91' + digits
+  return digits
+}
+
+function flagChip(label: string, color: string, bg: string, border: string) {
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 4,
+      padding: '2px 8px', borderRadius: 12,
+      fontSize: 10, fontWeight: 700, letterSpacing: '0.02em',
+      background: bg, color, border: `1px solid ${border}`,
+      whiteSpace: 'nowrap',
+    }}>{label}</span>
+  )
+}
+
+function DentistHealthTab({ dentists, cityFilter }: { dentists: DentistHealthRow[]; cityFilter: string | null }) {
+  const [sort, setSort] = useState<HealthSort>('risk')
+  const [atRiskOnly, setAtRiskOnly] = useState(true)
+
+  const list = useMemo(() => {
+    const base = atRiskOnly ? dentists.filter(d => d.risk_score > 0) : dentists
+    const sorted = [...base]
+    if (sort === 'risk') {
+      // Tie-break by name so the order is stable across renders.
+      sorted.sort((a, b) => b.risk_score - a.risk_score || a.name.localeCompare(b.name))
+    } else if (sort === 'recent') {
+      sorted.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    } else {
+      sorted.sort((a, b) => a.name.localeCompare(b.name))
+    }
+    return sorted
+  }, [dentists, sort, atRiskOnly])
+
+  const totalAtRisk = dentists.filter(d => d.risk_score > 0).length
+  const zeroBookings = dentists.filter(d => d.flags.zeroBookings30d).length
+  const incomplete = dentists.filter(d => d.flags.lowCompletion).length
+
+  // Pre-baked outreach templates so the admin can fire a personal nudge in
+  // a single click. Subject/body intentionally short — they're conversation
+  // openers, not pitches.
+  function emailHref(d: DentistHealthRow): string {
+    if (!d.email) return '#'
+    const reasons: string[] = []
+    if (d.flags.zeroBookings30d) reasons.push('boost your bookings')
+    if (d.flags.lowCompletion) reasons.push('complete your profile')
+    if (d.flags.noPhoto) reasons.push('add a profile photo')
+    if (d.flags.noMaps) reasons.push('plug in your Google Maps')
+    if (d.flags.noGallery) reasons.push('upload a few clinic photos')
+    const why = reasons.length > 0 ? reasons.join(', ') : 'help you get more from your listing'
+    const subject = encodeURIComponent(`Quick win for ${d.clinic_name || d.name}`)
+    const body = encodeURIComponent(
+      `Hi Dr. ${d.name.split(' ').slice(-1)[0]},\n\n` +
+      `Saw a couple of things on your listing we can ${why}. ` +
+      `Want me to walk you through it on a 5-minute call?\n\n` +
+      `— Urban Smile team`,
+    )
+    return `mailto:${d.email}?subject=${subject}&body=${body}`
+  }
+
+  function waHref(d: DentistHealthRow): string | null {
+    const num = buildWhatsAppNumber(d.whatsapp || d.phone)
+    if (!num) return null
+    const text = encodeURIComponent(
+      `Hi Dr. ${d.name.split(' ').slice(-1)[0]}, this is the Urban Smile team. ` +
+      `Spotted a quick win on your listing — got 2 minutes?`,
+    )
+    return `https://wa.me/${num}?text=${text}`
+  }
+
+  const sortPillStyle = (active: boolean): React.CSSProperties => ({
+    padding: '6px 12px', borderRadius: 999,
+    fontSize: 12, fontWeight: 600,
+    background: active ? 'var(--blue)' : '#fff',
+    color: active ? '#fff' : 'var(--text-secondary)',
+    border: `1px solid ${active ? 'var(--blue)' : '#E2E8F0'}`,
+    cursor: 'pointer', fontFamily: 'var(--font-body)',
+  })
+
+  const actionBtn = (variant: 'primary' | 'secondary' | 'muted'): React.CSSProperties => ({
+    padding: '6px 10px', minHeight: 32,
+    fontSize: 12, fontWeight: 600,
+    borderRadius: 7,
+    textDecoration: 'none',
+    fontFamily: 'var(--font-body)',
+    display: 'inline-flex', alignItems: 'center', gap: 4,
+    whiteSpace: 'nowrap',
+    background: variant === 'primary' ? 'var(--blue)' : variant === 'secondary' ? '#25D366' : '#fff',
+    color: variant === 'muted' ? 'var(--text-secondary)' : '#fff',
+    border: variant === 'muted' ? '1px solid #E2E8F0' : 'none',
+  })
+
+  return (
+    <div>
+      <PageHeader
+        title="Dentist Health"
+        subtitle="At-risk dentists across the active roster — booking droughts, incomplete profiles, missing photos or maps. Reach out before they churn."
+      />
+      <CityFilterBar cityFilter={cityFilter} label="Scope to city" />
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16, marginBottom: 20 }}>
+        <StatCard icon="🧑‍⚕️" label="Active dentists" value={dentists.length} color="var(--blue)" />
+        <StatCard icon="⚠️" label="At risk" value={totalAtRisk} color="#DC2626" />
+        <StatCard icon="📉" label="0 bookings · 30d" value={zeroBookings} color="#DC2626" />
+        <StatCard icon="🧩" label="Incomplete < 60%" value={incomplete} color="#F59E0B" />
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16, padding: '10px 14px', background: '#fff', border: '1px solid var(--border)', borderRadius: 10 }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginRight: 8 }}>Sort</span>
+        <button onClick={() => setSort('risk')}   style={sortPillStyle(sort === 'risk')}>Most at risk</button>
+        <button onClick={() => setSort('recent')} style={sortPillStyle(sort === 'recent')}>Recently joined</button>
+        <button onClick={() => setSort('alpha')}  style={sortPillStyle(sort === 'alpha')}>Alphabetical</button>
+        <span style={{ width: 1, height: 18, background: '#E2E8F0', margin: '0 6px' }} />
+        <button onClick={() => setAtRiskOnly(v => !v)} style={sortPillStyle(atRiskOnly)}>
+          {atRiskOnly ? '✓ At-risk only' : 'Show all dentists'}
+        </button>
+        <div style={{ flex: 1 }} />
+        <span style={{ fontSize: 12, color: 'var(--muted)' }}>{list.length} shown</span>
+      </div>
+
+      <div style={{ background: '#fff', border: `1px solid ${CARD_BORDER}`, borderRadius: 16, boxShadow: CARD_SHADOW, overflow: 'hidden' }}>
+        {list.length === 0 ? (
+          <div style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>
+            {atRiskOnly ? 'Everyone looks healthy 🎉 No at-risk dentists in this scope.' : 'No dentists in this scope.'}
+          </div>
+        ) : list.map((d, i) => {
+          const wa = waHref(d)
+          const initials = d.name.split(' ').map(p => p[0]).filter(Boolean).slice(0, 2).join('').toUpperCase() || 'D'
+          return (
+            <div key={d.id} style={{
+              display: 'grid',
+              gridTemplateColumns: 'minmax(220px, 1.6fr) minmax(280px, 2fr) minmax(140px, auto) auto',
+              gap: 16, alignItems: 'center',
+              padding: '14px 18px',
+              borderTop: i > 0 ? '1px solid var(--border)' : 'none',
+            }}>
+              {/* Identity */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                <div style={{ width: 38, height: 38, borderRadius: '50%', background: '#EFF6FF', color: '#1D4ED8', fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{initials}</div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name}</div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.clinic_name || '—'}</div>
+                  <div style={{ display: 'flex', gap: 6, marginTop: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <CityBadge slug={d.city} />
+                    {d.area && <span style={{ fontSize: 10, color: 'var(--muted)' }}>{d.area}</span>}
+                    <Badge status={d.tier || 'free'} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Flags + completion */}
+              <div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
+                  {d.flags.zeroBookings30d && flagChip('0 bookings · 30d', '#991B1B', '#FEE2E2', '#FECACA')}
+                  {d.flags.lowCompletion   && flagChip(`Incomplete ${d.completion}%`, '#92400E', '#FEF3C7', '#FDE68A')}
+                  {d.flags.noPhoto         && flagChip('No photo', '#92400E', '#FEF3C7', '#FDE68A')}
+                  {d.flags.noMaps          && flagChip('No maps', '#92400E', '#FEF3C7', '#FDE68A')}
+                  {d.flags.noGallery       && flagChip('No gallery', '#92400E', '#FEF3C7', '#FDE68A')}
+                  {d.risk_score === 0      && flagChip('Healthy', '#166534', '#DCFCE7', '#BBF7D0')}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ width: 100, height: 6, background: 'var(--bg)', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${d.completion}%`, background: d.completion >= 80 ? 'var(--green)' : d.completion >= 60 ? '#F59E0B' : '#DC2626', borderRadius: 3 }} />
+                  </div>
+                  <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>{d.completion}% complete</span>
+                </div>
+              </div>
+
+              {/* Joined / risk score */}
+              <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                <div style={{ fontWeight: 700, color: d.risk_score >= 5 ? '#DC2626' : d.risk_score >= 3 ? '#D97706' : 'var(--text-secondary)' }}>
+                  Risk score: {d.risk_score}
+                </div>
+                <div>Joined {new Date(d.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+              </div>
+
+              {/* Actions */}
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                {d.email
+                  ? <a href={emailHref(d)} style={actionBtn('primary')}>📧 Email</a>
+                  : <span style={actionBtn('muted')} title="No email on file">📧 Email</span>}
+                {wa
+                  ? <a href={wa} target="_blank" rel="noopener noreferrer" style={actionBtn('secondary')}>💚 WhatsApp</a>
+                  : <span style={actionBtn('muted')} title="No phone/whatsapp on file">💚 WhatsApp</span>}
+                <a href={`/dentist/${d.slug}`} target="_blank" rel="noopener noreferrer" style={actionBtn('muted')}>↗ Profile</a>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+export default function AdminPageClient({ stats, dentists, registrations, appointments, enquiries, reviews, areas, foundingConfig, analytics, cityFilter, commsDentists, dentistHealth }: AdminPageClientProps) {
   const [section, setSection] = useState('dashboard')
   const [dentistList, setDentistList] = useState(dentists)
   const [reviewList, setReviewList] = useState(reviews)
@@ -630,7 +864,7 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
                 icon="💰"
                 label="Paid Dentists"
                 value={analytics.paidDentists}
-                sub={`${analytics.goldCount} gold · ${analytics.featuredCount} featured`}
+                sub={`${analytics.silverCount} silver · ${analytics.goldCount} gold · ${analytics.featuredCount} featured`}
                 color="#D97706"
               />
               <MetricCard
@@ -653,6 +887,20 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
                 value={`${analytics.conversionPct.toFixed(1)}%`}
                 sub="Paid / active dentists"
                 color="#EC4899"
+              />
+              <MetricCard
+                icon="💎"
+                label="Avg Revenue / Paid Dentist"
+                value={`₹${Math.round(analytics.avgRevenuePerPaid).toLocaleString('en-IN')}`}
+                sub="MRR ÷ paid dentists"
+                color="#0EA5E9"
+              />
+              <MetricCard
+                icon="⚠️"
+                label="Churn Risk · 7 days"
+                value={(analytics.churnRisk7d as any[]).length}
+                sub={(analytics.churnRisk7d as any[]).length > 0 ? 'Tier expires within a week' : 'No imminent expiries'}
+                color={(analytics.churnRisk7d as any[]).length > 0 ? '#DC2626' : 'var(--muted)'}
               />
             </div>
 
@@ -792,7 +1040,212 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
                 )}
               </div>
             </div>
+
+            {/* ROW 7 — Booking Funnel */}
+            <SectionTitle>Booking Funnel <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>· last 30 days · profile views → bookings</span></SectionTitle>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16, marginBottom: 16 }}>
+              <MetricCard
+                icon="📅"
+                label="Bookings This Month"
+                value={analytics.booking.thisMonth}
+                sub="Submitted via platform"
+                color="#0EA5E9"
+              />
+              <MetricCard
+                icon="🎯"
+                label="View → Book Conversion"
+                value={`${analytics.booking.conversionPct.toFixed(1)}%`}
+                sub={`${analytics.engagement.profile_views.toLocaleString('en-IN')} views → ${analytics.engagement.appointments_last30.toLocaleString('en-IN')} bookings`}
+                color="#7C3AED"
+              />
+              <MetricCard
+                icon="📊"
+                label="Avg Bookings / Dentist"
+                value={analytics.booking.avgPerDentist.toFixed(1)}
+                sub="All-time across active roster"
+                color="var(--blue)"
+              />
+              <MetricCard
+                icon="💚"
+                label="WhatsApp Lead Rate"
+                value={analytics.engagement.profile_views > 0 ? `${((analytics.engagement.whatsapp_clicks / analytics.engagement.profile_views) * 100).toFixed(1)}%` : '—'}
+                sub="WhatsApp clicks per profile view"
+                color="#25D366"
+              />
+            </div>
+            {/* Bookings-by-city table — only show cities that have at least
+                one booking this month so we don't pad the table with zero rows
+                for cities that aren't live yet. */}
+            <div style={{ background: '#fff', border: `1px solid ${CARD_BORDER}`, borderRadius: 16, boxShadow: CARD_SHADOW, overflow: 'hidden', marginBottom: 28 }}>
+              <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15 }}>Bookings by City · this month</h3>
+                <span style={{ fontSize: 12, color: 'var(--muted)' }}>{(analytics.booking.byCity as any[]).filter(c => c.bookings > 0).length} cities active</span>
+              </div>
+              {(() => {
+                const rows = (analytics.booking.byCity as Array<{ slug: string; cityName: string; bookings: number }>).filter(r => r.bookings > 0)
+                if (rows.length === 0) {
+                  return <div style={{ padding: '24px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>No bookings yet this month.</div>
+                }
+                const max = Math.max(1, ...rows.map(r => r.bookings))
+                return (
+                  <div>
+                    {rows.map(r => (
+                      <div key={r.slug} style={{ display: 'grid', gridTemplateColumns: '140px 1fr 60px', alignItems: 'center', gap: 12, padding: '10px 18px', borderTop: '1px solid var(--border)' }}>
+                        <span style={{ fontSize: 13, fontWeight: 600 }}>{r.cityName}</span>
+                        <div style={{ height: 14, background: 'var(--bg)', borderRadius: 4, overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${(r.bookings / max) * 100}%`, background: '#0EA5E9', borderRadius: 4 }} />
+                        </div>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: '#0369A1', textAlign: 'right' }}>{r.bookings}</span>
+                      </div>
+                    ))}
+                  </div>
+                )
+              })()}
+            </div>
+
+            {/* ROW 8 — Patient Metrics */}
+            <SectionTitle>Patient Metrics</SectionTitle>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16, marginBottom: 28 }}>
+              <MetricCard
+                icon="👥"
+                label="Unique Patients"
+                value={analytics.patients.total}
+                sub="All clinics combined"
+                color="#7C3AED"
+              />
+              <MetricCard
+                icon="🆕"
+                label="New Patients This Month"
+                value={analytics.patients.newThisMonth}
+                sub="Created since 1st"
+                color="var(--green)"
+              />
+              <MetricCard
+                icon="🔁"
+                label="Returning Patient Rate"
+                value={`${analytics.patients.returningRatePct.toFixed(1)}%`}
+                sub="Patients with ≥2 visits"
+                color="#D97706"
+              />
+              <MetricCard
+                icon="📈"
+                label="Avg Appointments / Patient"
+                value={analytics.patients.avgAppointmentsPerPatient.toFixed(2)}
+                sub="Among patients with ≥1 visit"
+                color="var(--blue)"
+              />
+            </div>
+
+            {/* ROW 9 — Content & Profile Health */}
+            <SectionTitle>Content & Profile Health</SectionTitle>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16, marginBottom: 28 }}>
+              <MetricCard
+                icon="📊"
+                label="Avg Profile Completion"
+                value={`${analytics.content.avgCompletionPct.toFixed(0)}%`}
+                sub="Across active dentists"
+                color="var(--blue)"
+              />
+              <MetricCard
+                icon="🖼️"
+                label="No Gallery Photos"
+                value={analytics.content.noGallery}
+                sub="Dentists with 0 photos"
+                color="#F59E0B"
+              />
+              <MetricCard
+                icon="🗺️"
+                label="No Maps Embed"
+                value={analytics.content.noMapsEmbed}
+                sub="Missing location iframe"
+                color="#F59E0B"
+              />
+              <MetricCard
+                icon="⭐"
+                label="With Reviews"
+                value={analytics.content.withReviews}
+                sub={`${analytics.content.withoutReviews} dentists have none yet`}
+                color="#10B981"
+              />
+            </div>
+
+            {/* ROW 10 — Dentist Health overview (full detail in the Dentist Health tab) */}
+            <SectionTitle>Dentist Health <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>· at-risk signals</span></SectionTitle>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16, marginBottom: 12 }}>
+              <MetricCard
+                icon="📉"
+                label="0 Bookings · 30 days"
+                value={analytics.health.noBookings30}
+                sub={`Out of ${analytics.health.totalActive} active`}
+                color="#DC2626"
+              />
+              <MetricCard
+                icon="🧩"
+                label="Incomplete Profiles"
+                value={analytics.health.incompleteProfile}
+                sub="< 60% completion"
+                color="#F59E0B"
+              />
+              <MetricCard
+                icon="📷"
+                label="No Profile Photo"
+                value={analytics.health.noPhoto}
+                sub="Headshot missing"
+                color="#F59E0B"
+              />
+              <MetricCard
+                icon="🗺️"
+                label="No Maps Embed"
+                value={analytics.content.noMapsEmbed}
+                sub="Location iframe missing"
+                color="#F59E0B"
+              />
+            </div>
+            <div style={{ marginBottom: 28 }}>
+              <button
+                onClick={() => setSection('dentist-health')}
+                style={{ padding: '9px 16px', minHeight: 38, background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)' }}
+              >Open Dentist Health tab →</button>
+            </div>
+
+            {/* ROW 11 — Outreach */}
+            <SectionTitle>Outreach <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>· cold-email funnel</span></SectionTitle>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16, marginBottom: 28 }}>
+              <MetricCard
+                icon="📇"
+                label="Contacts Uploaded"
+                value={analytics.outreach.contactsTotal}
+                sub="Lifetime, all campaigns"
+                color="var(--blue)"
+              />
+              <MetricCard
+                icon="📤"
+                label="Emails Sent This Month"
+                value={analytics.outreach.sentThisMonth}
+                sub={`${analytics.outreach.sentAll} all-time`}
+                color="var(--blue)"
+              />
+              <MetricCard
+                icon="👁️"
+                label="Open Rate"
+                value={`${analytics.outreach.openRatePct.toFixed(1)}%`}
+                sub={`${analytics.outreach.opened.toLocaleString('en-IN')} opens / ${analytics.outreach.sentAll.toLocaleString('en-IN')} sent`}
+                color="#7C3AED"
+              />
+              <MetricCard
+                icon="🎯"
+                label="Registration Conversions"
+                value={analytics.outreach.registered}
+                sub={`${analytics.outreach.conversionPct.toFixed(2)}% of sent`}
+                color="var(--green)"
+              />
+            </div>
           </div>
+        )}
+
+        {/* DENTIST HEALTH (new tab) */}
+        {section === 'dentist-health' && (
+          <DentistHealthTab dentists={dentistHealth} cityFilter={cityFilter} />
         )}
 
         {/* REGISTRATIONS */}

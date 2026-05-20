@@ -23,6 +23,7 @@ const NAV_ITEMS = [
   { id: 'communications', label: 'Communications', icon: '📣' },
   { id: 'outreach',       label: 'Outreach',       icon: '📧' },
   { id: 'analytics',      label: 'Analytics',      icon: '📈' },
+  { id: 'dentist-health', label: 'Dentist Health', icon: '🩺' },
   { id: 'appointments',   label: 'Appointments',   icon: '📅' },
   { id: 'enquiries',      label: 'Enquiries',      icon: '💬' },
   { id: 'areas',          label: 'Areas',          icon: '📍' },

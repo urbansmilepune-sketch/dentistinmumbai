@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import AdminPageClient from './AdminPageClient'
 import { CITY_CONFIGS, type CitySlug } from '@/config/cities'
+import { completionPct, type CompletionFields } from '@/lib/profileCompletion'
 
 export const dynamic = 'force-dynamic'
 
@@ -45,6 +46,16 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const dayMs = 24 * 60 * 60 * 1000
   const weekAgoIso = new Date(now - 7 * dayMs).toISOString()
   const thirtyDaysAgoIso = new Date(now - 30 * dayMs).toISOString()
+  // Calendar-month start (UTC) — used for "this month" metrics so the cards
+  // line up with how a finance/ops user reads "this month" rather than a
+  // rolling 30-day window. Day-of-month is reset to 1, time to 00:00:00Z.
+  const _ms = new Date()
+  _ms.setUTCDate(1); _ms.setUTCHours(0, 0, 0, 0)
+  const monthStartIso = _ms.toISOString()
+  // Churn window — paid dentists whose tier_expires_at falls in the next
+  // 7 days. Iso lower bound is "now" so we don't catch already-expired rows.
+  const sevenDaysAheadIso = new Date(now + 7 * dayMs).toISOString()
+  const nowIso = new Date(now).toISOString()
 
   // Small ergonomic helper so every query reads `applyCity(q)` instead of
   // duplicating the conditional .eq('city', …) on each line. Typed loosely
@@ -85,6 +96,22 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     { data: allRegistrationsSlim },
     { data: allPatientDentistIds },
     { data: commsDentists },
+    // --- New analytics: revenue, booking funnel, patient + content health ---
+    { count: silverCount },
+    { count: appointmentsThisMonthCount },
+    { count: newPatientsThisMonthCount },
+    { data: appointmentsThisMonthSlim },
+    { data: appointmentsAllPatientSlim },
+    { data: gallerySlim },
+    // Active dentists — fuller projection used for completion scoring, churn
+    // risk, photo/maps gaps, and the new "Dentist Health" tab.
+    { data: healthDentists },
+    // --- Outreach metrics ---
+    { count: outreachContactsTotal },
+    { count: outreachSentThisMonthCount },
+    { count: outreachSentAllCount },
+    { count: outreachOpenedCount },
+    { count: outreachRegisteredCount },
   ] = await Promise.all([
     applyCity(supabase.from('dentists').select('*', { count: 'exact', head: true }).eq('is_active', true)),
     applyCity(supabase.from('appointments').select('*, dentists!inner(city)', { count: 'exact', head: true })),
@@ -131,6 +158,42 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     // table query uses. Slim columns so the payload stays small even at a
     // few thousand dentists.
     supabase.from('dentists').select('id, name, clinic_name, email, city, tier').eq('is_active', true).not('email', 'is', null).order('clinic_name', { ascending: true }),
+
+    // --- New: silver count (Revenue) ---
+    applyCity(supabase.from('dentists').select('*', { count: 'exact', head: true }).eq('is_active', true).eq('tier', 'silver')),
+
+    // --- New: booking funnel ---
+    applyCity(supabase.from('appointments').select('*, dentists!inner(city)', { count: 'exact', head: true }).gte('created_at', monthStartIso)),
+    cityFilter
+      ? supabase.from('patients').select('*, dentists!inner(city)', { count: 'exact', head: true }).eq('dentists.city', cityFilter).gte('created_at', monthStartIso)
+      : supabase.from('patients').select('*', { count: 'exact', head: true }).gte('created_at', monthStartIso),
+    // Slim "bookings this month" rows used for the by-city pivot. Limit
+    // 5000 mirrors the existing apptDentistRows30 cap — comfortably above
+    // realistic monthly volume at current scale.
+    applyCity(supabase.from('appointments').select('dentist_id, dentists!inner(city)').gte('created_at', monthStartIso).limit(5000)),
+    // patient_id list across ALL appointments (city-filtered) for returning-
+    // rate + avg-appts-per-patient computation. Excludes legacy rows with
+    // no patient_id link.
+    applyCity(supabase.from('appointments').select('patient_id, dentists!inner(city)').not('patient_id', 'is', null).limit(20000)),
+
+    // --- New: content health ---
+    cityFilter
+      ? supabase.from('gallery_photos').select('dentist_id, dentists!inner(city)').eq('dentists.city', cityFilter).limit(20000)
+      : supabase.from('gallery_photos').select('dentist_id').limit(20000),
+    applyCity(
+      supabase.from('dentists')
+        .select('id, slug, name, clinic_name, email, phone, whatsapp, city, tier, tier_expires_at, profile_photo, cover_photo, bio, maps_embed, review_count, created_at, areas(name)')
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(2000),
+    ),
+
+    // --- New: outreach metrics (admin-only tables — no city filter) ---
+    supabase.from('outreach_contacts').select('*', { count: 'exact', head: true }),
+    supabase.from('outreach_contacts').select('*', { count: 'exact', head: true }).gte('sent_at', monthStartIso),
+    supabase.from('outreach_contacts').select('*', { count: 'exact', head: true }).not('sent_at', 'is', null),
+    supabase.from('outreach_contacts').select('*', { count: 'exact', head: true }).not('opened_at', 'is', null),
+    supabase.from('outreach_contacts').select('*', { count: 'exact', head: true }).not('registered_at', 'is', null),
   ])
 
   const dc = dentistCount || 0
@@ -157,13 +220,17 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     appointments_last30: appointmentsLast30 || 0,
   }
 
-  // Revenue
+  // Revenue. Silver is finally counted in MRR — previously the calc skipped
+  // it because the upgrade flow didn't ship Silver pricing on launch. Pricing
+  // mirrors PlanSelector: Silver ₹499/mo, Gold ₹999/mo, Featured ₹2,499/mo.
+  const silver = silverCount || 0
   const gold = goldCount || 0
   const featured = featuredCount || 0
-  const mrr = gold * 999 + featured * 2499
+  const mrr = silver * 499 + gold * 999 + featured * 2499
   const arr = mrr * 12
-  const paidCount = gold + featured
+  const paidCount = silver + gold + featured
   const conversionPct = dc > 0 ? (paidCount / dc) * 100 : 0
+  const avgRevenuePerPaid = paidCount > 0 ? mrr / paidCount : 0
 
   // Top by appointments — aggregate JS-side
   type ApptRow = { dentist_id: string; dentists: { id: string; name: string; slug: string; clinic_name: string | null } | null }
@@ -211,6 +278,188 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     patientCountByCity.set(c, (patientCountByCity.get(c) ?? 0) + 1)
   }
 
+  // -------------------------------------------------------------------------
+  // Booking funnel. Conversion rate is profile_views (30d) → appointments
+  // (30d), which is the most actionable funnel ratio we have given that
+  // analytics_events only carries last-30-day data after compaction. Avg
+  // bookings per dentist is all-time over the active roster.
+  // -------------------------------------------------------------------------
+  const bookingsThisMonth = appointmentsThisMonthCount || 0
+  const bookingConversionPct = engagement.profile_views > 0
+    ? (engagement.appointments_last30 / engagement.profile_views) * 100
+    : 0
+  const avgBookingsPerDentist = dc > 0 ? (appointmentCount || 0) / dc : 0
+
+  // Bookings-by-city — derived JS-side from the slim "this month" appt rows.
+  // Pivot uses the joined dentists.city so dentists rows with a null city
+  // (rare legacy) just fall out instead of bucketing into "unknown".
+  type ApptCityRow = { dentist_id: string | null; dentists: { city: string | null } | null }
+  const bookingsByCityMap = new Map<string, number>()
+  for (const r of (appointmentsThisMonthSlim || []) as unknown as ApptCityRow[]) {
+    const c = r.dentists?.city
+    if (!c) continue
+    bookingsByCityMap.set(c, (bookingsByCityMap.get(c) ?? 0) + 1)
+  }
+  const bookingsByCity = (Object.keys(CITY_CONFIGS) as CitySlug[])
+    .map(slug => ({
+      slug,
+      cityName: CITY_CONFIGS[slug].cityName,
+      bookings: bookingsByCityMap.get(slug) ?? 0,
+    }))
+    .sort((a, b) => b.bookings - a.bookings)
+
+  // -------------------------------------------------------------------------
+  // Patient metrics. `appointmentsAllPatientSlim` is appointments.patient_id
+  // (non-null) scoped to the cityFilter; group counts give us returning vs
+  // one-visit splits and avg appointments per patient.
+  // -------------------------------------------------------------------------
+  const patientApptCounts = new Map<string, number>()
+  for (const a of (appointmentsAllPatientSlim || []) as Array<{ patient_id: string | null }>) {
+    if (!a.patient_id) continue
+    patientApptCounts.set(a.patient_id, (patientApptCounts.get(a.patient_id) ?? 0) + 1)
+  }
+  const totalPatients = patientCount || 0
+  // Returning = patients with ≥2 appointments. Denominator is total patients
+  // (not just patients with ≥1 appt) because a brand-new patient row with
+  // zero appointments is still a "non-returning" patient in product terms.
+  let returningPatientCount = 0
+  for (const cnt of patientApptCounts.values()) if (cnt >= 2) returningPatientCount++
+  const returningPatientRatePct = totalPatients > 0 ? (returningPatientCount / totalPatients) * 100 : 0
+  // Avg appointments per patient — only over patients that have at least one
+  // appointment, because dividing by `totalPatients` would blend in rows
+  // that exist solely from the patient-record CRUD with no booking history
+  // and produce a misleading sub-1 number.
+  const patientsWithAtLeastOne = patientApptCounts.size
+  const totalApptsForPatients = Array.from(patientApptCounts.values()).reduce((a, b) => a + b, 0)
+  const avgAppointmentsPerPatient = patientsWithAtLeastOne > 0
+    ? totalApptsForPatients / patientsWithAtLeastOne
+    : 0
+  const newPatientsThisMonth = newPatientsThisMonthCount || 0
+
+  // -------------------------------------------------------------------------
+  // Gallery counts per dentist — used both by the "no gallery photos" content
+  // health metric AND by the at-risk Dentist Health tab.
+  // -------------------------------------------------------------------------
+  const galleryByDentist = new Map<string, number>()
+  for (const g of (gallerySlim || []) as Array<{ dentist_id: string | null }>) {
+    if (!g.dentist_id) continue
+    galleryByDentist.set(g.dentist_id, (galleryByDentist.get(g.dentist_id) ?? 0) + 1)
+  }
+
+  // dentists with ≥1 appointment in the last 30 days. Used to compute
+  // "0 bookings in last 30 days" without an extra query.
+  const dentistsWithBookings30 = new Set<string>()
+  for (const r of (apptDentistRows30 || []) as Array<{ dentist_id: string | null }>) {
+    if (r.dentist_id) dentistsWithBookings30.add(r.dentist_id)
+  }
+
+  // -------------------------------------------------------------------------
+  // Dentist health scoring. One row per active dentist, projected to just
+  // the signals the admin needs in the Health tab. `risk_score` is the
+  // sum of weighted at-risk flags so the tab can sort "most at risk" first.
+  // -------------------------------------------------------------------------
+  type HealthDentRow = {
+    id: string
+    slug: string
+    name: string
+    clinic_name: string | null
+    email: string | null
+    phone: string | null
+    whatsapp: string | null
+    city: string | null
+    tier: string | null
+    tier_expires_at: string | null
+    profile_photo: string | null
+    cover_photo: string | null
+    bio: string | null
+    maps_embed: string | null
+    review_count: number | null
+    created_at: string
+    areas: { name: string } | null
+  }
+  const healthRows = (healthDentists || []) as unknown as HealthDentRow[]
+  const dentistHealth = healthRows.map(d => {
+    const fields: CompletionFields = {
+      profile_photo: d.profile_photo,
+      cover_photo: d.cover_photo,
+      bio: d.bio,
+      whatsapp: d.whatsapp,
+      maps_embed: d.maps_embed,
+    }
+    const completion = completionPct(fields)
+    const zeroBookings30d = !dentistsWithBookings30.has(d.id)
+    const lowCompletion = completion < 60
+    const noPhoto = !d.profile_photo
+    const noMaps = !d.maps_embed
+    const galleryCount = galleryByDentist.get(d.id) ?? 0
+    const noGallery = galleryCount === 0
+    // Weighted risk score — bookings drought is the loudest signal because
+    // every other gap (photo, maps, gallery) can be fixed in minutes; a
+    // dentist with zero bookings in 30 days is the one we should call.
+    const risk_score =
+      (zeroBookings30d ? 3 : 0) +
+      (lowCompletion   ? 2 : 0) +
+      (noPhoto         ? 1 : 0) +
+      (noMaps          ? 1 : 0) +
+      (noGallery       ? 1 : 0)
+    return {
+      id: d.id,
+      slug: d.slug,
+      name: d.name,
+      clinic_name: d.clinic_name,
+      email: d.email,
+      phone: d.phone,
+      whatsapp: d.whatsapp,
+      city: d.city,
+      tier: d.tier,
+      tier_expires_at: d.tier_expires_at,
+      created_at: d.created_at,
+      area: d.areas?.name ?? null,
+      completion,
+      flags: { zeroBookings30d, lowCompletion, noPhoto, noMaps, noGallery },
+      gallery_count: galleryCount,
+      risk_score,
+    }
+  })
+
+  // Rollup counters powering the new content + revenue + booking cards.
+  const avgCompletion = dentistHealth.length === 0
+    ? 0
+    : dentistHealth.reduce((sum, d) => sum + d.completion, 0) / dentistHealth.length
+  const noBookings30Count = dentistHealth.filter(d => d.flags.zeroBookings30d).length
+  const incompleteProfileCount = dentistHealth.filter(d => d.flags.lowCompletion).length
+  const noPhotoCount = dentistHealth.filter(d => d.flags.noPhoto).length
+  const noMapsCount = dentistHealth.filter(d => d.flags.noMaps).length
+  const noGalleryCount = dentistHealth.filter(d => d.flags.noGallery).length
+  const withReviewsCount = healthRows.filter(d => (d.review_count ?? 0) > 0).length
+  const withoutReviewsCount = healthRows.length - withReviewsCount
+
+  // Churn risk — paid dentists whose tier_expires_at falls in the next
+  // 7 days. `tier !== 'free'` filter skips the trial-equivalent rows so
+  // we only surface accounts that actually paid and are about to lapse.
+  const churnRiskRows = healthRows.filter(d => {
+    if (!d.tier_expires_at || d.tier === 'free' || !d.tier) return false
+    const t = new Date(d.tier_expires_at).getTime()
+    return Number.isFinite(t) && t >= now && t <= now + 7 * dayMs
+  }).map(d => ({
+    id: d.id, slug: d.slug, name: d.name, clinic_name: d.clinic_name,
+    email: d.email, phone: d.phone, whatsapp: d.whatsapp, tier: d.tier,
+    tier_expires_at: d.tier_expires_at,
+  }))
+
+  // -------------------------------------------------------------------------
+  // Outreach rollup. open_rate uses sent_at as the denominator because
+  // open tracking only fires after a send; click & registration share the
+  // same denominator so the percentages line up on the dashboard.
+  // -------------------------------------------------------------------------
+  const outreachSentAll = outreachSentAllCount || 0
+  const outreachOpenRatePct = outreachSentAll > 0
+    ? ((outreachOpenedCount || 0) / outreachSentAll) * 100
+    : 0
+  const outreachConversionPct = outreachSentAll > 0
+    ? ((outreachRegisteredCount || 0) / outreachSentAll) * 100
+    : 0
+
   const cityOverview = (Object.keys(CITY_CONFIGS) as CitySlug[]).map(slug => {
     const cfg = CITY_CONFIGS[slug]
     const dentistsHere = dentSlim.filter(d => d.city === slug)
@@ -232,13 +481,16 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     pendingApprovals: pendingRows.length,
     avgPendingWaitHrs,
     activeDentists: dc,
-    totalPatients: patientCount || 0,
+    totalPatients,
     paidDentists: paidCount,
+    silverCount: silver,
     goldCount: gold,
     featuredCount: featured,
     mrr,
     arr,
     conversionPct,
+    avgRevenuePerPaid,
+    churnRisk7d: churnRiskRows,
     engagement,
     topByViews: topByViews || [],
     topByWhatsApp: topByWhatsApp || [],
@@ -255,6 +507,45 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
       empty: emptyAreas,
     },
     cityOverview,
+    // --- Booking funnel ---
+    booking: {
+      thisMonth: bookingsThisMonth,
+      conversionPct: bookingConversionPct,
+      avgPerDentist: avgBookingsPerDentist,
+      byCity: bookingsByCity,
+    },
+    // --- Patient metrics ---
+    patients: {
+      total: totalPatients,
+      newThisMonth: newPatientsThisMonth,
+      returningRatePct: returningPatientRatePct,
+      avgAppointmentsPerPatient,
+    },
+    // --- Content health ---
+    content: {
+      noGallery: noGalleryCount,
+      noMapsEmbed: noMapsCount,
+      avgCompletionPct: avgCompletion,
+      withReviews: withReviewsCount,
+      withoutReviews: withoutReviewsCount,
+    },
+    // --- Dentist health (also drives the new Dentist Health tab) ---
+    health: {
+      noBookings30: noBookings30Count,
+      incompleteProfile: incompleteProfileCount,
+      noPhoto: noPhotoCount,
+      totalActive: dentistHealth.length,
+    },
+    // --- Outreach ---
+    outreach: {
+      contactsTotal: outreachContactsTotal || 0,
+      sentThisMonth: outreachSentThisMonthCount || 0,
+      sentAll: outreachSentAll,
+      opened: outreachOpenedCount || 0,
+      openRatePct: outreachOpenRatePct,
+      registered: outreachRegisteredCount || 0,
+      conversionPct: outreachConversionPct,
+    },
   }
 
   return (
@@ -270,6 +561,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
       analytics={analytics}
       cityFilter={cityFilter}
       commsDentists={commsDentists || []}
+      dentistHealth={dentistHealth}
     />
   )
 }
