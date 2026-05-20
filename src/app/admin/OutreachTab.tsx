@@ -70,7 +70,7 @@ It takes 5 minutes to join. No credit card. No contracts.
 
 👉 Join the network: https://dentistinindia.in/join
 
-Already 25+ dentists from {city} are on it.
+Join 3,000+ dental professionals already on the network.
 
 Regards,
 The DentistIn Team`,
