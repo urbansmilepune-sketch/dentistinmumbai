@@ -55,24 +55,22 @@ const CITY_ORDER: CitySlug[] = [
 ]
 
 const DEFAULT_TEMPLATE = {
-  subject: '{clinic_name} is not listed on DentistIn{city} yet',
+  subject: 'Dr. {name} — your peers are already on this',
   body: `Hi Dr. {name},
 
-We noticed {clinic_name} is not yet listed on our dental directory for {city}.
+India's first professional network for dentists just launched — and dentists in {city} are already sharing cases, connecting with specialists, and getting referrals.
 
-Dentists on DentistIn are getting new patient enquiries every week — completely free.
+What it looks like:
+📋 Share your before/after cases — get recognition from peers
+🤝 Connect with 500+ verified dentists across 13 cities
+🏥 Your clinic listed automatically on dentistin{city_lower}.in
+⭐ Build your professional reputation online
 
-👉 Claim your free listing in 5 minutes:
-https://dentistin{city_lower}.in/for-dentists/register
+It takes 5 minutes to join. No credit card. No contracts.
 
-What you get for free:
-✅ Your own booking page patients can find on Google
-✅ WhatsApp booking button
-✅ Patient reviews and ratings
-✅ Appointment management dashboard
-✅ Zero commission — ever
+👉 Join the network: https://dentistinindia.in/join
 
-No credit card. No contracts. Just more patients.
+Already 25+ dentists from {city} are on it.
 
 Regards,
 The DentistIn Team`,

@@ -1,21 +1,30 @@
 import Link from 'next/link'
+import { createClient } from '@/lib/supabase/server'
+import FeedNavLink from './FeedNavLink'
 
-// Shared header + footer for the secondary national pages (/about,
-// /dental-tourism, /for-dentists). NationalHome and /cities keep their
-// own custom navs because their hero is part of the same visual block —
-// they were shipped first and aren't worth re-touching for this PR.
+// Shared header + footer for the secondary national pages (every
+// national surface except / and /cities, which have their own inline
+// navs). Nav reflects the LinkedIn-style pivot: Cases / Dentists /
+// Cities / For Dentists, plus "My Feed" and "My Profile" when the
+// viewer is signed in, or "Join the Network" when not.
+//
+// Auth state is fetched server-side in this component itself (rather
+// than via a prop) so every consumer doesn't have to thread it through.
+// supabase.auth.getUser() is a cookie read + JWT validate, cheap to
+// repeat per render.
 
 interface Props {
-  /** Used in the footer copyright line and OG/site context only. The
-   *  visible page heading is rendered by the page itself, not this shell. */
-  pageLabel?: string
   /** Toggles a coloured pill in the right side of the header so the
    *  user knows they're inside a sub-flow (e.g. "Dental Tourism"). */
   badge?: string
   children: React.ReactNode
 }
 
-export default function NationalShell({ badge, children }: Props) {
+export default async function NationalShell({ badge, children }: Props) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  const signedIn = !!user?.email
+
   return (
     <div style={{ background: '#fff', color: '#0F1923', fontFamily: 'var(--font-body)', minHeight: '100vh' }}>
       <nav style={{ position: 'sticky', top: 0, zIndex: 50, background: '#fff', borderBottom: '1px solid #E2E8F0', padding: '14px 20px' }}>
@@ -29,14 +38,22 @@ export default function NationalShell({ badge, children }: Props) {
             )}
           </Link>
           <div style={{ display: 'flex', alignItems: 'center', gap: 18, fontSize: 14, fontWeight: 600 }}>
-            <Link href="/cases"           style={{ color: '#475569', textDecoration: 'none' }}>Cases</Link>
-            <Link href="/cities"          style={{ color: '#475569', textDecoration: 'none' }}>Cities</Link>
-            <Link href="/dental-tourism"  style={{ color: '#475569', textDecoration: 'none' }}>Dental Tourism</Link>
-            <Link href="/about"           style={{ color: '#475569', textDecoration: 'none' }}>About</Link>
-            <Link
-              href="/for-dentists"
-              style={{ padding: '8px 16px', background: '#1D4ED8', color: '#fff', borderRadius: 8, textDecoration: 'none' }}
-            >For Dentists</Link>
+            <Link href="/cases"        style={{ color: '#475569', textDecoration: 'none' }}>Cases</Link>
+            <Link href="/dentists"     style={{ color: '#475569', textDecoration: 'none' }}>Dentists</Link>
+            <Link href="/cities"       style={{ color: '#475569', textDecoration: 'none' }}>Cities</Link>
+            <Link href="/for-dentists" style={{ color: '#475569', textDecoration: 'none' }}>For Dentists</Link>
+            {signedIn ? (
+              <>
+                <FeedNavLink />
+                <Link href="/professional/me" style={{ padding: '8px 16px', background: '#0F1923', color: '#fff', borderRadius: 8, textDecoration: 'none' }}>
+                  My Profile
+                </Link>
+              </>
+            ) : (
+              <Link href="/join" style={{ padding: '8px 16px', background: '#1D4ED8', color: '#fff', borderRadius: 8, textDecoration: 'none' }}>
+                Join the Network
+              </Link>
+            )}
           </div>
         </div>
       </nav>
@@ -50,20 +67,23 @@ export default function NationalShell({ badge, children }: Props) {
               Dentist In India
             </div>
             <p style={{ fontSize: 13, lineHeight: 1.6 }}>
-              Verified dentists across every Indian city. Built by dental professionals.
+              India's professional network for dentists. Built by dental professionals.
             </p>
           </div>
           <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap' }}>
-            <FooterCol title="Patients">
-              <FooterLink href="/cities">Find a dentist</FooterLink>
-              <FooterLink href="/dental-tourism">Dental tourism</FooterLink>
+            <FooterCol title="Network">
+              <FooterLink href="/cases">Browse cases</FooterLink>
+              <FooterLink href="/dentists">Discover dentists</FooterLink>
+              <FooterLink href="/cities">Cities</FooterLink>
             </FooterCol>
-            <FooterCol title="Dentists">
-              <FooterLink href="/cases">Clinical cases</FooterLink>
-              <FooterLink href="/for-dentists">List your clinic</FooterLink>
+            <FooterCol title="Get started">
+              <FooterLink href="/join">Join the network</FooterLink>
+              <FooterLink href="/for-dentists/login">Sign in</FooterLink>
+              <FooterLink href="/for-dentists">For dentists</FooterLink>
             </FooterCol>
             <FooterCol title="Company">
               <FooterLink href="/about">About</FooterLink>
+              <FooterLink href="/dental-tourism">Dental tourism</FooterLink>
             </FooterCol>
           </div>
         </div>

@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { CITY_CONFIGS, NATIONAL_ORIGIN } from '@/config/cities'
 import { COMING_SOON_CITIES } from '@/config/citiesNational'
@@ -6,127 +7,135 @@ import NationalMapSection from './NationalMapSection'
 // Server-only projection of the India GeoJSON. Imported HERE (server
 // component) so d3-geo + the GeoJSON stay out of the client bundle.
 import { STATE_PATHS, LIVE_DOTS, SOON_DOTS } from './indiaMapData'
+import { getSpecialty } from '@/lib/dentalSpecialties'
 
-// National parent homepage. Server component — fetches everything the map
-// + live counters need in a single Promise.all and hands them to the
-// interactive island.
-//
-// Profile-views-this-month is read via the service-role client because
-// analytics_events has restrictive RLS (the user-bound anon client returns
-// 0 rows). Service-role is safe here: this page runs server-only and
-// returns just a scalar count to the browser, never the raw events.
+// National parent homepage — re-positioned as India's professional
+// network for dentists (LinkedIn + Instagram + Facebook shape, not a
+// patient directory). The shape we render varies subtly for signed-in
+// vs signed-out viewers — signed-in dentists see a CTA to their feed
+// instead of the generic "Join the Network" pitch.
 
 export const dynamic = 'force-dynamic'
 
-// Hardcoded blog tile placeholders so the section renders something
-// recognisable until the blog system ships. Slugs are the URL we'd
-// pre-allocate when the posts go live.
-const BLOG_PLACEHOLDERS = [
-  { slug: 'how-to-choose-a-dentist-india', title: 'How to choose a verified dentist in India', excerpt: 'Six things every patient should check before booking — MCI registration, real reviews, and the questions that separate a good clinic from a great one.', tag: 'Patient Guide' },
-  { slug: 'cost-of-dental-implants-india', title: 'What dental implants actually cost across India (2026)',  excerpt: 'City-by-city price ranges for single implants, full-mouth restorations, and All-on-4 — plus how to compare quotes without falling for upsells.', tag: 'Cost Guide' },
-  { slug: 'dental-tourism-india-guide',    title: 'India is the world\'s smartest dental tourism destination', excerpt: 'How NRIs and international patients save 70-80% on world-class treatment, and the four cities best set up for medical-tourism stays.', tag: 'Dental Tourism' },
-]
-
-const TRUST_PILLARS = [
-  { icon: '✓', label: 'Verified Dentists',    sub: 'MCI-registered only' },
-  { icon: '₹', label: '0% Commission',        sub: 'You pay only the dentist' },
-  { icon: '⚡', label: '30-Second Booking',    sub: 'Direct WhatsApp + calendar' },
-  { icon: '🏥', label: 'MCI Registered Only', sub: 'Every clinic, verified' },
-]
-
-const PATIENT_STEPS = [
-  { n: 1, title: 'Search your city',     body: 'Pick from 13 live cities or get notified when yours launches.' },
-  { n: 2, title: 'Browse verified dentists', body: 'Real photos, real reviews, transparent fees — every listing is MCI-checked.' },
-  { n: 3, title: 'Book in 30 seconds',   body: 'WhatsApp the clinic directly or pick a calendar slot. No middlemen.' },
-]
-
 const DENTIST_STEPS = [
-  { n: 1, title: 'Register your clinic',     body: 'Five-minute signup. We verify your MCI number and you go live the same week.' },
-  { n: 2, title: 'Own your local SEO',       body: 'Get listed on your city domain — dentistin[city].in — with a profile that ranks.' },
-  { n: 3, title: 'Receive direct enquiries', body: 'Patients reach you on WhatsApp or your phone. Zero commission, ever.' },
+  { n: 1, title: 'Join in 5 minutes',         body: 'Create your verified profile. MCI registration + city + clinic name — that\'s it.' },
+  { n: 2, title: 'Share your clinical cases', body: 'Post before/after photos, x-rays, treatment write-ups. Auto-approved after your first three.' },
+  { n: 3, title: 'Build your network',        body: 'Follow peers, get followed, take part in case discussions. Featured on dentistin[city].in too.' },
 ]
+
+interface RecentCase {
+  id: string
+  title: string
+  specialty: string
+  complexity: number
+  thumb: string | null
+  dentist: { name: string; slug: string; city: string | null } | null
+}
+
+interface TopDentist {
+  id: string
+  slug: string
+  name: string
+  city: string | null
+  profile_photo: string | null
+  follower_count: number
+}
 
 export default async function NationalHome() {
-  // analytics_events has RLS that blocks anon reads, so we use the service
-  // role for this single count. The track route uses the same key for
-  // writes — see src/app/api/analytics/track/route.ts.
   const adminClient = createServiceClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   )
 
-  // Calendar-month start in UTC. Mirrors admin/page.tsx so "this month"
-  // means the same window to both surfaces.
-  const monthStart = new Date()
-  monthStart.setUTCDate(1); monthStart.setUTCHours(0, 0, 0, 0)
-  const monthStartIso = monthStart.toISOString()
+  // Auth lookup — used to swap the hero CTAs for "View My Feed" when a
+  // dentist is signed in, and to blur the feed-preview cards when they
+  // aren't.
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  const signedIn = !!user?.email
 
   const [
     { data: allDentistSlim },
     { count: totalDentistsRaw },
-    { count: profileViewsRaw },
+    { count: totalCasesRaw },
+    { data: recentRows },
+    { data: followsRaw },
+    { data: dentistDirRaw },
   ] = await Promise.all([
     adminClient.from('dentists').select('city, is_active'),
     adminClient.from('dentists').select('*', { count: 'exact', head: true }).eq('is_active', true),
-    adminClient.from('analytics_events').select('*', { count: 'exact', head: true }).eq('event_type', 'profile_view').gte('created_at', monthStartIso),
+    adminClient.from('cases').select('*', { count: 'exact', head: true }).eq('status', 'approved'),
+    // 3 most recent approved cases for the live feed preview
+    adminClient.from('cases')
+      .select('id, title, specialty, complexity, created_at, dentists(name, slug, city)')
+      .eq('status', 'approved')
+      .order('created_at', { ascending: false })
+      .limit(3),
+    // Every dentist_follows row so we can derive top-3-by-followers.
+    // At platform scale this is < 10k rows — cheap to fetch once.
+    adminClient.from('dentist_follows').select('following_id'),
+    adminClient.from('dentists').select('id, slug, name, city, profile_photo').eq('is_active', true).limit(2000),
   ])
 
   const totalDentists = totalDentistsRaw || 0
-  const profileViewsThisMonth = profileViewsRaw || 0
+  const totalCases    = totalCasesRaw || 0
+  const liveCityCount = Object.keys(CITY_CONFIGS).length
 
-  // Aggregate active-dentist count per city slug for the map tooltip.
+  // Per-city aggregate for the map tooltip.
   const dentistCountByCity: { [slug: string]: number } = {}
   for (const d of (allDentistSlim || []) as Array<{ city: string | null; is_active: boolean | null }>) {
     if (!d.city || !d.is_active) continue
     dentistCountByCity[d.city] = (dentistCountByCity[d.city] || 0) + 1
   }
 
-  const liveCityCount = Object.keys(CITY_CONFIGS).length
-  const featuredCities = Object.values(CITY_CONFIGS)
+  // Top 3 dentists by follower count. Aggregate JS-side from the
+  // dentist_follows fetch above; cap at 3.
+  const followerCountById = new Map<string, number>()
+  for (const f of (followsRaw || []) as Array<{ following_id: string }>) {
+    followerCountById.set(f.following_id, (followerCountById.get(f.following_id) || 0) + 1)
+  }
+  const topDentists: TopDentist[] = (dentistDirRaw || [])
+    .map((d: any) => ({
+      id: d.id, slug: d.slug, name: d.name, city: d.city,
+      profile_photo: d.profile_photo,
+      follower_count: followerCountById.get(d.id) || 0,
+    }))
+    .sort((a, b) => b.follower_count - a.follower_count || a.name.localeCompare(b.name))
+    .slice(0, 3)
 
-  // JSON-LD payload bundled here so the schema lives next to the component
-  // that owns its content. Three entities: the LLP, the website, and the
-  // medical-organization umbrella that ties every city listing together.
+  // Thumbnails for the recent-case feed preview cards.
+  const recentIds = (recentRows || []).map((r: any) => r.id as string)
+  const thumbs = new Map<string, string>()
+  if (recentIds.length) {
+    const { data: photos } = await adminClient
+      .from('case_photos').select('case_id, url, kind, display_order')
+      .in('case_id', recentIds).order('display_order')
+    for (const p of (photos || []) as Array<{ case_id: string; url: string; kind: string }>) {
+      if (!thumbs.has(p.case_id) || p.kind === 'before' || p.kind === 'after') {
+        thumbs.set(p.case_id, p.url)
+      }
+    }
+  }
+  const recentCases: RecentCase[] = (recentRows || []).map((r: any) => ({
+    id: r.id, title: r.title, specialty: r.specialty, complexity: r.complexity,
+    thumb: thumbs.get(r.id) ?? null,
+    dentist: r.dentists,
+  }))
+
+  // JSON-LD — organisation reframed as a ProfessionalService for the
+  // dental community, on top of the original WebSite + MedicalOrganization.
   const jsonLd = {
     '@context': 'https://schema.org',
     '@graph': [
-      {
-        '@type': 'Organization',
-        '@id': `${NATIONAL_ORIGIN}/#organization`,
-        name: 'DentistIn',
-        url: NATIONAL_ORIGIN,
-        logo: `${NATIONAL_ORIGIN}/logo.png`,
-        address: {
-          '@type': 'PostalAddress',
-          addressCountry: 'IN',
-        },
-      },
-      {
-        '@type': 'WebSite',
-        '@id': `${NATIONAL_ORIGIN}/#website`,
-        name: 'Dentist In India',
-        url: NATIONAL_ORIGIN,
-        publisher: { '@id': `${NATIONAL_ORIGIN}/#organization` },
-        inLanguage: 'en-IN',
-      },
-      {
-        '@type': 'MedicalOrganization',
-        '@id': `${NATIONAL_ORIGIN}/#medical-organization`,
-        name: 'Dentist In India — National Dental Network',
-        url: NATIONAL_ORIGIN,
-        medicalSpecialty: 'Dentistry',
-        areaServed: { '@type': 'Country', name: 'India' },
-        memberOf: { '@id': `${NATIONAL_ORIGIN}/#organization` },
-      },
+      { '@type': 'Organization', '@id': `${NATIONAL_ORIGIN}/#organization`, name: 'DentistIn', url: NATIONAL_ORIGIN, logo: `${NATIONAL_ORIGIN}/logo.png`, address: { '@type': 'PostalAddress', addressCountry: 'IN' } },
+      { '@type': 'WebSite', '@id': `${NATIONAL_ORIGIN}/#website`, name: 'Dentist In India', url: NATIONAL_ORIGIN, publisher: { '@id': `${NATIONAL_ORIGIN}/#organization` }, inLanguage: 'en-IN' },
+      { '@type': 'MedicalOrganization', '@id': `${NATIONAL_ORIGIN}/#medical-organization`, name: 'Dentist In India — National Dental Professional Network', url: NATIONAL_ORIGIN, medicalSpecialty: 'Dentistry', areaServed: { '@type': 'Country', name: 'India' }, memberOf: { '@id': `${NATIONAL_ORIGIN}/#organization` } },
     ],
   }
 
   return (
     <>
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-      />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
       <div style={{ background: '#fff', color: '#0F1923', fontFamily: 'var(--font-body)' }}>
         {/* Nav */}
@@ -136,41 +145,64 @@ export default async function NationalHome() {
               Dentist<span style={{ color: '#1D4ED8' }}>InIndia</span>.in
             </Link>
             <div style={{ display: 'flex', alignItems: 'center', gap: 18, fontSize: 14, fontWeight: 600 }}>
-              <Link href="/cities"        style={{ color: '#475569', textDecoration: 'none' }}>Cities</Link>
-              <Link href="/for-dentists"  style={{ color: '#475569', textDecoration: 'none' }}>For Dentists</Link>
-              <Link
-                href="/cities"
-                style={{ padding: '8px 16px', background: '#1D4ED8', color: '#fff', borderRadius: 8, textDecoration: 'none' }}
-              >Find a Dentist</Link>
+              <Link href="/cases"        style={{ color: '#475569', textDecoration: 'none' }}>Cases</Link>
+              <Link href="/dentists"     style={{ color: '#475569', textDecoration: 'none' }}>Dentists</Link>
+              <Link href="/cities"       style={{ color: '#475569', textDecoration: 'none' }}>Cities</Link>
+              {signedIn && <Link href="/feed" style={{ color: '#1D4ED8', textDecoration: 'none', fontWeight: 700 }}>My Feed</Link>}
+              {signedIn
+                ? <Link href="/professional/me" style={{ padding: '8px 16px', background: '#0F1923', color: '#fff', borderRadius: 8, textDecoration: 'none' }}>My Profile</Link>
+                : <Link href="/join" style={{ padding: '8px 16px', background: '#1D4ED8', color: '#fff', borderRadius: 8, textDecoration: 'none' }}>Join the Network</Link>}
             </div>
           </div>
         </nav>
 
         {/* Hero */}
-        <section style={{ background: 'linear-gradient(180deg, #F8FAFC 0%, #fff 100%)', padding: '64px 20px 40px' }}>
-          <div style={{ maxWidth: 1100, margin: '0 auto', textAlign: 'center' }}>
+        <section style={{ padding: '72px 20px 32px', background: 'linear-gradient(180deg, #F8FAFC 0%, #fff 100%)' }}>
+          <div style={{ maxWidth: 980, margin: '0 auto', textAlign: 'center' }}>
             <div style={{ display: 'inline-block', background: '#EFF6FF', color: '#1D4ED8', padding: '6px 14px', borderRadius: 999, fontSize: 12, fontWeight: 700, marginBottom: 18, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-              National Dental Network
+              For dental professionals
             </div>
-            <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 48, lineHeight: 1.1, marginBottom: 16, color: '#0F1923' }}>
-              India's Dental Network.<br />Every City. <span style={{ color: '#1D4ED8' }}>One Platform.</span>
+            <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 52, lineHeight: 1.08, marginBottom: 18, color: '#0F1923' }}>
+              India's Professional Network <br /><span style={{ color: '#1D4ED8' }}>for Dentists</span>
             </h1>
-            <p style={{ fontSize: 18, color: '#475569', maxWidth: 640, margin: '0 auto 28px', lineHeight: 1.55 }}>
-              Verified dentists across {liveCityCount} live cities and {COMING_SOON_CITIES.length} more launching soon. Zero commission, MCI-registered only, 30-second booking.
+            <p style={{ fontSize: 18, color: '#475569', maxWidth: 680, margin: '0 auto 28px', lineHeight: 1.55 }}>
+              Connect with verified dental professionals across {liveCityCount} cities. Share clinical cases. Learn from peers. Grow your practice.
             </p>
             <div style={{ display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <Link href="/cities" style={{ padding: '14px 26px', minHeight: 48, background: '#1D4ED8', color: '#fff', borderRadius: 10, fontSize: 15, fontWeight: 700, textDecoration: 'none' }}>
-                Find a Dentist →
-              </Link>
-              <Link href="/for-dentists" style={{ padding: '14px 26px', minHeight: 48, background: '#fff', color: '#0F1923', borderRadius: 10, fontSize: 15, fontWeight: 700, textDecoration: 'none', border: '1.5px solid #0F1923' }}>
-                List Your Clinic
-              </Link>
+              {signedIn ? (
+                <>
+                  <Link href="/feed" style={{ padding: '14px 26px', minHeight: 48, background: '#1D4ED8', color: '#fff', borderRadius: 10, fontSize: 15, fontWeight: 700, textDecoration: 'none' }}>
+                    My Feed →
+                  </Link>
+                  <Link href="/cases/new" style={{ padding: '14px 26px', minHeight: 48, background: '#fff', color: '#0F1923', borderRadius: 10, fontSize: 15, fontWeight: 700, textDecoration: 'none', border: '1.5px solid #0F1923' }}>
+                    Post a Case
+                  </Link>
+                </>
+              ) : (
+                <>
+                  <Link href="/join" style={{ padding: '14px 26px', minHeight: 48, background: '#1D4ED8', color: '#fff', borderRadius: 10, fontSize: 15, fontWeight: 700, textDecoration: 'none' }}>
+                    Join the Network →
+                  </Link>
+                  <Link href="/cases" style={{ padding: '14px 26px', minHeight: 48, background: '#fff', color: '#0F1923', borderRadius: 10, fontSize: 15, fontWeight: 700, textDecoration: 'none', border: '1.5px solid #0F1923' }}>
+                    Browse Cases
+                  </Link>
+                </>
+              )}
             </div>
           </div>
         </section>
 
-        {/* Map + counters */}
-        <section style={{ padding: '20px 20px 60px' }}>
+        {/* Stat strip */}
+        <section style={{ padding: '20px' }}>
+          <div style={{ maxWidth: 880, margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
+            <CounterCard value={totalDentists.toLocaleString('en-IN')} label="Dentists" />
+            <CounterCard value={totalCases.toLocaleString('en-IN')}    label="Cases Shared" />
+            <CounterCard value={liveCityCount.toString()}              label="Cities" />
+          </div>
+        </section>
+
+        {/* Map */}
+        <section style={{ padding: '32px 20px 56px' }}>
           <div style={{ maxWidth: 1100, margin: '0 auto' }}>
             <NationalMapSection
               statePaths={STATE_PATHS}
@@ -178,130 +210,137 @@ export default async function NationalHome() {
               soonDots={SOON_DOTS}
               dentistCountByCity={dentistCountByCity}
             />
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginTop: 36, maxWidth: 880, marginLeft: 'auto', marginRight: 'auto' }}>
-              <CounterCard value={totalDentists.toLocaleString('en-IN')} label="Dentists Listed" />
-              <CounterCard value={liveCityCount.toString()}              label="Cities Live" />
-              <CounterCard value={profileViewsThisMonth.toLocaleString('en-IN')} label="Profile Views This Month" />
-            </div>
           </div>
         </section>
 
-        {/* Trust bar */}
-        <section style={{ background: '#0F1923', padding: '32px 20px', color: '#fff' }}>
-          <div style={{ maxWidth: 1100, margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 24 }}>
-            {TRUST_PILLARS.map(p => (
-              <div key={p.label} style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                <span style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(59, 130, 246, 0.15)', color: '#60A5FA', fontSize: 18, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  {p.icon}
-                </span>
-                <div>
-                  <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 14 }}>{p.label}</div>
-                  <div style={{ fontSize: 12, color: '#94A3B8' }}>{p.sub}</div>
+        {/* Feed preview — recent cases. Blurred for logged-out viewers
+            as a teaser with a Join CTA layered on top. */}
+        {recentCases.length > 0 && (
+          <section style={{ padding: '24px 20px 64px', background: '#F8FAFC', position: 'relative' }}>
+            <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+              <SectionEyebrow>{signedIn ? 'Latest from the network' : 'Live from the feed'}</SectionEyebrow>
+              <SectionHeadline>Clinical cases shared this week</SectionHeadline>
+              <div style={{ position: 'relative', marginTop: 28 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 18, filter: signedIn ? 'none' : 'blur(3.5px)', pointerEvents: signedIn ? 'auto' : 'none' }}>
+                  {recentCases.map(c => {
+                    const spec = getSpecialty(c.specialty)
+                    const cfg = c.dentist?.city ? (CITY_CONFIGS as any)[c.dentist.city] : null
+                    return (
+                      <Link key={c.id} href={`/cases/${c.id}`} style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 14, overflow: 'hidden', textDecoration: 'none', color: '#0F1923' }}>
+                        <div style={{ width: '100%', aspectRatio: '16 / 9', background: '#F1F5F9', overflow: 'hidden' }}>
+                          {c.thumb ? <img src={c.thumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} loading="lazy" /> : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, color: '#CBD5E1' }}>🦷</div>}
+                        </div>
+                        <div style={{ padding: '14px 18px' }}>
+                          {spec && <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', padding: '2px 8px', background: spec.bg, color: spec.color, borderRadius: 999 }}>{spec.label}</span>}
+                          <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, color: '#0F1923', marginTop: 6, lineHeight: 1.35 }}>{c.title}</h3>
+                          <div style={{ fontSize: 12, color: '#94A3B8', marginTop: 8 }}>
+                            {c.dentist?.name ? `Dr. ${c.dentist.name}` : ''}{cfg ? ' · ' + cfg.cityName : ''}
+                          </div>
+                        </div>
+                      </Link>
+                    )
+                  })}
                 </div>
+                {!signedIn && (
+                  <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ background: 'rgba(255,255,255,0.96)', border: '1px solid #E2E8F0', borderRadius: 14, padding: '28px 32px', textAlign: 'center', boxShadow: '0 12px 32px rgba(15,25,35,0.08)', maxWidth: 460 }}>
+                      <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 18, color: '#0F1923', marginBottom: 6 }}>
+                        Sign in to see the full feed
+                      </div>
+                      <p style={{ fontSize: 13, color: '#475569', lineHeight: 1.55, marginBottom: 16 }}>
+                        Cases from India's top dental professionals. Free to join.
+                      </p>
+                      <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+                        <Link href="/join" style={{ padding: '10px 20px', background: '#1D4ED8', color: '#fff', borderRadius: 8, fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>Join Free →</Link>
+                        <Link href="/for-dentists/login" style={{ padding: '10px 20px', background: '#fff', color: '#0F1923', border: '1px solid #E2E8F0', borderRadius: 8, fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>Sign in</Link>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
-            ))}
-          </div>
-        </section>
+            </div>
+          </section>
+        )}
 
-        {/* How it works — patients */}
-        <section style={{ padding: '64px 20px 32px' }}>
-          <div style={{ maxWidth: 1100, margin: '0 auto' }}>
-            <SectionEyebrow>For patients</SectionEyebrow>
-            <SectionHeadline>How it works</SectionHeadline>
-            <StepGrid steps={PATIENT_STEPS} accent="#1D4ED8" />
-          </div>
-        </section>
+        {/* Top dentists */}
+        {topDentists.length > 0 && (
+          <section style={{ padding: '64px 20px 32px' }}>
+            <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+              <SectionEyebrow>Top dental professionals</SectionEyebrow>
+              <SectionHeadline>Most-followed on the network</SectionHeadline>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 14, marginTop: 28 }}>
+                {topDentists.map(d => {
+                  const cfg = d.city ? (CITY_CONFIGS as any)[d.city] : null
+                  const initials = d.name.split(' ').map(p => p[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
+                  return (
+                    <Link key={d.id} href={`/professional/${d.slug}`} style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 14, padding: 20, display: 'flex', gap: 12, alignItems: 'center', textDecoration: 'none', color: '#0F1923' }}>
+                      <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#EFF6FF', color: '#1D4ED8', fontWeight: 800, fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+                        {d.profile_photo ? <img src={d.profile_photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 15 }}>Dr. {d.name}</div>
+                        {cfg && <div style={{ fontSize: 12, color: '#64748B' }}>{cfg.cityName}</div>}
+                        <div style={{ fontSize: 12, color: '#1D4ED8', fontWeight: 700, marginTop: 4 }}>{d.follower_count} follower{d.follower_count === 1 ? '' : 's'}</div>
+                      </div>
+                    </Link>
+                  )
+                })}
+              </div>
+              <div style={{ textAlign: 'center', marginTop: 24 }}>
+                <Link href="/dentists" style={{ fontSize: 13, color: '#1D4ED8', fontWeight: 700, textDecoration: 'none' }}>Discover all dentists →</Link>
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* How it works — dentists */}
-        <section style={{ padding: '32px 20px 64px', background: '#F8FAFC' }}>
+        <section style={{ padding: '40px 20px 64px', background: '#F8FAFC' }}>
           <div style={{ maxWidth: 1100, margin: '0 auto' }}>
-            <SectionEyebrow>For dentists</SectionEyebrow>
-            <SectionHeadline>List your clinic in 3 steps</SectionHeadline>
-            <StepGrid steps={DENTIST_STEPS} accent="#166534" />
+            <SectionEyebrow>How it works</SectionEyebrow>
+            <SectionHeadline>Three steps to join the network</SectionHeadline>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 24, marginTop: 32 }}>
+              {DENTIST_STEPS.map(s => (
+                <div key={s.n} style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 14, padding: '24px 22px' }}>
+                  <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#1D4ED8', color: '#fff', fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+                    {s.n}
+                  </div>
+                  <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, color: '#0F1923', marginBottom: 6 }}>{s.title}</h3>
+                  <p style={{ fontSize: 14, color: '#475569', lineHeight: 1.6 }}>{s.body}</p>
+                </div>
+              ))}
+            </div>
             <div style={{ textAlign: 'center', marginTop: 28 }}>
-              <Link href="/for-dentists" style={{ padding: '12px 22px', minHeight: 44, background: '#0F1923', color: '#fff', borderRadius: 10, fontSize: 14, fontWeight: 700, textDecoration: 'none', display: 'inline-block' }}>
-                Register your clinic →
-              </Link>
+              {!signedIn && (
+                <Link href="/join" style={{ padding: '12px 24px', minHeight: 44, background: '#0F1923', color: '#fff', borderRadius: 10, fontSize: 14, fontWeight: 700, textDecoration: 'none', display: 'inline-block' }}>
+                  Join the network — it's free →
+                </Link>
+              )}
             </div>
           </div>
         </section>
 
-        {/* Featured cities — 13 live */}
+        {/* Featured cities — patient-facing CTA secondary to the
+            professional network framing, but still useful: every city
+            has a directory and the network is rooted there. */}
         <section style={{ padding: '64px 20px' }}>
           <div style={{ maxWidth: 1100, margin: '0 auto' }}>
-            <SectionEyebrow>Live in {liveCityCount} cities</SectionEyebrow>
-            <SectionHeadline>Where you can find dentists today</SectionHeadline>
+            <SectionEyebrow>Network presence</SectionEyebrow>
+            <SectionHeadline>Live in {liveCityCount} cities, {COMING_SOON_CITIES.length} more coming</SectionHeadline>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 14, marginTop: 28 }}>
-              {featuredCities.map(c => (
-                <a
-                  key={c.citySlug}
-                  href={`https://${c.domain}`}
-                  target="_blank"
-                  rel="noopener"
-                  style={{
-                    display: 'block', padding: '20px',
-                    background: '#fff', border: '1px solid #E2E8F0', borderRadius: 14,
-                    textDecoration: 'none', color: '#0F1923',
-                    boxShadow: '0 2px 6px rgba(15, 25, 35, 0.04)',
-                    transition: 'transform 0.15s, box-shadow 0.15s',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 17 }}>{c.cityName}</span>
-                    <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 12, background: '#DCFCE7', color: '#166534', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Live</span>
+              {Object.values(CITY_CONFIGS).map(c => (
+                <a key={c.citySlug} href={`https://${c.domain}`} target="_blank" rel="noopener" style={{ display: 'block', padding: '16px 18px', background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12, textDecoration: 'none', color: '#0F1923' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15 }}>{c.cityName}</span>
+                    <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 10, background: '#DCFCE7', color: '#166534', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Live</span>
                   </div>
-                  <div style={{ fontSize: 12, color: '#64748B', marginBottom: 8 }}>{c.state}</div>
-                  <div style={{ fontSize: 13, color: '#1D4ED8', fontWeight: 600 }}>
+                  <div style={{ fontSize: 12, color: '#1D4ED8', fontWeight: 600 }}>
                     {dentistCountByCity[c.citySlug] ?? 0} dentist{(dentistCountByCity[c.citySlug] ?? 0) === 1 ? '' : 's'} →
                   </div>
                 </a>
               ))}
             </div>
-            <div style={{ textAlign: 'center', marginTop: 28 }}>
-              <Link href="/cities" style={{ color: '#1D4ED8', fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
-                See all 63 cities →
-              </Link>
-            </div>
-          </div>
-        </section>
-
-        {/* Clinical Cases promo — bridges the consumer side of the site
-            (above) with the dentist professional network (below). Lives
-            inside the same gradient strip the city listings use so the
-            "for patients" → "for dentists" handoff reads as deliberate. */}
-        <section style={{ padding: '32px 20px 64px' }}>
-          <div style={{ maxWidth: 1100, margin: '0 auto' }}>
-            <SectionEyebrow>For dentists</SectionEyebrow>
-            <SectionHeadline>Clinical cases from peers across India</SectionHeadline>
-            <p style={{ fontSize: 15, color: '#475569', lineHeight: 1.6, textAlign: 'center', maxWidth: 640, margin: '12px auto 24px' }}>
-              Share treatment write-ups, browse cases by specialty, and build a portfolio that travels with your name — not your clinic.
-            </p>
-            <div style={{ display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <Link href="/cases" style={{ padding: '12px 22px', minHeight: 44, background: '#0F1923', color: '#fff', borderRadius: 10, fontSize: 14, fontWeight: 700, textDecoration: 'none' }}>
-                Browse cases →
-              </Link>
-              <Link href="/cases/new" style={{ padding: '12px 22px', minHeight: 44, background: '#fff', color: '#0F1923', border: '1.5px solid #0F1923', borderRadius: 10, fontSize: 14, fontWeight: 700, textDecoration: 'none' }}>
-                Post a case
-              </Link>
-            </div>
-          </div>
-        </section>
-
-        {/* Blog preview */}
-        <section style={{ padding: '32px 20px 64px', background: '#F8FAFC' }}>
-          <div style={{ maxWidth: 1100, margin: '0 auto' }}>
-            <SectionEyebrow>Dental health journal</SectionEyebrow>
-            <SectionHeadline>What to read next</SectionHeadline>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 18, marginTop: 28 }}>
-              {BLOG_PLACEHOLDERS.map(p => (
-                <article key={p.slug} style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 14, padding: 22 }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: '#1D4ED8', letterSpacing: '0.06em', textTransform: 'uppercase' }}>{p.tag}</span>
-                  <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 18, lineHeight: 1.3, color: '#0F1923', marginTop: 8, marginBottom: 10 }}>{p.title}</h3>
-                  <p style={{ fontSize: 13, color: '#475569', lineHeight: 1.55 }}>{p.excerpt}</p>
-                  <div style={{ marginTop: 14, fontSize: 12, color: '#94A3B8', fontWeight: 600 }}>Coming soon</div>
-                </article>
-              ))}
+            <div style={{ textAlign: 'center', marginTop: 24 }}>
+              <Link href="/cities" style={{ color: '#1D4ED8', fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>See all 63 cities →</Link>
             </div>
           </div>
         </section>
@@ -310,19 +349,19 @@ export default async function NationalHome() {
         <footer style={{ background: '#0F1923', color: '#94A3B8', padding: '40px 20px' }}>
           <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', flexWrap: 'wrap', gap: 24, justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div style={{ maxWidth: 320 }}>
-              <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 18, color: '#fff', marginBottom: 8 }}>
-                Dentist In India
-              </div>
-              <p style={{ fontSize: 13, lineHeight: 1.6 }}>
-                Verified dentists across every Indian city. Built by dental professionals.
-              </p>
+              <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 18, color: '#fff', marginBottom: 8 }}>Dentist In India</div>
+              <p style={{ fontSize: 13, lineHeight: 1.6 }}>India's professional network for dentists. Built by dental professionals.</p>
             </div>
             <div style={{ display: 'flex', gap: 32 }}>
-              <FooterColumn title="Patients">
-                <FooterLink href="/cities">Find a dentist</FooterLink>
+              <FooterColumn title="Network">
+                <FooterLink href="/cases">Browse cases</FooterLink>
+                <FooterLink href="/dentists">Discover dentists</FooterLink>
+                <FooterLink href="/cities">Cities</FooterLink>
               </FooterColumn>
-              <FooterColumn title="Dentists">
-                <FooterLink href="/for-dentists">List your clinic</FooterLink>
+              <FooterColumn title="Get started">
+                <FooterLink href="/join">Join the network</FooterLink>
+                <FooterLink href="/for-dentists/login">Sign in</FooterLink>
+                <FooterLink href="/about">About</FooterLink>
               </FooterColumn>
             </div>
           </div>
@@ -345,35 +384,11 @@ function CounterCard({ value, label }: { value: string; label: string }) {
 }
 
 function SectionEyebrow({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{ fontSize: 12, fontWeight: 700, color: '#1D4ED8', letterSpacing: '0.08em', textTransform: 'uppercase', textAlign: 'center', marginBottom: 8 }}>
-      {children}
-    </div>
-  )
+  return <div style={{ fontSize: 12, fontWeight: 700, color: '#1D4ED8', letterSpacing: '0.08em', textTransform: 'uppercase', textAlign: 'center', marginBottom: 8 }}>{children}</div>
 }
 
 function SectionHeadline({ children }: { children: React.ReactNode }) {
-  return (
-    <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 32, color: '#0F1923', textAlign: 'center', lineHeight: 1.2 }}>
-      {children}
-    </h2>
-  )
-}
-
-function StepGrid({ steps, accent }: { steps: { n: number; title: string; body: string }[]; accent: string }) {
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 24, marginTop: 32 }}>
-      {steps.map(s => (
-        <div key={s.n} style={{ position: 'relative', background: '#fff', border: '1px solid #E2E8F0', borderRadius: 14, padding: '24px 22px' }}>
-          <div style={{ width: 36, height: 36, borderRadius: '50%', background: accent, color: '#fff', fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
-            {s.n}
-          </div>
-          <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, color: '#0F1923', marginBottom: 6 }}>{s.title}</h3>
-          <p style={{ fontSize: 14, color: '#475569', lineHeight: 1.6 }}>{s.body}</p>
-        </div>
-      ))}
-    </div>
-  )
+  return <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 32, color: '#0F1923', textAlign: 'center', lineHeight: 1.2 }}>{children}</h2>
 }
 
 function FooterColumn({ title, children }: { title: string; children: React.ReactNode }) {

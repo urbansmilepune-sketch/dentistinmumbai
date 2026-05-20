@@ -2,19 +2,27 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
-import { getCityBySlug, cityBrandName, cityBrandTld, cityOrigin } from '@/config/cities'
+import { getCityBySlug, cityBrandName, cityBrandTld, cityOrigin, NATIONAL_ORIGIN } from '@/config/cities'
 import FilterSidebar from './FilterSidebar'
 import DentistCard from './DentistCard'
 import Pagination from './Pagination'
 import SortSelect from './SortSelect'
 import { haversineKm } from '@/lib/distance'
+import NationalDentistsDiscover from '@/components/national/NationalDentistsDiscover'
 
 // headers() forces dynamic rendering; ISR revalidate is therefore moot.
 export const dynamic = 'force-dynamic'
 
 export async function generateMetadata({ searchParams }: { searchParams: Promise<Record<string, string>> }): Promise<Metadata> {
-  const params = await searchParams
   const h = await headers()
+  if (h.get('x-is-national') === '1') {
+    return {
+      title: 'Discover Dentists | Dentist In India',
+      description: 'Browse verified MCI-registered dentists across 13 Indian cities. Filter by specialty, city, experience.',
+      alternates: { canonical: `${NATIONAL_ORIGIN}/dentists` },
+    }
+  }
+  const params = await searchParams
   const city = getCityBySlug(h.get('x-city-slug'))
   const area = params.area?.split(',')[0] || ''
   const treatment = params.treatment?.split(',')[0] || ''
@@ -41,9 +49,15 @@ function parseCoord(v: string | undefined, range: number): number | null {
 }
 
 export default async function DentistsPage({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
+  const h = await headers()
+  // National parent gets the "Discover Dentists" professional grid; city
+  // domains keep the existing patient-facing search-by-area page.
+  if (h.get('x-is-national') === '1') {
+    const p = await searchParams
+    return <NationalDentistsDiscover searchParams={p} />
+  }
   const params = await searchParams
   const supabase = await createClient()
-  const h = await headers()
   const city = getCityBySlug(h.get('x-city-slug'))
   const citySlug = city.citySlug
 
