@@ -13,7 +13,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { createClient as createUserClient } from '@/lib/supabase/server'
-import { renderOutreachTemplate, sendOutreachEmail } from '@/lib/outreach'
+import { sendOutreachEmail } from '@/lib/outreach'
 import { CITY_CONFIGS, type CitySlug } from '@/config/cities'
 
 function admin() {
@@ -121,15 +121,14 @@ export async function POST(request: NextRequest) {
     const chunk = batch.slice(i, i + RESEND_CHUNK)
     const results = await Promise.allSettled(
       chunk.map(async (c) => {
-        const ctx = { name: c.name, clinic_name: c.clinic_name, city: c.city || campaign.city, email: c.email }
-        const subject = renderOutreachTemplate(campaign.subject, ctx)
-        const body    = renderOutreachTemplate(campaign.body, ctx)
         await sendOutreachEmail({
           to_email: c.email,
+          to_name: c.name,
+          clinic_name: c.clinic_name,
           contact_id: c.id,
           campaign_id: campaign.id,
-          subject,
-          body,
+          subject: campaign.subject,
+          body: campaign.body,
           city: c.city || campaign.city,
           origin,
         })

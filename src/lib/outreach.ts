@@ -50,86 +50,10 @@ export function cityLowerSlug(input: string): string {
   return v
 }
 
-function escapeHtml(s: string) {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
-
-function trackedUrl(trackBase: string, contactId: string, campaignId: string, url: string): string {
-  return `${trackBase}/api/track/click?contact_id=${encodeURIComponent(contactId)}&campaign_id=${encodeURIComponent(campaignId)}&url=${encodeURIComponent(url)}`
-}
-
-// Per-line transformer that recognises three patterns we use heavily
-// in outreach bodies and renders each as its own block:
-//   1. "✅ …"        → styled checkmark row with a green tick
-//   2. "👉 LABEL: https://…" → CTA-button row (we render the URL as a
-//                              prominent button labelled LABEL, with the
-//                              standard tracking redirect applied)
-//   3. Anything else → paragraph with inline URL linkification
-//
-// Plain newlines outside these patterns collapse into vertical spacing
-// rather than raw <br/> so the email still reads cleanly when the admin
-// writes the body in plain text.
-function transformBodyToHtml(body: string, trackBase: string, contactId: string, campaignId: string): string {
-  const lines = body.split(/\r?\n/)
-  const out: string[] = []
-  let paraBuf: string[] = []
-  const flushPara = () => {
-    if (paraBuf.length === 0) return
-    const text = paraBuf.join('<br/>')
-    out.push(`<p style="margin:0 0 14px;color:#374151;font-size:15px;line-height:1.7;">${text}</p>`)
-    paraBuf = []
-  }
-  const linkify = (s: string) => s.replace(/https?:\/\/[^\s<>"]+/g, (url) => {
-    return `<a href="${trackedUrl(trackBase, contactId, campaignId, url)}" style="color:#0057A8;text-decoration:underline;">${url}</a>`
-  })
-
-  for (const raw of lines) {
-    const line = raw.trim()
-    if (!line) { flushPara(); continue }
-
-    // ✅ checklist row
-    if (line.startsWith('✅')) {
-      flushPara()
-      const text = escapeHtml(line.replace(/^✅\s*/, ''))
-      out.push(
-        `<div style="display:flex;align-items:flex-start;gap:10px;margin:6px 0;font-size:15px;line-height:1.55;color:#0F1923;">` +
-          `<span aria-hidden="true" style="flex-shrink:0;width:22px;height:22px;border-radius:50%;background:#DCFCE7;color:#166534;font-weight:700;font-size:13px;line-height:22px;text-align:center;">✓</span>` +
-          `<span>${linkify(text)}</span>` +
-        `</div>`,
-      )
-      continue
-    }
-
-    // 👉 CTA button row — "👉 LABEL: https://..." or just "👉 https://..."
-    const ctaMatch = line.match(/^👉\s*(?:([^:]+):\s*)?(https?:\/\/\S+)/)
-    if (ctaMatch) {
-      flushPara()
-      const label = (ctaMatch[1] || 'Visit the link').trim()
-      const url = ctaMatch[2]
-      const tracked = trackedUrl(trackBase, contactId, campaignId, url)
-      out.push(
-        `<div style="text-align:center;margin:22px 0;">` +
-          `<a href="${tracked}" style="display:inline-block;padding:14px 28px;background:#1D4ED8;color:#ffffff;font-weight:700;font-size:15px;text-decoration:none;border-radius:8px;letter-spacing:0.02em;">` +
-            `${escapeHtml(label)} →` +
-          `</a>` +
-        `</div>`,
-      )
-      continue
-    }
-
-    paraBuf.push(linkify(escapeHtml(line)))
-  }
-  flushPara()
-  return out.join('')
-}
-
 export interface OutreachSendInput {
   to_email: string
+  to_name?: string | null
+  clinic_name?: string | null
   contact_id: string
   campaign_id: string
   subject: string
@@ -139,49 +63,108 @@ export interface OutreachSendInput {
 }
 
 export async function sendOutreachEmail(input: OutreachSendInput) {
-  const html = transformBodyToHtml(input.body, input.origin, input.contact_id, input.campaign_id)
+  const renderedSubject = renderOutreachTemplate(input.subject, {
+    name: input.to_name,
+    clinic_name: input.clinic_name,
+    city: input.city,
+    email: input.to_email,
+  })
+
+  const renderedBody = renderOutreachTemplate(input.body, {
+    name: input.to_name,
+    clinic_name: input.clinic_name,
+    city: input.city,
+    email: input.to_email,
+  })
+
+  // Build rich HTML from body text
+  const lines = renderedBody.split('\n')
+  let bodyHtml = ''
+
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+
+    // CTA button: 👉 LABEL: https://...
+    if (trimmed.startsWith('👉')) {
+      const urlMatch = trimmed.match(/https?:\/\/[^\s]+/)
+      const label = trimmed.replace(/^👉\s*/, '').replace(/https?:\/\/[^\s]+/, '').replace(':', '').trim()
+      const url = urlMatch ? urlMatch[0] : '#'
+      const trackedUrl = `${input.origin}/api/track/click?contact_id=${encodeURIComponent(input.contact_id)}&campaign_id=${encodeURIComponent(input.campaign_id)}&url=${encodeURIComponent(url)}`
+      bodyHtml += `
+        <div style="text-align:center;margin:28px 0;">
+          <a href="${trackedUrl}" style="display:inline-block;background:#0057A8;color:#ffffff;text-decoration:none;padding:16px 36px;border-radius:10px;font-size:16px;font-weight:700;font-family:Arial,sans-serif;">
+            ${label || 'Join the Network →'}
+          </a>
+        </div>`
+    }
+    // Checkmark bullet: ✅ text
+    else if (trimmed.startsWith('✅')) {
+      bodyHtml += `
+        <div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;font-family:Arial,sans-serif;font-size:14px;color:#374151;">
+          <span style="color:#16A34A;font-weight:700;flex-shrink:0;">✓</span>
+          <span>${trimmed.replace('✅', '').trim()}</span>
+        </div>`
+    }
+    // Regular paragraph
+    else {
+      bodyHtml += `<p style="font-family:Arial,sans-serif;font-size:15px;color:#374151;line-height:1.7;margin:0 0 12px;">${trimmed}</p>`
+    }
+  }
+
+  const unsubUrl = `${input.origin}/unsubscribe?email=${encodeURIComponent(input.to_email)}`
   const pixel = `<img src="${input.origin}/api/track/open?contact_id=${encodeURIComponent(input.contact_id)}&campaign_id=${encodeURIComponent(input.campaign_id)}" width="1" height="1" style="display:none" alt="" />`
+
+  const html = `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#F1F5F9;">
+  <div style="max-width:600px;margin:0 auto;padding:20px;">
+
+    <!-- Header -->
+    <div style="background:linear-gradient(135deg,#003F7A,#0057A8);padding:32px 24px;border-radius:12px 12px 0 0;text-align:center;">
+      <div style="font-family:Arial,sans-serif;font-size:26px;font-weight:800;color:#ffffff;letter-spacing:-0.5px;">
+        DentistIn<span style="color:#93C5FD;">India.in</span>
+      </div>
+      <div style="font-family:Arial,sans-serif;font-size:12px;color:rgba(255,255,255,0.7);margin-top:6px;text-transform:uppercase;letter-spacing:1px;">
+        India's Dental Professional Network
+      </div>
+    </div>
+
+    <!-- Body -->
+    <div style="background:#ffffff;padding:32px 28px;border:1px solid #E2E8F0;border-top:none;">
+      ${bodyHtml}
+    </div>
+
+    <!-- Social proof bar -->
+    <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-top:none;padding:16px;text-align:center;">
+      <span style="font-family:Arial,sans-serif;font-size:12px;color:#64748B;font-weight:600;">
+        3,000+ Dentists &nbsp;|&nbsp; 13 Cities &nbsp;|&nbsp; India's #1 Dental Network
+      </span>
+    </div>
+
+    <!-- Footer -->
+    <div style="padding:16px;text-align:center;">
+      <p style="font-family:Arial,sans-serif;font-size:11px;color:#94A3B8;margin:0 0 6px;">
+        You received this because we found your clinic in ${cityDisplayName(input.city) || 'your city'}.
+      </p>
+      <a href="${unsubUrl}" style="font-family:Arial,sans-serif;font-size:11px;color:#94A3B8;">Unsubscribe</a>
+    </div>
+
+  </div>
+  ${pixel}
+</body>
+</html>`
+
   const fromSlug = (input.city && Object.prototype.hasOwnProperty.call(CITY_CONFIGS, input.city)
     ? input.city
     : DEFAULT_CITY) as CitySlug
-  const cfg = CITY_CONFIGS[fromSlug]
-  // Unsubscribe URL — the public /unsubscribe page reads ?email= and flips
-  // the row's status. Mumbai is hardcoded because the page is hosted there
-  // (single deployment serves every city domain).
-  const unsubUrl = `${input.origin}/unsubscribe?email=${encodeURIComponent(input.to_email)}`
+
   return resend.emails.send({
     from: getCityEmail(fromSlug),
     to: input.to_email,
-    subject: input.subject,
-    html: `
-      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 16px; background: #F8FAFC;">
-        <!-- Header: navy gradient with white wordmark + tagline. Inline
-             styles only (no <style> blocks) so Gmail / Outlook render
-             the gradient correctly. -->
-        <div style="background: linear-gradient(135deg, #003F7A 0%, #0057A8 100%); padding: 28px 32px; border-radius: 14px 14px 0 0; text-align: center;">
-          <div style="font-family: 'Segoe UI', Tahoma, Arial, sans-serif; font-weight: 800; font-size: 24px; color: #ffffff; letter-spacing: -0.01em; line-height: 1.1;">
-            Dentist<span style="color: #93C5FD;">InIndia</span>.in
-          </div>
-          <div style="font-size: 12px; color: rgba(255,255,255,0.85); margin-top: 6px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">
-            India's Dental Professional Network
-          </div>
-        </div>
-
-        <!-- Body card. Solid white with soft border so the gradient
-             header floats above it cleanly. -->
-        <div style="background: #ffffff; padding: 32px; border: 1px solid #E2E8F0; border-top: none; border-radius: 0 0 14px 14px;">
-          ${html}
-        </div>
-
-        <!-- Footer chrome — light grey, small type, tracking pixel
-             tucked in as the last element so opens fire after render. -->
-        <div style="margin-top: 18px; padding: 0 8px; color: #94a3b8; font-size: 11px; line-height: 1.6; text-align: center;">
-          You're receiving this because we thought ${escapeHtml(cfg.domain)} could help your clinic grow.<br/>
-          <a href="${unsubUrl}" style="color: #94a3b8; text-decoration: underline;">Unsubscribe</a>
-        </div>
-        ${pixel}
-      </div>
-    `,
+    subject: renderedSubject,
+    html,
   })
 }
 
