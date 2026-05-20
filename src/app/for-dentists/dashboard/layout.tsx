@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createServiceClient } from '@supabase/supabase-js'
 import DashboardShell from './DashboardShell'
 import SupportButton from '@/components/SupportButton'
 import { completionPct } from '@/lib/profileCompletion'
@@ -23,6 +24,23 @@ export default async function DashboardLayout({ children }: { children: React.Re
     .single()
 
   if (!dentist) {
+    // Staff members have no dentists row — they live in clinic_staff
+    // and have their own portal at /for-dentists/staff. Before bouncing
+    // to /register, check whether this email belongs to staff at any
+    // clinic. Service role bypasses RLS so the lookup works even though
+    // staff have no policy granting them read on clinic_staff.
+    const admin = createServiceClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    )
+    const { data: staffRow } = await admin
+      .from('clinic_staff')
+      .select('id')
+      .ilike('email', user.email ?? '')
+      .neq('status', 'removed')
+      .maybeSingle()
+    if (staffRow) redirect('/for-dentists/staff')
+
     const email = user.email ?? ''
     redirect(`/for-dentists/register?email=${encodeURIComponent(email)}`)
   }

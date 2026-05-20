@@ -14,6 +14,7 @@ export default function PatientsPage() {
   const [search, setSearch] = useState('')
   const [showAdd, setShowAdd] = useState(() => searchParams.get('new') === '1')
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [form, setForm] = useState({
     name: '', phone: '', email: '', age: '', gender: '',
     address: '', blood_group: '', allergies: '', current_medications: '', medical_history: '',
@@ -41,7 +42,8 @@ export default function PatientsPage() {
   }, [])
 
   async function handleAddPatient() {
-    if (!form.name || !form.phone) { alert('Name and phone are required'); return }
+    setSaveError(null)
+    if (!form.name || !form.phone) { setSaveError('Name and phone are required'); return }
     setSaving(true)
     const supabase = createClient()
     const { data, error } = await supabase.from('patients').insert({
@@ -54,12 +56,18 @@ export default function PatientsPage() {
       emergency_contact_name: form.emergency_contact_name || null,
       emergency_contact_phone: form.emergency_contact_phone || null,
     }).select('*').single()
-    if (!error && data) {
-      setPatients(prev => [data, ...prev])
-      setShowAdd(false)
-      setForm({ name: '', phone: '', email: '', age: '', gender: '', address: '', blood_group: '', allergies: '', current_medications: '', medical_history: '', emergency_contact_name: '', emergency_contact_phone: '' })
-    }
     setSaving(false)
+    if (error || !data) {
+      // Previously this branch silently no-op'd — the Saving… spinner
+      // would clear and the modal stayed open with no feedback, which
+      // looked exactly like a broken submit button. Surface the actual
+      // failure reason so the dentist knows what to fix.
+      setSaveError(error?.message || 'Could not save patient. Please try again.')
+      return
+    }
+    setPatients(prev => [data, ...prev])
+    setShowAdd(false)
+    setForm({ name: '', phone: '', email: '', age: '', gender: '', address: '', blood_group: '', allergies: '', current_medications: '', medical_history: '', emergency_contact_name: '', emergency_contact_phone: '' })
   }
 
   const filtered = patients.filter(p =>
@@ -148,8 +156,13 @@ export default function PatientsPage() {
                 <input value={form.emergency_contact_phone} onChange={e => setForm(f => ({ ...f, emergency_contact_phone: e.target.value }))} placeholder="Phone" style={inputStyle} />
               </div>
             </div>
+            {saveError && (
+              <div style={{ background: '#FEE2E2', border: '1px solid #FECACA', color: '#991B1B', padding: '10px 14px', borderRadius: 10, fontSize: 13, marginTop: 14 }}>
+                {saveError}
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
-              <button onClick={() => setShowAdd(false)} style={{ padding: '10px 20px', background: 'var(--bg)', color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 10, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>Cancel</button>
+              <button onClick={() => { setShowAdd(false); setSaveError(null) }} style={{ padding: '10px 20px', background: 'var(--bg)', color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 10, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>Cancel</button>
               <button onClick={handleAddPatient} disabled={saving} style={{ padding: '10px 24px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-body)' }}>{saving ? 'Saving...' : 'Add Patient'}</button>
             </div>
           </div>
