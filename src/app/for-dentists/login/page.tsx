@@ -29,7 +29,27 @@ export default function DentistLoginPage() {
   }, [])
   const brandLeft = national ? 'dentistinindia' : cityConfig.domain.split('.')[0]
   const brandTld = national ? '.in' : '.' + cityConfig.domain.split('.').slice(1).join('.')
-  const brandLeftPretty = national ? 'DentistInIndia' : `DentistIn${cityConfig.cityName.replace(/\s+/g, '')}`
+  // The orange chunk between "DentistIn" and the TLD. National host shows
+  // "India"; city hosts show the city name. Previously this used
+  // cityConfig.cityName directly, which leaked Mumbai branding onto
+  // dentistinindia.in because getCityByDomain falls back to Mumbai for
+  // unknown hosts.
+  const brandCityChunk = national ? 'India' : cityConfig.cityName.replace(/\s+/g, '')
+  const brandLeftPretty = `DentistIn${brandCityChunk}`
+
+  // Per-mode copy. The login page wears two hats: a city-clinic portal
+  // (DentistInMumbai.in etc.) and the national professional network
+  // (DentistInIndia.in). Frame the page accordingly.
+  const heroHeadline   = national ? "India's Professional Network for Dentists" : 'Your practice dashboard awaits'
+  const heroSub        = national ? 'Sign in to share cases and connect with peers' : 'Manage everything from one place'
+  const heroBullets    = national
+    ? ['Share clinical cases with peers', 'Connect with specialists nearby', 'Build your professional profile', 'Get listed on your city directory']
+    : ['Manage appointments 24/7', 'Upload clinic photos', 'Track patient enquiries', 'Rank higher on Google']
+  const rightSubLine   = national ? 'Sign in to the network' : 'Sign in to your practice portal'
+  const submitLabel    = national ? 'Sign In' : 'Sign In to Dashboard'
+  const joinHref       = national ? '/join' : '/for-dentists'
+  const joinCta        = national ? 'Join the network →' : 'List your clinic free →'
+  const magicLinkLine  = national ? 'Check your email for your magic sign-in link' : 'Check your email for your dashboard access link'
 
   const supabase = createClient()
 
@@ -38,8 +58,9 @@ export default function DentistLoginPage() {
   // can't pass an absolute URL and redirect the user off-platform.
   function nextPath(): string {
     if (nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//')) return nextParam
-    // Default landing: national host → cases hub; city hosts → city dashboard.
-    return national ? '/cases' : '/for-dentists/dashboard'
+    // Default landing: national host → feed (the professional network
+    // surface); city hosts → city dashboard.
+    return national ? '/feed' : '/for-dentists/dashboard'
   }
 
   async function handleEmail(e: React.FormEvent) {
@@ -77,16 +98,16 @@ async function handleGoogle() {
       <div style={{ display: 'none', width: '40%', flexDirection: 'column', justifyContent: 'space-between', padding: '40px', background: 'linear-gradient(145deg, #003F7A, #0057A8)' }} className="login-panel">
         <div>
           <Link href="/" style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, color: '#fff', textDecoration: 'none' }}>
-            DentistIn<span style={{ color: '#FF6135' }}>{cityConfig.cityName.replace(/\s+/g, '')}</span>{brandTld}
+            DentistIn<span style={{ color: '#FF6135' }}>{brandCityChunk}</span>{brandTld}
           </Link>
         </div>
         <div>
           <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 30, color: '#fff', lineHeight: 1.3, marginBottom: 12 }}>
-            Your practice dashboard awaits
+            {heroHeadline}
           </h2>
-          <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: 15, marginBottom: 32 }}>Manage everything from one place</p>
+          <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: 15, marginBottom: 32 }}>{heroSub}</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {['Manage appointments 24/7', 'Upload clinic photos', 'Track patient enquiries', 'Rank higher on Google'].map(item => (
+            {heroBullets.map(item => (
               <div key={item} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <div style={{ width: 22, height: 22, borderRadius: '50%', background: '#00A878', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 12, flexShrink: 0 }}>✓</div>
                 <span style={{ color: '#fff', fontSize: 14 }}>{item}</span>
@@ -95,7 +116,7 @@ async function handleGoogle() {
           </div>
         </div>
         <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>
-          Not a member? <Link href="/for-dentists" style={{ color: '#fff', textDecoration: 'underline' }}>List your clinic free →</Link>
+          Not a member? <Link href={joinHref} style={{ color: '#fff', textDecoration: 'underline' }}>{joinCta}</Link>
         </p>
       </div>
 
@@ -105,12 +126,12 @@ async function handleGoogle() {
           {/* Mobile logo */}
           <div style={{ marginBottom: 32, textAlign: 'center' }}>
             <Link href="/" style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, color: 'var(--blue)', textDecoration: 'none' }}>
-              DentistIn<span style={{ color: '#FF6135' }}>{cityConfig.cityName.replace(/\s+/g, '')}</span>{brandTld}
+              DentistIn<span style={{ color: '#FF6135' }}>{brandCityChunk}</span>{brandTld}
             </Link>
           </div>
 
           <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 4 }}>Welcome back, Doctor</h1>
-          <p style={{ color: 'var(--muted)', fontSize: 14, marginBottom: 20 }}>Sign in to your practice portal</p>
+          <p style={{ color: 'var(--muted)', fontSize: 14, marginBottom: 20 }}>{rightSubLine}</p>
 
           {/* First-login nudge: dentists who just registered get a one-click
               magic link in their approval email rather than a password —
@@ -118,7 +139,7 @@ async function handleGoogle() {
               time trying password combinations that don't exist. */}
           <div style={{ padding: '12px 14px', background: '#E8F3FF', border: '1px solid #BFDBFE', borderRadius: 10, fontSize: 13, color: 'var(--blue-dark)', marginBottom: 20, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
             <span style={{ fontSize: 16, lineHeight: 1.2 }}>📧</span>
-            <span><strong>Just registered?</strong> Check your email for your dashboard access link — no password needed for your first sign-in.</span>
+            <span><strong>Just registered?</strong> {magicLinkLine} — no password needed for your first sign-in.</span>
           </div>
 
           {error && (
@@ -169,7 +190,7 @@ async function handleGoogle() {
             <button
               type="submit" disabled={loading}
               style={{ width: '100%', padding: '13px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: 15, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}
-            >{loading ? 'Signing in...' : 'Sign In to Dashboard'}</button>
+            >{loading ? 'Signing in...' : submitLabel}</button>
           </form>
 
           {/* Divider */}
@@ -195,7 +216,7 @@ async function handleGoogle() {
 
           <p style={{ textAlign: 'center', fontSize: 13, color: 'var(--muted)', marginTop: 24 }}>
             New to {brandLeftPretty}?{' '}
-            <Link href="/for-dentists" style={{ color: 'var(--blue)', fontWeight: 600 }}>Create your free listing →</Link>
+            <Link href={joinHref} style={{ color: 'var(--blue)', fontWeight: 600 }}>{joinCta}</Link>
           </p>
         </div>
       </div>
