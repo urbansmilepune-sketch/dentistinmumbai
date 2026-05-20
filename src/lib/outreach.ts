@@ -62,109 +62,83 @@ export interface OutreachSendInput {
   origin: string
 }
 
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 export async function sendOutreachEmail(input: OutreachSendInput) {
-  const renderedSubject = renderOutreachTemplate(input.subject, {
+  const ctx = {
     name: input.to_name,
     clinic_name: input.clinic_name,
     city: input.city,
     email: input.to_email,
-  })
-
-  const renderedBody = renderOutreachTemplate(input.body, {
-    name: input.to_name,
-    clinic_name: input.clinic_name,
-    city: input.city,
-    email: input.to_email,
-  })
-
-  // Build rich HTML from body text
-  const lines = renderedBody.split('\n')
-  let bodyHtml = ''
-
-  for (const line of lines) {
-    const trimmed = line.trim()
-    if (!trimmed) continue
-
-    // CTA button: 👉 LABEL: https://...
-    if (trimmed.startsWith('👉')) {
-      const urlMatch = trimmed.match(/https?:\/\/[^\s]+/)
-      const label = trimmed.replace(/^👉\s*/, '').replace(/https?:\/\/[^\s]+/, '').replace(':', '').trim()
-      const url = urlMatch ? urlMatch[0] : '#'
-      const trackedUrl = `${input.origin}/api/track/click?contact_id=${encodeURIComponent(input.contact_id)}&campaign_id=${encodeURIComponent(input.campaign_id)}&url=${encodeURIComponent(url)}`
-      bodyHtml += `
-        <div style="text-align:center;margin:28px 0;">
-          <a href="${trackedUrl}" style="display:inline-block;background:#0057A8;color:#ffffff;text-decoration:none;padding:16px 36px;border-radius:10px;font-size:16px;font-weight:700;font-family:Arial,sans-serif;">
-            ${label || 'Join the Network →'}
-          </a>
-        </div>`
-    }
-    // Checkmark bullet: ✅ text
-    else if (trimmed.startsWith('✅')) {
-      bodyHtml += `
-        <div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;font-family:Arial,sans-serif;font-size:14px;color:#374151;">
-          <span style="color:#16A34A;font-weight:700;flex-shrink:0;">✓</span>
-          <span>${trimmed.replace('✅', '').trim()}</span>
-        </div>`
-    }
-    // Regular paragraph
-    else {
-      bodyHtml += `<p style="font-family:Arial,sans-serif;font-size:15px;color:#374151;line-height:1.7;margin:0 0 12px;">${trimmed}</p>`
-    }
   }
+  const renderedSubject = renderOutreachTemplate(input.subject, ctx)
+  const renderedBody    = renderOutreachTemplate(input.body, ctx)
 
   const unsubUrl = `${input.origin}/unsubscribe?email=${encodeURIComponent(input.to_email)}`
   const pixel = `<img src="${input.origin}/api/track/open?contact_id=${encodeURIComponent(input.contact_id)}&campaign_id=${encodeURIComponent(input.campaign_id)}" width="1" height="1" style="display:none" alt="" />`
 
+  // Convert the plain-text body to minimal HTML. Blank line → new <p>,
+  // single newline → <br/>, URLs become tracked links. No gradient header,
+  // no logo banner, no CTA buttons, no social-proof strip — Gmail's
+  // promotions classifier penalises all of those. A bare <p> stack reads
+  // like a personal note instead of a marketing blast.
+  const escapedBody = escapeHtml(renderedBody)
+  const linkedBody = escapedBody.replace(/https?:\/\/[^\s<>"]+/g, (match) => {
+    const actualUrl = match.replace(/&amp;/g, '&')
+    const tracked = `${input.origin}/api/track/click?contact_id=${encodeURIComponent(input.contact_id)}&campaign_id=${encodeURIComponent(input.campaign_id)}&url=${encodeURIComponent(actualUrl)}`
+    return `<a href="${tracked.replace(/&/g, '&amp;')}" style="color:#1D4ED8;text-decoration:underline;">${match}</a>`
+  })
+  const paragraphsHtml = linkedBody
+    .split(/\n\s*\n/)
+    .map(p => p.trim())
+    .filter(Boolean)
+    .map(p => `<p style="margin:0 0 14px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.6;color:#1F2937;">${p.replace(/\n/g, '<br/>')}</p>`)
+    .join('')
+
   const html = `<!DOCTYPE html>
 <html>
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#F1F5F9;">
-  <div style="max-width:600px;margin:0 auto;padding:20px;">
-
-    <!-- Header -->
-    <div style="background:linear-gradient(135deg,#003F7A,#0057A8);padding:32px 24px;border-radius:12px 12px 0 0;text-align:center;">
-      <div style="font-family:Arial,sans-serif;font-size:26px;font-weight:800;color:#ffffff;letter-spacing:-0.5px;">
-        DentistIn<span style="color:#93C5FD;">India.in</span>
-      </div>
-      <div style="font-family:Arial,sans-serif;font-size:12px;color:rgba(255,255,255,0.7);margin-top:6px;text-transform:uppercase;letter-spacing:1px;">
-        India's Dental Professional Network
-      </div>
-    </div>
-
-    <!-- Body -->
-    <div style="background:#ffffff;padding:32px 28px;border:1px solid #E2E8F0;border-top:none;">
-      ${bodyHtml}
-    </div>
-
-    <!-- Social proof bar -->
-    <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-top:none;padding:16px;text-align:center;">
-      <span style="font-family:Arial,sans-serif;font-size:12px;color:#64748B;font-weight:600;">
-        3,000+ Dentists &nbsp;|&nbsp; 13 Cities &nbsp;|&nbsp; India's #1 Dental Network
-      </span>
-    </div>
-
-    <!-- Footer -->
-    <div style="padding:16px;text-align:center;">
-      <p style="font-family:Arial,sans-serif;font-size:11px;color:#94A3B8;margin:0 0 6px;">
-        You received this because we found your clinic in ${cityDisplayName(input.city) || 'your city'}.
-      </p>
-      <a href="${unsubUrl}" style="font-family:Arial,sans-serif;font-size:11px;color:#94A3B8;">Unsubscribe</a>
-    </div>
-
+<head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#ffffff;">
+  <div style="max-width:560px;margin:0 auto;padding:24px 20px;">
+    ${paragraphsHtml}
+    <p style="margin:24px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#9CA3AF;">
+      <a href="${unsubUrl}" style="color:#9CA3AF;text-decoration:underline;">Unsubscribe</a>
+    </p>
   </div>
   ${pixel}
 </body>
 </html>`
+
+  // Plain-text alternate. multipart/alternative is itself a deliverability
+  // signal — bulk marketing mail often omits it.
+  const text = `${renderedBody}\n\n--\nUnsubscribe: ${unsubUrl}`
 
   const fromSlug = (input.city && Object.prototype.hasOwnProperty.call(CITY_CONFIGS, input.city)
     ? input.city
     : DEFAULT_CITY) as CitySlug
 
   return resend.emails.send({
-    from: getCityEmail(fromSlug),
+    from: `DentistIn Team <${getCityEmail(fromSlug)}>`,
     to: input.to_email,
     subject: renderedSubject,
     html,
+    text,
+    headers: {
+      // RFC 8058 one-click unsubscribe. Gmail / Yahoo / Apple all use this
+      // to surface the native unsubscribe link AND to bias toward Primary
+      // when the sender clearly supports unsubscribing.
+      'List-Unsubscribe': `<${unsubUrl}>`,
+      'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+      // Per-campaign correlation id for ESP-side dedupe/grouping.
+      'X-Entity-Ref-ID': input.campaign_id,
+    },
   })
 }
 

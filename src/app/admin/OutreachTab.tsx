@@ -55,27 +55,21 @@ const CITY_ORDER: CitySlug[] = [
 ]
 
 const DEFAULT_TEMPLATE = {
-  subject: 'Dr. {name} — your peers are already on this',
+  subject: 'Quick note for Dr. {name}',
   body: `Hi Dr. {name},
 
-India's first professional network for dentists just launched in {city}.
+I came across your clinic {clinic_name} and wanted to reach out personally.
 
-Your peers are already sharing cases, connecting with specialists, and getting new patients through dentistinindia.in
+A few dentists in {city} have been using dentistinindia.in to connect with peers and share clinical cases. I thought you might find it useful too.
 
-What you get completely free:
-✅ Professional profile on India's dental network
-✅ Share before/after cases — get recognition from peers
-✅ Your clinic listed on dentistin{city_lower}.in
-✅ Connect with 3,000+ verified dentists across India
-✅ Get referrals from specialists in your city
+It's a professional network built specifically for dentists — you can share before/after cases, connect with specialists nearby, and your clinic gets listed on dentistin{city_lower}.in automatically.
 
-👉 JOIN THE NETWORK: https://dentistinindia.in/join
+If you're curious: https://dentistinindia.in/join
 
-It takes 5 minutes. No credit card. No contracts.
+Happy to answer any questions — just reply to this email.
 
-Regards,
-The DentistIn Team
-dentistinindia.in`,
+Dr. Team
+DentistIn India`,
 }
 
 const cardStyle: React.CSSProperties = {
