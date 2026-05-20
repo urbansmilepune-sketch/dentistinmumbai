@@ -8,6 +8,7 @@ import NationalMapSection from './NationalMapSection'
 // component) so d3-geo + the GeoJSON stay out of the client bundle.
 import { STATE_PATHS, LIVE_DOTS, SOON_DOTS } from './indiaMapData'
 import { getSpecialty } from '@/lib/dentalSpecialties'
+import BrandLogo from './BrandLogo'
 
 // National parent homepage — re-positioned as India's professional
 // network for dentists (LinkedIn + Instagram + Facebook shape, not a
@@ -141,8 +142,8 @@ export default async function NationalHome() {
         {/* Nav */}
         <nav style={{ position: 'sticky', top: 0, zIndex: 50, background: '#fff', borderBottom: '1px solid #E2E8F0', padding: '14px 20px' }}>
           <div style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-            <Link href="/" style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 20, color: '#0F1923', textDecoration: 'none' }}>
-              Dentist<span style={{ color: '#1D4ED8' }}>InIndia</span>.in
+            <Link href="/" style={{ display: 'flex', alignItems: 'center', color: '#0F1923', textDecoration: 'none' }}>
+              <BrandLogo height={32} />
             </Link>
             <div style={{ display: 'flex', alignItems: 'center', gap: 18, fontSize: 14, fontWeight: 600 }}>
               <Link href="/cases"        style={{ color: '#475569', textDecoration: 'none' }}>Cases</Link>
@@ -159,6 +160,9 @@ export default async function NationalHome() {
         {/* Hero */}
         <section style={{ padding: '72px 20px 32px', background: 'linear-gradient(180deg, #F8FAFC 0%, #fff 100%)' }}>
           <div style={{ maxWidth: 980, margin: '0 auto', textAlign: 'center' }}>
+            <div style={{ marginBottom: 22, display: 'flex', justifyContent: 'center' }}>
+              <BrandLogo height={64} fontSize={28} />
+            </div>
             <div style={{ display: 'inline-block', background: '#EFF6FF', color: '#1D4ED8', padding: '6px 14px', borderRadius: 999, fontSize: 12, fontWeight: 700, marginBottom: 18, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
               For dental professionals
             </div>

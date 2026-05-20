@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import FeedNavLink from './FeedNavLink'
+import BrandLogo from './BrandLogo'
 
 // Shared header + footer for the secondary national pages (every
 // national surface except / and /cities, which have their own inline
@@ -29,8 +30,8 @@ export default async function NationalShell({ badge, children }: Props) {
     <div style={{ background: '#fff', color: '#0F1923', fontFamily: 'var(--font-body)', minHeight: '100vh' }}>
       <nav style={{ position: 'sticky', top: 0, zIndex: 50, background: '#fff', borderBottom: '1px solid #E2E8F0', padding: '14px 20px' }}>
         <div style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-          <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 20, color: '#0F1923', textDecoration: 'none' }}>
-            Dentist<span style={{ color: '#1D4ED8' }}>InIndia</span>.in
+          <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#0F1923', textDecoration: 'none' }}>
+            <BrandLogo height={32} />
             {badge && (
               <span style={{ marginLeft: 6, fontFamily: 'var(--font-body)', fontSize: 11, fontWeight: 700, padding: '3px 8px', background: '#EFF6FF', color: '#1D4ED8', borderRadius: 999, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
                 {badge}
