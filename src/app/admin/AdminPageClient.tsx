@@ -197,6 +197,11 @@ interface AdminPageClientProps {
    * + the analytics rollup. Pre-computed on the server so the client tab
    * just sorts / filters; no extra round-trip. */
   dentistHealth: DentistHealthRow[]
+  /** Clinical-case moderation queue + reports. Server pre-joins the
+   *  case + dentist + first photo so the tab renders without extra
+   *  client-side fetches. */
+  pendingCases: any[]
+  openReports: any[]
 }
 
 // User-requested display order for the city dropdown — All Cities first,
@@ -578,7 +583,149 @@ function DentistHealthTab({ dentists, cityFilter }: { dentists: DentistHealthRow
   )
 }
 
-export default function AdminPageClient({ stats, dentists, registrations, appointments, enquiries, reviews, areas, foundingConfig, analytics, cityFilter, commsDentists, dentistHealth }: AdminPageClientProps) {
+// ────────────────────────────────────────────────────────────────────────
+// Cases moderation tab
+//
+// Pre-loaded with the pending cases + open reports the server fetched
+// in admin/page.tsx. All state changes are optimistic — once the API
+// call returns ok we drop the row out of the list rather than refetch.
+// ────────────────────────────────────────────────────────────────────────
+
+interface CasesModerationProps {
+  initialPending: any[]
+  initialReports: any[]
+  onToast: (variant: 'success' | 'error' | 'info', message: string) => void
+}
+
+function CasesModerationTab({ initialPending, initialReports, onToast }: CasesModerationProps) {
+  const [pending, setPending] = useState<any[]>(initialPending)
+  const [reports, setReports] = useState<any[]>(initialReports)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [rejectTarget, setRejectTarget] = useState<{ id: string; title: string } | null>(null)
+
+  async function approveCase(id: string) {
+    setBusy(id)
+    const res = await fetch('/api/admin/cases', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ case_id: id, action: 'approve' }) })
+    setBusy(null)
+    if (!res.ok) { onToast('error', 'Could not approve case.'); return }
+    setPending(p => p.filter(c => c.id !== id))
+    onToast('success', 'Case approved and live.')
+  }
+
+  async function performReject(reason: string) {
+    if (!rejectTarget) return
+    const id = rejectTarget.id
+    setRejectTarget(null)
+    setBusy(id)
+    const res = await fetch('/api/admin/cases', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ case_id: id, action: 'reject', reason }) })
+    setBusy(null)
+    if (!res.ok) { onToast('error', 'Could not reject case.'); return }
+    setPending(p => p.filter(c => c.id !== id))
+    onToast('success', 'Case rejected.')
+  }
+
+  async function resolveReport(id: string, action: 'resolve' | 'dismiss') {
+    setBusy(id)
+    const res = await fetch('/api/admin/cases', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ report_id: id, action }) })
+    setBusy(null)
+    if (!res.ok) { onToast('error', 'Could not update report.'); return }
+    setReports(r => r.filter(rep => rep.id !== id))
+    onToast('success', action === 'resolve' ? 'Report resolved.' : 'Report dismissed.')
+  }
+
+  function firstThumb(photos: any[] | undefined | null): string | null {
+    if (!photos || photos.length === 0) return null
+    // Prefer a clinical photo; fall back to whatever's first by display_order.
+    const sorted = [...photos].sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
+    const clinical = sorted.find(p => p.kind === 'before' || p.kind === 'after')
+    return (clinical || sorted[0])?.url ?? null
+  }
+
+  return (
+    <div>
+      <PageHeader title="Clinical Cases" subtitle="Approve, reject, and resolve reports on the clinical-case feed." />
+
+      <SectionTitle>
+        Pending review <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>· {pending.length} {pending.length === 1 ? 'case' : 'cases'}</span>
+      </SectionTitle>
+      <div style={{ background: '#fff', border: `1px solid ${CARD_BORDER}`, borderRadius: 16, boxShadow: CARD_SHADOW, overflow: 'hidden', marginBottom: 28 }}>
+        {pending.length === 0 ? (
+          <div style={{ padding: '32px 24px', textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>Queue empty — every case has been reviewed.</div>
+        ) : pending.map((c, i) => {
+          const thumb = firstThumb(c.case_photos)
+          const dentistName = c.dentists?.name || '—'
+          return (
+            <div key={c.id} style={{
+              display: 'grid', gridTemplateColumns: '88px 1fr auto', gap: 16, alignItems: 'center',
+              padding: '14px 18px',
+              borderTop: i > 0 ? '1px solid var(--border)' : 'none',
+            }}>
+              <div style={{ width: 88, height: 66, borderRadius: 8, overflow: 'hidden', background: '#F1F5F9' }}>
+                {thumb && <img src={thumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)' }}>{c.title}</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                  Dr. {dentistName}{c.dentists?.city ? ' · ' + c.dentists.city : ''} · {c.specialty} · {'★'.repeat(c.complexity)}
+                </div>
+                <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 2 }}>Submitted {new Date(c.created_at).toLocaleDateString('en-IN')}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <a href={`https://dentistinindia.in/cases/${c.id}`} target="_blank" rel="noopener noreferrer" style={{ padding: '7px 12px', minHeight: 32, background: '#fff', border: '1px solid #E2E8F0', borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#475569', textDecoration: 'none' }}>Preview</a>
+                <button onClick={() => approveCase(c.id)} disabled={busy === c.id} style={{ padding: '7px 12px', minHeight: 32, background: '#DCFCE7', color: '#166534', border: '1px solid #BBF7D0', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: busy === c.id ? 'wait' : 'pointer', fontFamily: 'var(--font-body)' }}>✓ Approve</button>
+                <button onClick={() => setRejectTarget({ id: c.id, title: c.title })} disabled={busy === c.id} style={{ padding: '7px 12px', minHeight: 32, background: '#FEE2E2', color: '#991B1B', border: '1px solid #FECACA', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: busy === c.id ? 'wait' : 'pointer', fontFamily: 'var(--font-body)' }}>✕ Reject</button>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      <SectionTitle>
+        Open reports <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>· {reports.length}</span>
+      </SectionTitle>
+      <div style={{ background: '#fff', border: `1px solid ${CARD_BORDER}`, borderRadius: 16, boxShadow: CARD_SHADOW, overflow: 'hidden', marginBottom: 28 }}>
+        {reports.length === 0 ? (
+          <div style={{ padding: '32px 24px', textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>No open reports.</div>
+        ) : reports.map((r, i) => (
+          <div key={r.id} style={{ padding: '14px 18px', borderTop: i > 0 ? '1px solid var(--border)' : 'none', display: 'grid', gridTemplateColumns: '1fr auto', gap: 14, alignItems: 'flex-start' }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>
+                {r.case?.title || 'Case'}{r.case?.dentist?.name ? <span style={{ color: '#64748B', fontWeight: 500 }}> · by Dr. {r.case.dentist.name}</span> : null}
+              </div>
+              <div style={{ fontSize: 11, color: '#94A3B8', marginBottom: 6 }}>
+                Reported by Dr. {r.reporter?.name || '—'} · {new Date(r.created_at).toLocaleDateString('en-IN')}
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.55, background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 8, padding: '8px 12px' }}>
+                {r.reason}
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <a href={`https://dentistinindia.in/cases/${r.case_id}`} target="_blank" rel="noopener noreferrer" style={{ padding: '7px 12px', minHeight: 32, background: '#fff', border: '1px solid #E2E8F0', borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#475569', textDecoration: 'none', textAlign: 'center' }}>View case</a>
+              <button onClick={() => resolveReport(r.id, 'resolve')} disabled={busy === r.id} style={{ padding: '7px 12px', minHeight: 32, background: '#DCFCE7', color: '#166534', border: '1px solid #BBF7D0', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: busy === r.id ? 'wait' : 'pointer', fontFamily: 'var(--font-body)' }}>Resolve</button>
+              <button onClick={() => resolveReport(r.id, 'dismiss')} disabled={busy === r.id} style={{ padding: '7px 12px', minHeight: 32, background: '#F1F5F9', color: '#475569', border: '1px solid #E2E8F0', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: busy === r.id ? 'wait' : 'pointer', fontFamily: 'var(--font-body)' }}>Dismiss</button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {rejectTarget && (
+        <ConfirmModal
+          title={`Reject case: ${rejectTarget.title}`}
+          description="The dentist will see this case as 'rejected' in their portfolio. The reason below is stored for audit but not currently emailed."
+          confirmLabel="Reject case"
+          confirmVariant="danger"
+          requireReason
+          reasonLabel="Reason for rejection"
+          reasonPlaceholder="e.g. Photos don't match the described treatment / unverified outcome / non-clinical content"
+          onCancel={() => setRejectTarget(null)}
+          onConfirm={performReject}
+        />
+      )}
+    </div>
+  )
+}
+
+export default function AdminPageClient({ stats, dentists, registrations, appointments, enquiries, reviews, areas, foundingConfig, analytics, cityFilter, commsDentists, dentistHealth, pendingCases, openReports }: AdminPageClientProps) {
   const [section, setSection] = useState('dashboard')
   const [dentistList, setDentistList] = useState(dentists)
   const [reviewList, setReviewList] = useState(reviews)
@@ -1246,6 +1393,15 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
         {/* DENTIST HEALTH (new tab) */}
         {section === 'dentist-health' && (
           <DentistHealthTab dentists={dentistHealth} cityFilter={cityFilter} />
+        )}
+
+        {/* CASES MODERATION */}
+        {section === 'cases' && (
+          <CasesModerationTab
+            initialPending={pendingCases}
+            initialReports={openReports}
+            onToast={pushToast}
+          />
         )}
 
         {/* REGISTRATIONS */}

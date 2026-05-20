@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { getCityByDomain, CITY_CONFIGS, DEFAULT_CITY, type CityConfig } from '@/config/cities'
+import { getCityByDomain, isNationalHost, CITY_CONFIGS, DEFAULT_CITY, type CityConfig } from '@/config/cities'
 
 export default function DentistLoginPage() {
   const router = useRouter()
@@ -16,12 +16,31 @@ export default function DentistLoginPage() {
   const [gLoading, setGLoading] = useState(false)
   const [error, setError] = useState('')
   const [cityConfig, setCityConfig] = useState<CityConfig>(CITY_CONFIGS[DEFAULT_CITY])
-  useEffect(() => { setCityConfig(getCityByDomain(window.location.hostname)) }, [])
-  const brandLeft = cityConfig.domain.split('.')[0]
-  const brandTld = '.' + cityConfig.domain.split('.').slice(1).join('.')
-  const brandLeftPretty = `DentistIn${cityConfig.cityName.replace(/\s+/g, '')}`
+  const [national, setNational] = useState(false)
+  const [nextParam, setNextParam] = useState<string>('')
+  useEffect(() => {
+    const host = window.location.hostname
+    setNational(isNationalHost(host))
+    setCityConfig(getCityByDomain(host))
+    // Read ?next= directly from the URL instead of useSearchParams() — the
+    // latter requires a Suspense boundary at build time and adds zero
+    // value here since this is a 'use client' component.
+    setNextParam(new URLSearchParams(window.location.search).get('next') ?? '')
+  }, [])
+  const brandLeft = national ? 'dentistinindia' : cityConfig.domain.split('.')[0]
+  const brandTld = national ? '.in' : '.' + cityConfig.domain.split('.').slice(1).join('.')
+  const brandLeftPretty = national ? 'DentistInIndia' : `DentistIn${cityConfig.cityName.replace(/\s+/g, '')}`
 
   const supabase = createClient()
+
+  // Allow callers to specify a post-login target via ?next=. Same-origin
+  // safety: we accept only paths that start with "/" so an attacker
+  // can't pass an absolute URL and redirect the user off-platform.
+  function nextPath(): string {
+    if (nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//')) return nextParam
+    // Default landing: national host → cases hub; city hosts → city dashboard.
+    return national ? '/cases' : '/for-dentists/dashboard'
+  }
 
   async function handleEmail(e: React.FormEvent) {
     e.preventDefault()
@@ -31,12 +50,12 @@ export default function DentistLoginPage() {
       setError('Incorrect email or password. Please try again.')
       setLoading(false); return
     }
-    // Same origin only — each city is a separate apex domain so the
-    // supabase auth cookie is host-scoped; a cross-domain redirect would
-    // drop the session and loop. The dashboard reads the dentist row by
-    // email, so data renders correctly here even if this domain doesn't
-    // match the dentist's registered city.
-    router.push('/for-dentists/dashboard')
+    // Same origin only — each domain (each city + national) is a separate
+    // apex so the supabase auth cookie is host-scoped; cross-domain
+    // redirects drop the session and loop. The dashboard reads the dentist
+    // row by email, so data renders correctly here even if this domain
+    // doesn't match the dentist's registered city.
+    router.push(nextPath())
     router.refresh()
   }
 

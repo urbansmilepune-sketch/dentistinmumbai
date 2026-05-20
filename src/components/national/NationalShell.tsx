@@ -29,6 +29,7 @@ export default function NationalShell({ badge, children }: Props) {
             )}
           </Link>
           <div style={{ display: 'flex', alignItems: 'center', gap: 18, fontSize: 14, fontWeight: 600 }}>
+            <Link href="/cases"           style={{ color: '#475569', textDecoration: 'none' }}>Cases</Link>
             <Link href="/cities"          style={{ color: '#475569', textDecoration: 'none' }}>Cities</Link>
             <Link href="/dental-tourism"  style={{ color: '#475569', textDecoration: 'none' }}>Dental Tourism</Link>
             <Link href="/about"           style={{ color: '#475569', textDecoration: 'none' }}>About</Link>
@@ -58,6 +59,7 @@ export default function NationalShell({ badge, children }: Props) {
               <FooterLink href="/dental-tourism">Dental tourism</FooterLink>
             </FooterCol>
             <FooterCol title="Dentists">
+              <FooterLink href="/cases">Clinical cases</FooterLink>
               <FooterLink href="/for-dentists">List your clinic</FooterLink>
             </FooterCol>
             <FooterCol title="Company">

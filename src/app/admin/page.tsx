@@ -112,6 +112,9 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     { count: outreachSentAllCount },
     { count: outreachOpenedCount },
     { count: outreachRegisteredCount },
+    // --- Cases moderation ---
+    { data: pendingCases },
+    { data: openReports },
   ] = await Promise.all([
     applyCity(supabase.from('dentists').select('*', { count: 'exact', head: true }).eq('is_active', true)),
     applyCity(supabase.from('appointments').select('*, dentists!inner(city)', { count: 'exact', head: true })),
@@ -194,6 +197,23 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     supabase.from('outreach_contacts').select('*', { count: 'exact', head: true }).not('sent_at', 'is', null),
     supabase.from('outreach_contacts').select('*', { count: 'exact', head: true }).not('opened_at', 'is', null),
     supabase.from('outreach_contacts').select('*', { count: 'exact', head: true }).not('registered_at', 'is', null),
+
+    // --- Cases moderation queue. RLS on cases / case_reports is built
+    //     around the dentist owner; admins read via service role so the
+    //     moderation tab sees every pending row regardless of who owns
+    //     it. The same `adminClient` already gates the admin login.
+    adminClient
+      .from('cases')
+      .select('id, title, specialty, complexity, created_at, dentists(name, slug, clinic_name, city), case_photos(url, kind, display_order)')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: true })
+      .limit(50),
+    adminClient
+      .from('case_reports')
+      .select('id, reason, created_at, case_id, reporter:reporter_dentist_id(name, slug), case:case_id(title, status, dentist:dentist_id(name, slug))')
+      .eq('status', 'open')
+      .order('created_at', { ascending: true })
+      .limit(50),
   ])
 
   const dc = dentistCount || 0
@@ -562,6 +582,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
       cityFilter={cityFilter}
       commsDentists={commsDentists || []}
       dentistHealth={dentistHealth}
+      pendingCases={pendingCases || []}
+      openReports={openReports || []}
     />
   )
 }

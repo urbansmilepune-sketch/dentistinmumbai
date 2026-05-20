@@ -6,6 +6,7 @@ import { getCityByDomain, cityOrigin, CITY_CONFIGS, isNationalHost, NATIONAL_ORI
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const h = await headers()
   const host = h.get('x-forwarded-host') || h.get('host')
+  const supabase = await createClient()
 
   // National parent. The sitemap surfaces the network homepage + /cities,
   // and lists every city domain as a dofollow link so Google crawls the
@@ -16,6 +17,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     const nationalPages: MetadataRoute.Sitemap = [
       { url: NATIONAL_ORIGIN,                       lastModified: now, changeFrequency: 'daily',   priority: 1.0 },
       { url: `${NATIONAL_ORIGIN}/cities`,           lastModified: now, changeFrequency: 'weekly',  priority: 0.9 },
+      { url: `${NATIONAL_ORIGIN}/cases`,            lastModified: now, changeFrequency: 'daily',   priority: 0.9 },
       { url: `${NATIONAL_ORIGIN}/dental-tourism`,   lastModified: now, changeFrequency: 'monthly', priority: 0.85 },
       { url: `${NATIONAL_ORIGIN}/for-dentists`,     lastModified: now, changeFrequency: 'weekly',  priority: 0.85 },
       { url: `${NATIONAL_ORIGIN}/about`,            lastModified: now, changeFrequency: 'monthly', priority: 0.6 },
@@ -26,10 +28,27 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: 'daily' as const,
       priority: 0.8,
     }))
-    return [...nationalPages, ...cityHomes]
+    // Approved case + professional-profile URLs — fetched via the
+    // user-bound client; case_photos RLS doesn't gate the cases.id read.
+    const [{ data: approvedCases }, { data: activeDentists }] = await Promise.all([
+      supabase.from('cases').select('id, created_at').eq('status', 'approved').order('created_at', { ascending: false }).limit(5000),
+      supabase.from('dentists').select('slug').eq('is_active', true).limit(5000),
+    ])
+    const casePages: MetadataRoute.Sitemap = (approvedCases || []).map((c: any) => ({
+      url: `${NATIONAL_ORIGIN}/cases/${c.id}`,
+      lastModified: c.created_at ? new Date(c.created_at) : now,
+      changeFrequency: 'weekly' as const,
+      priority: 0.75,
+    }))
+    const profilePages: MetadataRoute.Sitemap = (activeDentists || []).map((d: any) => ({
+      url: `${NATIONAL_ORIGIN}/professional/${d.slug}`,
+      lastModified: now,
+      changeFrequency: 'weekly' as const,
+      priority: 0.7,
+    }))
+    return [...nationalPages, ...cityHomes, ...casePages, ...profilePages]
   }
 
-  const supabase = await createClient()
   const city = getCityByDomain(host)
   const BASE = cityOrigin(city)
 

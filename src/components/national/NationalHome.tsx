@@ -266,6 +266,28 @@ export default async function NationalHome() {
           </div>
         </section>
 
+        {/* Clinical Cases promo — bridges the consumer side of the site
+            (above) with the dentist professional network (below). Lives
+            inside the same gradient strip the city listings use so the
+            "for patients" → "for dentists" handoff reads as deliberate. */}
+        <section style={{ padding: '32px 20px 64px' }}>
+          <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+            <SectionEyebrow>For dentists</SectionEyebrow>
+            <SectionHeadline>Clinical cases from peers across India</SectionHeadline>
+            <p style={{ fontSize: 15, color: '#475569', lineHeight: 1.6, textAlign: 'center', maxWidth: 640, margin: '12px auto 24px' }}>
+              Share treatment write-ups, browse cases by specialty, and build a portfolio that travels with your name — not your clinic.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <Link href="/cases" style={{ padding: '12px 22px', minHeight: 44, background: '#0F1923', color: '#fff', borderRadius: 10, fontSize: 14, fontWeight: 700, textDecoration: 'none' }}>
+                Browse cases →
+              </Link>
+              <Link href="/cases/new" style={{ padding: '12px 22px', minHeight: 44, background: '#fff', color: '#0F1923', border: '1.5px solid #0F1923', borderRadius: 10, fontSize: 14, fontWeight: 700, textDecoration: 'none' }}>
+                Post a case
+              </Link>
+            </div>
+          </div>
+        </section>
+
         {/* Blog preview */}
         <section style={{ padding: '32px 20px 64px', background: '#F8FAFC' }}>
           <div style={{ maxWidth: 1100, margin: '0 auto' }}>
