@@ -242,6 +242,13 @@ export default function OutreachTab() {
   const [sendProgress, setSendProgress] = useState<Record<string, { active: boolean; sent: number; total: number; failed: number }>>({})
   const sendCancelRef = useRef<Record<string, boolean>>({})
 
+  // Per-row test-send state. testEmailFor holds the campaign id whose row
+  // is currently expanded; null collapses every row.
+  const [testEmailFor, setTestEmailFor] = useState<string | null>(null)
+  const [testEmail, setTestEmail] = useState('')
+  const [testSending, setTestSending] = useState(false)
+  const [testMsg, setTestMsg] = useState<string | null>(null)
+
   const loadCounts = useCallback(async () => {
     try {
       const res = await fetch('/api/admin/outreach/contacts', { cache: 'no-store' })
@@ -413,6 +420,25 @@ export default function OutreachTab() {
       })
     } catch {}
     loadCampaigns()
+  }
+
+  async function sendTest(campaignId: string) {
+    const to = testEmail.trim()
+    if (!to) return
+    setTestSending(true); setTestMsg(null)
+    try {
+      const res = await fetch('/api/admin/outreach/campaigns/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campaign_id: campaignId, test_email: to }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) setTestMsg(`Test failed: ${data?.error || 'Unknown error'}`)
+      else setTestMsg(`✓ Test sent to ${to}`)
+    } catch {
+      setTestMsg('Test failed: network error')
+    }
+    setTestSending(false)
   }
 
   async function resumeSending(c: Campaign) {
@@ -598,8 +624,36 @@ export default function OutreachTab() {
                         {c.status === 'paused' && !progress?.active && (
                           <button style={smallBtnPrimary} onClick={() => resumeSending(c)}>▶ Resume</button>
                         )}
+                        <button style={smallBtnGhost} onClick={() => {
+                          if (testEmailFor === c.id) { setTestEmailFor(null); setTestMsg(null) }
+                          else { setTestEmailFor(c.id); setTestEmail(''); setTestMsg(null) }
+                        }}>✉ Test</button>
                         <button style={smallBtnGhost} onClick={() => deleteCampaign(c.id)}>🗑</button>
                       </div>
+                      {testEmailFor === c.id && (
+                        <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <label style={{ ...labelStyle, marginBottom: 0 }}>Send test to</label>
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                            <input
+                              type="email"
+                              value={testEmail}
+                              placeholder="your@email.com"
+                              onChange={e => setTestEmail(e.target.value)}
+                              style={{ ...inputStyle, flex: '1 1 180px', minWidth: 180 }}
+                            />
+                            <button
+                              style={smallBtnPrimary}
+                              disabled={testSending || !testEmail.trim()}
+                              onClick={() => sendTest(c.id)}
+                            >
+                              {testSending ? 'Sending…' : 'Send Test'}
+                            </button>
+                          </div>
+                          {testMsg && (
+                            <div style={{ fontSize: 12, color: testMsg.startsWith('✓') ? '#15803D' : '#B91C1C' }}>{testMsg}</div>
+                          )}
+                        </div>
+                      )}
                     </td>
                   </tr>
                 )
