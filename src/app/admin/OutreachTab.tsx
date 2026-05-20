@@ -58,22 +58,24 @@ const DEFAULT_TEMPLATE = {
   subject: 'Dr. {name} — your peers are already on this',
   body: `Hi Dr. {name},
 
-India's first professional network for dentists just launched — and dentists in {city} are already sharing cases, connecting with specialists, and getting referrals.
+India's first professional network for dentists just launched in {city}.
 
-What it looks like:
-📋 Share your before/after cases — get recognition from peers
-🤝 Connect with 500+ verified dentists across 13 cities
-🏥 Your clinic listed automatically on dentistin{city_lower}.in
-⭐ Build your professional reputation online
+Your peers are already sharing cases, connecting with specialists, and getting new patients through dentistinindia.in
 
-It takes 5 minutes to join. No credit card. No contracts.
+What you get completely free:
+✅ Professional profile on India's dental network
+✅ Share before/after cases — get recognition from peers
+✅ Your clinic listed on dentistin{city_lower}.in
+✅ Connect with 3,000+ verified dentists across India
+✅ Get referrals from specialists in your city
 
-👉 Join the network: https://dentistinindia.in/join
+👉 JOIN THE NETWORK: https://dentistinindia.in/join
 
-Join 3,000+ dental professionals already on the network.
+It takes 5 minutes. No credit card. No contracts.
 
 Regards,
-The DentistIn Team`,
+The DentistIn Team
+dentistinindia.in`,
 }
 
 const cardStyle: React.CSSProperties = {
