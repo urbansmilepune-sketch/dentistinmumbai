@@ -14,8 +14,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   if (isNationalHost(host)) {
     const now = new Date()
     const nationalPages: MetadataRoute.Sitemap = [
-      { url: NATIONAL_ORIGIN,                lastModified: now, changeFrequency: 'daily',  priority: 1.0 },
-      { url: `${NATIONAL_ORIGIN}/cities`,    lastModified: now, changeFrequency: 'weekly', priority: 0.9 },
+      { url: NATIONAL_ORIGIN,                       lastModified: now, changeFrequency: 'daily',   priority: 1.0 },
+      { url: `${NATIONAL_ORIGIN}/cities`,           lastModified: now, changeFrequency: 'weekly',  priority: 0.9 },
+      { url: `${NATIONAL_ORIGIN}/dental-tourism`,   lastModified: now, changeFrequency: 'monthly', priority: 0.85 },
+      { url: `${NATIONAL_ORIGIN}/for-dentists`,     lastModified: now, changeFrequency: 'weekly',  priority: 0.85 },
+      { url: `${NATIONAL_ORIGIN}/about`,            lastModified: now, changeFrequency: 'monthly', priority: 0.6 },
     ]
     const cityHomes: MetadataRoute.Sitemap = Object.values(CITY_CONFIGS).map(c => ({
       url: `https://${c.domain}`,

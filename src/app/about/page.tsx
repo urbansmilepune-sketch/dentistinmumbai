@@ -1,12 +1,24 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { headers } from 'next/headers'
-import { getCityBySlug, cityBrandName, cityBrandTld, cityOrigin } from '@/config/cities'
+import { getCityBySlug, cityBrandName, cityBrandTld, cityOrigin, NATIONAL_ORIGIN } from '@/config/cities'
+import NationalAbout from '@/components/national/NationalAbout'
 
 export const dynamic = 'force-dynamic'
 
 export async function generateMetadata(): Promise<Metadata> {
   const h = await headers()
+  if (h.get('x-is-national') === '1') {
+    const title = 'About Us | Dentist In India'
+    const description = 'Dentist In India is a national dental network built by Dentaura Prime LLP — Pune-based healthcare-tech company behind Urban Smile and the 13 dentistin[city].in sites.'
+    const url = `${NATIONAL_ORIGIN}/about`
+    return {
+      title, description,
+      alternates: { canonical: url },
+      openGraph: { title, description, url, siteName: 'dentistinindia.in', type: 'website', locale: 'en_IN' },
+      twitter: { card: 'summary', title, description },
+    }
+  }
   const city = getCityBySlug(h.get('x-city-slug'))
   const title = `About Us | ${city.domain}`
   const description = `${city.domain} is ${city.cityName}'s most trusted dental directory. Built by Dentaura Prime LLP to help patients find verified dentists and help dentists grow their practice.`
@@ -22,6 +34,12 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function AboutPage() {
   const h = await headers()
+  // National parent gets the team-led NationalAbout (Ashish, Dr Manish, Dr
+  // Sweety, Urban Smile, platform-wide live stats). The existing per-city
+  // copy below keeps shipping on dentistin[city].in surfaces unchanged.
+  if (h.get('x-is-national') === '1') {
+    return <NationalAbout />
+  }
   const city = getCityBySlug(h.get('x-city-slug'))
 
   return (

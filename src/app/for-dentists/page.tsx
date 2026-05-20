@@ -2,19 +2,31 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
-import { getCityBySlug, CITY_CONFIGS } from '@/config/cities'
+import { getCityBySlug, CITY_CONFIGS, NATIONAL_ORIGIN } from '@/config/cities'
 import TickerBar from './TickerBar'
 import ExpoPricingSection from './ExpoPricingSection'
 import ProgressBar from './ProgressBar'
 import HeroButtons from './HeroButtons'
+import NationalForDentists from '@/components/national/NationalForDentists'
 
 const UNLOCK_AT = 250
 
 export const dynamic = 'force-dynamic'
 
 export async function generateMetadata(): Promise<Metadata> {
-  const supabase = await createClient()
   const h = await headers()
+  if (h.get('x-is-national') === '1') {
+    const title = 'List Your Clinic on India\'s Dental Network | Dentist In India'
+    const description = 'MCI-verified directory across 13 live cities with zero commission. Pick your city, register in 5 minutes, go live in 24 hours.'
+    const url = `${NATIONAL_ORIGIN}/for-dentists`
+    return {
+      title, description,
+      alternates: { canonical: url },
+      openGraph: { title, description, url, siteName: 'dentistinindia.in', type: 'website', locale: 'en_IN' },
+      twitter: { card: 'summary', title, description },
+    }
+  }
+  const supabase = await createClient()
   const city = getCityBySlug(h.get('x-city-slug'))
   const { count } = await supabase
     .from('dentists')
@@ -40,8 +52,14 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function ForDentistsPage() {
-  const supabase = await createClient()
   const h = await headers()
+  // National parent gets the city-picker landing: pricing tiers + a
+  // dropdown that routes the dentist to their city's registration form.
+  // Per-city /for-dentists stays unchanged for the 13 live city domains.
+  if (h.get('x-is-national') === '1') {
+    return <NationalForDentists />
+  }
+  const supabase = await createClient()
   const city = getCityBySlug(h.get('x-city-slug'))
 
   const [{ count }, { data: areas }] = await Promise.all([
