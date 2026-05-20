@@ -40,7 +40,7 @@ export default async function ContactPage() {
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20, marginBottom: 40 }}>
             {[
-              { icon: '👤', title: 'For Patients', desc: 'Need help finding a dentist or have a booking issue?', action: 'WhatsApp Us', href: 'https://wa.me/917719903232' },
+              { icon: '👤', title: 'For Patients', desc: 'Need help finding a dentist or have a booking issue?', action: 'Email Us', href: `mailto:admin@${city.domain}` },
               { icon: '🦷', title: 'For Dentists', desc: 'Want to list your clinic or have a profile question?', action: 'List Your Clinic', href: '/for-dentists' },
               { icon: '🤝', title: 'Partnerships', desc: 'Dental brands, associations, or media enquiries.', action: 'Email Us', href: `mailto:admin@${city.domain}` },
             ].map(card => (
@@ -60,8 +60,6 @@ export default async function ContactPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               {[
                 { icon: '📧', label: 'Email', value: `admin@${city.domain}`, href: `mailto:admin@${city.domain}` },
-                { icon: '💬', label: 'WhatsApp', value: '+91 7719903232', href: 'https://wa.me/917719903232' },
-                { icon: '🏢', label: 'Company', value: 'Dentaura Prime LLP, Pune, Maharashtra', href: null },
               ].map(item => (
                 <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '14px', background: 'var(--bg)', borderRadius: 10 }}>
                   <span style={{ fontSize: 22, flexShrink: 0 }}>{item.icon}</span>
@@ -81,7 +79,7 @@ export default async function ContactPage() {
       </main>
 
       <footer style={{ background: '#0A1628', padding: '32px 20px', color: 'rgba(255,255,255,0.6)', textAlign: 'center' }}>
-        <p style={{ fontSize: 13 }}>© {new Date().getFullYear()} {city.domain} · A Dentaura Prime LLP initiative</p>
+        <p style={{ fontSize: 13 }}>© {new Date().getFullYear()} DentistIn. All rights reserved.</p>
       </footer>
     </>
   )

@@ -50,7 +50,7 @@ export default async function TermsPage() {
         <div className="container" style={{ maxWidth: 760 }}>
           <div style={{ marginBottom: 40 }}>
             <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(1.8rem, 4vw, 2.5rem)', marginBottom: 8 }}>Terms of Use</h1>
-            <p style={{ color: 'var(--muted)', fontSize: 14 }}>Last updated: May 2026 · Dentaura Prime LLP</p>
+            <p style={{ color: 'var(--muted)', fontSize: 14 }}>Last updated: May 2026</p>
           </div>
 
           <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '48px' }}>
@@ -69,7 +69,7 @@ export default async function TermsPage() {
           <Link href="/privacy" style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>Privacy Policy</Link>
           <Link href="/contact" style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>Contact</Link>
         </div>
-        <p style={{ fontSize: 13 }}>© {new Date().getFullYear()} {city.domain} · A Dentaura Prime LLP initiative</p>
+        <p style={{ fontSize: 13 }}>© {new Date().getFullYear()} DentistIn. All rights reserved.</p>
       </footer>
     </>
   )

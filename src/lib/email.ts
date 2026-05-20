@@ -164,7 +164,7 @@ export async function sendStaffInviteEmail(data: {
             If you weren't expecting this email, you can safely ignore it — the invite won't activate until you click the link.
           </p>
           <p style="color: #94a3b8; font-size: 12px; margin-top: 18px;">
-            © ${new Date().getFullYear()} ${city.domain} · A Dentaura Prime LLP initiative
+            © ${new Date().getFullYear()} DentistIn. All rights reserved.
           </p>
         </div>
       </div>
@@ -240,8 +240,8 @@ export async function sendRegistrationEmailToDentist(data: {
             <a href="${city.origin}/for-dentists/login" style="background: #FF6135; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 15px;">Access Your Dashboard →</a>
           </div>
           <div style="margin-top: 24px; text-align: center;">
-            <p style="color: #94a3b8; font-size: 12px;">Questions? WhatsApp us at <a href="https://wa.me/917719903232" style="color: #0057A8;">+91 7719903232</a></p>
-            <p style="color: #94a3b8; font-size: 12px; margin-top: 4px;">© ${new Date().getFullYear()} ${city.domain} · A Dentaura Prime LLP initiative</p>
+            <p style="color: #94a3b8; font-size: 12px;">Questions? Email us at <a href="mailto:admin@${city.domain}" style="color: #0057A8;">admin@${city.domain}</a></p>
+            <p style="color: #94a3b8; font-size: 12px; margin-top: 4px;">© ${new Date().getFullYear()} DentistIn. All rights reserved.</p>
           </div>
         </div>
       </div>
@@ -289,7 +289,7 @@ export async function sendDeclineEmail(data: {
           <p style="color: #374151; font-size: 15px; line-height: 1.6;">We appreciate the time you took to apply and wish you the very best with your practice.</p>
           <p style="color: #374151; font-size: 15px; margin-top: 20px;">Warm regards,<br/><strong>The ${city.domain} team</strong></p>
           <div style="margin-top: 28px; padding-top: 20px; border-top: 1px solid #e2e8f0; text-align: center;">
-            <p style="color: #94a3b8; font-size: 12px; margin: 0;">© ${new Date().getFullYear()} ${city.domain} · A Dentaura Prime LLP initiative</p>
+            <p style="color: #94a3b8; font-size: 12px; margin: 0;">© ${new Date().getFullYear()} DentistIn. All rights reserved.</p>
           </div>
         </div>
       </div>
@@ -342,7 +342,7 @@ export async function sendProfileReminderEmail(data: {
             <p style="color: #94a3b8; font-size: 12px; margin: 0 0 6px;">
               Don't want profile reminders? <a href="${data.unsubscribe_url}" style="color: #64748b; text-decoration: underline;">Unsubscribe</a>
             </p>
-            <p style="color: #94a3b8; font-size: 12px; margin: 0;">© ${new Date().getFullYear()} ${city.domain} · A Dentaura Prime LLP initiative</p>
+            <p style="color: #94a3b8; font-size: 12px; margin: 0;">© ${new Date().getFullYear()} DentistIn. All rights reserved.</p>
           </div>
         </div>
       </div>
@@ -429,7 +429,7 @@ export async function sendApprovalEmail(data: {
             </ul>
           </div>
           <div style="margin-top: 24px; text-align: center;">
-            <p style="color: #94a3b8; font-size: 12px;">© ${new Date().getFullYear()} ${city.domain} · A Dentaura Prime LLP initiative</p>
+            <p style="color: #94a3b8; font-size: 12px;">© ${new Date().getFullYear()} DentistIn. All rights reserved.</p>
           </div>
         </div>
       </div>
@@ -503,7 +503,7 @@ export async function sendBookingRequestToPatient(data: {
           </p>
 
           <div style="margin-top: 22px; padding-top: 16px; border-top: 1px solid #e2e8f0; text-align: center;">
-            <p style="color: #94a3b8; font-size: 12px; margin: 0;">© ${new Date().getFullYear()} ${city.domain} · A Dentaura Prime LLP initiative</p>
+            <p style="color: #94a3b8; font-size: 12px; margin: 0;">© ${new Date().getFullYear()} DentistIn. All rights reserved.</p>
           </div>
         </div>
       </div>
@@ -561,7 +561,7 @@ export async function sendBookingRequestToDentist(data: {
           </p>
 
           <div style="margin-top: 22px; padding-top: 16px; border-top: 1px solid #e2e8f0; text-align: center;">
-            <p style="color: #94a3b8; font-size: 12px; margin: 0;">© ${new Date().getFullYear()} ${city.domain} · A Dentaura Prime LLP initiative</p>
+            <p style="color: #94a3b8; font-size: 12px; margin: 0;">© ${new Date().getFullYear()} DentistIn. All rights reserved.</p>
           </div>
         </div>
       </div>
@@ -621,7 +621,7 @@ export async function sendAppointmentConfirmedToPatient(data: {
           </p>
 
           <div style="margin-top: 22px; padding-top: 16px; border-top: 1px solid #e2e8f0; text-align: center;">
-            <p style="color: #94a3b8; font-size: 12px; margin: 0;">© ${new Date().getFullYear()} ${city.domain} · A Dentaura Prime LLP initiative</p>
+            <p style="color: #94a3b8; font-size: 12px; margin: 0;">© ${new Date().getFullYear()} DentistIn. All rights reserved.</p>
           </div>
         </div>
       </div>
@@ -670,7 +670,7 @@ export async function sendAppointmentCancelledToPatient(data: {
           </table>
 
           <div style="margin-top: 22px; padding-top: 16px; border-top: 1px solid #e2e8f0; text-align: center;">
-            <p style="color: #94a3b8; font-size: 12px; margin: 0;">© ${new Date().getFullYear()} ${city.domain} · A Dentaura Prime LLP initiative</p>
+            <p style="color: #94a3b8; font-size: 12px; margin: 0;">© ${new Date().getFullYear()} DentistIn. All rights reserved.</p>
           </div>
         </div>
       </div>
@@ -758,7 +758,7 @@ export async function sendUpgradeConfirmationEmail(data: {
 
           <div style="margin-top: 24px; padding-top: 18px; border-top: 1px solid #e2e8f0; text-align: center;">
             <p style="color: #475569; font-size: 13px; margin: 0 0 4px;">Thank you for being a ${city.domain} founding member! 🏅</p>
-            <p style="color: #94a3b8; font-size: 12px; margin: 6px 0 0;">© ${new Date().getFullYear()} ${city.domain} · A Dentaura Prime LLP initiative</p>
+            <p style="color: #94a3b8; font-size: 12px; margin: 6px 0 0;">© ${new Date().getFullYear()} DentistIn. All rights reserved.</p>
           </div>
         </div>
       </div>
@@ -805,7 +805,7 @@ export async function sendAdminBulkMessage(data: {
             <a href="${city.origin}/for-dentists/dashboard" style="display: inline-block; background: #0057A8; color: #fff; padding: 11px 24px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 14px;">Open Dashboard →</a>
           </div>
           <p style="color: #94a3b8; font-size: 12px; text-align: center; margin: 20px 0 0;">
-            © ${new Date().getFullYear()} ${city.domain} · A Dentaura Prime LLP initiative
+            © ${new Date().getFullYear()} DentistIn. All rights reserved.
           </p>
         </div>
       </div>

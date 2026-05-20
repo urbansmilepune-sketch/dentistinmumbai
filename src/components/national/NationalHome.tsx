@@ -93,14 +93,11 @@ export default async function NationalHome() {
       {
         '@type': 'Organization',
         '@id': `${NATIONAL_ORIGIN}/#organization`,
-        name: 'Dentaura Prime LLP',
+        name: 'DentistIn',
         url: NATIONAL_ORIGIN,
         logo: `${NATIONAL_ORIGIN}/logo.png`,
-        founder: { '@type': 'Person', name: 'Ashish' },
         address: {
           '@type': 'PostalAddress',
-          addressLocality: 'Pune',
-          addressRegion: 'Maharashtra',
           addressCountry: 'IN',
         },
       },
@@ -295,7 +292,7 @@ export default async function NationalHome() {
                 Dentist In India
               </div>
               <p style={{ fontSize: 13, lineHeight: 1.6 }}>
-                Verified dentists across every Indian city. Built by Dentaura Prime LLP, Pune.
+                Verified dentists across every Indian city. Built by dental professionals.
               </p>
             </div>
             <div style={{ display: 'flex', gap: 32 }}>
@@ -308,7 +305,7 @@ export default async function NationalHome() {
             </div>
           </div>
           <div style={{ maxWidth: 1100, margin: '24px auto 0', paddingTop: 18, borderTop: '1px solid #1E293B', fontSize: 12, color: '#64748B' }}>
-            © {new Date().getFullYear()} Dentaura Prime LLP · Pune, India
+            © {new Date().getFullYear()} DentistIn. All rights reserved.
           </div>
         </footer>
       </div>

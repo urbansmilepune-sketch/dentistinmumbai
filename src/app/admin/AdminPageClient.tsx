@@ -439,7 +439,7 @@ function DentistHealthTab({ dentists, cityFilter }: { dentists: DentistHealthRow
       `Hi Dr. ${d.name.split(' ').slice(-1)[0]},\n\n` +
       `Saw a couple of things on your listing we can ${why}. ` +
       `Want me to walk you through it on a 5-minute call?\n\n` +
-      `— Urban Smile team`,
+      `— the platform team`,
     )
     return `mailto:${d.email}?subject=${subject}&body=${body}`
   }
@@ -448,7 +448,7 @@ function DentistHealthTab({ dentists, cityFilter }: { dentists: DentistHealthRow
     const num = buildWhatsAppNumber(d.whatsapp || d.phone)
     if (!num) return null
     const text = encodeURIComponent(
-      `Hi Dr. ${d.name.split(' ').slice(-1)[0]}, this is the Urban Smile team. ` +
+      `Hi Dr. ${d.name.split(' ').slice(-1)[0]}, this is the platform team. ` +
       `Spotted a quick win on your listing — got 2 minutes?`,
     )
     return `https://wa.me/${num}?text=${text}`

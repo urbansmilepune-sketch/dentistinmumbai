@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
             <a href="${(authData as any)?.properties?.action_link}" style="background: #0057A8; color: white; padding: 14px 28px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 15px;">Access My Dashboard →</a>
           </div>
           <p style="color: #64748b; font-size: 13px;">Once inside, you can set a permanent password from your profile settings.</p>
-          <p style="color: #94a3b8; font-size: 12px; margin-top: 20px; text-align: center;">© ${new Date().getFullYear()} ${city.domain} · A Dentaura Prime LLP initiative</p>
+          <p style="color: #94a3b8; font-size: 12px; margin-top: 20px; text-align: center;">© ${new Date().getFullYear()} DentistIn. All rights reserved.</p>
         </div>
       </div>
     `,

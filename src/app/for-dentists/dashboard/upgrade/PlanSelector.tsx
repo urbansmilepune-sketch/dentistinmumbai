@@ -116,8 +116,7 @@ export default function PlanSelector({ defaultPlan }: Props = {}) {
             'Priority support',
           ]}
           footer={
-            <a href={`https://wa.me/917719903232?text=${encodeURIComponent(`Hi, I want to upgrade my ${cityConfig.domain} listing to the Featured plan. My clinic is listed on the platform.`)}`}
-              target="_blank" rel="noopener noreferrer"
+            <a href={`mailto:hello@dentistinindia.in?subject=${encodeURIComponent('Featured plan upgrade')}&body=${encodeURIComponent(`Hi, I want to upgrade my ${cityConfig.domain} listing to the Featured plan. My clinic is listed on the platform.`)}`}
               style={{ display: 'block', width: '100%', padding: '12px', background: '#C2410C', color: '#fff', borderRadius: 10, textAlign: 'center', fontSize: 14, fontWeight: 700, textDecoration: 'none' }}>
               Get Featured →
             </a>

@@ -135,9 +135,9 @@ export default async function UpgradePage({ searchParams }: Props) {
 
       <div style={{ textAlign: 'center', marginTop: 40 }}>
         <p style={{ fontSize: 14, color: 'var(--muted)', marginBottom: 12 }}>Questions about plans? Talk to us directly.</p>
-        <a href="https://wa.me/917719903232" target="_blank" rel="noopener noreferrer"
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '12px 24px', background: '#25D366', color: '#fff', borderRadius: 10, fontWeight: 600, fontSize: 14, textDecoration: 'none' }}>
-          💬 WhatsApp Us
+        <a href="mailto:hello@dentistinindia.in"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '12px 24px', background: '#1D4ED8', color: '#fff', borderRadius: 10, fontWeight: 600, fontSize: 14, textDecoration: 'none' }}>
+          📧 Email Us
         </a>
       </div>
     </div>

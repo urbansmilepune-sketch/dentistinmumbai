@@ -10,7 +10,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const h = await headers()
   if (h.get('x-is-national') === '1') {
     const title = 'About Us | Dentist In India'
-    const description = 'Dentist In India is a national dental network built by Dentaura Prime LLP — Pune-based healthcare-tech company behind Urban Smile and the 13 dentistin[city].in sites.'
+    const description = 'Dentist In India is a national dental network built by dental professionals — one verified platform for every Indian city, on a mission to make quality dental care accessible to every Indian.'
     const url = `${NATIONAL_ORIGIN}/about`
     return {
       title, description,
@@ -21,7 +21,7 @@ export async function generateMetadata(): Promise<Metadata> {
   }
   const city = getCityBySlug(h.get('x-city-slug'))
   const title = `About Us | ${city.domain}`
-  const description = `${city.domain} is ${city.cityName}'s most trusted dental directory. Built by Dentaura Prime LLP to help patients find verified dentists and help dentists grow their practice.`
+  const description = `${city.domain} is ${city.cityName}'s most trusted dental directory. Built by dental professionals to help patients find verified dentists and help dentists grow their practice.`
   const url = `${cityOrigin(city)}/about`
   return {
     title,
@@ -34,9 +34,10 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function AboutPage() {
   const h = await headers()
-  // National parent gets the team-led NationalAbout (Ashish, Dr Manish, Dr
-  // Sweety, Urban Smile, platform-wide live stats). The existing per-city
-  // copy below keeps shipping on dentistin[city].in surfaces unchanged.
+  // National parent gets the dedicated NationalAbout (mission, generic
+  // "built by dental professionals" framing, platform-wide live stats).
+  // The existing per-city copy below keeps shipping on dentistin[city].in
+  // surfaces unchanged.
   if (h.get('x-is-national') === '1') {
     return <NationalAbout />
   }
@@ -62,7 +63,7 @@ export default async function AboutPage() {
           <div className="container" style={{ textAlign: 'center' }}>
             <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(2rem, 4vw, 3rem)', color: '#fff', marginBottom: 16 }}>About {city.domain}</h1>
             <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 18, maxWidth: 560, margin: '0 auto' }}>
-              {city.cityName}&apos;s most trusted platform for finding verified dentists — built by Dentaura Prime LLP.
+              {city.cityName}&apos;s most trusted platform for finding verified dentists — built by dental professionals.
             </p>
           </div>
         </section>
@@ -86,7 +87,7 @@ export default async function AboutPage() {
 
               <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 16 }}>Who We Are</h2>
               <p style={{ fontSize: 16, color: 'var(--text-secondary)', lineHeight: 1.8, marginBottom: 32 }}>
-                {city.domain} is a product of <strong>Dentaura Prime LLP</strong>, a Pune-based healthcare technology company. We also operate DentalSamaan (dental materials quick-commerce) and Urban Smile dental clinics. We understand dental from both sides of the chair.
+                {city.domain} is built by dental professionals — practitioners who run their own clinics and have lived the gap between patients searching online and dentists trying to reach them. Every product decision is shaped by people who understand dental from both sides of the chair.
               </p>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 20, marginBottom: 40 }}>
@@ -107,8 +108,6 @@ export default async function AboutPage() {
                 <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 16 }}>Contact Us</h2>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 15, color: 'var(--text-secondary)' }}>
                   <div>📧 <a href={`mailto:admin@${city.domain}`} style={{ color: 'var(--blue)' }}>admin@{city.domain}</a></div>
-                  <div>💬 <a href="https://wa.me/917719903232" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--blue)' }}>WhatsApp: +91 7719903232</a></div>
-                  <div>🏢 Dentaura Prime LLP, Pune, Maharashtra, India</div>
                 </div>
               </div>
             </div>
@@ -117,7 +116,7 @@ export default async function AboutPage() {
       </main>
 
       <footer style={{ background: '#0A1628', padding: '32px 20px', color: 'rgba(255,255,255,0.6)', textAlign: 'center' }}>
-        <p style={{ fontSize: 13 }}>© {new Date().getFullYear()} {city.domain} · A Dentaura Prime LLP initiative</p>
+        <p style={{ fontSize: 13 }}>© {new Date().getFullYear()} DentistIn. All rights reserved.</p>
       </footer>
     </>
   )

@@ -133,7 +133,7 @@ export default function ExpoPricingSection() {
         </div>
 
         <p style={{ textAlign: 'center', color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>
-          Questions? WhatsApp us at <a href="https://wa.me/917719903232" style={{ color: '#25D366', fontWeight: 600 }}>+91 7719903232</a>
+          Questions? Email us at <a href="mailto:hello@dentistinindia.in" style={{ color: '#60A5FA', fontWeight: 600 }}>hello@dentistinindia.in</a>
         </p>
       </div>
     </section>

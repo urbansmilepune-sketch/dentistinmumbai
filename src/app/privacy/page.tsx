@@ -51,7 +51,7 @@ function sectionsFor(domain: string) {
     },
     {
       title: '9. Contact',
-      content: `For any privacy-related questions, contact us at admin@${domain} or WhatsApp +91 7719903232.`,
+      content: `For any privacy-related questions, contact us at admin@${domain}.`,
     },
   ]
 }
@@ -76,7 +76,7 @@ export default async function PrivacyPage() {
         <div className="container" style={{ maxWidth: 760 }}>
           <div style={{ marginBottom: 40 }}>
             <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(1.8rem, 4vw, 2.5rem)', marginBottom: 8 }}>Privacy Policy</h1>
-            <p style={{ color: 'var(--muted)', fontSize: 14 }}>Last updated: May 2026 · Dentaura Prime LLP</p>
+            <p style={{ color: 'var(--muted)', fontSize: 14 }}>Last updated: May 2026</p>
           </div>
 
           <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '48px' }}>
@@ -99,7 +99,7 @@ export default async function PrivacyPage() {
           <Link href="/terms" style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>Terms of Use</Link>
           <Link href="/contact" style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>Contact</Link>
         </div>
-        <p style={{ fontSize: 13 }}>© {new Date().getFullYear()} {city.domain} · A Dentaura Prime LLP initiative</p>
+        <p style={{ fontSize: 13 }}>© {new Date().getFullYear()} DentistIn. All rights reserved.</p>
       </footer>
     </>
   )
