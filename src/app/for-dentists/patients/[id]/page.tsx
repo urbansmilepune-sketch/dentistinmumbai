@@ -78,7 +78,10 @@ export default function PatientDetailPage() {
         supabase.from('visits').select('*').eq('patient_id', patientId).order('visit_date', { ascending: false }),
         supabase.from('prescriptions').select('*').eq('patient_id', patientId).order('created_at', { ascending: false }),
         supabase.from('treatment_plans').select('*, treatment_plan_steps(*)').eq('patient_id', patientId).order('created_at', { ascending: false }),
-        supabase.from('xray_images').select('*').eq('patient_id', patientId).order('taken_at', { ascending: false }),
+        // Legacy route — xray_images was merged into patient_images by
+        // 20260521170000_patient_images.sql. Use the new table; field
+        // names below tolerate either shape since this route is older.
+        supabase.from('patient_images').select('*').eq('patient_id', patientId).order('created_at', { ascending: false }),
       ])
 
       if (!p) { router.push('/for-dentists/dashboard/patients'); return }
@@ -444,27 +447,15 @@ export default function PatientDetailPage() {
         </div>
       )}
 
-      {/* X-RAY VAULT */}
+      {/* X-RAY VAULT — legacy route. Patient image upload was moved into
+          the unified ImageVault on /for-dentists/dashboard/patients/[id].
+          The old table xray_images was dropped by migration
+          20260521170000_patient_images.sql; this tab now reads from the
+          new table and points dentists to the full vault. */}
       {activeTab === 'xrays' && (
         <div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
-            <label style={{ padding: '10px 20px', background: 'var(--blue)', color: '#fff', borderRadius: 10, fontWeight: 700, cursor: 'pointer', fontSize: 14 }}>
-              + Upload X-Ray / Image
-              <input type="file" accept="image/*" style={{ display: 'none' }} onChange={async e => {
-                const file = e.target.files?.[0]
-                if (!file) return
-                const formData = new FormData()
-                formData.append('file', file)
-                formData.append('type', 'xray')
-                const res = await fetch('/api/cloudinary/upload', { method: 'POST', body: formData })
-                const data = await res.json()
-                if (data.success) {
-                  const supabase = createClient()
-                  const { data: xray } = await supabase.from('xray_images').insert({ patient_id: patientId, dentist_id: dentistId, url: data.url, image_type: 'xray', taken_at: new Date().toISOString().split('T')[0] }).select('*').single()
-                  if (xray) setXrays(prev => [xray, ...prev])
-                }
-              }} />
-            </label>
+          <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 18px', marginBottom: 16, fontSize: 13, color: 'var(--text-secondary)' }}>
+            Image uploads have moved to the new <strong>X-Rays &amp; Photos</strong> tab in the patient detail dashboard.
           </div>
           {xrays.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '40px', background: '#fff', borderRadius: 14, border: '1px solid var(--border)', color: 'var(--muted)' }}>No images uploaded yet.</div>
@@ -472,11 +463,11 @@ export default function PatientDetailPage() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16 }}>
               {xrays.map(xr => (
                 <div key={xr.id} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
-                  <img src={xr.url} alt="X-ray" style={{ width: '100%', height: 160, objectFit: 'cover', display: 'block' }} />
+                  <img src={xr.image_url || xr.url} alt="Patient image" style={{ width: '100%', height: 160, objectFit: 'cover', display: 'block' }} />
                   <div style={{ padding: '10px 12px' }}>
                     <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>{xr.image_type?.toUpperCase()}</div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>{new Date(xr.taken_at).toLocaleDateString('en-IN')}</div>
-                    {xr.tooth_number && <div style={{ fontSize: 11, color: 'var(--blue)' }}>Tooth #{xr.tooth_number}</div>}
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>{xr.taken_date ? new Date(xr.taken_date).toLocaleDateString('en-IN') : ''}</div>
+                    {(xr.tooth_numbers || xr.tooth_number) && <div style={{ fontSize: 11, color: 'var(--blue)' }}>Tooth #{xr.tooth_numbers || xr.tooth_number}</div>}
                   </div>
                 </div>
               ))}

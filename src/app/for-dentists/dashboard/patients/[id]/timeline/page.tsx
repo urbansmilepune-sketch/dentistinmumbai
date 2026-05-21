@@ -83,7 +83,10 @@ export default function TimelinePage() {
           ? supabase.from('appointments').select('*, treatments(name)').eq('patient_phone', patient.phone).eq('dentist_id', dentist.id)
           : Promise.resolve({ data: [] as any[] }),
         supabase.from('consent_forms').select('*').eq('patient_id', patientId).eq('dentist_id', dentist.id),
-        supabase.from('xray_images').select('*').eq('patient_id', patientId).eq('dentist_id', dentist.id),
+        // Patient image vault — both x-rays and clinical photos. The
+        // legacy xray_images table was merged into patient_images by
+        // 20260521170000_patient_images.sql.
+        supabase.from('patient_images').select('*').eq('patient_id', patientId).eq('dentist_id', dentist.id),
       ])
 
       const merged: TimelineEvent[] = []
@@ -149,9 +152,10 @@ export default function TimelinePage() {
 
       ;(xrays ?? []).forEach((x: any) => merged.push({
         id: `xray:${x.id}`, type: 'xray',
-        iso: isoFrom(x.taken_at),
-        title: `${(x.image_type || 'X-ray').toUpperCase()}${x.tooth_number ? ` · Tooth ${x.tooth_number}` : ''}`,
-        summary: 'Image uploaded',
+        // patient_images.taken_date supersedes the legacy taken_at column.
+        iso: isoFrom(x.taken_date || x.created_at),
+        title: `${(x.image_type || 'image').toUpperCase()}${x.tooth_numbers ? ` · Tooth ${x.tooth_numbers}` : ''}`,
+        summary: x.notes || 'Image uploaded',
         data: x,
       }))
 
@@ -386,14 +390,19 @@ function EventDetails({ type, data, iso }: { type: EventType; data: any; iso: st
     )
   }
   if (type === 'xray') {
+    // patient_images replaces the legacy xray_images shape — read the new
+    // column names (image_url, tooth_numbers) with a fallback to the old
+    // ones in case the row pre-dates the rename.
+    const url = data.image_url || data.url
     return (
       <div>
         <Row label="Type" value={data.image_type} />
-        <Row label="Tooth" value={data.tooth_number} />
+        <Row label="Tooth" value={data.tooth_numbers || data.tooth_number} />
         <Row label="Date" value={fmtDate(iso)} />
-        {data.url && (
-          <a href={data.url} target="_blank" rel="noopener noreferrer" style={{ display: 'block', marginTop: 8 }}>
-            <img src={data.url} alt="X-ray" style={{ maxWidth: '100%', maxHeight: 280, borderRadius: 8, border: '1px solid var(--border)' }} />
+        {data.notes && <Row label="Notes" value={data.notes} />}
+        {url && (
+          <a href={url} target="_blank" rel="noopener noreferrer" style={{ display: 'block', marginTop: 8 }}>
+            <img src={url} alt="Patient image" style={{ maxWidth: '100%', maxHeight: 280, borderRadius: 8, border: '1px solid var(--border)' }} />
           </a>
         )}
       </div>

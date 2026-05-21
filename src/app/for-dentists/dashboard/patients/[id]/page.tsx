@@ -6,6 +6,7 @@ import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import DentalChart from '@/components/DentalChart'
 import PerioChart from '@/components/dental/PerioChart'
+import ImageVault from '@/components/dental/ImageVault'
 import { downloadInvoicePdf } from '@/lib/invoicePdf'
 
 const TABS = [
@@ -18,8 +19,11 @@ const TABS = [
   { id: 'emr', label: 'EMR', icon: '🏥' },
   { id: 'consent', label: 'Consent', icon: '📝' },
   { id: 'chart', label: 'Dental Chart', icon: '🦷' },
-  { id: 'xrays', label: 'X-Ray Vault', icon: '🩻' },
-  { id: 'photos', label: 'Before / After', icon: '🖼️' },
+  // Unified vault — replaces the older `xrays` and `photos` tabs which
+  // queried two separate tables (xray_images + patient_photos). Both
+  // legacy tables were merged into patient_images by migration
+  // 20260521170000.
+  { id: 'images', label: 'X-Rays & Photos', icon: '🔬' },
 ]
 
 const PRESCRIPTION_TEMPLATES = {
@@ -48,6 +52,10 @@ const TAB_ALIASES: Record<string, string> = {
   history: 'timeline',
   treatments: 'visits',
   treatment: 'visits',
+  // Legacy aliases — the old `xrays` and `photos` tabs were merged into
+  // the unified `images` vault. Existing bookmarks keep landing correctly.
+  xrays: 'images',
+  photos: 'images',
 }
 
 export default function PatientDetailPage() {
@@ -68,7 +76,6 @@ export default function PatientDetailPage() {
   const [visits, setVisits] = useState<any[]>([])
   const [prescriptions, setPrescriptions] = useState<any[]>([])
   const [plans, setPlans] = useState<any[]>([])
-  const [xrays, setXrays] = useState<any[]>([])
   const [invoices, setInvoices] = useState<any[]>([])
   const [invoiceActionError, setInvoiceActionError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState(initialTab)
@@ -110,17 +117,16 @@ export default function PatientDetailPage() {
       setDentistName(dentist.name)
       setDentistMeta(dentist)
 
-      const [{ data: p }, { data: v }, { data: rx }, { data: pl }, { data: xr }, { data: inv }] = await Promise.all([
+      const [{ data: p }, { data: v }, { data: rx }, { data: pl }, { data: inv }] = await Promise.all([
         supabase.from('patients').select('*').eq('id', patientId).eq('dentist_id', dentist.id).single(),
         supabase.from('visits').select('*').eq('patient_id', patientId).order('visit_date', { ascending: false }),
         supabase.from('prescriptions').select('*').eq('patient_id', patientId).order('created_at', { ascending: false }),
         supabase.from('treatment_plans').select('*, treatment_plan_steps(*)').eq('patient_id', patientId).order('created_at', { ascending: false }),
-        supabase.from('xray_images').select('*').eq('patient_id', patientId).order('taken_at', { ascending: false }),
         supabase.from('invoices').select('*, patients(name, phone)').eq('patient_id', patientId).eq('dentist_id', dentist.id).order('invoice_date', { ascending: false }),
       ])
 
       if (!p) { router.push('/for-dentists/dashboard/patients'); return }
-      setPatient(p); setVisits(v || []); setPrescriptions(rx || []); setPlans(pl || []); setXrays(xr || []); setInvoices(inv || [])
+      setPatient(p); setVisits(v || []); setPrescriptions(rx || []); setPlans(pl || []); setInvoices(inv || [])
       setLoading(false)
     }
     load()
@@ -259,7 +265,6 @@ export default function PatientDetailPage() {
                 { label: 'Prescriptions', value: prescriptions.length, icon: '💊' },
                 { label: 'Invoices', value: invoices.length, icon: '🧾' },
                 { label: 'Treatment Plans', value: plans.length, icon: '🦷' },
-                { label: 'X-Rays', value: xrays.length, icon: '🩻' },
               ].map(stat => (
                 <div key={stat.label} style={{ background: 'var(--bg)', borderRadius: 10, padding: '14px', textAlign: 'center' }}>
                   <div style={{ fontSize: 24, marginBottom: 4 }}>{stat.icon}</div>
@@ -654,21 +659,6 @@ export default function PatientDetailPage() {
         </div>
       )}
 
-      {/* BEFORE/AFTER */}
-      {activeTab === 'photos' && (
-        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '28px', textAlign: 'center' }}>
-          <div style={{ fontSize: 40, marginBottom: 10 }}>🖼️</div>
-          <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18, marginBottom: 6 }}>Before &amp; After Photos</h3>
-          <p style={{ fontSize: 14, color: 'var(--muted)', maxWidth: 480, margin: '0 auto 20px' }}>
-            Upload paired before/after shots and view them with a side-by-side reveal slider — great for showing patients their progress.
-          </p>
-          <Link href={`/for-dentists/dashboard/patients/${patientId}/photos`}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '11px 22px', minHeight: 44, background: 'var(--blue)', color: '#fff', borderRadius: 10, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
-            Open Photos →
-          </Link>
-        </div>
-      )}
-
       {/* CONSENT */}
       {activeTab === 'consent' && (
         <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '28px', textAlign: 'center' }}>
@@ -719,45 +709,10 @@ export default function PatientDetailPage() {
         </div>
       )}
 
-      {/* X-RAY VAULT */}
-      {activeTab === 'xrays' && (
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
-            <label style={{ padding: '10px 20px', background: 'var(--blue)', color: '#fff', borderRadius: 10, fontWeight: 700, cursor: 'pointer', fontSize: 14 }}>
-              + Upload X-Ray / Image
-              <input type="file" accept="image/*" style={{ display: 'none' }} onChange={async e => {
-                const file = e.target.files?.[0]
-                if (!file) return
-                const formData = new FormData()
-                formData.append('file', file)
-                formData.append('type', 'xray')
-                const res = await fetch('/api/cloudinary/upload', { method: 'POST', body: formData })
-                const data = await res.json()
-                if (data.success) {
-                  const supabase = createClient()
-                  const { data: xray } = await supabase.from('xray_images').insert({ patient_id: patientId, dentist_id: dentistId, url: data.url, image_type: 'xray', taken_at: new Date().toISOString().split('T')[0] }).select('*').single()
-                  if (xray) setXrays(prev => [xray, ...prev])
-                }
-              }} />
-            </label>
-          </div>
-          {xrays.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '40px', background: '#fff', borderRadius: 14, border: '1px solid var(--border)', color: 'var(--muted)' }}>No images uploaded yet.</div>
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16 }}>
-              {xrays.map(xr => (
-                <div key={xr.id} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
-                  <img src={xr.url} alt="X-ray" style={{ width: '100%', height: 160, objectFit: 'cover', display: 'block' }} />
-                  <div style={{ padding: '10px 12px' }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>{xr.image_type?.toUpperCase()}</div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>{new Date(xr.taken_at).toLocaleDateString('en-IN')}</div>
-                    {xr.tooth_number && <div style={{ fontSize: 11, color: 'var(--blue)' }}>Tooth #{xr.tooth_number}</div>}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+      {/* UNIFIED X-RAY + PHOTO VAULT — replaces the legacy `xrays` and
+          `photos` tabs. Backed by the new patient_images table. */}
+      {activeTab === 'images' && (
+        <ImageVault patientId={patientId} dentistId={dentistId} />
       )}
     </div>
   )
