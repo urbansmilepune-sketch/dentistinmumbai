@@ -33,6 +33,7 @@ const NAV: NavItem[] = [
   { href: '/for-dentists/dashboard/treatments',   icon: '🦷', label: 'Treatments'    },
   { href: '/for-dentists/dashboard/emr-templates', icon: '📋', label: 'EMR Templates' },
   { href: '/for-dentists/dashboard/analytics',    icon: '📈', label: 'Analytics'     },
+  { href: '/for-dentists/dashboard/reports',      icon: '📊', label: 'Reports'       },
   { href: '/for-dentists/dashboard/upgrade',      icon: '⭐', label: 'Upgrade Plan'  },
 ]
 
