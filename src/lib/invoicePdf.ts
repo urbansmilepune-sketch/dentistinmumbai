@@ -129,52 +129,52 @@ export function downloadInvoicePdf(inv: Invoice, dentist: InvoiceDentist) {
   doc.text(`Date: ${dateStr}`, RIGHT_X, 89, { align: 'right' })
 
   // ============================================================
-  // DIVIDER at y=125
+  // DIVIDER at y=136 (pushed down to clear the 2-line address block above)
   // ============================================================
   doc.setDrawColor(220, 220, 220)
   doc.setLineWidth(1)
-  doc.line(MARGIN, 125, RIGHT_X, 125)
+  doc.line(MARGIN, 136, RIGHT_X, 136)
 
   // ============================================================
-  // BILL TO (y: 135-175)
+  // BILL TO (y: 160-187)
   // ============================================================
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(9)
   doc.setTextColor(100, 116, 139)
-  doc.text('BILL TO', MARGIN, 148)
+  doc.text('BILL TO', MARGIN, 160)
 
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(13)
   doc.setTextColor(15, 25, 35)
-  doc.text(inv.patients?.name || 'Patient', MARGIN, 162)
+  doc.text(inv.patients?.name || 'Patient', MARGIN, 174)
 
   if (inv.patients?.phone) {
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(10)
     doc.setTextColor(100, 100, 100)
-    doc.text(`Phone: ${inv.patients.phone}`, MARGIN, 175)
+    doc.text(`Phone: ${inv.patients.phone}`, MARGIN, 187)
   }
 
   // ============================================================
-  // ITEMS TABLE — header row at y=195
+  // ITEMS TABLE — header row at y=210
   // ============================================================
-  const TABLE_HEADER_Y = 195
+  const TABLE_HEADER_Y = 210
   doc.setFillColor(245, 247, 252)
   doc.rect(MARGIN, TABLE_HEADER_Y, RIGHT_X - MARGIN, 22, 'F')
 
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(9)
   doc.setTextColor(100, 116, 139)
-  const HEADER_TEXT_Y = TABLE_HEADER_Y + 15  // y=210
+  const HEADER_TEXT_Y = TABLE_HEADER_Y + 15  // y=225
   doc.text('TREATMENT', COL_TREAT_X, HEADER_TEXT_Y)
   doc.text('QTY', COL_QTY_X, HEADER_TEXT_Y)
   doc.text('UNIT PRICE', COL_PRICE_X, HEADER_TEXT_Y)
   doc.text('TOTAL', COL_TOTAL_X, HEADER_TEXT_Y, { align: 'right' })
 
   // ============================================================
-  // ITEMS — rows starting at y=225, baseline +14pt per extra wrap line
+  // ITEMS — rows starting at y=240, baseline +14pt per extra wrap line
   // ============================================================
-  let cursorY = 225
+  let cursorY = 240
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(11)
   doc.setTextColor(30, 41, 59)
