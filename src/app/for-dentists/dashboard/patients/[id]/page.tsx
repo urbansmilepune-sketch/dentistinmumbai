@@ -81,7 +81,7 @@ export default function PatientDetailPage() {
       if (!user) { router.push('/for-dentists/login'); return }
       const { data: dentist } = await supabase
         .from('dentists')
-        .select('id, name, clinic_name, phone, whatsapp, city, areas(name)')
+        .select('id, name, degree, clinic_name, phone, whatsapp, address, mci_number, city, areas(name)')
         .eq('email', user.email)
         .single()
       if (!dentist) return

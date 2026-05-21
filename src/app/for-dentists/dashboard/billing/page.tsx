@@ -8,9 +8,12 @@ import { downloadInvoicePdf } from '@/lib/invoicePdf'
 type DentistMeta = {
   id: string
   name: string | null
+  degree: string | null
   clinic_name: string | null
   phone: string | null
   whatsapp: string | null
+  address: string | null
+  mci_number: string | null
   city: string | null
   areas: { name: string | null } | null
 }
@@ -44,8 +47,9 @@ function BillingPageInner() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [form, setForm] = useState({
     patient_id: initialPatientId, date: new Date().toISOString().split('T')[0],
-    items: [{ description: '', amount: '' }],
-    discount: '', notes: '', payment_status: 'pending',
+    items: [{ treatment_name: '', quantity: '1', unit_price: '' }],
+    discount: '', gst_enabled: false, notes: '', payment_status: 'pending',
+    payment_method: '',
   })
 
   useEffect(() => {
@@ -56,7 +60,7 @@ function BillingPageInner() {
         if (!user) { router.push('/for-dentists/login'); return }
         const { data: dentistRow } = await supabase
           .from('dentists')
-          .select('id, name, clinic_name, phone, whatsapp, city, areas(name)')
+          .select('id, name, degree, clinic_name, phone, whatsapp, address, mci_number, city, areas(name)')
           .eq('email', user.email)
           .single()
         if (!dentistRow) return
@@ -77,26 +81,55 @@ function BillingPageInner() {
     load()
   }, [])
 
-  const subtotal = form.items.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0)
+  // Line totals derive from qty × unit; subtotal is the sum of lines, discount
+  // is applied first, GST is computed on the discounted base so the tax line
+  // matches the bill the patient actually owes.
+  const itemsComputed = form.items.map(i => {
+    const qty = parseFloat(i.quantity) || 0
+    const unit = parseFloat(i.unit_price) || 0
+    return { qty, unit, line: qty * unit }
+  })
+  const subtotal = itemsComputed.reduce((sum, i) => sum + i.line, 0)
   const discountAmt = parseFloat(form.discount) || 0
-  const total = subtotal - discountAmt
+  const taxable = Math.max(subtotal - discountAmt, 0)
+  const gstAmt = form.gst_enabled ? +(taxable * 0.18).toFixed(2) : 0
+  const total = taxable + gstAmt
 
   async function handleSave() {
     if (!form.patient_id) { alert('Please select a patient'); return }
-    if (form.items.some(i => !i.description || !i.amount)) { alert('Fill all item fields'); return }
+    if (form.items.some(i => !i.treatment_name || !i.unit_price)) { alert('Fill treatment name and unit price for each item'); return }
+    if (form.payment_status === 'paid' && !form.payment_method) { alert('Please select a payment method for paid invoices'); return }
     setSaving(true)
     const supabase = createClient()
     const invNo = `INV-${Date.now().toString().slice(-6)}`
+    const itemsPayload = form.items.map((i, idx) => {
+      const c = itemsComputed[idx]
+      return {
+        treatment_name: i.treatment_name,
+        // Keep `description` populated so older PDFs / queries that read from
+        // the legacy field still render the line.
+        description: i.treatment_name,
+        quantity: c.qty,
+        unit_price: c.unit,
+        amount: c.line,
+      }
+    })
     const { data } = await supabase.from('invoices').insert({
       invoice_no: invNo, dentist_id: dentistId, patient_id: form.patient_id,
       invoice_date: form.date,
-      items: form.items.map(i => ({ description: i.description, amount: parseFloat(i.amount) })),
-      subtotal, discount: discountAmt, total,
+      items: itemsPayload,
+      subtotal, discount: discountAmt, gst_amount: gstAmt, total,
       notes: form.notes || null, payment_status: form.payment_status,
+      payment_method: form.payment_method || null,
     }).select('*, patients(name, phone)').single()
     if (data) setInvoices(prev => [data, ...prev])
     setShowAdd(false)
-    setForm({ patient_id: '', date: new Date().toISOString().split('T')[0], items: [{ description: '', amount: '' }], discount: '', notes: '', payment_status: 'pending' })
+    setForm({
+      patient_id: '', date: new Date().toISOString().split('T')[0],
+      items: [{ treatment_name: '', quantity: '1', unit_price: '' }],
+      discount: '', gst_enabled: false, notes: '', payment_status: 'pending',
+      payment_method: '',
+    })
     setSaving(false)
   }
 
@@ -231,15 +264,29 @@ function BillingPageInner() {
               </div>
             </div>
 
-            <label style={labelStyle}>Items *</label>
-            {form.items.map((item, i) => (
-              <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto', gap: 8, marginBottom: 8 }}>
-                <input value={item.description} onChange={e => { const items = [...form.items]; items[i].description = e.target.value; setForm(f => ({ ...f, items })) }} placeholder="Treatment description" style={inputStyle} />
-                <input type="number" value={item.amount} onChange={e => { const items = [...form.items]; items[i].amount = e.target.value; setForm(f => ({ ...f, items })) }} placeholder="₹ Amount" style={inputStyle} />
-                {form.items.length > 1 && <button onClick={() => setForm(f => ({ ...f, items: f.items.filter((_, idx) => idx !== i) }))} style={{ padding: '8px 10px', background: '#FEE2E2', color: '#991B1B', border: 'none', borderRadius: 6, cursor: 'pointer' }}>✕</button>}
-              </div>
-            ))}
-            <button onClick={() => setForm(f => ({ ...f, items: [...f.items, { description: '', amount: '' }] }))} style={{ fontSize: 12, color: 'var(--blue)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-body)', marginBottom: 14 }}>+ Add item</button>
+            <label style={labelStyle}>Treatment Items *</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '2.2fr 0.6fr 1fr 1fr auto', gap: 8, marginBottom: 4, fontSize: 11, fontWeight: 600, color: 'var(--muted)' }}>
+              <span>Treatment</span>
+              <span>Qty</span>
+              <span>Unit ₹</span>
+              <span>Total ₹</span>
+              <span></span>
+            </div>
+            {form.items.map((item, i) => {
+              const lineTotal = (parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0)
+              return (
+                <div key={i} style={{ display: 'grid', gridTemplateColumns: '2.2fr 0.6fr 1fr 1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+                  <input value={item.treatment_name} onChange={e => { const items = [...form.items]; items[i].treatment_name = e.target.value; setForm(f => ({ ...f, items })) }} placeholder="e.g. Root Canal Treatment" style={inputStyle} />
+                  <input type="number" min="1" value={item.quantity} onChange={e => { const items = [...form.items]; items[i].quantity = e.target.value; setForm(f => ({ ...f, items })) }} placeholder="1" style={inputStyle} />
+                  <input type="number" value={item.unit_price} onChange={e => { const items = [...form.items]; items[i].unit_price = e.target.value; setForm(f => ({ ...f, items })) }} placeholder="0" style={inputStyle} />
+                  <div style={{ padding: '9px 12px', background: 'var(--bg)', borderRadius: 8, fontSize: 13, fontWeight: 600, textAlign: 'right' }}>₹{lineTotal.toLocaleString('en-IN')}</div>
+                  {form.items.length > 1
+                    ? <button onClick={() => setForm(f => ({ ...f, items: f.items.filter((_, idx) => idx !== i) }))} style={{ padding: '8px 10px', background: '#FEE2E2', color: '#991B1B', border: 'none', borderRadius: 6, cursor: 'pointer' }}>✕</button>
+                    : <span style={{ width: 32 }} />}
+                </div>
+              )
+            })}
+            <button onClick={() => setForm(f => ({ ...f, items: [...f.items, { treatment_name: '', quantity: '1', unit_price: '' }] }))} style={{ fontSize: 12, color: 'var(--blue)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-body)', marginBottom: 14 }}>+ Add item</button>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
               <div>
@@ -252,6 +299,28 @@ function BillingPageInner() {
                   <option value="pending">Pending</option>
                   <option value="paid">Paid</option>
                 </select>
+              </div>
+              <div>
+                <label style={labelStyle}>Payment Method</label>
+                <select value={form.payment_method} onChange={e => setForm(f => ({ ...f, payment_method: e.target.value }))} style={{ ...inputStyle, cursor: 'pointer' }}>
+                  <option value="">— Not specified —</option>
+                  <option value="Cash">Cash</option>
+                  <option value="Card">Card</option>
+                  <option value="UPI">UPI</option>
+                  <option value="Online">Online</option>
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>GST (18%)</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 8, border: '1.5px solid var(--border)', background: '#fff' }}>
+                  <label style={{ position: 'relative', display: 'inline-block', width: 36, height: 20, flexShrink: 0 }}>
+                    <input type="checkbox" checked={form.gst_enabled} onChange={e => setForm(f => ({ ...f, gst_enabled: e.target.checked }))} style={{ opacity: 0, width: 0, height: 0 }} />
+                    <span onClick={() => setForm(f => ({ ...f, gst_enabled: !f.gst_enabled }))} style={{ position: 'absolute', inset: 0, background: form.gst_enabled ? 'var(--blue)' : '#CBD5E1', borderRadius: 20, cursor: 'pointer', transition: '0.2s' }}>
+                      <span style={{ position: 'absolute', height: 14, width: 14, left: form.gst_enabled ? 19 : 3, top: 3, background: '#fff', borderRadius: '50%', transition: '0.2s' }} />
+                    </span>
+                  </label>
+                  <span style={{ fontSize: 13, color: form.gst_enabled ? 'var(--blue)' : 'var(--muted)' }}>{form.gst_enabled ? 'Apply GST' : 'No GST'}</span>
+                </div>
               </div>
             </div>
 
@@ -269,8 +338,12 @@ function BillingPageInner() {
                 <span style={{ color: 'var(--muted)' }}>Discount</span>
                 <span style={{ color: '#00A878' }}>-₹{discountAmt.toLocaleString('en-IN')}</span>
               </div>}
+              {form.gst_enabled && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 6 }}>
+                <span style={{ color: 'var(--muted)' }}>GST (18%)</span>
+                <span>₹{gstAmt.toLocaleString('en-IN')}</span>
+              </div>}
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 16, fontWeight: 700, borderTop: '1px solid var(--border)', paddingTop: 8, marginTop: 6 }}>
-                <span>Total</span>
+                <span>Grand Total</span>
                 <span style={{ color: 'var(--blue)' }}>₹{total.toLocaleString('en-IN')}</span>
               </div>
             </div>

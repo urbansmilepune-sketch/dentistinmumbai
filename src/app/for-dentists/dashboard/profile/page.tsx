@@ -23,7 +23,7 @@ export default function EditProfilePage() {
   const [siteBase, setSiteBase] = useState('https://dentistinmumbai.in')
 
   const [form, setForm] = useState({
-    name: '', clinic_name: '', qualifications: '', experience_years: '',
+    name: '', clinic_name: '', qualifications: '', degree: '', experience_years: '',
     bio: '', phone: '', whatsapp: '', website: '', address: '',
     consultation_fee: '', mci_number: '', emi_available: false,
     languages: [] as string[], specialties: [] as string[],
@@ -38,7 +38,7 @@ export default function EditProfilePage() {
 
       const { data: dentist } = await supabase
         .from('dentists')
-        .select('id, slug, name, clinic_name, qualifications, experience_years, bio, phone, whatsapp, website, address, consultation_fee, mci_number, emi_available, languages, specialties, maps_embed, city')
+        .select('id, slug, name, clinic_name, qualifications, degree, experience_years, bio, phone, whatsapp, website, address, consultation_fee, mci_number, emi_available, languages, specialties, maps_embed, city')
         .eq('email', user.email)
         .single()
 
@@ -50,6 +50,7 @@ export default function EditProfilePage() {
           name: dentist.name || '',
           clinic_name: dentist.clinic_name || '',
           qualifications: dentist.qualifications || '',
+          degree: (dentist as any).degree || '',
           experience_years: dentist.experience_years?.toString() || '',
           bio: dentist.bio || '',
           phone: dentist.phone || '',
@@ -247,6 +248,7 @@ export default function EditProfilePage() {
         name: form.name,
         clinic_name: form.clinic_name,
         qualifications: form.qualifications,
+        degree: form.degree || null,
         experience_years: form.experience_years ? parseInt(form.experience_years) : null,
         bio: form.bio,
         phone: form.phone,
@@ -380,6 +382,11 @@ export default function EditProfilePage() {
           <div>
             <label style={labelStyle}>Consultation Fee (₹)</label>
             <input type="number" value={form.consultation_fee} onChange={e => setForm(f => ({ ...f, consultation_fee: e.target.value }))} placeholder="e.g. 300" style={inputStyle} />
+          </div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <label style={labelStyle}>Degree (printed on prescriptions)</label>
+            <input value={form.degree} onChange={e => setForm(f => ({ ...f, degree: e.target.value }))} placeholder="e.g. BDS, MDS (Orthodontics), FICOI" style={inputStyle} />
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>Appears under your name on prescription PDFs and invoices. Use the format you sign with.</div>
           </div>
           <div style={{ gridColumn: '1 / -1' }}>
             <label style={labelStyle}>About You / Bio</label>
