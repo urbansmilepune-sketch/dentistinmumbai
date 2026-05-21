@@ -57,7 +57,7 @@ export async function GET() {
   const db = admin()
   const { data, error } = await db
     .from('clinic_staff')
-    .select('id, email, name, role, status, invited_at, joined_at')
+    .select('id, email, name, role, status, invited_at')
     .eq('dentist_id', owner.id)
     .neq('status', 'removed')
     .order('invited_at', { ascending: false })
@@ -116,7 +116,6 @@ export async function POST(request: NextRequest) {
       .update({
         status: 'invited', role, name,
         invited_at: new Date().toISOString(),
-        joined_at: null,
         accepted_at: null,
         invite_token,
       })

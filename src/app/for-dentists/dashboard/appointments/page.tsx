@@ -76,7 +76,7 @@ export default function AppointmentsPage() {
     appt_date: todayIsoLocal(),
     time_slot: '',
     treatment_id: '',
-    status: 'waiting',
+    status: 'pending',
     notes: '',
   })
 
@@ -171,7 +171,7 @@ export default function AppointmentsPage() {
     setShowAdd(false)
     setForm({
       patient_name: '', patient_phone: '', appt_date: todayIsoLocal(),
-      time_slot: '', treatment_id: '', status: 'waiting', notes: '',
+      time_slot: '', treatment_id: '', status: 'pending', notes: '',
     })
   }
 
@@ -294,9 +294,11 @@ export default function AppointmentsPage() {
                   <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Status</label>
                   <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
                     style={{ width: '100%', padding: '12px', minHeight: 48, borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 14, fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box', background: '#fff' }}>
-                    <option value="waiting">Waiting (walk-in)</option>
-                    <option value="scheduled">Scheduled (future)</option>
-                    <option value="active">Active</option>
+                    <option value="pending">Pending</option>
+                    <option value="confirmed">Confirmed</option>
+                    <option value="completed">Completed</option>
+                    <option value="cancelled">Cancelled</option>
+                    <option value="no_show">No-show</option>
                   </select>
                 </div>
                 <div>

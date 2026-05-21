@@ -129,8 +129,6 @@ export async function POST(request: NextRequest) {
   }
 
   // Mark the clinic_staff row active and clear the token (single-use).
-  // joined_at is mirrored alongside accepted_at so the existing staff
-  // list UI keeps rendering "joined on …" without changes.
   const now = new Date().toISOString()
   const { error: activateErr } = await db
     .from('clinic_staff')
@@ -138,7 +136,6 @@ export async function POST(request: NextRequest) {
       status: 'active',
       user_id: userId,
       accepted_at: now,
-      joined_at: now,
       invite_token: null,
     })
     .eq('id', row.id)

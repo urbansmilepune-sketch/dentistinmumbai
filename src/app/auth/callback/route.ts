@@ -74,10 +74,10 @@ export async function GET(request: NextRequest) {
     .neq('status', 'removed')
     .maybeSingle()
   if (staffRow) {
-    // Only set joined_at the first time, so re-logins don't keep bumping it.
-    const patch: Record<string, any> = { status: 'active', user_id: user!.id }
-    if (!staffRow.user_id) patch.joined_at = new Date().toISOString()
-    await admin.from('clinic_staff').update(patch).eq('id', staffRow.id)
+    await admin
+      .from('clinic_staff')
+      .update({ status: 'active', user_id: user!.id })
+      .eq('id', staffRow.id)
     return NextResponse.redirect(`${origin}/for-dentists/staff`)
   }
 

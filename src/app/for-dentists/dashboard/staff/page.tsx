@@ -23,7 +23,6 @@ interface StaffRow {
   role: Role
   status: 'invited' | 'active' | 'removed'
   invited_at: string
-  joined_at: string | null
 }
 
 const ROLE_META: Record<Role, { label: string; color: string; bg: string; border: string; permissions: string[] }> = {
