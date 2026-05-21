@@ -24,6 +24,7 @@ const TABS = [
   // legacy tables were merged into patient_images by migration
   // 20260521170000.
   { id: 'images', label: 'X-Rays & Photos', icon: '🔬' },
+  { id: 'lab', label: 'Lab Work', icon: '🧪' },
 ]
 
 const PRESCRIPTION_TEMPLATES = {
@@ -56,6 +57,9 @@ const TAB_ALIASES: Record<string, string> = {
   // the unified `images` vault. Existing bookmarks keep landing correctly.
   xrays: 'images',
   photos: 'images',
+  // Spelling-tolerant aliases for the lab-work tab.
+  labwork: 'lab',
+  'lab-work': 'lab',
 }
 
 export default function PatientDetailPage() {
@@ -77,6 +81,7 @@ export default function PatientDetailPage() {
   const [prescriptions, setPrescriptions] = useState<any[]>([])
   const [plans, setPlans] = useState<any[]>([])
   const [invoices, setInvoices] = useState<any[]>([])
+  const [labWork, setLabWork] = useState<any[]>([])
   const [invoiceActionError, setInvoiceActionError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState(initialTab)
   // Inner navigation for the Dental Chart tab. Two sub-views live under the
@@ -117,16 +122,17 @@ export default function PatientDetailPage() {
       setDentistName(dentist.name)
       setDentistMeta(dentist)
 
-      const [{ data: p }, { data: v }, { data: rx }, { data: pl }, { data: inv }] = await Promise.all([
+      const [{ data: p }, { data: v }, { data: rx }, { data: pl }, { data: inv }, { data: lw }] = await Promise.all([
         supabase.from('patients').select('*').eq('id', patientId).eq('dentist_id', dentist.id).single(),
         supabase.from('visits').select('*').eq('patient_id', patientId).order('visit_date', { ascending: false }),
         supabase.from('prescriptions').select('*').eq('patient_id', patientId).order('created_at', { ascending: false }),
         supabase.from('treatment_plans').select('*, treatment_plan_steps(*)').eq('patient_id', patientId).order('created_at', { ascending: false }),
         supabase.from('invoices').select('*, patients(name, phone)').eq('patient_id', patientId).eq('dentist_id', dentist.id).order('invoice_date', { ascending: false }),
+        supabase.from('lab_work').select('*').eq('patient_id', patientId).eq('dentist_id', dentist.id).order('created_at', { ascending: false }),
       ])
 
       if (!p) { router.push('/for-dentists/dashboard/patients'); return }
-      setPatient(p); setVisits(v || []); setPrescriptions(rx || []); setPlans(pl || []); setInvoices(inv || [])
+      setPatient(p); setVisits(v || []); setPrescriptions(rx || []); setPlans(pl || []); setInvoices(inv || []); setLabWork(lw || [])
       setLoading(false)
     }
     load()
@@ -265,6 +271,7 @@ export default function PatientDetailPage() {
                 { label: 'Prescriptions', value: prescriptions.length, icon: '💊' },
                 { label: 'Invoices', value: invoices.length, icon: '🧾' },
                 { label: 'Treatment Plans', value: plans.length, icon: '🦷' },
+                { label: 'Lab Work', value: labWork.length, icon: '🧪' },
               ].map(stat => (
                 <div key={stat.label} style={{ background: 'var(--bg)', borderRadius: 10, padding: '14px', textAlign: 'center' }}>
                   <div style={{ fontSize: 24, marginBottom: 4 }}>{stat.icon}</div>
@@ -713,6 +720,67 @@ export default function PatientDetailPage() {
           `photos` tabs. Backed by the new patient_images table. */}
       {activeTab === 'images' && (
         <ImageVault patientId={patientId} dentistId={dentistId} />
+      )}
+
+      {/* LAB WORK — per-patient view of crowns / bridges / dentures etc.
+          sent to external labs. CRUD lives on the standalone
+          /dashboard/lab-work page so we don't duplicate the form here —
+          this tab is a read-only roll-up plus a quick "open the full
+          tracker" link. */}
+      {activeTab === 'lab' && (
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, gap: 10, flexWrap: 'wrap' }}>
+            <p style={{ fontSize: 13, color: 'var(--muted)' }}>
+              {labWork.length === 0
+                ? 'No lab work tracked for this patient yet.'
+                : `${labWork.length} case${labWork.length === 1 ? '' : 's'} on file for this patient.`}
+            </p>
+            <Link href="/for-dentists/dashboard/lab-work"
+              style={{ padding: '8px 14px', background: 'var(--blue)', color: '#fff', borderRadius: 8, fontWeight: 700, fontSize: 13, textDecoration: 'none' }}>
+              Open Lab Work tracker →
+            </Link>
+          </div>
+          {labWork.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {labWork.map((r: any) => {
+                const overdue = r.status !== 'ready' && r.status !== 'delivered'
+                  && r.expected_return_date
+                  && r.expected_return_date < new Date().toISOString().slice(0, 10)
+                const statusColor: Record<string, { bg: string; text: string; label: string }> = {
+                  sent:        { bg: '#FEF3C7', text: '#92400E', label: 'Sent'        },
+                  in_progress: { bg: '#DBEAFE', text: '#1D4ED8', label: 'In Progress' },
+                  ready:       { bg: '#DCFCE7', text: '#166534', label: 'Ready'       },
+                  delivered:   { bg: '#E5E7EB', text: '#374151', label: 'Delivered'   },
+                  remake:      { bg: '#FEE2E2', text: '#991B1B', label: 'Remake'      },
+                }
+                const sc = statusColor[r.status] || { bg: '#F3F4F6', text: '#374151', label: r.status }
+                return (
+                  <div key={r.id} style={{
+                    background: '#fff',
+                    border: `1px solid ${overdue ? '#FECACA' : 'var(--border)'}`,
+                    borderLeft: overdue ? '4px solid #DC2626' : '1px solid var(--border)',
+                    borderRadius: 10, padding: '12px 16px',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 700, fontSize: 14 }}>{r.work_type}</span>
+                      {r.tooth_numbers && <span style={{ fontSize: 12, color: 'var(--blue)', fontWeight: 600 }}>🦷 {r.tooth_numbers}</span>}
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: sc.bg, color: sc.text }}>{sc.label}</span>
+                      {overdue && <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: '#FEE2E2', color: '#991B1B' }}>⚠ Overdue</span>}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--muted)', display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                      {r.lab_name && <span>🏭 {r.lab_name}</span>}
+                      {r.shade && <span>🎨 {r.shade}</span>}
+                      {r.sent_date && <span>📤 {new Date(r.sent_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>}
+                      {r.expected_return_date && <span>⏰ Due {new Date(r.expected_return_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>}
+                      {r.cost != null && <span>💰 ₹{Number(r.cost).toLocaleString('en-IN')}</span>}
+                    </div>
+                    {r.notes && <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4, fontStyle: 'italic' }}>"{r.notes}"</p>}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
       )}
     </div>
   )
