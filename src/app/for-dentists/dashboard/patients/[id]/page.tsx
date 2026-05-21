@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import DentalChart from '@/components/DentalChart'
+import PerioChart from '@/components/dental/PerioChart'
 import { downloadInvoicePdf } from '@/lib/invoicePdf'
 
 const TABS = [
@@ -71,6 +72,10 @@ export default function PatientDetailPage() {
   const [invoices, setInvoices] = useState<any[]>([])
   const [invoiceActionError, setInvoiceActionError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState(initialTab)
+  // Inner navigation for the Dental Chart tab. Two sub-views live under the
+  // same tab so the FDI tooth chart and the periodontal chart share screen
+  // real estate without bloating the top-level tab strip.
+  const [chartSubTab, setChartSubTab] = useState<'tooth' | 'perio'>('tooth')
   const [showAddVisit, setShowAddVisit] = useState(false)
   const [showAddRx, setShowAddRx] = useState(false)
   const [showAddPlan, setShowAddPlan] = useState(false)
@@ -679,9 +684,39 @@ export default function PatientDetailPage() {
         </div>
       )}
 
-      {/* DENTAL CHART */}
+      {/* DENTAL CHART — two sub-views: the FDI tooth chart (caries, RCT,
+          restorations, missing teeth) and the periodontal chart (pocket
+          depth / BOP / recession / mobility / furcation). Keeping them in
+          sibling sub-tabs avoids cramming a 12th top-level tab into the
+          patient strip. */}
       {activeTab === 'chart' && (
-        <DentalChart patientId={patientId} dentistId={dentistId} />
+        <div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16, borderBottom: '1px solid var(--border)' }}>
+            {([
+              { key: 'tooth' as const, label: '🦷 Tooth Chart', sub: 'Caries, RCT, restorations' },
+              { key: 'perio' as const, label: '🩸 Perio Chart', sub: 'Pocket depth, BOP, recession' },
+            ]).map(t => (
+              <button key={t.key} onClick={() => setChartSubTab(t.key)}
+                style={{
+                  padding: '10px 16px',
+                  border: 'none',
+                  background: 'none',
+                  cursor: 'pointer',
+                  fontFamily: 'var(--font-body)',
+                  fontSize: 13,
+                  fontWeight: chartSubTab === t.key ? 700 : 500,
+                  color: chartSubTab === t.key ? 'var(--blue)' : 'var(--muted)',
+                  borderBottom: `2px solid ${chartSubTab === t.key ? 'var(--blue)' : 'transparent'}`,
+                  textAlign: 'left',
+                }}>
+                <div>{t.label}</div>
+                <div style={{ fontSize: 10, fontWeight: 500, color: 'var(--muted)' }}>{t.sub}</div>
+              </button>
+            ))}
+          </div>
+          {chartSubTab === 'tooth' && <DentalChart patientId={patientId} dentistId={dentistId} />}
+          {chartSubTab === 'perio' && <PerioChart patientId={patientId} dentistId={dentistId} />}
+        </div>
       )}
 
       {/* X-RAY VAULT */}
