@@ -12,6 +12,12 @@
 import jsPDF from 'jspdf'
 import { getCityBySlug } from '@/config/cities'
 
+// jsPDF's built-in Helvetica is WinAnsi/Latin-1 only — it has no glyph for
+// ₹ (U+20B9) and renders it as '¹'. Using "Rs." sidesteps font embedding.
+function formatCurrency(amount: number): string {
+  return 'Rs.' + amount.toLocaleString('en-IN')
+}
+
 export type InvoiceDentist = {
   name: string | null
   degree?: string | null
@@ -95,18 +101,19 @@ export function downloadInvoicePdf(inv: Invoice, dentist: InvoiceDentist) {
     doc.text(degree ? `${doctorName}, ${degree}` : doctorName, MARGIN, 76)
   }
 
-  // Address — 9pt grey at y=89 (truncate to one line so right-side INVOICE
-  // text never gets crowded)
+  // Address — 9pt grey, up to 2 lines (long addresses were being truncated to
+  // one line; 280pt wraps before the right-side INVOICE block at x=315+).
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9)
   doc.setTextColor(100, 100, 100)
   const addrLines = doc.splitTextToSize(clinicAddress, 280) as string[]
-  doc.text(addrLines[0] || '', MARGIN, 89)
+  if (addrLines[0]) doc.text(addrLines[0], MARGIN, 89)
+  if (addrLines[1]) doc.text(addrLines[1], MARGIN, 100)
 
-  // Phone — 9pt grey at y=100
-  if (phone) doc.text(`Phone: ${phone}`, MARGIN, 100)
-  // MCI — 9pt grey at y=111
-  if (mci) doc.text(`Reg No: ${mci}`, MARGIN, 111)
+  // Phone — 9pt grey at y=111 (pushed down to make room for 2-line address)
+  if (phone) doc.text(`Phone: ${phone}`, MARGIN, 111)
+  // MCI — 9pt grey at y=122
+  if (mci) doc.text(`Reg No: ${mci}`, MARGIN, 122)
 
   // Right side: INVOICE label + meta
   doc.setFont('helvetica', 'bold')
@@ -187,8 +194,8 @@ export function downloadInvoicePdf(inv: Invoice, dentist: InvoiceDentist) {
       doc.text(line, COL_TREAT_X, cursorY + (idx * 14))
     })
     doc.text(String(qty), COL_QTY_X, cursorY)
-    doc.text(`₹${unit.toLocaleString('en-IN')}`, COL_PRICE_X, cursorY)
-    doc.text(`₹${lineTotal.toLocaleString('en-IN')}`, COL_TOTAL_X, cursorY, { align: 'right' })
+    doc.text(formatCurrency(unit), COL_PRICE_X, cursorY)
+    doc.text(formatCurrency(lineTotal), COL_TOTAL_X, cursorY, { align: 'right' })
 
     // Row height = base 22 + 14 per extra wrap line.
     const rowHeight = 22 + Math.max(0, (wrapped.length - 1) * 14)
@@ -215,12 +222,12 @@ export function downloadInvoicePdf(inv: Invoice, dentist: InvoiceDentist) {
     cursorY += opts.bold ? 22 : 16
   }
 
-  totalRow('Subtotal', `₹${Number(inv.subtotal || 0).toLocaleString('en-IN')}`)
+  totalRow('Subtotal', formatCurrency(Number(inv.subtotal || 0)))
   if (Number(inv.discount) > 0) {
-    totalRow('Discount', `- ₹${Number(inv.discount).toLocaleString('en-IN')}`, { color: [22, 101, 52] })
+    totalRow('Discount', `- ${formatCurrency(Number(inv.discount))}`, { color: [22, 101, 52] })
   }
   if (Number(inv.gst_amount) > 0) {
-    totalRow('GST (18%)', `₹${Number(inv.gst_amount).toLocaleString('en-IN')}`)
+    totalRow('GST (18%)', formatCurrency(Number(inv.gst_amount)))
   }
 
   // Divider above grand total
@@ -229,7 +236,7 @@ export function downloadInvoicePdf(inv: Invoice, dentist: InvoiceDentist) {
   doc.line(TOTALS_LABEL_X, cursorY - 4, TOTALS_VALUE_X, cursorY - 4)
   cursorY += 4
 
-  totalRow('Grand Total', `₹${Number(inv.total || 0).toLocaleString('en-IN')}`, { bold: true, size: 13, color: [0, 87, 168] })
+  totalRow('Grand Total', formatCurrency(Number(inv.total || 0)), { bold: true, size: 13, color: [0, 87, 168] })
 
   // ============================================================
   // STATUS STAMP (left side, below items)
