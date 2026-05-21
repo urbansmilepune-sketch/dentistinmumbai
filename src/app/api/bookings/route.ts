@@ -200,30 +200,42 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Fire-and-forget SMS via MSG91. Same rules as the email side: only
-      // fire when the corresponding template id is configured, never let an
-      // SMS failure bubble back into the response. The DLT-approved templates
-      // (BOOKING_PATIENT, BOOKING_DENTIST) take two vars: a label (clinic or
-      // patient name) and a single "{date time}" string, so the date and slot
-      // are concatenated into one variable here rather than passed separately.
+      // SMS via MSG91 — AWAITED for the same reason the emails are: on Vercel
+      // serverless the function exits the instant the response returns, so a
+      // fire-and-forget fetch gets terminated mid-flight and the SMS never
+      // leaves. The DLT-approved templates (BOOKING_PATIENT, BOOKING_DENTIST)
+      // take two vars: a label (clinic or patient name) and a single
+      // "{date time}" string, so the date and slot are concatenated.
       const dateTime = `${formattedDate} ${time_slot}`
       const patientTpl = process.env.MSG91_TEMPLATE_ID_BOOKING_PATIENT
       if (patientTpl && patient_phone) {
+        console.log('[bookings] patient SMS attempt', {
+          phone: patient_phone,
+          templateId: patientTpl,
+          patient: patient_name,
+        })
         try {
-          void sendSMS(patient_phone, patientTpl, [clinicName, dateTime])
-            .then(r => { if (!r.success) console.error('[bookings] patient SMS failed', r) })
-            .catch(err => console.error('[bookings] patient SMS threw', err))
-        } catch (err) { console.error('[bookings] patient SMS dispatch error', err) }
+          const r = await sendSMS(patient_phone, patientTpl, [clinicName, dateTime])
+          if (!r.success) console.error('[bookings] patient SMS failed', r)
+        } catch (err: any) {
+          console.error('[bookings] patient SMS threw', { message: err?.message })
+        }
       }
 
       const dentistTpl = process.env.MSG91_TEMPLATE_ID_BOOKING_DENTIST
       const dentistSmsPhone = dentist.phone || dentist.whatsapp
       if (dentistTpl && dentistSmsPhone) {
+        console.log('[bookings] dentist SMS attempt', {
+          phone: dentistSmsPhone,
+          templateId: process.env.MSG91_TEMPLATE_ID_BOOKING_DENTIST,
+          patient: patient_name,
+        })
         try {
-          void sendSMS(dentistSmsPhone, dentistTpl, [patient_name, dateTime])
-            .then(r => { if (!r.success) console.error('[bookings] dentist SMS failed', r) })
-            .catch(err => console.error('[bookings] dentist SMS threw', err))
-        } catch (err) { console.error('[bookings] dentist SMS dispatch error', err) }
+          const r = await sendSMS(dentistSmsPhone, dentistTpl, [patient_name, dateTime])
+          if (!r.success) console.error('[bookings] dentist SMS failed', r)
+        } catch (err: any) {
+          console.error('[bookings] dentist SMS threw', { message: err?.message })
+        }
       }
     }
 
