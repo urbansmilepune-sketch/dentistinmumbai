@@ -7,6 +7,14 @@
     {
       "path": "/api/cron/health-check",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/appointment-reminders",
+      "schedule": "30 12 * * *"
+    },
+    {
+      "path": "/api/cron/appointment-reminders-morning",
+      "schedule": "30 2 * * *"
     }
   ]
 }

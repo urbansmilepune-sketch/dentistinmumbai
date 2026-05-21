@@ -45,17 +45,18 @@ export async function sendSMS(
   const digits = phone.replace(/\D/g, '')
   const mobiles = digits.startsWith('91') ? digits : `91${digits}`
 
+  // var1..var10 — the reminder templates use five variables (name, clinic,
+  // time, ref, phone), so the original var1..var4 cap had to grow. Slots
+  // beyond what the caller passed default to '' which MSG91 renders as
+  // empty in the template; unused slots are harmless.
+  const recipient: Record<string, string> = { mobiles }
+  for (let i = 0; i < 10; i++) recipient[`var${i + 1}`] = variables[i] ?? ''
+
   const body = {
     template_id: templateId,
     sender: MSG91_SENDER_ID,
     short_url: 0,
-    recipients: [{
-      mobiles,
-      var1: variables[0] ?? '',
-      var2: variables[1] ?? '',
-      var3: variables[2] ?? '',
-      var4: variables[3] ?? '',
-    }],
+    recipients: [recipient],
   }
 
   const controller = new AbortController()
