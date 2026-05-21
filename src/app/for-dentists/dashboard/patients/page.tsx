@@ -182,30 +182,49 @@ export default function PatientsPage() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {filtered.map(p => (
-            <Link key={p.id} href={`/for-dentists/dashboard/patients/${p.id}`} style={{ textDecoration: 'none' }}>
-              <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 16, cursor: 'pointer', transition: 'border-color 0.15s' }}>
+            <div key={p.id} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 16, transition: 'border-color 0.15s', flexWrap: 'wrap' }}>
+              {/* The avatar + identity strip stays a click-target for the
+                  full patient record. The right-hand action buttons are
+                  rendered as separate Links so they don't nest inside the
+                  outer Link (which broke hydration when this row was a
+                  single Link). */}
+              <Link href={`/for-dentists/dashboard/patients/${p.id}`}
+                style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 16, textDecoration: 'none', color: 'inherit', minWidth: 240 }}>
                 <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'var(--blue-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>
                   {p.gender === 'Female' ? '👩' : '👨'}
                 </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
                     <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)' }}>{p.name}</span>
                     {p.allergies && <span style={{ fontSize: 10, fontWeight: 700, color: '#991B1B', background: '#FEE2E2', padding: '1px 6px', borderRadius: 10 }}>⚠️ ALLERGY</span>}
                     {p.age && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{p.age} yrs</span>}
                     {p.blood_group && <span style={{ fontSize: 11, color: '#7C3AED', background: '#EDE9FE', padding: '1px 6px', borderRadius: 10 }}>{p.blood_group}</span>}
                   </div>
-                  <div style={{ fontSize: 13, color: 'var(--muted)', display: 'flex', gap: 12 }}>
+                  <div style={{ fontSize: 13, color: 'var(--muted)', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                     <span>📞 {p.phone}</span>
                     {p.email && <span>✉️ {p.email}</span>}
                     {p.medical_history && <span style={{ color: '#F59E0B' }}>📋 Medical history on file</span>}
                   </div>
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--muted)', flexShrink: 0 }}>
-                  {new Date(p.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                </div>
-                <span style={{ color: 'var(--blue)', fontSize: 18 }}>→</span>
+              </Link>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                <Link href={`/for-dentists/dashboard/patients/${p.id}?tab=treatments`}
+                  title="Open the Visits/Treatments tab"
+                  style={{ padding: '7px 12px', background: '#DCFCE7', color: '#166534', borderRadius: 8, fontSize: 12, fontWeight: 600, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  🩺 Start Consultation
+                </Link>
+                <Link href={`/for-dentists/dashboard/patients/${p.id}?tab=timeline`}
+                  title="Open patient timeline"
+                  style={{ padding: '7px 12px', background: 'var(--blue-light)', color: 'var(--blue)', border: '1px solid #BFDBFE', borderRadius: 8, fontSize: 12, fontWeight: 600, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  📋 View History
+                </Link>
+                <Link href={`/for-dentists/dashboard/billing?patient_id=${p.id}`}
+                  title="New invoice for this patient"
+                  style={{ padding: '7px 12px', background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A', borderRadius: 8, fontSize: 12, fontWeight: 600, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  🧾 New Invoice
+                </Link>
               </div>
-            </Link>
+            </div>
           ))}
         </div>
       )}

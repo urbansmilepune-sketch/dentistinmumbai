@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 
 type FilterKey = 'all' | 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'no_show'
 
@@ -72,6 +73,12 @@ export default function AppointmentsPage() {
   const [appointments, setAppointments] = useState<any[]>([])
   const [invoicedPhones, setInvoicedPhones] = useState<Set<string>>(new Set())
   const [unpaidByPhone, setUnpaidByPhone] = useState<Map<string, number>>(new Map())
+  // Manual walk-in appointments don't set patient_id, but the dashboard's
+  // "Start Consultation" / "Edit Patient" buttons need to deep-link to a
+  // patient record. Resolve via phone-number match so those buttons work even
+  // when the appointment row never got linked. Keys are digits-only so a phone
+  // saved as "+91 98xxxx" still matches "98xxxx".
+  const [patientIdByPhone, setPatientIdByPhone] = useState<Map<string, string>>(new Map())
   const [filter, setFilter] = useState<FilterKey>('all')
   const [updating, setUpdating] = useState<string | null>(null)
   const [statusError, setStatusError] = useState<string | null>(null)
@@ -88,6 +95,20 @@ export default function AppointmentsPage() {
     status: 'pending',
     notes: '',
   })
+
+  // The Edit modal piggybacks on the same form shape as Add, plus the id of
+  // the row being edited. editing === null means the modal is closed.
+  const [editing, setEditing] = useState<any | null>(null)
+  const [editForm, setEditForm] = useState({
+    patient_phone: '',
+    appt_date: todayIsoLocal(),
+    time_slot: '',
+    treatment_id: '',
+    status: 'pending',
+    notes: '',
+  })
+  const [editSaving, setEditSaving] = useState(false)
+  const [editError, setEditError] = useState<string | null>(null)
 
   useEffect(() => {
     async function load() {
@@ -108,7 +129,7 @@ export default function AppointmentsPage() {
           whatsapp: dentist.whatsapp || dentist.phone || '',
         })
 
-        const [{ data: appts }, { data: invs }, { data: tx }] = await Promise.all([
+        const [{ data: appts }, { data: invs }, { data: tx }, { data: pts }] = await Promise.all([
           supabase
             .from('appointments')
             .select('*, treatments(name, icon)')
@@ -121,6 +142,10 @@ export default function AppointmentsPage() {
           supabase
             .from('dentist_treatments')
             .select('treatments(id, name)')
+            .eq('dentist_id', dentist.id),
+          supabase
+            .from('patients')
+            .select('id, phone')
             .eq('dentist_id', dentist.id),
         ])
 
@@ -137,6 +162,12 @@ export default function AppointmentsPage() {
         })
         setInvoicedPhones(phones)
         setUnpaidByPhone(unpaid)
+        const pmap = new Map<string, string>()
+        ;(pts || []).forEach((row: any) => {
+          const digits = String(row.phone || '').replace(/\D/g, '')
+          if (digits) pmap.set(digits, row.id)
+        })
+        setPatientIdByPhone(pmap)
         const tList = (tx || []).map((r: any) => r.treatments).filter(Boolean) as { id: string; name: string }[]
         setTreatments(tList)
       } finally {
@@ -182,6 +213,53 @@ export default function AppointmentsPage() {
       patient_name: '', patient_phone: '', appt_date: todayIsoLocal(),
       time_slot: '', treatment_id: '', status: 'pending', notes: '',
     })
+  }
+
+  function openEdit(a: any) {
+    setEditError(null)
+    setEditing(a)
+    setEditForm({
+      patient_phone: a.patient_phone || '',
+      appt_date:     a.appt_date || todayIsoLocal(),
+      time_slot:     a.time_slot || '',
+      treatment_id:  a.treatment_id || '',
+      status:        a.status || 'pending',
+      notes:         a.notes || '',
+    })
+  }
+
+  async function saveEdit() {
+    if (!editing) return
+    setEditError(null)
+    if (!editForm.appt_date || !editForm.time_slot.trim()) {
+      setEditError('Date and time are required'); return
+    }
+    setEditSaving(true)
+    try {
+      const res = await fetch(`/api/dentist/appointments/${editing.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          patient_phone: editForm.patient_phone.trim(),
+          appt_date: editForm.appt_date,
+          time_slot: editForm.time_slot.trim(),
+          treatment_id: editForm.treatment_id || null,
+          status: editForm.status,
+          notes: editForm.notes.trim() || null,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setEditError(data.message || data.error || 'Update failed')
+        return
+      }
+      setAppointments(prev => prev.map(x => x.id === editing.id ? (data.appointment || { ...x, ...editForm }) : x))
+      setEditing(null)
+    } catch (e: any) {
+      setEditError(e?.message || 'Network error')
+    } finally {
+      setEditSaving(false)
+    }
   }
 
   async function updateStatus(id: string, status: string) {
@@ -500,6 +578,42 @@ export default function AppointmentsPage() {
                       ✉️ Send Summary
                     </a>
                   )}
+
+                  {/* Workflow shortcuts into the patient record. patient_id is
+                      set on online bookings; manual walk-ins resolve via
+                      phone-number match. When neither yields a patient row,
+                      the buttons hide rather than 404 — the dentist can add
+                      the patient from Patients first. */}
+                  {(() => {
+                    const phoneDigits = String(a.patient_phone || '').replace(/\D/g, '')
+                    const pid = a.patient_id || patientIdByPhone.get(phoneDigits) || null
+                    if (!pid) return null
+                    return (
+                      <>
+                        {!isClosed && (
+                          <Link
+                            href={`/for-dentists/dashboard/patients/${pid}?tab=treatments`}
+                            title="Open patient record on the Visits/Treatments tab"
+                            style={{ ...primaryBtn, background: '#DCFCE7', color: '#166534', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            🩺 Start Consultation
+                          </Link>
+                        )}
+                        <Link
+                          href={`/for-dentists/dashboard/patients/${pid}?tab=profile`}
+                          title="Open the patient's profile to edit details"
+                          style={{ ...secondaryBtn, color: 'var(--blue)', borderColor: '#BFDBFE' }}>
+                          👤 Edit Patient
+                        </Link>
+                      </>
+                    )
+                  })()}
+
+                  {/* Edit — reschedule date/time, swap treatment, fix typos.
+                      Available on every row so closed-out appointments can
+                      still be corrected after the fact. */}
+                  <button onClick={() => openEdit(a)} title="Edit appointment" style={secondaryBtn}>
+                    ✏ Edit
+                  </button>
 
                   {/* Cancel — kept as a small secondary so live appointments aren't uncancellable */}
                   {!isClosed && (

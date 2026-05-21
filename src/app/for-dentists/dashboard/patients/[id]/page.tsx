@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useRouter, useParams } from 'next/navigation'
+import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import DentalChart from '@/components/DentalChart'
 import { downloadInvoicePdf } from '@/lib/invoicePdf'
@@ -38,10 +38,26 @@ const PRESCRIPTION_TEMPLATES = {
   ],
 }
 
+// Quick-action buttons elsewhere in the dashboard link here with
+// `?tab=treatments|profile|history` — friendly names that don't always match
+// the internal tab id list. Map them to real tabs so the deep link lands on
+// the section the operator expects.
+const TAB_ALIASES: Record<string, string> = {
+  profile: 'overview',
+  history: 'timeline',
+  treatments: 'visits',
+  treatment: 'visits',
+}
+
 export default function PatientDetailPage() {
   const router = useRouter()
   const params = useParams()
+  const searchParams = useSearchParams()
   const patientId = params.id as string
+  const initialTab = (() => {
+    const raw = searchParams.get('tab') || ''
+    return TAB_ALIASES[raw] || raw || 'overview'
+  })()
 
   const [loading, setLoading] = useState(true)
   const [dentistId, setDentistId] = useState('')
@@ -54,7 +70,7 @@ export default function PatientDetailPage() {
   const [xrays, setXrays] = useState<any[]>([])
   const [invoices, setInvoices] = useState<any[]>([])
   const [invoiceActionError, setInvoiceActionError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState('overview')
+  const [activeTab, setActiveTab] = useState(initialTab)
   const [showAddVisit, setShowAddVisit] = useState(false)
   const [showAddRx, setShowAddRx] = useState(false)
   const [showAddPlan, setShowAddPlan] = useState(false)

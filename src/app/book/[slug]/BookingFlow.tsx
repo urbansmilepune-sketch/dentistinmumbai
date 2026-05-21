@@ -17,20 +17,44 @@ interface Props {
   treatments: Treatment[]
 }
 
-// 9am to 7pm with 1-hour starts → 09:00 … 18:00
-const HOURLY_SLOTS: string[] = Array.from({ length: 10 }, (_, i) => `${String(9 + i).padStart(2, '0')}:00`)
+// Default open hours when the dentist hasn't set working_hours yet:
+// 9 AM → 8 PM, hourly starts. Matches the public profile "Closed today"
+// fallback in src/app/dentist/[slug]/page.tsx::isOpenNow().
+const DEFAULT_OPEN  = '09:00'
+const DEFAULT_CLOSE = '20:00'
 const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const
 
-/** A slot is allowed if the clinic is open that weekday AND the slot start time
- * is within [open_time, close_time). If working_hours is missing or malformed
- * we fall back to allowing everything — better to show too many slots than to
- * silently hide all of them. */
-function isSlotInsideHours(slot: string, hours: DayHours | undefined): boolean {
-  if (!hours) return true
-  if (hours.is_open === false) return false
-  const open = hours.open_time || '00:00'
-  const close = hours.close_time || '23:59'
-  return slot >= open && slot < close
+function hhmmToMinutes(s: string): number {
+  const [h, m] = s.split(':').map(Number)
+  return (h || 0) * 60 + (m || 0)
+}
+
+function minutesToHHMM(mins: number): string {
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+}
+
+/** Build the hourly slot list for a given day, using the dentist's saved
+ * working_hours when present. Returns null when the clinic is explicitly
+ * closed that day so the UI can show a "Closed" message instead of an
+ * empty grid. When working_hours is missing entirely we fall back to the
+ * platform default (9 AM – 8 PM) — a fresh signup should still take
+ * bookings while the dentist gets around to filling in their hours. */
+function buildSlotsForDay(hours: DayHours | undefined): string[] | null {
+  if (hours?.is_open === false) return null
+  const openStr  = (hours?.open_time  || DEFAULT_OPEN).slice(0, 5)
+  const closeStr = (hours?.close_time || DEFAULT_CLOSE).slice(0, 5)
+  const openMin = hhmmToMinutes(openStr)
+  const closeMin = hhmmToMinutes(closeStr)
+  if (!(closeMin > openMin)) return []
+  const slots: string[] = []
+  // Round the start up to the next whole hour so a 09:30 open still
+  // produces 10:00 as the first patient-facing slot. Hourly cadence is
+  // the booking grain the rest of the app uses.
+  const firstSlotMin = Math.ceil(openMin / 60) * 60
+  for (let m = firstSlotMin; m < closeMin; m += 60) slots.push(minutesToHHMM(m))
+  return slots
 }
 
 function toLocalIso(d: Date): string {
@@ -115,17 +139,22 @@ export default function BookingFlow({ dentistId, dentistSlug, dentistName, clini
     return () => { cancelled = true }
   }, [dentistId, selectedDate])
 
+  // null when the clinic is closed on the selected day, otherwise the list
+  // of hourly slots inside open/close hours. The "closed today" branch in
+  // the slot grid renders the dedicated copy off this same null.
+  const dayHours = useMemo(() => {
+    if (!selectedDate) return undefined
+    const [yy, mm, dd] = selectedDate.split('-').map(Number)
+    if (!Number.isFinite(yy + mm + dd) || !workingHours) return undefined
+    return workingHours[DAY_KEYS[new Date(yy, (mm || 1) - 1, dd || 1).getDay()]]
+  }, [selectedDate, workingHours])
+  const dayIsClosed = dayHours?.is_open === false
+
   const availableSlots = useMemo(() => {
     if (!selectedDate) return []
-    // Resolve the selected date's day-of-week key (sun..sat) so we can look up
-    // the matching entry in working_hours. Parsing the ISO directly with the UTC
-    // suffix would shift Sunday → Saturday for early-morning IST loads.
-    const [yy, mm, dd] = selectedDate.split('-').map(Number)
-    const dayHours = (workingHours && Number.isFinite(yy + mm + dd))
-      ? workingHours[DAY_KEYS[new Date(yy, (mm || 1) - 1, dd || 1).getDay()]]
-      : undefined
-    return HOURLY_SLOTS.filter(slot => {
-      if (!isSlotInsideHours(slot, dayHours)) return false
+    const baseSlots = buildSlotsForDay(dayHours)
+    if (!baseSlots) return []
+    return baseSlots.filter(slot => {
       if (booked.has(slot)) return false
       if (selectedDate === todayIso && nowHour >= 0) {
         const hour = parseInt(slot.split(':')[0], 10)
@@ -133,7 +162,7 @@ export default function BookingFlow({ dentistId, dentistSlug, dentistName, clini
       }
       return true
     })
-  }, [booked, selectedDate, todayIso, nowHour, workingHours])
+  }, [booked, selectedDate, todayIso, nowHour, dayHours])
 
   function validate(): string | null {
     if (!name.trim()) return 'Please enter your name'
@@ -271,6 +300,10 @@ export default function BookingFlow({ dentistId, dentistSlug, dentistName, clini
         </h2>
         {loadingSlots ? (
           <p style={{ fontSize: 13, color: 'var(--muted)', padding: '12px 0' }}>Checking availability…</p>
+        ) : dayIsClosed ? (
+          <div style={{ padding: '14px 16px', background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: 10, color: '#92400E', fontSize: 14, lineHeight: 1.5 }}>
+            <strong>Closed on this day.</strong> Please pick another date — the clinic is closed.
+          </div>
         ) : availableSlots.length === 0 ? (
           <p style={{ fontSize: 14, color: 'var(--muted)', padding: '12px 0' }}>
             No slots available on this day. Try another date.

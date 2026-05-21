@@ -1,11 +1,22 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import QRCode from 'qrcode'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { getCityBySlug } from '@/config/cities'
 import { buildMapsIframe, classifyMapsInput, extractMapsIframeSrc } from '@/lib/maps'
+
+const HOURS_DAYS: { key: string; label: string }[] = [
+  { key: 'mon', label: 'Monday' },
+  { key: 'tue', label: 'Tuesday' },
+  { key: 'wed', label: 'Wednesday' },
+  { key: 'thu', label: 'Thursday' },
+  { key: 'fri', label: 'Friday' },
+  { key: 'sat', label: 'Saturday' },
+  { key: 'sun', label: 'Sunday' },
+]
 
 const LANGUAGES = ['English', 'Hindi', 'Marathi', 'Gujarati', 'Tamil', 'Telugu', 'Kannada', 'Bengali', 'Urdu']
 const SPECIALTIES = ['General Dentistry', 'Orthodontics', 'Endodontics', 'Periodontology', 'Prosthodontics', 'Oral Surgery', 'Pediatric Dentistry', 'Cosmetic Dentistry', 'Implantology', 'Oral Medicine']
@@ -21,6 +32,10 @@ export default function EditProfilePage() {
   const [slug, setSlug] = useState('')
   const [qrDataUrl, setQrDataUrl] = useState('')
   const [siteBase, setSiteBase] = useState('https://dentistinmumbai.in')
+  // Read-only mirror of dentists.working_hours so the profile page can show
+  // a clear weekday summary. The dedicated editor at /dashboard/hours owns
+  // the write path — we never UPDATE this column from profile/page.tsx.
+  const [workingHours, setWorkingHours] = useState<Record<string, any> | null>(null)
 
   const [form, setForm] = useState({
     name: '', clinic_name: '', qualifications: '', degree: '', experience_years: '',
@@ -38,7 +53,7 @@ export default function EditProfilePage() {
 
       const { data: dentist } = await supabase
         .from('dentists')
-        .select('id, slug, name, clinic_name, qualifications, degree, experience_years, bio, phone, whatsapp, website, address, consultation_fee, mci_number, emi_available, languages, specialties, maps_embed, city')
+        .select('id, slug, name, clinic_name, qualifications, degree, experience_years, bio, phone, whatsapp, website, address, consultation_fee, mci_number, emi_available, languages, specialties, maps_embed, city, working_hours')
         .eq('email', user.email)
         .single()
 
@@ -46,6 +61,7 @@ export default function EditProfilePage() {
         setDentistId(dentist.id)
         setSlug(dentist.slug || '')
         setSiteBase(`https://${getCityBySlug((dentist as any).city).domain}`)
+        setWorkingHours((dentist as any).working_hours || null)
         setForm({
           name: dentist.name || '',
           clinic_name: dentist.clinic_name || '',
@@ -515,6 +531,51 @@ export default function EditProfilePage() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* Working hours summary — read-only mirror of dentists.working_hours.
+          The dedicated editor at /dashboard/hours owns the write path; this
+          block is here so the profile page makes it obvious which days the
+          clinic is open and what the patient-facing booking grid will use. */}
+      <div style={sectionStyle}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, gap: 12, flexWrap: 'wrap' }}>
+          <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17 }}>Clinic hours on each day</h2>
+          <Link href="/for-dentists/dashboard/hours"
+            style={{ fontSize: 13, color: 'var(--blue)', fontWeight: 600, textDecoration: 'none', padding: '6px 12px', background: 'var(--blue-light)', borderRadius: 8 }}>
+            ✎ Edit hours
+          </Link>
+        </div>
+        <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 14 }}>
+          These are the hours patients see on your public profile and the booking-page time-slot grid. Closed days show no slots.
+        </p>
+        {workingHours ? (
+          <div style={{ border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
+            {HOURS_DAYS.map(({ key, label }, idx) => {
+              const h = workingHours[key]
+              const open = h?.is_open
+              return (
+                <div key={key} style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  padding: '10px 14px', fontSize: 13,
+                  borderBottom: idx < HOURS_DAYS.length - 1 ? '1px solid var(--border)' : 'none',
+                  background: open ? '#fff' : 'var(--bg)',
+                }}>
+                  <span style={{ fontWeight: 600, color: 'var(--text)' }}>{label}</span>
+                  <span style={{ fontWeight: 600, color: open ? 'var(--text)' : '#EF4444' }}>
+                    {open
+                      ? `${h?.open_time || '—'} – ${h?.close_time || '—'}${h?.has_break ? ` (Break ${h.break_start}–${h.break_end})` : ''}`
+                      : 'Closed'}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div style={{ padding: '14px 16px', background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: 10, color: '#92400E', fontSize: 13, lineHeight: 1.5 }}>
+            You haven't set your clinic hours yet. The booking page will default to <strong>9 AM – 8 PM, every day</strong> until you do.{' '}
+            <Link href="/for-dentists/dashboard/hours" style={{ color: '#92400E', fontWeight: 700, textDecoration: 'underline' }}>Set hours →</Link>
+          </div>
+        )}
       </div>
 
       {/* Languages */}

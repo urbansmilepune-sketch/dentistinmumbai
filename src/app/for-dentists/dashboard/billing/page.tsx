@@ -45,6 +45,10 @@ function BillingPageInner() {
   const [saving, setSaving] = useState(false)
   const [linkLoading, setLinkLoading] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  // When set, the New Invoice modal is reused as an Edit modal: same fields,
+  // same totals, but the submit handler does an UPDATE instead of an INSERT
+  // and the headline / CTA copy switch to "Edit / Update Invoice".
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState({
     patient_id: initialPatientId, date: new Date().toISOString().split('T')[0],
     items: [{ treatment_name: '', quantity: '1', unit_price: '' }],
@@ -95,13 +99,48 @@ function BillingPageInner() {
   const gstAmt = form.gst_enabled ? +(taxable * 0.18).toFixed(2) : 0
   const total = taxable + gstAmt
 
+  function resetForm() {
+    setForm({
+      patient_id: '', date: new Date().toISOString().split('T')[0],
+      items: [{ treatment_name: '', quantity: '1', unit_price: '' }],
+      discount: '', gst_enabled: false, notes: '', payment_status: 'pending',
+      payment_method: '',
+    })
+    setEditingId(null)
+  }
+
+  function openEdit(inv: any) {
+    // Items are stored as JSONB on the invoices row. Old rows may use the
+    // legacy `description` field instead of `treatment_name`, so we read
+    // either. Numbers come back as JSON numbers — re-stringify them for the
+    // inputs (the form keeps text so empty fields stay empty, not 0).
+    const items = Array.isArray(inv.items) && inv.items.length > 0
+      ? inv.items.map((i: any) => ({
+          treatment_name: String(i.treatment_name || i.description || ''),
+          quantity: i.quantity != null ? String(i.quantity) : '1',
+          unit_price: i.unit_price != null ? String(i.unit_price) : '',
+        }))
+      : [{ treatment_name: '', quantity: '1', unit_price: '' }]
+    setForm({
+      patient_id: inv.patient_id || '',
+      date: (inv.invoice_date || new Date().toISOString().split('T')[0]).slice(0, 10),
+      items,
+      discount: inv.discount != null ? String(inv.discount) : '',
+      gst_enabled: Number(inv.gst_amount || 0) > 0,
+      notes: inv.notes || '',
+      payment_status: inv.payment_status || 'pending',
+      payment_method: inv.payment_method || '',
+    })
+    setEditingId(inv.id)
+    setShowAdd(true)
+  }
+
   async function handleSave() {
     if (!form.patient_id) { alert('Please select a patient'); return }
     if (form.items.some(i => !i.treatment_name || !i.unit_price)) { alert('Fill treatment name and unit price for each item'); return }
     if (form.payment_status === 'paid' && !form.payment_method) { alert('Please select a payment method for paid invoices'); return }
     setSaving(true)
     const supabase = createClient()
-    const invNo = `INV-${Date.now().toString().slice(-6)}`
     const itemsPayload = form.items.map((i, idx) => {
       const c = itemsComputed[idx]
       return {
@@ -114,6 +153,34 @@ function BillingPageInner() {
         amount: c.line,
       }
     })
+
+    if (editingId) {
+      const { data, error } = await supabase
+        .from('invoices')
+        .update({
+          patient_id: form.patient_id,
+          invoice_date: form.date,
+          items: itemsPayload,
+          subtotal, discount: discountAmt, gst_amount: gstAmt, total,
+          notes: form.notes || null,
+          payment_status: form.payment_status,
+          payment_method: form.payment_method || null,
+        })
+        .eq('id', editingId)
+        .select('*, patients(name, phone)')
+        .single()
+      setSaving(false)
+      if (error || !data) {
+        setActionError(error?.message || 'Update failed — your changes were not saved.')
+        return
+      }
+      setInvoices(prev => prev.map(x => x.id === editingId ? data : x))
+      setShowAdd(false)
+      resetForm()
+      return
+    }
+
+    const invNo = `INV-${Date.now().toString().slice(-6)}`
     const { data } = await supabase.from('invoices').insert({
       invoice_no: invNo, dentist_id: dentistId, patient_id: form.patient_id,
       invoice_date: form.date,
@@ -124,12 +191,7 @@ function BillingPageInner() {
     }).select('*, patients(name, phone)').single()
     if (data) setInvoices(prev => [data, ...prev])
     setShowAdd(false)
-    setForm({
-      patient_id: '', date: new Date().toISOString().split('T')[0],
-      items: [{ treatment_name: '', quantity: '1', unit_price: '' }],
-      discount: '', gst_enabled: false, notes: '', payment_status: 'pending',
-      payment_method: '',
-    })
+    resetForm()
     setSaving(false)
   }
 
@@ -217,7 +279,7 @@ function BillingPageInner() {
           <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 4 }}>Billing</h1>
           <p style={{ fontSize: 14, color: 'var(--muted)' }}>Invoices and payments</p>
         </div>
-        <button onClick={() => setShowAdd(true)} style={{ padding: '10px 20px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 14, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>+ New Invoice</button>
+        <button onClick={() => { resetForm(); setShowAdd(true) }} style={{ padding: '10px 20px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 14, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>+ New Invoice</button>
       </div>
 
       {actionError && (
@@ -247,8 +309,8 @@ function BillingPageInner() {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
           <div style={{ background: '#fff', borderRadius: 20, padding: '28px', width: '100%', maxWidth: 580, maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
-              <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 20 }}>New Invoice</h2>
-              <button onClick={() => setShowAdd(false)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer' }}>✕</button>
+              <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 20 }}>{editingId ? 'Edit Invoice' : 'New Invoice'}</h2>
+              <button onClick={() => { setShowAdd(false); resetForm() }} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer' }}>✕</button>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 16 }}>
               <div>
@@ -349,8 +411,8 @@ function BillingPageInner() {
             </div>
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button onClick={() => setShowAdd(false)} style={{ padding: '10px 20px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>Cancel</button>
-              <button onClick={handleSave} disabled={saving} style={{ padding: '10px 24px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>{saving ? 'Saving...' : 'Create Invoice'}</button>
+              <button onClick={() => { setShowAdd(false); resetForm() }} style={{ padding: '10px 20px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>Cancel</button>
+              <button onClick={handleSave} disabled={saving} style={{ padding: '10px 24px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>{saving ? 'Saving...' : (editingId ? 'Update Invoice' : 'Create Invoice')}</button>
             </div>
           </div>
         </div>
@@ -362,7 +424,7 @@ function BillingPageInner() {
           <div style={{ fontSize: 48, marginBottom: 12 }}>📄</div>
           <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18, marginBottom: 8 }}>No invoices yet</h3>
           <p style={{ color: 'var(--muted)', marginBottom: 20 }}>Create your first invoice to start tracking payments</p>
-          <button onClick={() => setShowAdd(true)} style={{ padding: '11px 24px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>+ New Invoice</button>
+          <button onClick={() => { resetForm(); setShowAdd(true) }} style={{ padding: '11px 24px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>+ New Invoice</button>
         </div>
       ) : (
         <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
@@ -406,6 +468,11 @@ function BillingPageInner() {
                         <button onClick={() => downloadPdf(inv)}
                           style={{ padding: '5px 10px', background: 'var(--blue-light)', color: 'var(--blue)', border: '1px solid #BFDBFE', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
                           ⬇ PDF
+                        </button>
+                        <button onClick={() => openEdit(inv)}
+                          title="Edit items, amounts, or payment info"
+                          style={{ padding: '5px 10px', background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
+                          ✏ Edit
                         </button>
                         {inv.patients?.phone && (
                           <a href={`https://wa.me/91${inv.patients.phone.replace(/\D/g,'')}?text=Dear ${inv.patients.name}, your invoice ${inv.invoice_no} of ₹${inv.total} from ${new Date(inv.invoice_date).toLocaleDateString('en-IN')} is due. Please make payment at your earliest. Thank you.`}
