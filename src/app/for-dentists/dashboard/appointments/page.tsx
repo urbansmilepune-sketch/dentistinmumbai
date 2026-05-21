@@ -32,6 +32,21 @@ function waLink(phone: string, text: string): string {
   return `https://wa.me/91${(phone || '').replace(/\D/g, '')}?text=${encodeURIComponent(text)}`
 }
 
+// Native <input type="time"> renders as an OS-level picker whose layout
+// varies wildly between Android webviews and desktop browsers — multiple
+// dentists reported a picker that surfaces only Clear/Cancel with no
+// hour/minute wheel. A plain <select> with a fixed slot list sidesteps
+// the picker entirely and matches the half-hour cadence most clinics
+// actually book on.
+const TIME_SLOTS = [
+  '09:00 AM', '09:30 AM', '10:00 AM', '10:30 AM',
+  '11:00 AM', '11:30 AM', '12:00 PM', '12:30 PM',
+  '01:00 PM', '01:30 PM', '02:00 PM', '02:30 PM',
+  '03:00 PM', '03:30 PM', '04:00 PM', '04:30 PM',
+  '05:00 PM', '05:30 PM', '06:00 PM', '06:30 PM',
+  '07:00 PM', '07:30 PM', '08:00 PM',
+]
+
 // Status values mirror the DB constraint exactly: pending, confirmed,
 // completed, cancelled, no_show. The dropdown labels and tab labels below
 // are the human-readable presentation of those same values.
@@ -301,8 +316,13 @@ export default function AppointmentsPage() {
                 </div>
                 <div>
                   <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Time *</label>
-                  <input type="time" value={form.time_slot} onChange={e => setForm(f => ({ ...f, time_slot: e.target.value }))}
-                    style={{ width: '100%', padding: '12px', minHeight: 48, borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 14, fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box' }} />
+                  <select value={form.time_slot} onChange={e => setForm(f => ({ ...f, time_slot: e.target.value }))}
+                    style={{ width: '100%', padding: '12px', minHeight: 48, borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 14, fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box', background: '#fff' }}>
+                    <option value="">Select time</option>
+                    {TIME_SLOTS.map(slot => (
+                      <option key={slot} value={slot}>{slot}</option>
+                    ))}
+                  </select>
                 </div>
                 <div style={{ gridColumn: '1/-1' }}>
                   <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Treatment</label>
