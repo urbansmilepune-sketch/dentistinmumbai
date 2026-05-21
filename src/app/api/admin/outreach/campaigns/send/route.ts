@@ -13,7 +13,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { createClient as createUserClient } from '@/lib/supabase/server'
-import { sendOutreachEmail } from '@/lib/outreach'
+import { sendOutreachEmail, renderOutreachTemplate } from '@/lib/outreach'
 import { CITY_CONFIGS, type CitySlug } from '@/config/cities'
 
 function admin() {
@@ -84,7 +84,23 @@ export async function POST(request: NextRequest) {
   }
 
   if (campaign.status === 'draft') {
-    await db.from('outreach_campaigns').update({ status: 'sending' }).eq('id', campaign_id)
+    // Recount the pending audience at first send and stamp it onto the
+    // campaign. This self-heals older campaigns whose total_contacts was
+    // saved as 0 (drafted before any contacts were uploaded) and picks up
+    // contacts uploaded between drafting and sending. campaign.city = null
+    // means "All India" — no city filter applied.
+    let q = db
+      .from('outreach_contacts')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'pending')
+    if (campaign.city) q = q.eq('city', campaign.city)
+    const { count: pendingCount } = await q
+    const audienceSize = pendingCount || 0
+    await db
+      .from('outreach_campaigns')
+      .update({ status: 'sending', total_contacts: audienceSize })
+      .eq('id', campaign_id)
+    campaign.total_contacts = audienceSize
   }
 
   // Pick the next batch of pending contacts. campaign.city = null means
@@ -121,14 +137,27 @@ export async function POST(request: NextRequest) {
     const chunk = batch.slice(i, i + RESEND_CHUNK)
     const results = await Promise.allSettled(
       chunk.map(async (c) => {
+        // Per-contact template rendering happens here, before the email
+        // helper, so that the substituted values are visible in this route
+        // for debugging and so any rendering bug shows up in the request
+        // logs instead of being buried inside the lib.
+        const ctx = {
+          name: c.name,
+          clinic_name: c.clinic_name,
+          city: c.city || campaign.city,
+          email: c.email,
+        }
+        const renderedSubject = renderOutreachTemplate(campaign.subject, ctx)
+        const renderedBody    = renderOutreachTemplate(campaign.body, ctx)
+
         await sendOutreachEmail({
           to_email: c.email,
           to_name: c.name,
           clinic_name: c.clinic_name,
           contact_id: c.id,
           campaign_id: campaign.id,
-          subject: campaign.subject,
-          body: campaign.body,
+          subject: renderedSubject,
+          body: renderedBody,
           city: c.city || campaign.city,
           origin,
         })

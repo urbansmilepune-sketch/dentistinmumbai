@@ -542,7 +542,7 @@ export default function OutreachTab() {
               <div>
                 <label style={labelStyle}>City filter</label>
                 <select value={cCity} onChange={e => setCCity(e.target.value)} style={inputStyle}>
-                  <option value="">All cities</option>
+                  <option value="">All India (every pending contact)</option>
                   {CITY_ORDER.map(slug => <option key={slug} value={slug}>{CITY_CONFIGS[slug].cityName}</option>)}
                 </select>
               </div>
@@ -594,7 +594,7 @@ export default function OutreachTab() {
                       <div style={{ fontWeight: 600 }}>{c.name}</div>
                       <div style={{ fontSize: 11, color: '#64748B' }}>{c.subject}</div>
                     </td>
-                    <td style={td}>{c.city ? cityDisplayName(c.city) : 'All cities'}</td>
+                    <td style={td}>{c.city ? cityDisplayName(c.city) : 'All India'}</td>
                     <td style={td}><CampaignStatusBadge status={c.status} /></td>
                     <td style={td}>
                       {sent}/{total}
