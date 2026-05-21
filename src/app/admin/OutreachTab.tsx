@@ -54,9 +54,12 @@ const CITY_ORDER: CitySlug[] = [
   'kolhapur', 'sambhajinagar', 'rajkot', 'ahmedabad', 'jamnagar', 'navimumbai',
 ]
 
+// `{name}` already arrives with the title baked in ("Dr. Nirav Shah"), so
+// the template must NOT add its own "Dr." prefix — doing so produced the
+// "Dr. Dr. Nirav Shah" double-prefix that went out in earlier batches.
 const DEFAULT_TEMPLATE = {
-  subject: 'Quick note for Dr. {name}',
-  body: `Hi Dr. {name},
+  subject: 'Quick note for {name}',
+  body: `Hi {name},
 
 I came across your clinic {clinic_name} and wanted to reach out personally.
 

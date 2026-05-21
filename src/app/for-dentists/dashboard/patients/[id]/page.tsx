@@ -5,12 +5,14 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import DentalChart from '@/components/DentalChart'
+import { downloadInvoicePdf } from '@/lib/invoicePdf'
 
 const TABS = [
   { id: 'overview', label: 'Overview', icon: '👤' },
   { id: 'timeline', label: 'Timeline', icon: '📈' },
   { id: 'visits', label: 'Visit Notes', icon: '📋' },
   { id: 'prescriptions', label: 'Prescriptions', icon: '💊' },
+  { id: 'invoices', label: 'Invoices', icon: '🧾' },
   { id: 'plans', label: 'Treatment Plans', icon: '🦷' },
   { id: 'emr', label: 'EMR', icon: '🏥' },
   { id: 'consent', label: 'Consent', icon: '📝' },
@@ -44,11 +46,14 @@ export default function PatientDetailPage() {
   const [loading, setLoading] = useState(true)
   const [dentistId, setDentistId] = useState('')
   const [dentistName, setDentistName] = useState('')
+  const [dentistMeta, setDentistMeta] = useState<any>(null)
   const [patient, setPatient] = useState<any>(null)
   const [visits, setVisits] = useState<any[]>([])
   const [prescriptions, setPrescriptions] = useState<any[]>([])
   const [plans, setPlans] = useState<any[]>([])
   const [xrays, setXrays] = useState<any[]>([])
+  const [invoices, setInvoices] = useState<any[]>([])
+  const [invoiceActionError, setInvoiceActionError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState('overview')
   const [showAddVisit, setShowAddVisit] = useState(false)
   const [showAddRx, setShowAddRx] = useState(false)
@@ -74,21 +79,27 @@ export default function PatientDetailPage() {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/for-dentists/login'); return }
-      const { data: dentist } = await supabase.from('dentists').select('id, name').eq('email', user.email).single()
+      const { data: dentist } = await supabase
+        .from('dentists')
+        .select('id, name, clinic_name, phone, whatsapp, city, areas(name)')
+        .eq('email', user.email)
+        .single()
       if (!dentist) return
       setDentistId(dentist.id)
       setDentistName(dentist.name)
+      setDentistMeta(dentist)
 
-      const [{ data: p }, { data: v }, { data: rx }, { data: pl }, { data: xr }] = await Promise.all([
+      const [{ data: p }, { data: v }, { data: rx }, { data: pl }, { data: xr }, { data: inv }] = await Promise.all([
         supabase.from('patients').select('*').eq('id', patientId).eq('dentist_id', dentist.id).single(),
         supabase.from('visits').select('*').eq('patient_id', patientId).order('visit_date', { ascending: false }),
         supabase.from('prescriptions').select('*').eq('patient_id', patientId).order('created_at', { ascending: false }),
         supabase.from('treatment_plans').select('*, treatment_plan_steps(*)').eq('patient_id', patientId).order('created_at', { ascending: false }),
         supabase.from('xray_images').select('*').eq('patient_id', patientId).order('taken_at', { ascending: false }),
+        supabase.from('invoices').select('*, patients(name, phone)').eq('patient_id', patientId).eq('dentist_id', dentist.id).order('invoice_date', { ascending: false }),
       ])
 
       if (!p) { router.push('/for-dentists/dashboard/patients'); return }
-      setPatient(p); setVisits(v || []); setPrescriptions(rx || []); setPlans(pl || []); setXrays(xr || [])
+      setPatient(p); setVisits(v || []); setPrescriptions(rx || []); setPlans(pl || []); setXrays(xr || []); setInvoices(inv || [])
       setLoading(false)
     }
     load()
@@ -154,6 +165,24 @@ export default function PatientDetailPage() {
     setSaving(false)
   }
 
+  async function markInvoicePaid(id: string) {
+    setInvoiceActionError(null)
+    const supabase = createClient()
+    // Mirror the billing page: .select() the write so a silent RLS denial
+    // surfaces as a user-visible error instead of pretending it succeeded.
+    const { data, error } = await supabase
+      .from('invoices').update({ payment_status: 'paid' }).eq('id', id).select('id')
+    if (error) {
+      setInvoiceActionError(error.message)
+      return
+    }
+    if (!data || data.length === 0) {
+      setInvoiceActionError('Update rejected — you may not have permission to edit this invoice.')
+      return
+    }
+    setInvoices(prev => prev.map(inv => inv.id === id ? { ...inv, payment_status: 'paid' } : inv))
+  }
+
   function applyTemplate(templateName: string) {
     const meds = PRESCRIPTION_TEMPLATES[templateName as keyof typeof PRESCRIPTION_TEMPLATES] || []
     setRxForm(f => ({ ...f, template: templateName, medicines: meds }))
@@ -207,6 +236,7 @@ export default function PatientDetailPage() {
               {[
                 { label: 'Total Visits', value: visits.length, icon: '📋' },
                 { label: 'Prescriptions', value: prescriptions.length, icon: '💊' },
+                { label: 'Invoices', value: invoices.length, icon: '🧾' },
                 { label: 'Treatment Plans', value: plans.length, icon: '🦷' },
                 { label: 'X-Rays', value: xrays.length, icon: '🩻' },
               ].map(stat => (
@@ -358,9 +388,40 @@ export default function PatientDetailPage() {
             <div style={{ textAlign: 'center', padding: '40px', background: '#fff', borderRadius: 14, border: '1px solid var(--border)', color: 'var(--muted)' }}>No prescriptions yet.</div>
           ) : prescriptions.map(rx => (
             <div key={rx.id} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '20px', marginBottom: 12 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12, gap: 12, flexWrap: 'wrap' }}>
                 <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700 }}>💊 {rx.template_used || 'Prescription'}</span>
-                <span style={{ fontSize: 12, color: 'var(--muted)' }}>{new Date(rx.created_at).toLocaleDateString('en-IN')}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 12, color: 'var(--muted)' }}>{new Date(rx.created_at).toLocaleDateString('en-IN')}</span>
+                  <a
+                    href={`/api/prescriptions/pdf?id=${rx.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ padding: '5px 10px', background: 'var(--blue-light)', color: 'var(--blue)', border: '1px solid #BFDBFE', borderRadius: 6, fontSize: 11, fontWeight: 600, textDecoration: 'none' }}
+                  >
+                    📄 Download PDF
+                  </a>
+                  {patient.phone && (() => {
+                    const phone = String(patient.phone).replace(/\D/g, '').slice(-10)
+                    const clinic = dentistMeta?.clinic_name || dentistMeta?.name || 'your clinic'
+                    // Patient-facing share link: absolute so wa.me lands the
+                    // patient on a working URL regardless of which device opens
+                    // the WhatsApp message.
+                    const link = typeof window !== 'undefined'
+                      ? `${window.location.origin}/api/prescriptions/pdf?id=${rx.id}`
+                      : `/api/prescriptions/pdf?id=${rx.id}`
+                    const msg = `Your prescription from ${clinic}: ${link}`
+                    return (
+                      <a
+                        href={`https://wa.me/91${phone}?text=${encodeURIComponent(msg)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ padding: '5px 10px', background: '#25D366', color: '#fff', borderRadius: 6, fontSize: 11, fontWeight: 600, textDecoration: 'none' }}
+                      >
+                        💚 Send to Patient
+                      </a>
+                    )
+                  })()}
+                </div>
               </div>
               {rx.medicines?.length > 0 && (
                 <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 12 }}>
@@ -382,6 +443,98 @@ export default function PatientDetailPage() {
           ))}
         </div>
       )}
+
+      {/* INVOICES */}
+      {activeTab === 'invoices' && (() => {
+        const outstanding = invoices
+          .filter(i => i.payment_status !== 'paid')
+          .reduce((sum, i) => sum + (Number(i.total) || 0), 0)
+        const collected = invoices
+          .filter(i => i.payment_status === 'paid')
+          .reduce((sum, i) => sum + (Number(i.total) || 0), 0)
+        const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
+          pending: { bg: '#FEF3C7', text: '#92400E' },
+          paid: { bg: '#DCFCE7', text: '#166534' },
+          overdue: { bg: '#FEE2E2', text: '#991B1B' },
+        }
+        return (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                <div style={{ background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: 10, padding: '10px 14px' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#92400E', textTransform: 'uppercase', letterSpacing: 0.5 }}>Outstanding</div>
+                  <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 20, color: '#92400E' }}>₹{outstanding.toLocaleString('en-IN')}</div>
+                </div>
+                <div style={{ background: '#DCFCE7', border: '1px solid #BBF7D0', borderRadius: 10, padding: '10px 14px' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#166534', textTransform: 'uppercase', letterSpacing: 0.5 }}>Collected</div>
+                  <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 20, color: '#166534' }}>₹{collected.toLocaleString('en-IN')}</div>
+                </div>
+              </div>
+              <Link
+                href={`/for-dentists/dashboard/billing?patient_id=${patientId}`}
+                style={{ padding: '10px 20px', background: 'var(--blue)', color: '#fff', borderRadius: 10, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: 14, textDecoration: 'none' }}
+              >
+                + New Invoice
+              </Link>
+            </div>
+
+            {invoiceActionError && (
+              <div style={{ background: '#FEE2E2', border: '1px solid #FECACA', color: '#991B1B', padding: '10px 14px', borderRadius: 10, fontSize: 13, marginBottom: 12, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                <span>{invoiceActionError}</span>
+                <button onClick={() => setInvoiceActionError(null)} style={{ background: 'none', border: 'none', color: '#991B1B', cursor: 'pointer', fontFamily: 'var(--font-body)', fontWeight: 700 }}>✕</button>
+              </div>
+            )}
+
+            {invoices.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '40px', background: '#fff', borderRadius: 14, border: '1px solid var(--border)', color: 'var(--muted)' }}>
+                No invoices yet for this patient.
+              </div>
+            ) : (
+              <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--bg)' }}>
+                      {['Invoice #', 'Date', 'Amount', 'Status', 'Actions'].map(h => (
+                        <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {invoices.map(inv => {
+                      const sc = STATUS_COLORS[inv.payment_status] || STATUS_COLORS.pending
+                      return (
+                        <tr key={inv.id} style={{ borderTop: '1px solid var(--border)' }}>
+                          <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: 'var(--blue)' }}>{inv.invoice_no}</td>
+                          <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--muted)' }}>{new Date(inv.invoice_date).toLocaleDateString('en-IN')}</td>
+                          <td style={{ padding: '12px 16px', fontSize: 14, fontWeight: 700 }}>₹{Number(inv.total || 0).toLocaleString('en-IN')}</td>
+                          <td style={{ padding: '12px 16px' }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: sc.bg, color: sc.text }}>{inv.payment_status}</span>
+                          </td>
+                          <td style={{ padding: '12px 16px' }}>
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                              {inv.payment_status !== 'paid' && (
+                                <button onClick={() => markInvoicePaid(inv.id)}
+                                  style={{ padding: '5px 10px', background: '#DCFCE7', color: '#166534', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
+                                  Mark Paid
+                                </button>
+                              )}
+                              <button onClick={() => dentistMeta && downloadInvoicePdf(inv, dentistMeta)}
+                                disabled={!dentistMeta}
+                                style={{ padding: '5px 10px', background: 'var(--blue-light)', color: 'var(--blue)', border: '1px solid #BFDBFE', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: dentistMeta ? 'pointer' : 'not-allowed', fontFamily: 'var(--font-body)' }}>
+                                ⬇ PDF
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       {/* TREATMENT PLANS */}
       {activeTab === 'plans' && (
