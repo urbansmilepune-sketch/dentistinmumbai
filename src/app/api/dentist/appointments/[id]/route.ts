@@ -37,6 +37,7 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
   if (!id) return NextResponse.json({ error: 'Missing appointment id' }, { status: 400 })
 
   const body = await request.json().catch(() => ({} as Record<string, unknown>))
+  console.log('[appointments PATCH] called with status:', body?.status, 'id:', id)
 
   // Build the partial update payload from whichever fields the client sent.
   // Only fields explicitly present in the body are propagated; this lets the
@@ -88,6 +89,7 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
   if (!appt || appt.dentist_id !== owner.id) {
     return NextResponse.json({ error: 'Appointment not found' }, { status: 404 })
   }
+  console.log('[appointments PATCH] patient_email:', appt?.patient_email, 'ref:', appt?.reference_no)
 
   const { data: updated, error: updateErr } = await db
     .from('appointments')
@@ -129,45 +131,75 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
     const patientEmail = updated.patient_email
     const patientPhone = updated.patient_phone
 
+    // IMPORTANT: each notification is AWAITED, not fire-and-forget. On Vercel
+    // serverless the function exits the moment we return the response, killing
+    // any in-flight Resend / MSG91 fetch. The PATCH route was previously
+    // .catch()-ing without awaiting, which worked locally (Node process kept
+    // running) but silently dropped every email in production. Awaiting adds
+    // ~500ms to the response — acceptable for a button click, and the only
+    // way to guarantee the send actually happens.
     if (status === 'confirmed') {
       if (patientEmail) {
-        sendAppointmentConfirmedToPatient({
-          to_email: patientEmail,
-          patient_name: updated.patient_name || 'there',
-          dentist_name: dentistFull?.name || owner.name || 'your dentist',
-          clinic_name: clinicName,
-          clinic_address: dentistFull?.address || null,
-          clinic_phone: clinicPhone,
-          appt_date: updated.appt_date,
-          time_slot: updated.time_slot,
-          reference_no: updated.reference_no,
-          city: citySlug,
-        }).catch(err => console.error('[dentist appointments PATCH] patient confirmation email failed', err))
+        try {
+          const result = await sendAppointmentConfirmedToPatient({
+            to_email: patientEmail,
+            patient_name: updated.patient_name || 'there',
+            dentist_name: dentistFull?.name || owner.name || 'your dentist',
+            clinic_name: clinicName,
+            clinic_address: dentistFull?.address || null,
+            clinic_phone: clinicPhone,
+            appt_date: updated.appt_date,
+            time_slot: updated.time_slot,
+            reference_no: updated.reference_no,
+            city: citySlug,
+          })
+          console.log('[appointments PATCH] confirmation email sent', {
+            to: patientEmail, ref: updated.reference_no,
+            id: (result as any)?.data?.id, error: (result as any)?.error,
+          })
+        } catch (err: any) {
+          console.error('[appointments PATCH] confirmation email threw', {
+            to: patientEmail, ref: updated.reference_no, message: err?.message,
+          })
+        }
+      } else {
+        console.log('[appointments PATCH] no patient_email on appointment — skipping confirmation email', { ref: updated.reference_no })
       }
 
       const confirmTpl = process.env.MSG91_TEMPLATE_ID_APPOINTMENT_CONFIRMED
       if (confirmTpl && patientPhone) {
         try {
           // DLT template: "Your Appointment confirmed at {clinic} on {date time} ..."
-          void sendSMS(patientPhone, confirmTpl, [
+          const r = await sendSMS(patientPhone, confirmTpl, [
             clinicName, `${formattedDate} ${updated.time_slot}`,
           ])
-            .then(r => { if (!r.success) console.error('[dentist appointments PATCH] confirmation SMS failed', r) })
-            .catch(err => console.error('[dentist appointments PATCH] confirmation SMS threw', err))
-        } catch (err) { console.error('[dentist appointments PATCH] confirmation SMS dispatch error', err) }
+          if (!r.success) console.error('[appointments PATCH] confirmation SMS failed', r)
+        } catch (err) {
+          console.error('[appointments PATCH] confirmation SMS threw', err)
+        }
       }
     } else {
       if (patientEmail) {
-        sendAppointmentCancelledToPatient({
-          to_email: patientEmail,
-          patient_name: updated.patient_name || 'there',
-          clinic_name: clinicName,
-          clinic_phone: clinicPhone,
-          appt_date: updated.appt_date,
-          time_slot: updated.time_slot,
-          reference_no: updated.reference_no,
-          city: citySlug,
-        }).catch(err => console.error('[dentist appointments PATCH] patient cancellation email failed', err))
+        try {
+          const result = await sendAppointmentCancelledToPatient({
+            to_email: patientEmail,
+            patient_name: updated.patient_name || 'there',
+            clinic_name: clinicName,
+            clinic_phone: clinicPhone,
+            appt_date: updated.appt_date,
+            time_slot: updated.time_slot,
+            reference_no: updated.reference_no,
+            city: citySlug,
+          })
+          console.log('[appointments PATCH] cancellation email sent', {
+            to: patientEmail, ref: updated.reference_no,
+            id: (result as any)?.data?.id, error: (result as any)?.error,
+          })
+        } catch (err: any) {
+          console.error('[appointments PATCH] cancellation email threw', {
+            to: patientEmail, ref: updated.reference_no, message: err?.message,
+          })
+        }
       }
 
       const cancelTpl = process.env.MSG91_TEMPLATE_ID_APPOINTMENT_CANCELLED
@@ -177,10 +209,11 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
           // clinic name — there is no {date time} placeholder, so we send a
           // single variable. Re-registering a fixed template body would unblock
           // a second var; until then, only clinicName is passed.
-          void sendSMS(patientPhone, cancelTpl, [clinicName])
-            .then(r => { if (!r.success) console.error('[dentist appointments PATCH] cancellation SMS failed', r) })
-            .catch(err => console.error('[dentist appointments PATCH] cancellation SMS threw', err))
-        } catch (err) { console.error('[dentist appointments PATCH] cancellation SMS dispatch error', err) }
+          const r = await sendSMS(patientPhone, cancelTpl, [clinicName])
+          if (!r.success) console.error('[appointments PATCH] cancellation SMS failed', r)
+        } catch (err) {
+          console.error('[appointments PATCH] cancellation SMS threw', err)
+        }
       }
     }
   }

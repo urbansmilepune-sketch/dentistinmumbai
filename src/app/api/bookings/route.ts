@@ -177,38 +177,61 @@ export async function POST(request: NextRequest) {
         catch (notifyErr) { console.error('[bookings] notifyDentist failed (booking succeeded)', notifyErr) }
       }
 
-      // Fire-and-forget email side: row is committed, the patient already
-      // has the on-screen reference card, a Resend hiccup here must not
-      // make this response 500. Both helpers log their own failures.
+      // Emails AWAITED (not fire-and-forget). On Vercel serverless the
+      // function exits the moment the response is returned, terminating any
+      // in-flight Resend fetch and silently dropping the email. The row is
+      // already committed, so wrap each send in try/catch — a Resend hiccup
+      // must not 500 the response. Adding ~500ms per call is the price of
+      // making sure the patient and dentist actually get notified.
       const dentistName = dentist.name || 'the dentist'
       const clinicName = dentist.clinic_name || `${cityCfg.cityName} clinic`
       const clinicPhone = dentist.phone || dentist.whatsapp || null
       const citySlug = (dentist as any).city || undefined
       if (normalizedEmail) {
-        sendBookingRequestToPatient({
-          to_email: normalizedEmail,
-          patient_name,
-          dentist_name: dentistName,
-          clinic_name: clinicName,
-          clinic_phone: clinicPhone,
-          appt_date,
-          time_slot,
-          reference_no,
-          city: citySlug,
-        }).catch(err => console.error('[bookings] patient ack email failed', err))
+        try {
+          const result = await sendBookingRequestToPatient({
+            to_email: normalizedEmail,
+            patient_name,
+            dentist_name: dentistName,
+            clinic_name: clinicName,
+            clinic_phone: clinicPhone,
+            appt_date,
+            time_slot,
+            reference_no,
+            city: citySlug,
+          })
+          console.log('[bookings] patient ack email sent', {
+            to: normalizedEmail, ref: reference_no,
+            id: (result as any)?.data?.id, error: (result as any)?.error,
+          })
+        } catch (err: any) {
+          console.error('[bookings] patient ack email threw', {
+            to: normalizedEmail, ref: reference_no, message: err?.message,
+          })
+        }
       }
       if ((dentist as any).email) {
-        sendBookingRequestToDentist({
-          to_email: (dentist as any).email,
-          dentist_name: dentistName,
-          patient_name,
-          patient_phone,
-          appt_date,
-          time_slot,
-          treatment_name: treatmentName,
-          reference_no,
-          city: citySlug,
-        }).catch(err => console.error('[bookings] dentist new-request email failed', err))
+        try {
+          const result = await sendBookingRequestToDentist({
+            to_email: (dentist as any).email,
+            dentist_name: dentistName,
+            patient_name,
+            patient_phone,
+            appt_date,
+            time_slot,
+            treatment_name: treatmentName,
+            reference_no,
+            city: citySlug,
+          })
+          console.log('[bookings] dentist new-request email sent', {
+            to: (dentist as any).email, ref: reference_no,
+            id: (result as any)?.data?.id, error: (result as any)?.error,
+          })
+        } catch (err: any) {
+          console.error('[bookings] dentist new-request email threw', {
+            to: (dentist as any).email, ref: reference_no, message: err?.message,
+          })
+        }
       }
 
       // Fire-and-forget SMS via MSG91. Same rules as the email side: only
