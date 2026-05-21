@@ -16,7 +16,7 @@ export default function PatientsPage() {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [form, setForm] = useState({
-    name: '', phone: '', email: '', age: '', gender: '',
+    name: '', phone: '', email: '', age: '', gender: '', date_of_birth: '',
     address: '', blood_group: '', allergies: '', current_medications: '', medical_history: '',
     emergency_contact_name: '', emergency_contact_phone: '',
   })
@@ -50,6 +50,10 @@ export default function PatientsPage() {
       dentist_id: dentistId,
       name: form.name, phone: form.phone, email: form.email || null,
       age: form.age ? parseInt(form.age) : null, gender: form.gender || null,
+      // date_of_birth feeds the birthday-wishes cron — required for the
+      // automatic greeting to fire. age stays alongside because some
+      // dentists only know the age, not the exact DOB.
+      date_of_birth: form.date_of_birth || null,
       address: form.address || null, blood_group: form.blood_group || null,
       allergies: form.allergies || null, current_medications: form.current_medications || null,
       medical_history: form.medical_history || null,
@@ -67,7 +71,7 @@ export default function PatientsPage() {
     }
     setPatients(prev => [data, ...prev])
     setShowAdd(false)
-    setForm({ name: '', phone: '', email: '', age: '', gender: '', address: '', blood_group: '', allergies: '', current_medications: '', medical_history: '', emergency_contact_name: '', emergency_contact_phone: '' })
+    setForm({ name: '', phone: '', email: '', age: '', gender: '', date_of_birth: '', address: '', blood_group: '', allergies: '', current_medications: '', medical_history: '', emergency_contact_name: '', emergency_contact_phone: '' })
   }
 
   const filtered = patients.filter(p =>
@@ -123,6 +127,11 @@ export default function PatientsPage() {
                   <option value="">Select</option>
                   <option>Male</option><option>Female</option><option>Other</option>
                 </select>
+              </div>
+              <div>
+                <label style={labelStyle}>Date of Birth</label>
+                <input type="date" value={form.date_of_birth} onChange={e => setForm(f => ({ ...f, date_of_birth: e.target.value }))} style={inputStyle} />
+                <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>Unlocks automatic birthday wishes 🎂</div>
               </div>
               <div>
                 <label style={labelStyle}>Blood Group</label>

@@ -17,10 +17,11 @@ type Mode = 'individual' | 'selected' | 'all'
 type Channel = 'email' | 'whatsapp'
 type LastVisitWindow = 'all' | '30' | '60' | '90'
 
-// Free dentists can use exactly three operational templates — reminder /
-// closure / follow-up. The marketing-shaped templates (offer, new service,
-// birthday) are silver+ along with the email channel and bulk modes.
-const FREE_TEMPLATE_IDS = new Set(['appointment-reminder', 'holiday', 'follow-up'])
+// Free dentists can use the operational templates — reminder, closure,
+// follow-up, and treatment recall. The marketing-shaped templates (offer,
+// new service, birthday) stay silver+ along with the email channel and
+// bulk modes.
+const FREE_TEMPLATE_IDS = new Set(['appointment-reminder', 'holiday', 'follow-up', 'treatment-recall'])
 
 interface Patient {
   id: string
@@ -84,6 +85,16 @@ const TEMPLATES: TemplateDef[] = [
     label: 'Follow-up Care',
     subject: 'Following up on your visit',
     body: `Hi {patient_name},\n\nHow are you feeling after your last visit at {clinic_name}? If you have any concerns about the treatment or your recovery, please reach out — we're here to help.\n\nCall {clinic_phone} or just reply to this message.\n\n— {dentist_name}`,
+  },
+  {
+    // Recall reminder — for patients whose previous treatment is due for
+    // review (6-month cleaning, post-RCT crown follow-up, ortho check, etc).
+    // Sibling to "Follow-up Care" which is for immediate post-treatment
+    // recovery — this one is the "come back in 6 months" nudge.
+    id: 'treatment-recall',
+    label: 'Treatment Recall',
+    subject: 'Your treatment is due for follow-up — {clinic_name}',
+    body: `Hi {patient_name},\n\nYour previous treatment at {clinic_name} is due for a follow-up review. Regular check-ups help us catch issues early and keep your smile healthy.\n\nPlease call {clinic_phone} to book a slot, or reply to this message.\n\n— {dentist_name}`,
   },
   {
     id: 'birthday',

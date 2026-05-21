@@ -15,6 +15,14 @@
     {
       "path": "/api/cron/appointment-reminders-morning",
       "schedule": "30 2 * * *"
+    },
+    {
+      "path": "/api/cron/birthday-wishes",
+      "schedule": "30 3 * * *"
+    },
+    {
+      "path": "/api/cron/post-treatment-followup",
+      "schedule": "30 4 * * *"
     }
   ]
 }
