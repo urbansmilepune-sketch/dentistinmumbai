@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 
-type FilterKey = 'all' | 'waiting' | 'scheduled' | 'active' | 'completed' | 'cancelled'
+type FilterKey = 'all' | 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'no_show'
 
 function generateRef(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
@@ -32,25 +32,19 @@ function waLink(phone: string, text: string): string {
   return `https://wa.me/91${(phone || '').replace(/\D/g, '')}?text=${encodeURIComponent(text)}`
 }
 
-// New state-machine values + legacy values that still appear in old rows.
-// Legacy `pending` and `confirmed` are bucketed into the Scheduled tab so existing
-// bookings keep flowing through the workflow without a DB migration.
-const SCHEDULED_STATUSES = new Set(['scheduled', 'pending', 'confirmed'])
-
+// Status values mirror the DB constraint exactly: pending, confirmed,
+// completed, cancelled, no_show. The dropdown labels and tab labels below
+// are the human-readable presentation of those same values.
 const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }> = {
-  scheduled: { bg: '#DBEAFE', text: '#1D4ED8', label: 'scheduled' },
-  pending:   { bg: '#DBEAFE', text: '#1D4ED8', label: 'scheduled' },
-  confirmed: { bg: '#DBEAFE', text: '#1D4ED8', label: 'scheduled' },
-  waiting:   { bg: '#FEF3C7', text: '#92400E', label: 'waiting'   },
-  active:    { bg: '#DCFCE7', text: '#166534', label: 'active'    },
-  completed: { bg: '#E5E7EB', text: '#374151', label: 'completed' },
-  cancelled: { bg: '#FEE2E2', text: '#991B1B', label: 'cancelled' },
-  no_show:   { bg: '#F3F4F6', text: '#374151', label: 'no show'   },
+  pending:   { bg: '#FEF3C7', text: '#92400E', label: 'waiting / walk-in' },
+  confirmed: { bg: '#DBEAFE', text: '#1D4ED8', label: 'scheduled'         },
+  completed: { bg: '#E5E7EB', text: '#374151', label: 'completed'         },
+  cancelled: { bg: '#FEE2E2', text: '#991B1B', label: 'cancelled'         },
+  no_show:   { bg: '#F3F4F6', text: '#374151', label: 'no show'           },
 }
 
 function matchesFilter(status: string, filter: FilterKey): boolean {
   if (filter === 'all') return true
-  if (filter === 'scheduled') return SCHEDULED_STATUSES.has(status)
   return status === filter
 }
 
@@ -180,9 +174,8 @@ export default function AppointmentsPage() {
 
     // Confirm/decline transitions route through the server so the API can
     // attach side effects — most importantly emailing the patient when the
-    // appointment is confirmed. Other transitions (completed, no_show,
-    // back-to-pending, the dentist-added 'waiting' starts) keep using the
-    // direct RLS-gated supabase update path for now; if those grow their
+    // appointment is confirmed. Other transitions (completed, no_show) keep
+    // using the direct RLS-gated supabase update path; if those grow their
     // own side effects, expand the PATCH route.
     if (status === 'confirmed' || status === 'cancelled') {
       const res = await fetch(`/api/dentist/appointments/${id}`, {
@@ -219,22 +212,22 @@ export default function AppointmentsPage() {
   }
 
   const counts: Record<FilterKey, number> = {
-    all: appointments.length,
-    waiting:   appointments.filter(a => a.status === 'waiting').length,
-    scheduled: appointments.filter(a => SCHEDULED_STATUSES.has(a.status)).length,
-    active:    appointments.filter(a => a.status === 'active').length,
+    all:       appointments.length,
+    pending:   appointments.filter(a => a.status === 'pending').length,
+    confirmed: appointments.filter(a => a.status === 'confirmed').length,
     completed: appointments.filter(a => a.status === 'completed').length,
     cancelled: appointments.filter(a => a.status === 'cancelled').length,
+    no_show:   appointments.filter(a => a.status === 'no_show').length,
   }
   const filtered = appointments.filter(a => matchesFilter(a.status, filter))
 
   const TABS: { key: FilterKey; label: string }[] = [
-    { key: 'all',       label: 'All'       },
-    { key: 'waiting',   label: 'Waiting'   },
-    { key: 'scheduled', label: 'Scheduled' },
-    { key: 'active',    label: 'Active'    },
-    { key: 'completed', label: 'Completed' },
-    { key: 'cancelled', label: 'Cancelled' },
+    { key: 'all',       label: 'All'               },
+    { key: 'pending',   label: 'Waiting / Walk-in' },
+    { key: 'confirmed', label: 'Scheduled'         },
+    { key: 'completed', label: 'Completed'         },
+    { key: 'cancelled', label: 'Cancelled'         },
+    { key: 'no_show',   label: 'No Show'           },
   ]
 
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300 }}><p style={{ color: 'var(--muted)' }}>Loading...</p></div>
@@ -294,11 +287,11 @@ export default function AppointmentsPage() {
                   <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Status</label>
                   <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
                     style={{ width: '100%', padding: '12px', minHeight: 48, borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 14, fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box', background: '#fff' }}>
-                    <option value="pending">Pending</option>
-                    <option value="confirmed">Confirmed</option>
+                    <option value="pending">Waiting / Walk-in</option>
+                    <option value="confirmed">Scheduled</option>
                     <option value="completed">Completed</option>
                     <option value="cancelled">Cancelled</option>
-                    <option value="no_show">No-show</option>
+                    <option value="no_show">No Show</option>
                   </select>
                 </div>
                 <div>
@@ -359,13 +352,12 @@ export default function AppointmentsPage() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {filtered.map(a => {
-            const sc = STATUS_COLORS[a.status] || STATUS_COLORS.scheduled
+            const sc = STATUS_COLORS[a.status] || STATUS_COLORS.pending
             const isInvoiced = invoicedPhones.has(a.patient_phone)
-            const isScheduled = SCHEDULED_STATUSES.has(a.status)
-            const isActive = a.status === 'active'
-            const isWaiting = a.status === 'waiting'
+            const isPending = a.status === 'pending'
+            const isConfirmed = a.status === 'confirmed'
             const isCompleted = a.status === 'completed'
-            const isClosed = a.status === 'completed' || a.status === 'cancelled'
+            const isClosed = a.status === 'completed' || a.status === 'cancelled' || a.status === 'no_show'
             const reBookText = encodeURIComponent(`Hi ${a.patient_name}, would you like to book another appointment with us? Reply with a date and time that works for you.`)
 
             // 24-hour reminder eligibility: tomorrow's date AND not already closed out.
@@ -439,24 +431,27 @@ export default function AppointmentsPage() {
                 </div>
 
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                  {/* State-machine primary action */}
-                  {isScheduled && (
-                    <button onClick={() => updateStatus(a.id, 'waiting')} disabled={updating === a.id}
-                      style={{ ...primaryBtn, background: '#FEF3C7', color: '#92400E' }}>
-                      ▶ Start
+                  {/* State-machine primary action. The DB only accepts
+                      pending/confirmed/completed/cancelled/no_show, so the
+                      transition buttons go directly to those terminal states. */}
+                  {isPending && (
+                    <button onClick={() => updateStatus(a.id, 'confirmed')} disabled={updating === a.id}
+                      style={{ ...primaryBtn, background: '#DBEAFE', color: '#1D4ED8' }}>
+                      ✓ Confirm
                     </button>
                   )}
-                  {isWaiting && (
-                    <button onClick={() => updateStatus(a.id, 'active')} disabled={updating === a.id}
+                  {!isClosed && (
+                    <button onClick={() => updateStatus(a.id, 'completed')} disabled={updating === a.id}
                       style={{ ...primaryBtn, background: '#DCFCE7', color: '#166534' }}>
-                      ✓ Check In
+                      ✓ Complete
                     </button>
                   )}
-                  {isActive && (
-                    <a href="/for-dentists/dashboard/billing"
-                      style={{ ...primaryBtn, background: 'var(--blue)', color: '#fff', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
-                      🧾 Invoice
-                    </a>
+                  {isConfirmed && (
+                    <button onClick={() => updateStatus(a.id, 'no_show')} disabled={updating === a.id}
+                      title="Patient did not show up"
+                      style={{ ...primaryBtn, background: '#F3F4F6', color: '#374151' }}>
+                      ⊘ No Show
+                    </button>
                   )}
                   {isClosed && (
                     <a href={`https://wa.me/91${(a.patient_phone || '').replace(/\D/g, '')}?text=${reBookText}`}
