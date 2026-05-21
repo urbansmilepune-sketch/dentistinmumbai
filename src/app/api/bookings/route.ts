@@ -213,11 +213,15 @@ export async function POST(request: NextRequest) {
 
       // Fire-and-forget SMS via MSG91. Same rules as the email side: only
       // fire when the corresponding template id is configured, never let an
-      // SMS failure bubble back into the response.
+      // SMS failure bubble back into the response. The DLT-approved templates
+      // (BOOKING_PATIENT, BOOKING_DENTIST) take two vars: a label (clinic or
+      // patient name) and a single "{date time}" string, so the date and slot
+      // are concatenated into one variable here rather than passed separately.
+      const dateTime = `${formattedDate} ${time_slot}`
       const patientTpl = process.env.MSG91_TEMPLATE_ID_BOOKING_PATIENT
       if (patientTpl && patient_phone) {
         try {
-          void sendSMS(patient_phone, patientTpl, [clinicName, formattedDate, time_slot, reference_no])
+          void sendSMS(patient_phone, patientTpl, [clinicName, dateTime])
             .then(r => { if (!r.success) console.error('[bookings] patient SMS failed', r) })
             .catch(err => console.error('[bookings] patient SMS threw', err))
         } catch (err) { console.error('[bookings] patient SMS dispatch error', err) }
@@ -227,7 +231,7 @@ export async function POST(request: NextRequest) {
       const dentistSmsPhone = dentist.phone || dentist.whatsapp
       if (dentistTpl && dentistSmsPhone) {
         try {
-          void sendSMS(dentistSmsPhone, dentistTpl, [patient_name, formattedDate, time_slot, ''])
+          void sendSMS(dentistSmsPhone, dentistTpl, [patient_name, dateTime])
             .then(r => { if (!r.success) console.error('[bookings] dentist SMS failed', r) })
             .catch(err => console.error('[bookings] dentist SMS threw', err))
         } catch (err) { console.error('[bookings] dentist SMS dispatch error', err) }
