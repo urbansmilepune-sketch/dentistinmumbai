@@ -41,6 +41,12 @@ function BillingPageInner() {
   const [dentist, setDentist] = useState<DentistMeta | null>(null)
   const [invoices, setInvoices] = useState<any[]>([])
   const [patients, setPatients] = useState<any[]>([])
+  const [locations, setLocations] = useState<{ id: string; name: string | null; is_primary: boolean }[]>([])
+  // Branch filter scoped to the invoice list. 'all' shows everything,
+  // 'unassigned' shows invoices still missing a location_id (legacy rows),
+  // a specific id scopes to one branch. Hidden when the dentist has ≤1
+  // clinic_locations rows.
+  const [branchFilter, setBranchFilter] = useState<string>('all')
   const [showAdd, setShowAdd] = useState(Boolean(initialPatientId))
   const [saving, setSaving] = useState(false)
   const [linkLoading, setLinkLoading] = useState<string | null>(null)
@@ -53,7 +59,7 @@ function BillingPageInner() {
     patient_id: initialPatientId, date: new Date().toISOString().split('T')[0],
     items: [{ treatment_name: '', quantity: '1', unit_price: '' }],
     discount: '', gst_enabled: false, notes: '', payment_status: 'pending',
-    payment_method: '',
+    payment_method: '', location_id: '',
   })
 
   useEffect(() => {
@@ -70,12 +76,14 @@ function BillingPageInner() {
         if (!dentistRow) return
         setDentistId(dentistRow.id)
         setDentist(dentistRow as unknown as DentistMeta)
-        const [{ data: inv }, { data: pat }] = await Promise.all([
-          supabase.from('invoices').select('*, patients(name, phone)').eq('dentist_id', dentistRow.id).order('created_at', { ascending: false }),
+        const [{ data: inv }, { data: pat }, { data: locs }] = await Promise.all([
+          supabase.from('invoices').select('*, patients(name, phone), clinic_locations(id, clinic_name)').eq('dentist_id', dentistRow.id).order('created_at', { ascending: false }),
           supabase.from('patients').select('id, name, phone').eq('dentist_id', dentistRow.id).order('name'),
+          supabase.from('clinic_locations').select('id, clinic_name, is_primary').eq('dentist_id', dentistRow.id).order('is_primary', { ascending: false }).order('created_at'),
         ])
         setInvoices(inv || [])
         setPatients(pat || [])
+        setLocations((locs || []).map((l: any) => ({ id: l.id, name: l.clinic_name, is_primary: !!l.is_primary })))
       } finally {
         // Always release the spinner so RLS denial or a missing dentist row
         // doesn't strand the page on "Loading…".
@@ -104,7 +112,7 @@ function BillingPageInner() {
       patient_id: '', date: new Date().toISOString().split('T')[0],
       items: [{ treatment_name: '', quantity: '1', unit_price: '' }],
       discount: '', gst_enabled: false, notes: '', payment_status: 'pending',
-      payment_method: '',
+      payment_method: '', location_id: '',
     })
     setEditingId(null)
   }
@@ -130,6 +138,7 @@ function BillingPageInner() {
       notes: inv.notes || '',
       payment_status: inv.payment_status || 'pending',
       payment_method: inv.payment_method || '',
+      location_id: inv.location_id || '',
     })
     setEditingId(inv.id)
     setShowAdd(true)
@@ -165,9 +174,10 @@ function BillingPageInner() {
           notes: form.notes || null,
           payment_status: form.payment_status,
           payment_method: form.payment_method || null,
+          location_id: form.location_id || null,
         })
         .eq('id', editingId)
-        .select('*, patients(name, phone)')
+        .select('*, patients(name, phone), clinic_locations(id, clinic_name)')
         .single()
       setSaving(false)
       if (error || !data) {
@@ -188,7 +198,8 @@ function BillingPageInner() {
       subtotal, discount: discountAmt, gst_amount: gstAmt, total,
       notes: form.notes || null, payment_status: form.payment_status,
       payment_method: form.payment_method || null,
-    }).select('*, patients(name, phone)').single()
+      location_id: form.location_id || null,
+    }).select('*, patients(name, phone), clinic_locations(id, clinic_name)').single()
     if (data) setInvoices(prev => [data, ...prev])
     setShowAdd(false)
     resetForm()
@@ -267,8 +278,38 @@ function BillingPageInner() {
     overdue: { bg: '#FEE2E2', text: '#991B1B' },
   }
 
-  const totalRevenue = invoices.filter(i => i.payment_status === 'paid').reduce((sum, i) => sum + (i.total || 0), 0)
-  const pendingRevenue = invoices.filter(i => i.payment_status === 'pending').reduce((sum, i) => sum + (i.total || 0), 0)
+  // Branch-scoped slice — drives both the stats tiles and the visible list,
+  // so "Total Collected" reads as "Total Collected at the selected branch"
+  // when a branch is picked.
+  const branchScopedInvoices = invoices.filter(inv => {
+    if (branchFilter === 'all') return true
+    if (branchFilter === 'unassigned') return !inv.location_id
+    return inv.location_id === branchFilter
+  })
+  const totalRevenue = branchScopedInvoices.filter(i => i.payment_status === 'paid').reduce((sum, i) => sum + (i.total || 0), 0)
+  const pendingRevenue = branchScopedInvoices.filter(i => i.payment_status === 'pending').reduce((sum, i) => sum + (i.total || 0), 0)
+
+  // All-time revenue per branch — small breakdown card that surfaces only
+  // when the dentist has ≥2 branches. Includes a synthetic "Unassigned"
+  // bucket so legacy rows aren't silently dropped from the total.
+  const revenueByBranch = (() => {
+    if (locations.length < 2) return [] as Array<{ id: string; name: string; revenue: number; count: number }>
+    const map = new Map<string, { revenue: number; count: number }>()
+    for (const inv of invoices.filter(i => i.payment_status === 'paid')) {
+      const key = inv.location_id || '__unassigned__'
+      const prev = map.get(key) ?? { revenue: 0, count: 0 }
+      map.set(key, { revenue: prev.revenue + Number(inv.total || 0), count: prev.count + 1 })
+    }
+    const rows = locations.map(l => ({
+      id: l.id,
+      name: l.name || 'Branch',
+      revenue: map.get(l.id)?.revenue ?? 0,
+      count: map.get(l.id)?.count ?? 0,
+    }))
+    const u = map.get('__unassigned__')
+    if (u && u.count > 0) rows.push({ id: '__unassigned__', name: 'Unassigned', revenue: u.revenue, count: u.count })
+    return rows
+  })()
 
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300 }}><p style={{ color: 'var(--muted)' }}>Loading...</p></div>
 
@@ -289,12 +330,29 @@ function BillingPageInner() {
         </div>
       )}
 
+      {/* Branch filter — only renders when the dentist has more than one
+          clinic_locations row. Drives the stats tiles and the invoice list
+          below. */}
+      {locations.length > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>Branch:</span>
+          <select value={branchFilter} onChange={e => setBranchFilter(e.target.value)}
+            style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, fontFamily: 'var(--font-body)', background: '#fff', cursor: 'pointer', outline: 'none' }}>
+            <option value="all">All branches</option>
+            {locations.map(l => (
+              <option key={l.id} value={l.id}>{l.name || 'Branch'}{l.is_primary ? ' · primary' : ''}</option>
+            ))}
+            <option value="unassigned">Unassigned</option>
+          </select>
+        </div>
+      )}
+
       {/* Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 16, marginBottom: 24 }}>
         {[
           { label: 'Total Collected', value: `₹${totalRevenue.toLocaleString('en-IN')}`, color: '#00A878', icon: '✅' },
           { label: 'Pending', value: `₹${pendingRevenue.toLocaleString('en-IN')}`, color: '#F59E0B', icon: '⏳' },
-          { label: 'Total Invoices', value: invoices.length, color: 'var(--blue)', icon: '📄' },
+          { label: 'Total Invoices', value: branchScopedInvoices.length, color: 'var(--blue)', icon: '📄' },
         ].map(stat => (
           <div key={stat.label} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '18px' }}>
             <div style={{ fontSize: 24, marginBottom: 6 }}>{stat.icon}</div>
@@ -303,6 +361,24 @@ function BillingPageInner() {
           </div>
         ))}
       </div>
+
+      {/* Per-branch revenue card — only when the dentist has ≥2 branches.
+          Shows paid revenue + invoice count per branch so a dentist running
+          two clinics can see at a glance which one's pulling the numbers. */}
+      {revenueByBranch.length > 0 && (
+        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '16px 20px', marginBottom: 24 }}>
+          <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, marginBottom: 12 }}>Revenue by Branch · all time</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
+            {revenueByBranch.map(r => (
+              <div key={r.id} style={{ padding: '12px 14px', background: 'var(--bg)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, marginBottom: 4 }}>🏥 {r.name}</div>
+                <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 18, color: '#00A878' }}>₹{r.revenue.toLocaleString('en-IN')}</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.count} {r.count === 1 ? 'invoice' : 'invoices'}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* New Invoice Modal */}
       {showAdd && (
@@ -324,6 +400,17 @@ function BillingPageInner() {
                 <label style={labelStyle}>Date</label>
                 <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} style={inputStyle} />
               </div>
+              {locations.length > 0 && (
+                <div style={{ gridColumn: '1/-1' }}>
+                  <label style={labelStyle}>Branch</label>
+                  <select value={form.location_id} onChange={e => setForm(f => ({ ...f, location_id: e.target.value }))} style={{ ...inputStyle, cursor: 'pointer' }}>
+                    <option value="">— Not assigned to a branch</option>
+                    {locations.map(l => (
+                      <option key={l.id} value={l.id}>{l.name || 'Branch'}{l.is_primary ? ' (primary)' : ''}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
 
             <label style={labelStyle}>Treatment Items *</label>
@@ -437,11 +524,16 @@ function BillingPageInner() {
               </tr>
             </thead>
             <tbody>
-              {invoices.map(inv => {
+              {branchScopedInvoices.map(inv => {
                 const sc = STATUS_COLORS[inv.payment_status] || STATUS_COLORS.pending
                 return (
                   <tr key={inv.id} style={{ borderTop: '1px solid var(--border)' }}>
-                    <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: 'var(--blue)' }}>{inv.invoice_no}</td>
+                    <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: 'var(--blue)' }}>
+                      {inv.invoice_no}
+                      {locations.length > 1 && inv.clinic_locations?.clinic_name && (
+                        <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 500, marginTop: 2 }}>🏥 {inv.clinic_locations.clinic_name}</div>
+                      )}
+                    </td>
                     <td style={{ padding: '12px 16px', fontSize: 13 }}>
                       <div style={{ fontWeight: 500 }}>{inv.patients?.name}</div>
                       <div style={{ fontSize: 11, color: 'var(--muted)' }}>{inv.patients?.phone}</div>

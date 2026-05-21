@@ -23,6 +23,14 @@ interface StaffRow {
   role: Role
   status: 'invited' | 'active' | 'removed'
   invited_at: string
+  location_id: string | null
+  clinic_locations: { id: string; clinic_name: string | null } | null
+}
+
+interface LocationOption {
+  id: string
+  name: string | null
+  is_primary: boolean
 }
 
 const ROLE_META: Record<Role, { label: string; color: string; bg: string; border: string; permissions: string[] }> = {
@@ -58,6 +66,8 @@ export default function StaffPage() {
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteName, setInviteName] = useState('')
   const [inviteRole, setInviteRole] = useState<Role>('reception')
+  const [inviteLocationId, setInviteLocationId] = useState<string>('')
+  const [locations, setLocations] = useState<LocationOption[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
@@ -81,8 +91,18 @@ export default function StaffPage() {
     const supabase = createClient()
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user || cancelled) return
-      const { data } = await supabase.from('dentists').select('tier, trial_started_at').eq('email', user.email).maybeSingle()
-      if (!cancelled) setTier(effectiveTier(data?.tier, data?.trial_started_at))
+      const { data: dentistRow } = await supabase.from('dentists').select('id, tier, trial_started_at').eq('email', user.email).maybeSingle()
+      if (cancelled) return
+      if (dentistRow) {
+        setTier(effectiveTier(dentistRow.tier, dentistRow.trial_started_at))
+        const { data: locs } = await supabase
+          .from('clinic_locations')
+          .select('id, clinic_name, is_primary')
+          .eq('dentist_id', dentistRow.id)
+          .order('is_primary', { ascending: false })
+          .order('created_at')
+        if (!cancelled) setLocations((locs || []).map((l: any) => ({ id: l.id, name: l.clinic_name, is_primary: !!l.is_primary })))
+      }
     })
     return () => { cancelled = true }
   }, [])
@@ -102,7 +122,12 @@ export default function StaffPage() {
     const res = await fetch('/api/dentist/staff', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: inviteEmail.trim(), name: inviteName.trim() || null, role: inviteRole }),
+      body: JSON.stringify({
+        email: inviteEmail.trim(),
+        name: inviteName.trim() || null,
+        role: inviteRole,
+        location_id: inviteLocationId || null,
+      }),
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) {
@@ -112,8 +137,22 @@ export default function StaffPage() {
     }
     setSubmitting(false)
     setInviteOpen(false)
-    setInviteEmail(''); setInviteName(''); setInviteRole('reception')
+    setInviteEmail(''); setInviteName(''); setInviteRole('reception'); setInviteLocationId('')
     flashToast(data?.warning ? `Invite recorded but: ${data.warning}` : 'Invite sent — they’ll get an email shortly.')
+    await load()
+  }
+
+  async function reassignBranch(id: string, location_id: string) {
+    const res = await fetch(`/api/dentist/staff/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ location_id: location_id || null }),
+    })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      flashToast(`Branch change failed: ${data?.error || 'unknown error'}`)
+      return
+    }
     await load()
   }
 
@@ -203,8 +242,8 @@ export default function StaffPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'var(--bg)' }}>
-                {['Person', 'Role', 'Status', 'Invited', ''].map(h => (
-                  <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid var(--border)' }}>{h}</th>
+                {(['Person', 'Role', ...(locations.length > 0 ? ['Branch'] : []), 'Status', 'Invited', ''] as string[]).map(h => (
+                  <th key={h || 'actions'} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid var(--border)' }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -220,6 +259,17 @@ export default function StaffPage() {
                     <td style={cell}>
                       <span style={{ ...rolePill, color: meta.color, background: meta.bg, border: `1px solid ${meta.border}` }}>{meta.label}</span>
                     </td>
+                    {locations.length > 0 && (
+                      <td style={cell}>
+                        <select value={s.location_id || ''} onChange={e => reassignBranch(s.id, e.target.value)}
+                          style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 12, background: '#fff', fontFamily: 'var(--font-body)', cursor: 'pointer', outline: 'none' }}>
+                          <option value="">All branches</option>
+                          {locations.map(l => (
+                            <option key={l.id} value={l.id}>{l.name || 'Branch'}{l.is_primary ? ' · primary' : ''}</option>
+                          ))}
+                        </select>
+                      </td>
+                    )}
                     <td style={cell}>
                       {s.status === 'active'
                         ? <span style={{ ...statusPill, background: '#DCFCE7', color: '#166534' }}>● Active</span>
@@ -277,6 +327,17 @@ export default function StaffPage() {
                   ))}
                 </div>
               </Field>
+              {locations.length > 0 && (
+                <Field label="Branch">
+                  <select value={inviteLocationId} onChange={e => setInviteLocationId(e.target.value)}
+                    style={inputStyle}>
+                    <option value="">All branches</option>
+                    {locations.map(l => (
+                      <option key={l.id} value={l.id}>{l.name || 'Branch'}{l.is_primary ? ' · primary' : ''}</option>
+                    ))}
+                  </select>
+                </Field>
+              )}
 
               {error && (
                 <div style={{ background: '#FEE2E2', border: '1px solid #FECACA', color: '#991B1B', padding: '10px 12px', borderRadius: 8, fontSize: 13 }}>{error}</div>

@@ -57,7 +57,7 @@ export async function GET() {
   const db = admin()
   const { data, error } = await db
     .from('clinic_staff')
-    .select('id, email, name, role, status, invited_at')
+    .select('id, email, name, role, status, invited_at, location_id, clinic_locations(id, clinic_name)')
     .eq('dentist_id', owner.id)
     .neq('status', 'removed')
     .order('invited_at', { ascending: false })
@@ -73,6 +73,12 @@ export async function POST(request: NextRequest) {
   const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
   const rawName = typeof body.name === 'string' ? body.name.trim() : ''
   const role = (typeof body.role === 'string' ? body.role : '') as Role
+  // Branch scoping: NULL == "all branches". A specific clinic_locations.id
+  // restricts the staff member to that branch's records. The route just
+  // round-trips the column; enforcement lives in whatever feature reads it.
+  const location_id: string | null = typeof body.location_id === 'string' && body.location_id.trim()
+    ? body.location_id.trim()
+    : null
   // The form treats Name as optional ("Name (optional)") but the
   // clinic_staff table has name NOT NULL. Fall back to the email local-part
   // so blank submissions still land. This matches what the staff list UI
@@ -118,6 +124,7 @@ export async function POST(request: NextRequest) {
         invited_at: new Date().toISOString(),
         accepted_at: null,
         invite_token,
+        location_id,
       })
       .eq('id', existing.id)
     if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
@@ -125,7 +132,7 @@ export async function POST(request: NextRequest) {
   } else {
     const { data: inserted, error: insErr } = await db
       .from('clinic_staff')
-      .insert({ dentist_id: owner.id, email, name, role, status: 'invited', invite_token })
+      .insert({ dentist_id: owner.id, email, name, role, status: 'invited', invite_token, location_id })
       .select('id')
       .single()
     if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 })

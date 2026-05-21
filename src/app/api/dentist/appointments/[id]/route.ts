@@ -66,6 +66,13 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
     const n = body.notes
     patch.notes = typeof n === 'string' && n.trim() ? n.trim() : null
   }
+  if ('location_id' in body) {
+    // location_id can be deliberately cleared (== null) to reassign the
+    // row back to "no specific branch", so we accept any string-or-null
+    // shape here.
+    const l = body.location_id
+    patch.location_id = typeof l === 'string' && l ? l : null
+  }
 
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: 'No editable fields provided' }, { status: 400 })

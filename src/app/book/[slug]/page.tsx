@@ -64,6 +64,17 @@ export default async function PublicBookingPage({ params }: Props) {
 
   if (!dentist) notFound()
 
+  // Multi-branch support: a dentist with >1 clinic_locations rows shows a
+  // branch picker in BookingFlow, and the picked branch's working_hours
+  // drives the slot grid. Empty rows = legacy single-branch dentist; the
+  // booking flow stays unchanged for them.
+  const { data: locationRows } = await supabase
+    .from('clinic_locations')
+    .select('id, name:clinic_name, address, working_hours, is_primary, areas(name)')
+    .eq('dentist_id', dentist.id)
+    .order('is_primary', { ascending: false })
+    .order('created_at')
+
   const areaName = (dentist.areas as any)?.name || city.cityName
   const treatments = ((dentist.dentist_treatments ?? []) as any[])
     .map(dt => dt.treatments)
@@ -111,6 +122,14 @@ export default async function PublicBookingPage({ params }: Props) {
           dentistPhone={dentist.whatsapp || dentist.phone || ''}
           workingHours={dentist.working_hours ?? null}
           treatments={treatments}
+          locations={(locationRows ?? []).map((r: any) => ({
+            id: r.id,
+            name: r.name,
+            address: r.address,
+            areaName: r.areas?.name ?? null,
+            workingHours: r.working_hours,
+            isPrimary: !!r.is_primary,
+          }))}
         />
       </div>
       <style>{`

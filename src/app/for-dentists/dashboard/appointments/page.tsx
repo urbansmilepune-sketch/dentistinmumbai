@@ -80,6 +80,11 @@ export default function AppointmentsPage() {
   // saved as "+91 98xxxx" still matches "98xxxx".
   const [patientIdByPhone, setPatientIdByPhone] = useState<Map<string, string>>(new Map())
   const [filter, setFilter] = useState<FilterKey>('all')
+  // Branch filter — 'all' shows every row regardless of location_id, a
+  // specific id scopes to that branch only. Hidden in the UI when the
+  // dentist has 1 or 0 clinic_locations rows.
+  const [branchFilter, setBranchFilter] = useState<string>('all')
+  const [locations, setLocations] = useState<{ id: string; name: string | null; is_primary: boolean }[]>([])
   const [updating, setUpdating] = useState<string | null>(null)
   const [statusError, setStatusError] = useState<string | null>(null)
   const [treatments, setTreatments] = useState<{ id: string; name: string }[]>([])
@@ -94,6 +99,7 @@ export default function AppointmentsPage() {
     treatment_id: '',
     status: 'pending',
     notes: '',
+    location_id: '',
   })
 
   // The Edit modal piggybacks on the same form shape as Add, plus the id of
@@ -106,6 +112,7 @@ export default function AppointmentsPage() {
     treatment_id: '',
     status: 'pending',
     notes: '',
+    location_id: '',
   })
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
@@ -129,10 +136,10 @@ export default function AppointmentsPage() {
           whatsapp: dentist.whatsapp || dentist.phone || '',
         })
 
-        const [{ data: appts }, { data: invs }, { data: tx }, { data: pts }] = await Promise.all([
+        const [{ data: appts }, { data: invs }, { data: tx }, { data: pts }, { data: locs }] = await Promise.all([
           supabase
             .from('appointments')
-            .select('*, treatments(name, icon)')
+            .select('*, treatments(name, icon), clinic_locations(id, clinic_name)')
             .eq('dentist_id', dentist.id)
             .order('appt_date', { ascending: false }),
           supabase
@@ -147,6 +154,12 @@ export default function AppointmentsPage() {
             .from('patients')
             .select('id, phone')
             .eq('dentist_id', dentist.id),
+          supabase
+            .from('clinic_locations')
+            .select('id, clinic_name, is_primary')
+            .eq('dentist_id', dentist.id)
+            .order('is_primary', { ascending: false })
+            .order('created_at'),
         ])
 
         setAppointments(appts || [])
@@ -170,6 +183,7 @@ export default function AppointmentsPage() {
         setPatientIdByPhone(pmap)
         const tList = (tx || []).map((r: any) => r.treatments).filter(Boolean) as { id: string; name: string }[]
         setTreatments(tList)
+        setLocations((locs || []).map((l: any) => ({ id: l.id, name: l.clinic_name, is_primary: !!l.is_primary })))
       } finally {
         // Always release the spinner — RLS denial, missing dentist row, or
         // any thrown error in the parallel reads above must not leave the
@@ -202,8 +216,9 @@ export default function AppointmentsPage() {
         status: form.status,
         notes: form.notes.trim() || null,
         reference_no: generateRef(),
+        location_id: form.location_id || null,
       })
-      .select('*, treatments(name, icon)')
+      .select('*, treatments(name, icon), clinic_locations(id, clinic_name)')
       .single()
     setSaving(false)
     if (error) { setAddError(error.message); return }
@@ -211,7 +226,7 @@ export default function AppointmentsPage() {
     setShowAdd(false)
     setForm({
       patient_name: '', patient_phone: '', appt_date: todayIsoLocal(),
-      time_slot: '', treatment_id: '', status: 'pending', notes: '',
+      time_slot: '', treatment_id: '', status: 'pending', notes: '', location_id: '',
     })
   }
 
@@ -225,6 +240,7 @@ export default function AppointmentsPage() {
       treatment_id:  a.treatment_id || '',
       status:        a.status || 'pending',
       notes:         a.notes || '',
+      location_id:   a.location_id || '',
     })
   }
 
@@ -246,6 +262,7 @@ export default function AppointmentsPage() {
           treatment_id: editForm.treatment_id || null,
           status: editForm.status,
           notes: editForm.notes.trim() || null,
+          location_id: editForm.location_id || null,
         }),
       })
       const data = await res.json().catch(() => ({}))
@@ -304,15 +321,23 @@ export default function AppointmentsPage() {
     setAppointments(prev => prev.map(a => a.id === id ? { ...a, status } : a))
   }
 
+  // Branch-scoped view: counts and the filtered list both apply the branch
+  // filter before the status filter so the badges on the status tabs reflect
+  // the currently-visible branch slice, not the all-branches total.
+  const branchScoped = appointments.filter(a => {
+    if (branchFilter === 'all') return true
+    if (branchFilter === 'unassigned') return !a.location_id
+    return a.location_id === branchFilter
+  })
   const counts: Record<FilterKey, number> = {
-    all:       appointments.length,
-    pending:   appointments.filter(a => a.status === 'pending').length,
-    confirmed: appointments.filter(a => a.status === 'confirmed').length,
-    completed: appointments.filter(a => a.status === 'completed').length,
-    cancelled: appointments.filter(a => a.status === 'cancelled').length,
-    no_show:   appointments.filter(a => a.status === 'no_show').length,
+    all:       branchScoped.length,
+    pending:   branchScoped.filter(a => a.status === 'pending').length,
+    confirmed: branchScoped.filter(a => a.status === 'confirmed').length,
+    completed: branchScoped.filter(a => a.status === 'completed').length,
+    cancelled: branchScoped.filter(a => a.status === 'cancelled').length,
+    no_show:   branchScoped.filter(a => a.status === 'no_show').length,
   }
-  const filtered = appointments.filter(a => matchesFilter(a.status, filter))
+  const filtered = branchScoped.filter(a => matchesFilter(a.status, filter))
 
   const TABS: { key: FilterKey; label: string }[] = [
     { key: 'all',       label: 'All'               },
@@ -410,6 +435,18 @@ export default function AppointmentsPage() {
                     {treatments.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                   </select>
                 </div>
+                {locations.length > 0 && (
+                  <div style={{ gridColumn: '1/-1' }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Branch</label>
+                    <select value={form.location_id} onChange={e => setForm(f => ({ ...f, location_id: e.target.value }))}
+                      style={{ width: '100%', padding: '12px', minHeight: 48, borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 14, fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box', background: '#fff' }}>
+                      <option value="">— Not assigned to a branch</option>
+                      {locations.map(l => (
+                        <option key={l.id} value={l.id}>{l.name || 'Branch'}{l.is_primary ? ' (primary)' : ''}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <div style={{ gridColumn: '1/-1' }}>
                   <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Notes</label>
                   <input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
@@ -429,6 +466,24 @@ export default function AppointmentsPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Branch filter — only renders when the dentist has more than one
+          clinic_locations row. "All branches" is the default; "Unassigned"
+          surfaces appointments still missing a location_id (mostly older
+          rows from before the multi-branch rollout). */}
+      {locations.length > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>Branch:</span>
+          <select value={branchFilter} onChange={e => setBranchFilter(e.target.value)}
+            style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 13, fontFamily: 'var(--font-body)', background: '#fff', cursor: 'pointer', outline: 'none' }}>
+            <option value="all">All branches</option>
+            {locations.map(l => (
+              <option key={l.id} value={l.id}>{l.name || 'Branch'}{l.is_primary ? ' · primary' : ''}</option>
+            ))}
+            <option value="unassigned">Unassigned</option>
+          </select>
         </div>
       )}
 
@@ -524,6 +579,12 @@ export default function AppointmentsPage() {
                     <span>📅 {new Date(a.appt_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
                     <span>🕐 {a.time_slot}</span>
                     {a.treatments?.name && <span>🦷 {a.treatments.name}</span>}
+                    {/* Branch tag — only show when the dentist actually has
+                        more than one branch. For single-branch dentists the
+                        location_id is redundant noise. */}
+                    {locations.length > 1 && a.clinic_locations?.clinic_name && (
+                      <span>🏥 {a.clinic_locations.clinic_name}</span>
+                    )}
                   </div>
                   {a.notes && <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6, fontStyle: 'italic' }}>"{a.notes}"</p>}
                 </div>

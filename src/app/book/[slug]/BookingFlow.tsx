@@ -5,6 +5,14 @@ import { useEffect, useMemo, useState } from 'react'
 interface Treatment { id: string; name: string; icon: string | null }
 interface DayHours { is_open?: boolean; open_time?: string | null; close_time?: string | null }
 type WorkingHours = Partial<Record<'sun' | 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat', DayHours>> | null
+interface BranchLocation {
+  id: string
+  name: string | null
+  address: string | null
+  areaName: string | null
+  workingHours: WorkingHours
+  isPrimary: boolean
+}
 
 interface Props {
   dentistId: string
@@ -15,6 +23,10 @@ interface Props {
   dentistPhone: string
   workingHours?: WorkingHours
   treatments: Treatment[]
+  // Empty array = single-branch dentist (the dentists.working_hours field
+  // alone drives the slot grid). Non-empty = render a branch picker; the
+  // picked branch's working_hours overrides the top-level workingHours.
+  locations?: BranchLocation[]
 }
 
 // Default open hours when the dentist hasn't set working_hours yet:
@@ -79,7 +91,24 @@ function nextDays(n: number): { iso: string; label: string; sub: string }[] {
   return out
 }
 
-export default function BookingFlow({ dentistId, dentistSlug, dentistName, clinicName, areaName, dentistPhone, workingHours, treatments }: Props) {
+export default function BookingFlow({ dentistId, dentistSlug, dentistName, clinicName, areaName, dentistPhone, workingHours, treatments, locations = [] }: Props) {
+  // Multi-branch flow:
+  //   - 0 or 1 locations: single-branch dentist. selectedLocationId stays
+  //     null, the working_hours/slot fetch ignore the branch parameter.
+  //   - 2+ locations: render the branch picker. Default to the is_primary
+  //     row when present, else the first; both the slot fetch and the
+  //     working_hours derivation switch to the picked branch.
+  const hasMultipleBranches = locations.length > 1
+  const defaultLocationId = hasMultipleBranches
+    ? (locations.find(l => l.isPrimary)?.id ?? locations[0].id)
+    : null
+  const [selectedLocationId, setSelectedLocationId] = useState<string | null>(defaultLocationId)
+  const selectedLocation = hasMultipleBranches
+    ? locations.find(l => l.id === selectedLocationId) ?? null
+    : null
+  // Branch hours take precedence over dentist-level hours when a branch is
+  // picked; everything else (slot generation, "Closed" copy) reads off this.
+  const effectiveWorkingHours: WorkingHours = selectedLocation?.workingHours ?? workingHours ?? null
   // `days`, `selectedDate`, `nowHour` are derived from `new Date()` — if we
   // computed them during render the server (UTC) and client (IST) would
   // produce different values for "today" + current hour, causing a React
@@ -128,7 +157,9 @@ export default function BookingFlow({ dentistId, dentistSlug, dentistName, clini
     async function load() {
       setLoadingSlots(true)
       setSelectedSlot('')
-      const res = await fetch(`/api/bookings/slots?dentist_id=${encodeURIComponent(dentistId)}&date=${encodeURIComponent(selectedDate)}`)
+      const params = new URLSearchParams({ dentist_id: dentistId, date: selectedDate })
+      if (selectedLocationId) params.set('location_id', selectedLocationId)
+      const res = await fetch(`/api/bookings/slots?${params.toString()}`)
       const data = await res.json().catch(() => ({ slots: [] }))
       if (cancelled) return
       const norm = ((data.slots ?? []) as string[]).map((s: string) => s.slice(0, 5))
@@ -137,7 +168,7 @@ export default function BookingFlow({ dentistId, dentistSlug, dentistName, clini
     }
     load()
     return () => { cancelled = true }
-  }, [dentistId, selectedDate])
+  }, [dentistId, selectedDate, selectedLocationId])
 
   // null when the clinic is closed on the selected day, otherwise the list
   // of hourly slots inside open/close hours. The "closed today" branch in
@@ -145,9 +176,9 @@ export default function BookingFlow({ dentistId, dentistSlug, dentistName, clini
   const dayHours = useMemo(() => {
     if (!selectedDate) return undefined
     const [yy, mm, dd] = selectedDate.split('-').map(Number)
-    if (!Number.isFinite(yy + mm + dd) || !workingHours) return undefined
-    return workingHours[DAY_KEYS[new Date(yy, (mm || 1) - 1, dd || 1).getDay()]]
-  }, [selectedDate, workingHours])
+    if (!Number.isFinite(yy + mm + dd) || !effectiveWorkingHours) return undefined
+    return effectiveWorkingHours[DAY_KEYS[new Date(yy, (mm || 1) - 1, dd || 1).getDay()]]
+  }, [selectedDate, effectiveWorkingHours])
   const dayIsClosed = dayHours?.is_open === false
 
   const availableSlots = useMemo(() => {
@@ -196,6 +227,7 @@ export default function BookingFlow({ dentistId, dentistSlug, dentistName, clini
           time_slot: selectedSlot,
           treatment_id: treatmentId || null,
           notes: notes.trim() || null,
+          location_id: selectedLocationId,
         }),
       })
       const json = await res.json().catch(() => ({}))
@@ -255,6 +287,45 @@ export default function BookingFlow({ dentistId, dentistSlug, dentistName, clini
 
   return (
     <>
+      {/* Branch picker — only renders when the dentist has more than one
+          active clinic_locations row. The picked branch drives both the
+          slot fetch (location_id query param) and the working-hours
+          window the slot grid filters against. */}
+      {hasMultipleBranches && (
+        <section style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '14px 16px', marginBottom: 14 }}>
+          <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 14, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
+            Choose a branch
+          </h2>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {locations.map(loc => {
+              const on = loc.id === selectedLocationId
+              return (
+                <button key={loc.id} type="button" onClick={() => setSelectedLocationId(loc.id)}
+                  style={{
+                    textAlign: 'left',
+                    padding: '12px 14px',
+                    background: on ? 'var(--blue-light)' : '#fff',
+                    border: `1.5px solid ${on ? 'var(--blue)' : 'var(--border)'}`,
+                    borderRadius: 12,
+                    cursor: 'pointer',
+                    fontFamily: 'var(--font-body)',
+                  }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                    <span style={{ fontWeight: 700, fontSize: 14, color: on ? 'var(--blue)' : 'var(--text)' }}>
+                      {loc.name || 'Branch'}
+                    </span>
+                    {loc.isPrimary && <span style={{ fontSize: 10, fontWeight: 700, color: '#92400E', background: '#FEF3C7', padding: '1px 6px', borderRadius: 10 }}>PRIMARY</span>}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                    📍 {loc.address || loc.areaName || 'Location not provided'}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        </section>
+      )}
+
       {/* Date strip */}
       <section style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '14px 16px', marginBottom: 14 }}>
         <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 14, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>

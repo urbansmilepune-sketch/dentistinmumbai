@@ -23,11 +23,19 @@ function generateRef(): string {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { dentist_id, patient_name, patient_phone, patient_email, appt_date, time_slot, treatment_id, notes } = body
+    const { dentist_id, patient_name, patient_phone, patient_email, appt_date, time_slot, treatment_id, notes, location_id } = body
 
     if (!dentist_id || !patient_name || !patient_phone || !appt_date || !time_slot) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
+
+    // location_id is optional. When present, the clash check below scopes
+    // to that single branch so two patients can hold 10 AM at two different
+    // branches. When absent (single-branch dentist or legacy caller), the
+    // historical dentist-wide clash check still runs.
+    const normalizedLocationId: string | null = typeof location_id === 'string' && location_id.trim()
+      ? location_id.trim()
+      : null
 
     // Email is optional. We accept null/empty, but if the patient typed
     // something, run a basic shape check so we don't pollute the column with
@@ -54,14 +62,15 @@ export async function POST(request: NextRequest) {
     // race window — for stronger guarantees add a partial unique index on
     // (dentist_id, appt_date, time_slot) WHERE status != 'cancelled' and let
     // the constraint surface 23505 here.
-    const { data: clash, error: clashErr } = await supabase
+    let clashQuery = supabase
       .from('appointments')
       .select('id')
       .eq('dentist_id', dentist_id)
       .eq('appt_date', appt_date)
       .eq('time_slot', time_slot)
       .neq('status', 'cancelled')
-      .maybeSingle()
+    if (normalizedLocationId) clashQuery = clashQuery.eq('location_id', normalizedLocationId)
+    const { data: clash, error: clashErr } = await clashQuery.maybeSingle()
     if (clashErr) {
       console.error('[bookings] clash check failed', {
         dentist_id, appt_date, time_slot,
@@ -111,6 +120,7 @@ export async function POST(request: NextRequest) {
       time_slot,
       treatment_id: treatment_id || null,
       notes: notes || null,
+      location_id: normalizedLocationId,
       // CHECK constraint on appointments.status only allows pending, confirmed,
       // completed, cancelled, no_show. 'scheduled' was rejected, surfacing as
       // 23514 on every booking. New patient-booked rows start as 'pending'
