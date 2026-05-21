@@ -58,6 +58,9 @@ export async function sendSMS(
     }],
   }
 
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 10000)
+
   try {
     const res = await fetch('https://api.msg91.com/api/v5/flow/', {
       method: 'POST',
@@ -65,8 +68,10 @@ export async function sendSMS(
         'Content-Type': 'application/json',
         authkey: MSG91_AUTH_KEY,
       },
+      signal: controller.signal,
       body: JSON.stringify(body),
     })
+    clearTimeout(timeout)
     if (!res.ok) {
       const text = await res.text().catch(() => '')
       console.error('[MSG91] send failed', { status: res.status, mobiles, templateId, body: text })
@@ -75,6 +80,7 @@ export async function sendSMS(
     console.log('[MSG91] sent', { mobiles, templateId })
     return { success: true }
   } catch (err: any) {
+    clearTimeout(timeout)
     console.error('[MSG91] request error', { mobiles, templateId, message: err?.message, err })
     return { success: false, error: err?.message || 'Unknown error' }
   }
