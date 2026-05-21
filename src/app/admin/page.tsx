@@ -46,6 +46,15 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const dayMs = 24 * 60 * 60 * 1000
   const weekAgoIso = new Date(now - 7 * dayMs).toISOString()
   const thirtyDaysAgoIso = new Date(now - 30 * dayMs).toISOString()
+  // "Today" anchors used by the today-bookings + new-registrations-today
+  // tiles. todayIstIso is the YYYY-MM-DD comparison against appointments.appt_date;
+  // todayStartIso is the UTC midnight ISO used against created_at columns.
+  const todayIstIso = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date())
+  const _ds = new Date()
+  _ds.setUTCHours(0, 0, 0, 0)
+  const todayStartIso = _ds.toISOString()
   // Calendar-month start (UTC) — used for "this month" metrics so the cards
   // line up with how a finance/ops user reads "this month" rather than a
   // rolling 30-day window. Day-of-month is reset to 1, time to 00:00:00Z.
@@ -115,6 +124,9 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     // --- Cases moderation ---
     { data: pendingCases },
     { data: openReports },
+    // --- Today metrics (admin overview) ---
+    { count: bookingsTodayCount },
+    { count: newRegsTodayCount },
   ] = await Promise.all([
     applyCity(supabase.from('dentists').select('*', { count: 'exact', head: true }).eq('is_active', true)),
     applyCity(supabase.from('appointments').select('*, dentists!inner(city)', { count: 'exact', head: true })),
@@ -214,6 +226,14 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
       .eq('status', 'open')
       .order('created_at', { ascending: true })
       .limit(50),
+
+    // --- Today metrics. appt_date is a date column so the IST-calendar
+    //     comparison is the right one ("appointments scheduled for today"
+    //     not "appointments created today"). Registrations don't carry an
+    //     appt_date — we filter on created_at >= UTC-midnight to keep the
+    //     today bucket consistent across server restarts.
+    applyCity(supabase.from('appointments').select('*, dentists!inner(city)', { count: 'exact', head: true }).eq('appt_date', todayIstIso)),
+    applyCity(supabase.from('dentist_registrations').select('*', { count: 'exact', head: true }).gte('created_at', todayStartIso)),
   ])
 
   const dc = dentistCount || 0
@@ -224,6 +244,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     reviewPendingCount: reviewPending?.length || 0,
     registrationCount: pendingRegs?.length || 0,
     foundingPct: Math.min((dc / 250) * 100, 100),
+    bookingsToday: bookingsTodayCount || 0,
+    newRegistrationsToday: newRegsTodayCount || 0,
   }
 
   // Avg wait time for pending registrations (hours)

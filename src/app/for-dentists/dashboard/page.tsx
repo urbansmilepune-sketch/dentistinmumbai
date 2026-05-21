@@ -2,6 +2,8 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import TodayWhatsAppButton, { type TodayAppt } from './TodayWhatsAppButton'
+import AutoRefresh from '@/components/AutoRefresh'
+import RecentApptActions from './RecentApptActions'
 
 export const dynamic = 'force-dynamic'
 
@@ -48,6 +50,13 @@ export default async function DashboardPage() {
   const todayIso = istTodayIso()
   const todayLabel = istTodayLabel()
   const clinicName = (dentist as any).clinic_name || dentist.name || ''
+  // Start of the current calendar month in UTC. Used as the lower bound on
+  // "this month" appointment counts and engagement-event aggregates so the
+  // cards line up with how a clinic reads "this month" rather than a
+  // rolling 30-day window.
+  const _ms = new Date()
+  _ms.setUTCDate(1); _ms.setUTCHours(0, 0, 0, 0)
+  const monthStartIso = _ms.toISOString()
 
   const [
     { count: appointmentCount },
@@ -55,15 +64,20 @@ export default async function DashboardPage() {
     { count: reviewCount },
     { count: photoCount },
     { count: treatmentCount },
+    { count: pendingCount },
+    { count: monthApptCount },
     { data: todayAppts },
     { data: priorPhones },
     { data: unpaidInvoices },
+    { data: monthEngagementEvents },
   ] = await Promise.all([
     supabase.from('appointments').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id),
     supabase.from('enquiries').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id),
     supabase.from('reviews').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id).eq('status', 'approved'),
     supabase.from('gallery_photos').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id),
     supabase.from('dentist_treatments').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id),
+    supabase.from('appointments').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id).eq('status', 'pending'),
+    supabase.from('appointments').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id).gte('created_at', monthStartIso),
     supabase
       .from('appointments')
       .select('id, patient_name, patient_phone, appt_date, time_slot, status, treatments(name)')
@@ -80,15 +94,30 @@ export default async function DashboardPage() {
       .select('total, payment_status')
       .eq('dentist_id', dentist.id)
       .in('payment_status', ['pending', 'overdue']),
+    supabase
+      .from('analytics_events')
+      .select('event_type')
+      .eq('dentist_id', dentist.id)
+      .gte('created_at', monthStartIso),
   ])
 
-  // Recent appointments
+  // Recent appointments — include id and patient_phone so the inline
+  // confirm/decline buttons can address the row and the dashboard can
+  // resolve the patient record if needed downstream.
   const { data: recentAppts } = await supabase
     .from('appointments')
-    .select('reference_no, patient_name, appt_date, time_slot, status')
+    .select('id, reference_no, patient_name, appt_date, time_slot, status')
     .eq('dentist_id', dentist.id)
     .order('created_at', { ascending: false })
     .limit(5)
+
+  // Month-to-date engagement aggregates derived from analytics_events.
+  // We pre-bucket the event types we surface so the JSX stays cheap.
+  const monthEv = (monthEngagementEvents || []) as Array<{ event_type: string }>
+  const monthEngagement = {
+    profile_views:   monthEv.filter(e => e.event_type === 'profile_view').length,
+    whatsapp_clicks: monthEv.filter(e => e.event_type === 'whatsapp_click').length,
+  }
 
   // Today summary computations
   const todayList = ((todayAppts ?? []) as unknown) as Array<{
@@ -140,10 +169,14 @@ export default async function DashboardPage() {
   const pct = Math.round((completionItems.filter(i => i.done).length / completionItems.length) * 100)
 
   const STATS = [
+    { icon: '📅', label: "Today's Appointments", value: totalToday, href: '/for-dentists/dashboard/appointments' },
+    { icon: '⏳', label: 'Pending Approval', value: pendingCount || 0, href: '/for-dentists/dashboard/appointments?status=pending' },
+    { icon: '🗓️', label: 'This Month', value: monthApptCount || 0, href: '/for-dentists/dashboard/appointments' },
+    { icon: '👁️', label: 'Profile Views · MTD', value: monthEngagement.profile_views, href: '/for-dentists/dashboard/analytics' },
+    { icon: '💚', label: 'WhatsApp Clicks · MTD', value: monthEngagement.whatsapp_clicks, href: '/for-dentists/dashboard/analytics' },
     { icon: '📅', label: 'Total Appointments', value: appointmentCount || 0, href: '/for-dentists/dashboard/appointments' },
     { icon: '💬', label: 'Enquiries', value: enquiryCount || 0, href: '/for-dentists/dashboard/enquiries' },
     { icon: '⭐', label: 'Approved Reviews', value: reviewCount || 0, href: '/for-dentists/dashboard/profile' },
-    { icon: '📸', label: 'Gallery Photos', value: photoCount || 0, href: '/for-dentists/dashboard/photos' },
   ]
 
   const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
@@ -248,13 +281,16 @@ export default async function DashboardPage() {
       </section>
 
       {/* Welcome */}
-      <div style={{ marginBottom: 20 }}>
-        <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 4 }}>
-          Welcome back, {dentist.name?.split(' ')[0]} 👋
-        </h1>
-        <p style={{ fontSize: 14, color: 'var(--muted)' }}>
-          {dentist.is_verified ? '✅ Verified listing' : '⏳ Verification pending'} · {dentist.tier || 'free'} plan
-        </p>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
+        <div>
+          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 4 }}>
+            Welcome back, {dentist.name?.split(' ')[0]} 👋
+          </h1>
+          <p style={{ fontSize: 14, color: 'var(--muted)' }}>
+            {dentist.is_verified ? '✅ Verified listing' : '⏳ Verification pending'} · {dentist.tier || 'free'} plan
+          </p>
+        </div>
+        <AutoRefresh />
       </div>
 
       {/* Primary CTAs — Walk-in is the dominant action */}
@@ -324,25 +360,28 @@ export default async function DashboardPage() {
         </div>
         {recentAppts && recentAppts.length > 0 ? (
           <div className="table-wrapper">
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 680 }}>
             <thead>
               <tr>
-                {['Reference', 'Patient', 'Date', 'Time', 'Status'].map(h => (
+                {['Reference', 'Patient', 'Date', 'Time', 'Status', 'Actions'].map(h => (
                   <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: 'var(--muted)', background: 'var(--bg)' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {recentAppts.map(a => {
+              {recentAppts.map((a: any) => {
                 const sc = STATUS_COLORS[a.status] || { bg: '#F3F4F6', text: '#374151' }
                 return (
-                  <tr key={a.reference_no} style={{ borderTop: '1px solid var(--border)' }}>
+                  <tr key={a.id} style={{ borderTop: '1px solid var(--border)' }}>
                     <td style={{ padding: '12px 16px', fontSize: 12, fontFamily: 'monospace', color: 'var(--blue)', fontWeight: 600 }}>{a.reference_no}</td>
                     <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600 }}>{a.patient_name}</td>
                     <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--muted)' }}>{new Date(a.appt_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</td>
                     <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--muted)' }}>{a.time_slot}</td>
                     <td style={{ padding: '12px 16px' }}>
                       <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: sc.bg, color: sc.text }}>{a.status}</span>
+                    </td>
+                    <td style={{ padding: '12px 16px' }}>
+                      <RecentApptActions appointmentId={a.id} status={a.status} />
                     </td>
                   </tr>
                 )

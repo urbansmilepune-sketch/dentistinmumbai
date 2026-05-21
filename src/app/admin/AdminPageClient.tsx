@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import AdminShell from './AdminShell'
 import CommunicationsTab from './CommunicationsTab'
 import OutreachTab from './OutreachTab'
+import AutoRefresh from '@/components/AutoRefresh'
 import { CITY_CONFIGS, cityOrigin, getCityBySlug } from '@/config/cities'
 
 // Shared style tokens. Inline-styled cards reach for these so spacing,
@@ -854,7 +855,11 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
         {/* DASHBOARD */}
         {section === 'dashboard' && (
           <div>
-            <PageHeader title="Overview" subtitle="Welcome back. Here's what's happening across the platform today." />
+            <PageHeader
+              title="Overview"
+              subtitle="Welcome back. Here's what's happening across the platform today."
+              actions={<AutoRefresh />}
+            />
 
             {/* Founding counter */}
             <div style={{ background: 'linear-gradient(135deg, #003F7A, #0057A8)', borderRadius: 16, padding: '24px', marginBottom: 24, color: '#fff' }}>
@@ -875,6 +880,8 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
 
             {/* Stat cards */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 16, marginBottom: 28 }}>
+              <StatCard icon="📆" label="Bookings Today" value={stats.bookingsToday ?? 0} color="var(--green)" />
+              <StatCard icon="🆕" label="New Registrations Today" value={stats.newRegistrationsToday ?? 0} color="#F59E0B" />
               <StatCard icon="🦷" label="Active Dentists" value={stats.dentistCount} color="var(--blue)" />
               <StatCard icon="📋" label="Pending Registrations" value={stats.registrationCount} color="#F59E0B" />
               <StatCard icon="📅" label="Total Appointments" value={stats.appointmentCount} color="var(--green)" />
