@@ -205,12 +205,54 @@ export default function AppointmentsPage() {
     }
     setSaving(true)
     const supabase = createClient()
+
+    // Find-or-create the patient record FIRST so the new appointment lands
+    // in both `appointments` AND `patients`. Without this, manual walk-ins
+    // only ever lived in appointments and the Patients tab would read empty
+    // even when appointments held dozens of rows. Match by dentist_id +
+    // phone-digit tail so "+91 98xxxx" and "98xxxx" resolve to the same
+    // row.
+    const phoneRaw = form.patient_phone.trim()
+    const phoneDigits = phoneRaw.replace(/\D/g, '')
+    let patientId: string | null = null
+    if (phoneDigits.length >= 4) {
+      const tail = phoneDigits.slice(-10)
+      const { data: existing } = await supabase
+        .from('patients')
+        .select('id')
+        .eq('dentist_id', dentistId)
+        .ilike('phone', `%${tail}`)
+        .limit(1)
+        .maybeSingle()
+      if (existing?.id) patientId = existing.id
+    }
+    if (!patientId) {
+      const { data: created, error: ptErr } = await supabase
+        .from('patients')
+        .insert({
+          dentist_id: dentistId,
+          name: form.patient_name.trim(),
+          phone: phoneRaw,
+        })
+        .select('id')
+        .single()
+      if (ptErr) {
+        setSaving(false)
+        setAddError(`Could not create patient record: ${ptErr.message}`)
+        return
+      }
+      patientId = created.id
+    }
+
     const { data, error } = await supabase
       .from('appointments')
       .insert({
         dentist_id: dentistId,
+        // Link to the new/existing patient row so the per-row Open Patient
+        // File button resolves without falling back to a phone lookup.
+        patient_id: patientId,
         patient_name: form.patient_name.trim(),
-        patient_phone: form.patient_phone.trim(),
+        patient_phone: phoneRaw,
         appt_date: form.appt_date,
         time_slot: form.time_slot.trim(),
         treatment_id: form.treatment_id || null,
@@ -224,6 +266,16 @@ export default function AppointmentsPage() {
     setSaving(false)
     if (error) { setAddError(error.message); return }
     setAppointments(prev => [data, ...prev])
+    // Keep the phone→patient map in sync so the Open Patient File buttons
+    // on the just-added row (and any future row with this phone) resolve
+    // immediately without a refetch.
+    if (phoneDigits && patientId) {
+      setPatientIdByPhone(prev => {
+        const next = new Map(prev)
+        next.set(phoneDigits, patientId!)
+        return next
+      })
+    }
     setShowAdd(false)
     setForm({
       patient_name: '', patient_phone: '', appt_date: todayIsoLocal(),
@@ -277,6 +329,73 @@ export default function AppointmentsPage() {
       setEditError(e?.message || 'Network error')
     } finally {
       setEditSaving(false)
+    }
+  }
+
+  // Walk-ins where the row was created before the auto-link logic landed
+  // still have no patient_id and no matching patient row. The "Create
+  // Patient File" button below kicks off this handler — it creates the
+  // patient row from the appointment's name+phone, links the appointment
+  // back, then navigates the dentist to the new patient's profile.
+  const [creatingPatientFor, setCreatingPatientFor] = useState<string | null>(null)
+  async function createAndOpenPatientFile(a: any) {
+    setCreatingPatientFor(a.id)
+    const supabase = createClient()
+    try {
+      const phoneRaw = (a.patient_phone || '').trim()
+      const phoneDigits = phoneRaw.replace(/\D/g, '')
+
+      // Belt-and-suspenders find-or-create: an in-flight race with another
+      // dentist adding the same patient via the appointments form would
+      // otherwise produce duplicates. Match first, insert only on miss.
+      let patientId: string | null = null
+      if (phoneDigits.length >= 4) {
+        const tail = phoneDigits.slice(-10)
+        const { data: existing } = await supabase
+          .from('patients')
+          .select('id')
+          .eq('dentist_id', dentistId)
+          .ilike('phone', `%${tail}`)
+          .limit(1)
+          .maybeSingle()
+        if (existing?.id) patientId = existing.id
+      }
+      if (!patientId) {
+        const { data: created, error: ptErr } = await supabase
+          .from('patients')
+          .insert({
+            dentist_id: dentistId,
+            name: a.patient_name || 'Walk-in patient',
+            phone: phoneRaw || null,
+          })
+          .select('id')
+          .single()
+        if (ptErr || !created?.id) {
+          setStatusError(`Could not create patient record: ${ptErr?.message || 'unknown error'}`)
+          return
+        }
+        patientId = created.id
+      }
+
+      // Backfill patient_id on the appointment so subsequent clicks skip
+      // this handler and go straight to the Open button.
+      await supabase.from('appointments')
+        .update({ patient_id: patientId })
+        .eq('id', a.id)
+
+      setAppointments(prev => prev.map(x => x.id === a.id ? { ...x, patient_id: patientId } : x))
+      if (phoneDigits) {
+        setPatientIdByPhone(prev => {
+          const next = new Map(prev)
+          next.set(phoneDigits, patientId!)
+          return next
+        })
+      }
+      router.push(`/for-dentists/dashboard/patients/${patientId}`)
+    } catch (e: any) {
+      setStatusError(e?.message || 'Could not open patient file.')
+    } finally {
+      setCreatingPatientFor(null)
     }
   }
 
@@ -654,32 +773,46 @@ export default function AppointmentsPage() {
                     </a>
                   )}
 
-                  {/* Workflow shortcuts into the patient record. patient_id is
-                      set on online bookings; manual walk-ins resolve via
-                      phone-number match. When neither yields a patient row,
-                      the buttons hide rather than 404 — the dentist can add
-                      the patient from Patients first. */}
+                  {/* Patient file shortcut — present on EVERY row so the
+                      dentist can jump to the patient record (visits, Rx,
+                      invoices, treatment plans, dental chart) from the
+                      appointment context without round-tripping through
+                      the Patients tab. patient_id is set on online bookings
+                      AND on walk-ins post-auto-link; older walk-ins that
+                      predate the auto-link get a phone-match fallback;
+                      anything that still doesn't resolve falls into the
+                      "Create Patient File" branch that creates the patient
+                      record + links the appointment + navigates. */}
                   {(() => {
                     const phoneDigits = String(a.patient_phone || '').replace(/\D/g, '')
                     const pid = a.patient_id || patientIdByPhone.get(phoneDigits) || null
-                    if (!pid) return null
-                    return (
-                      <>
-                        {!isClosed && (
+                    if (pid) {
+                      return (
+                        <>
+                          {!isClosed && (
+                            <Link
+                              href={`/for-dentists/dashboard/patients/${pid}?tab=treatments`}
+                              title="Open the patient on the Visits / Treatments tab to begin the consultation"
+                              style={{ ...primaryBtn, background: '#DCFCE7', color: '#166534', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              🩺 Start Consultation
+                            </Link>
+                          )}
                           <Link
-                            href={`/for-dentists/dashboard/patients/${pid}?tab=treatments`}
-                            title="Open patient record on the Visits/Treatments tab"
-                            style={{ ...primaryBtn, background: '#DCFCE7', color: '#166534', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                            🩺 Start Consultation
+                            href={`/for-dentists/dashboard/patients/${pid}`}
+                            title="Open the patient's full file (overview, prescriptions, invoices, treatment plans, dental chart)"
+                            style={{ ...primaryBtn, background: 'var(--blue-light)', color: 'var(--blue)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            👤 Open Patient File
                           </Link>
-                        )}
-                        <Link
-                          href={`/for-dentists/dashboard/patients/${pid}?tab=profile`}
-                          title="Open the patient's profile to edit details"
-                          style={{ ...secondaryBtn, color: 'var(--blue)', borderColor: '#BFDBFE' }}>
-                          👤 Edit Patient
-                        </Link>
-                      </>
+                        </>
+                      )
+                    }
+                    return (
+                      <button onClick={() => createAndOpenPatientFile(a)}
+                        disabled={creatingPatientFor === a.id}
+                        title="Create a patient record from this walk-in and open the full file"
+                        style={{ ...primaryBtn, background: '#FEF3C7', color: '#92400E', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        {creatingPatientFor === a.id ? '⏳ Creating…' : '👤 Create Patient File'}
+                      </button>
                     )
                   })()}
 

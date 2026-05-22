@@ -1,6 +1,7 @@
 'use client'
 
 import { Suspense, useState, useEffect } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { downloadInvoicePdf } from '@/lib/invoicePdf'
@@ -535,7 +536,19 @@ function BillingPageInner() {
                       )}
                     </td>
                     <td style={{ padding: '12px 16px', fontSize: 13 }}>
-                      <div style={{ fontWeight: 500 }}>{inv.patients?.name}</div>
+                      {/* Patient name is a link straight to the patient file
+                          so the dentist can edit the patient or open
+                          prescriptions/treatment plans without going via
+                          the Patients tab. */}
+                      {inv.patient_id ? (
+                        <Link href={`/for-dentists/dashboard/patients/${inv.patient_id}`}
+                          title="Open the patient's full file"
+                          style={{ fontWeight: 600, color: 'var(--blue)', textDecoration: 'none' }}>
+                          👤 {inv.patients?.name}
+                        </Link>
+                      ) : (
+                        <div style={{ fontWeight: 500 }}>{inv.patients?.name}</div>
+                      )}
                       <div style={{ fontSize: 11, color: 'var(--muted)' }}>{inv.patients?.phone}</div>
                     </td>
                     <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--muted)' }}>{new Date(inv.invoice_date).toLocaleDateString('en-IN')}</td>

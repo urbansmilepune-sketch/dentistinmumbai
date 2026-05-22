@@ -10,6 +10,7 @@ type Appt = {
   appt_date: string
   time_slot: string | null
   status: string
+  patient_id: string | null
   patient_name: string | null
   patient_phone: string | null
   reference_no: string | null
@@ -92,7 +93,7 @@ export default function CalendarPage() {
       const to = toLocalIso(startOfNextMonth(viewYear, viewMonth))
       const { data, error: e } = await supabase
         .from('appointments')
-        .select('id, appt_date, time_slot, status, patient_name, patient_phone, reference_no, notes, treatments(name, icon)')
+        .select('id, appt_date, time_slot, status, patient_id, patient_name, patient_phone, reference_no, notes, treatments(name, icon)')
         .eq('dentist_id', dentist.id)
         .gte('appt_date', from)
         .lt('appt_date', to)
@@ -345,10 +346,25 @@ export default function CalendarPage() {
                       {a.treatments?.name && <span>{a.treatments.icon ?? '🦷'} {a.treatments.name}</span>}
                     </div>
                   </div>
-                  <Link href="/for-dentists/dashboard/appointments"
-                    style={{ fontSize: 12, color: 'var(--blue)', fontWeight: 600, textDecoration: 'none', padding: '6px 10px', minHeight: 36, display: 'inline-flex', alignItems: 'center', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)' }}>
-                    Open →
-                  </Link>
+                  {/* Two-button block: jump straight to the patient file
+                      (full record — visits, Rx, invoices, treatment plans,
+                      dental chart) when patient_id is set, OR fall back
+                      to the appointments list so the dentist can still
+                      reach the row via the "Create Patient File" button
+                      there. */}
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {a.patient_id ? (
+                      <Link href={`/for-dentists/dashboard/patients/${a.patient_id}`}
+                        title="Open the patient's full file"
+                        style={{ fontSize: 12, color: 'var(--blue)', fontWeight: 700, textDecoration: 'none', padding: '6px 10px', minHeight: 36, display: 'inline-flex', alignItems: 'center', borderRadius: 8, border: '1px solid #BFDBFE', background: 'var(--blue-light)' }}>
+                        👤 Patient File
+                      </Link>
+                    ) : null}
+                    <Link href="/for-dentists/dashboard/appointments"
+                      style={{ fontSize: 12, color: 'var(--blue)', fontWeight: 600, textDecoration: 'none', padding: '6px 10px', minHeight: 36, display: 'inline-flex', alignItems: 'center', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)' }}>
+                      Open →
+                    </Link>
+                  </div>
                 </div>
               )
             })}

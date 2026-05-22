@@ -111,8 +111,58 @@ export async function POST(request: NextRequest) {
       if (treatment) treatmentName = treatment.name
     }
 
+    // Find-or-create the patient record so the Patients tab in the dashboard
+    // includes everyone who books with this dentist. Without this, online
+    // bookings live only in appointments and the Patients tab reads empty
+    // even when the clinic has dozens of patients on the books. Match by
+    // dentist_id + phone-digit tail so "+91 98xxxx" and "98xxxx" resolve
+    // to the same row. Service role bypasses RLS, so the insert can't be
+    // refused by a missing policy.
+    const phoneDigits = String(patient_phone || '').replace(/\D/g, '')
+    let resolvedPatientId: string | null = null
+    if (phoneDigits.length >= 4) {
+      const tail = phoneDigits.slice(-10)
+      const { data: existingPatient } = await supabase
+        .from('patients')
+        .select('id')
+        .eq('dentist_id', dentist_id)
+        .ilike('phone', `%${tail}`)
+        .limit(1)
+        .maybeSingle()
+      if (existingPatient?.id) {
+        resolvedPatientId = existingPatient.id
+      } else {
+        const { data: createdPatient, error: createPatientErr } = await supabase
+          .from('patients')
+          .insert({
+            dentist_id,
+            name: patient_name,
+            phone: patient_phone,
+            email: normalizedEmail,
+          })
+          .select('id')
+          .maybeSingle()
+        if (createPatientErr) {
+          // Don't fail the booking on a patient-row hiccup — the appointment
+          // is the user-visible side of this request, and the dashboard's
+          // phone-based lookup will still resolve buttons that key off
+          // patient_phone. Log and continue.
+          console.error('[bookings] patient auto-create failed', {
+            dentist_id, phone: patient_phone,
+            code: createPatientErr.code, message: createPatientErr.message,
+          })
+        } else if (createdPatient?.id) {
+          resolvedPatientId = createdPatient.id
+        }
+      }
+    }
+
     const insertPayload = {
       dentist_id,
+      // Link to the patient row when we have one. The dashboard's Open
+      // Patient File button keys off this column; pre-link makes it work
+      // immediately without a phone-fallback lookup.
+      patient_id: resolvedPatientId,
       patient_name,
       patient_phone,
       patient_email: normalizedEmail,
