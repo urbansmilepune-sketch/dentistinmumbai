@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { headers } from 'next/headers'
-import { createClient } from '@/lib/supabase/server'
+import { getCityHomeData, PREMIUM_FLOOR } from '@/lib/cache/public-pages'
 import SearchBar from '@/components/SearchBar'
 import FaqAccordion from '@/components/FaqAccordion'
 import { CITY_CONFIGS, NATIONAL_ORIGIN, cityOrigin, getCityBySlug, cityBrandName, cityBrandTld, isNationalHost } from '@/config/cities'
@@ -99,60 +99,31 @@ export default async function HomePage() {
     return <NationalHome />
   }
 
-  const supabase = await createClient()
   const city = getCityBySlug(h.get('x-city-slug'))
   const brandName = cityBrandName(city)
   const brandTld = cityBrandTld(city)
   const FAQ_ITEMS = faqItemsFor(city.cityName, city.domain)
 
+  // Heavy Supabase reads live behind unstable_cache (5-min TTL) — the
+  // city-scoped row set is identical for every visitor, so we serve it
+  // from the Data Cache and only re-hit Supabase after the TTL elapses.
+  // See src/lib/cache/public-pages.ts.
+  //
   // Early-stage UX: until we cross PREMIUM_FLOOR active gold/featured
   // listings, the homepage shows every active dentist so new approvals
   // surface immediately (rather than waiting on an admin to flip
   // Verified + raise tier). Once we cross the floor the section
   // auto-switches back to the curated featured/gold/silver+verified view.
-  // Both dentist queries are fired in parallel and we pick afterwards —
-  // costs ~6 extra rows on the wire but saves a round-trip.
-  const PREMIUM_FLOOR = 50
-  const DENTIST_SELECT = 'id, name, slug, clinic_name, area_id, consultation_fee, experience_years, tier, is_verified, profile_photo, areas(name)'
+  const { areas, treatments, premiumCount, dentistCount, allActiveDentists, curatedDentists } =
+    await getCityHomeData(city.citySlug)
 
-  const [
-    { data: areas },
-    { data: treatments },
-    { count: premiumCount },
-    { count: dentistCount },
-    { data: allActiveDentists },
-    { data: curatedDentists },
-  ] = await Promise.all([
-    supabase.from('areas').select('id, name, slug, zone, dentist_count').eq('city', city.citySlug).order('dentist_count', { ascending: false }),
-    supabase.from('treatments').select('id, name, slug, icon').order('sort_order'),
-    supabase.from('dentists').select('*', { count: 'exact', head: true }).eq('is_active', true).eq('city', city.citySlug).in('tier', ['gold', 'featured']),
-    supabase.from('dentists').select('*', { count: 'exact', head: true }).eq('is_active', true).eq('city', city.citySlug),
-    supabase
-      .from('dentists')
-      .select(DENTIST_SELECT)
-      .eq('is_active', true)
-      .eq('city', city.citySlug)
-      .order('tier')
-      .order('created_at', { ascending: false })
-      .limit(6),
-    supabase
-      .from('dentists')
-      .select(DENTIST_SELECT)
-      .eq('is_active', true)
-      .eq('is_verified', true)
-      .eq('city', city.citySlug)
-      .in('tier', ['featured', 'gold', 'silver'])
-      .order('tier')
-      .limit(6),
-  ])
-
-  const showAllDentists = (premiumCount ?? 0) < PREMIUM_FLOOR
+  const showAllDentists = premiumCount < PREMIUM_FLOOR
   const featuredDentists = showAllDentists ? allActiveDentists : curatedDentists
 
-  const areaList = areas ?? []
-  const treatmentList = treatments ?? []
-  const dentists = featuredDentists ?? []
-  const totalDentists = dentistCount ?? 0
+  const areaList = areas
+  const treatmentList = treatments
+  const dentists = featuredDentists
+  const totalDentists = dentistCount
 
   const isMumbai = city.citySlug === 'mumbai'
   // Mumbai-only grouping by suburban-rail line. Every other city is rendered

@@ -3,7 +3,7 @@ import type { Metadata } from 'next'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { headers } from 'next/headers'
-import { createClient } from '@/lib/supabase/server'
+import { getDentistProfileData } from '@/lib/cache/public-pages'
 import { getCityBySlug, cityOrigin } from '@/config/cities'
 import { istDayTime } from '@/lib/time'
 import { whatsappLink } from '@/lib/phone'
@@ -15,8 +15,6 @@ import TrackedLink from './TrackedLink'
 import ClinicContactButton from './ClinicContactButton'
 import ReviewForm from '@/components/ReviewForm'
 import CitiesFooterLinks from '@/components/CitiesFooterLinks'
-
-export const dynamic = 'force-dynamic'
 
 interface Props { params: Promise<{ slug: string }> }
 
@@ -49,14 +47,11 @@ function isOpenNow(working_hours: any): { open: boolean; label: string } {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
-  const supabase = await createClient()
   const h = await headers()
   const city = getCityBySlug(h.get('x-city-slug'))
-  const { data: d } = await supabase
-    .from('dentists')
-    .select('name, clinic_name, areas(name), bio, profile_photo, qualifications, specialties')
-    .eq('slug', slug)
-    .single()
+  // Reuses the cached dentist row — same key the page fetch hits below.
+  const cached = await getDentistProfileData(slug)
+  const d = cached?.dentist as any
   if (!d) return {}
 
   const brand = `DentistIn${city.cityName.replace(/\s+/g, '')}`
@@ -99,19 +94,21 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function DentistProfilePage({ params }: Props) {
   const { slug } = await params
-  const supabase = await createClient()
   const h = await headers()
   const city = getCityBySlug(h.get('x-city-slug'))
   const origin = cityOrigin(city)
 
- const { data: dentist } = await supabase
-    .from('dentists')
-    .select('*, areas(name, slug), dentist_treatments(fee_from, fee_to, treatments(id, name, slug, icon)), gallery_photos(id, url, caption, category)')
-    .eq('slug', slug)
-    .eq('is_active', true)
-    .single()
-
-  if (!dentist) notFound()
+  // Dentist row + reviews + locations come from the Data Cache (60s TTL).
+  // Reviews are fetched server-side with status='approved' so pending/
+  // rejected text never ships over the wire to anonymous visitors.
+  // Multi-location support: dentists with zero clinic_locations rows fall
+  // back to the dentist row's single address/working_hours fields — no
+  // backfill of legacy data.
+  const cached = await getDentistProfileData(slug)
+  if (!cached) notFound()
+  const dentist = cached.dentist as any
+  const approvedReviews = cached.approvedReviews
+  const locations = cached.locations
 
   // Cross-city URLs always resolve to the dentist's own city domain. A
   // Pune dentist linked from dentistinmumbai.in/dentist/<slug> would
@@ -122,33 +119,6 @@ export default async function DentistProfilePage({ params }: Props) {
   if (dentistCityConfig.domain !== city.domain) {
     redirect(`https://${dentistCityConfig.domain}/dentist/${slug}`)
   }
-
-  // Reviews are fetched separately so the status filter applies server-side.
-  // Previously they joined with the dentists row and we filtered approved in
-  // JS — that shipped pending/rejected review text over the wire to every
-  // anonymous visitor, leaking moderation state.
-  const { data: approvedReviewsRows } = await supabase
-    .from('reviews')
-    .select('id, patient_name, rating, review_text, treatment, created_at')
-    .eq('dentist_id', dentist.id)
-    .eq('status', 'approved')
-    .order('created_at', { ascending: false })
-  const approvedReviews = approvedReviewsRows ?? []
-
-  // Multi-location support: pulled separately because the dentist row already
-  // joins four tables. Dentists with zero rows here keep using the original
-  // single-location fields (address, working_hours) on the dentists table —
-  // no backfill, no migration of legacy data.
-  // The DB column is `clinic_name`; LocationTabs expects `name`, so we
-  // alias on the select. `sort_order` was removed from the schema —
-  // ordering is is_primary DESC then created_at ASC.
-  const { data: locationRows } = await supabase
-    .from('clinic_locations')
-    .select('id, name:clinic_name, address, phone, working_hours, is_primary, areas(name)')
-    .eq('dentist_id', dentist.id)
-    .order('is_primary', { ascending: false })
-    .order('created_at')
-  const locations = locationRows ?? []
 
   const openStatus = isOpenNow(dentist.working_hours)
   // Normalised wa.me link — handles raw, '+91…', '91…' and trunk-prefix
