@@ -140,15 +140,12 @@ export default function CommunicationsPage() {
   const [error, setError] = useState<string | null>(null)
   const [tier, setTier] = useState<Tier>('free')
 
-  const isFree = !tierMeets(tier, 'silver')
-
-  // Snap free dentists out of any locked initial state when their tier
-  // resolves: mode defaults to 'selected' (locked) and channel to 'email'
-  // (locked), so without this they'd see a highlighted-but-disabled UI on
-  // first paint.
-  useEffect(() => {
-    if (isFree) { setMode('individual'); setChannel('whatsapp') }
-  }, [isFree])
+  // Tier-gating disabled for launch phase — every template, channel, and
+  // send mode is available to every dentist regardless of stored tier.
+  // FREE_TEMPLATE_IDS and the `locked` flags below collapse to false via
+  // this constant so the rest of the page reads as unlocked. Re-enable
+  // by restoring `const isFree = !tierMeets(tier, 'silver')`.
+  const isFree = false
 
   useEffect(() => {
     async function load() {

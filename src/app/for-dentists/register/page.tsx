@@ -166,14 +166,10 @@ export default function RegisterPage() {
                   <strong>No account found for {form.email}.</strong> Please complete the registration below to claim your free listing — your profile will be activated within 24 hours.
                 </div>
               )}
-              {planFromUrl && (
-                <div style={{ padding: '16px 18px', background: 'linear-gradient(135deg, #FFF7ED 0%, #FEF3C7 100%)', border: '1.5px solid #FDE68A', borderRadius: 12, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 14 }}>
-                  <div style={{ width: 44, height: 44, flexShrink: 0, borderRadius: 12, background: '#FF6135', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>⭐</div>
-                  <div style={{ flex: 1, fontSize: 14, color: '#7C2D12', lineHeight: 1.5 }}>
-                    You selected <strong>Gold {PLAN_COPY[planFromUrl].label}</strong> — <strong>{PLAN_COPY[planFromUrl].price}{PLAN_COPY[planFromUrl].period}</strong>. Your plan activates after profile approval.
-                  </div>
-                </div>
-              )}
+              {/* The legacy "?plan=monthly|annual" deep-link banner is
+                  hidden during the launch phase — see /lib/tier.ts. The
+                  planFromUrl state is still parsed (above) so the
+                  Razorpay flow can re-enable later without re-plumbing. */}
               {/* Hero */}
               <div style={{ textAlign: 'center', marginBottom: 36 }}>
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 16px', background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: 40, marginBottom: 16 }}>
@@ -317,12 +313,7 @@ export default function RegisterPage() {
               <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 28, marginBottom: 8 }}>
                 Welcome, {form.name.split(' ')[0]}!
               </h2>
-              <p style={{ color: 'var(--muted)', fontSize: 16, marginBottom: planFromUrl ? 16 : 28 }}>Your registration is confirmed.</p>
-              {planFromUrl && (
-                <p style={{ color: 'var(--text)', fontSize: 15, fontWeight: 600, marginBottom: 28 }}>
-                  Your Gold <span style={{ color: '#FF6135' }}>{PLAN_COPY[planFromUrl].label}</span> plan will activate once approved.
-                </p>
-              )}
+              <p style={{ color: 'var(--muted)', fontSize: 16, marginBottom: 28 }}>Your registration is confirmed.</p>
 
               <div style={{ background: 'var(--blue-light)', border: '1px solid #BFDBFE', borderRadius: 14, padding: '20px', marginBottom: 28 }}>
                 <p style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>Reference Number</p>

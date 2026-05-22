@@ -3,92 +3,18 @@ import { CITY_CONFIGS } from '@/config/cities'
 import NationalShell from './NationalShell'
 import CitySelector from './CitySelector'
 
-// National /for-dentists. Server-rendered. Pricing tiers mirror the
-// live billing in src/app/api/payments/create-order/route.ts and
-// src/app/for-dentists/dashboard/upgrade/PlanSelector.tsx — Silver
-// ₹499/mo, Gold ₹999/mo, Featured ₹2,499/mo. The "Free" tier exists
-// on every dentist row (default tier) so it's listed here even though
-// no checkout flow surfaces it.
+// National /for-dentists. Server-rendered. Pricing tiers are hidden
+// during the launch phase — see /lib/tier.ts. The previous TIERS array
+// and "Pricing" section have been removed; the page now reads as a
+// pure value pitch without a price comparison surface.
 //
 // Success-metric rollups come via the service role so the numbers
 // aren't blocked by analytics_events RLS the same way the homepage
 // counter was.
 
-const TIERS = [
-  {
-    name: 'Free',
-    price: '₹0',
-    period: 'forever',
-    color: '#475569',
-    bg: '#F8FAFC',
-    border: '#CBD5E1',
-    headline: 'Get listed and get found',
-    features: [
-      'Full clinic profile, indexed on Google',
-      'Direct WhatsApp + phone enquiries',
-      'Patient reviews',
-      'Up to 1 location',
-      'Basic appointment booking',
-    ],
-    cta: 'Start free',
-  },
-  {
-    name: 'Silver',
-    price: '₹499',
-    period: '/ month',
-    color: '#334155',
-    bg: '#F1F5F9',
-    border: '#94A3B8',
-    headline: 'Multi-location & staff',
-    features: [
-      'Everything in Free',
-      'Up to 5 clinic locations',
-      'Staff access + role-based dashboards',
-      'EMR templates',
-      'Communications (email blasts)',
-    ],
-    cta: 'Choose Silver',
-  },
-  {
-    name: 'Gold',
-    price: '₹999',
-    period: '/ month',
-    color: '#92400E',
-    bg: '#FEF3C7',
-    border: '#FDE68A',
-    badge: 'Most popular',
-    headline: 'Full marketing + analytics',
-    features: [
-      'Everything in Silver',
-      'Higher placement in search results',
-      'Featured badge on profile + reviews',
-      'Full marketing analytics dashboard',
-      'Priority support',
-    ],
-    cta: 'Choose Gold',
-  },
-  {
-    name: 'Featured',
-    price: '₹2,499',
-    period: '/ month',
-    color: '#C2410C',
-    bg: '#FFEDD5',
-    border: '#FDBA74',
-    headline: 'Top spot in your city',
-    features: [
-      'Everything in Gold',
-      'Top placement on city homepage',
-      'Featured in every relevant area + treatment page',
-      'Co-marketing on the network',
-      'White-glove onboarding',
-    ],
-    cta: 'Contact us',
-  },
-]
-
 const WHY_LIST = [
   { icon: '🦷', title: 'Patients searching by city, area, treatment', body: 'Local SEO that ranks. The dentistin[city].in domain matches exactly what patients type into Google.' },
-  { icon: '💰', title: 'Zero commission, ever', body: 'You pay only the platform fee (if you upgrade). Every rupee of patient revenue stays with you.' },
+  { icon: '💰', title: 'Zero commission, ever', body: 'Every rupee of patient revenue stays with you. Free for founding members — no credit card.' },
   { icon: '⚡', title: 'Live in 24 hours',  body: 'Submit your registration, we verify your MCI number, and your profile is publicly indexed within a business day.' },
   { icon: '📊', title: 'Real analytics',    body: 'See profile views, WhatsApp leads, call-clicks and appointments — not vanity metrics.' },
 ]
@@ -169,57 +95,8 @@ export default async function NationalForDentists() {
         </div>
       </section>
 
-      {/* Pricing */}
-      <section style={{ padding: '56px 20px' }}>
-        <div style={{ maxWidth: 1100, margin: '0 auto' }}>
-          <div style={{ textAlign: 'center', marginBottom: 32 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: '#1D4ED8', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>Pricing</div>
-            <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 28, color: '#0F1923', marginBottom: 8 }}>
-              Plans that grow with your practice
-            </h2>
-            <p style={{ fontSize: 14, color: '#64748B' }}>Patients pay nothing — ever. You pay only if you choose to upgrade.</p>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 18 }}>
-            {TIERS.map(t => (
-              <div
-                key={t.name}
-                style={{
-                  position: 'relative',
-                  background: '#fff',
-                  border: `1.5px solid ${(t as any).badge ? t.color : t.border}`,
-                  borderRadius: 16,
-                  padding: '24px 22px',
-                  boxShadow: (t as any).badge ? '0 8px 24px rgba(146, 64, 14, 0.12)' : '0 2px 6px rgba(15, 25, 35, 0.04)',
-                }}
-              >
-                {(t as any).badge && (
-                  <div style={{ position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)', background: t.color, color: '#fff', fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 999, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-                    {(t as any).badge}
-                  </div>
-                )}
-                <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 14, color: t.color, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 10 }}>{t.name}</div>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 6 }}>
-                  <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 30, color: '#0F1923', lineHeight: 1 }}>{t.price}</span>
-                  <span style={{ fontSize: 13, color: '#64748B', fontWeight: 600 }}>{t.period}</span>
-                </div>
-                <p style={{ fontSize: 13, color: '#475569', fontWeight: 600, marginBottom: 16 }}>{t.headline}</p>
-                <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 18 }}>
-                  {t.features.map(f => (
-                    <li key={f} style={{ display: 'flex', gap: 8, fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
-                      <span style={{ color: '#1D4ED8', flexShrink: 0 }}>✓</span>
-                      <span>{f}</span>
-                    </li>
-                  ))}
-                </ul>
-                <div style={{ fontSize: 12, color: '#94A3B8', fontStyle: 'italic', textAlign: 'center' }}>
-                  Available on every city site after registration
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+      {/* Pricing section intentionally removed during launch phase —
+          see /lib/tier.ts. */}
 
       {/* Final CTA */}
       <section style={{ padding: '48px 20px 72px', background: '#0F1923' }}>

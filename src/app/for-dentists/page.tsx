@@ -4,7 +4,6 @@ import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { getCityBySlug, CITY_CONFIGS, NATIONAL_ORIGIN } from '@/config/cities'
 import TickerBar from './TickerBar'
-import ExpoPricingSection from './ExpoPricingSection'
 import ProgressBar from './ProgressBar'
 import HeroButtons from './HeroButtons'
 import NationalForDentists from '@/components/national/NationalForDentists'
@@ -118,7 +117,7 @@ export default async function ForDentistsPage() {
   const CITY_PILLS = Object.values(CITY_CONFIGS).map(c => c.cityName)
 
   const FAQS = [
-    { q: 'Is DentistIn really free?', a: 'Yes. Your basic listing, profile, and booking page are completely free forever. We offer Silver and Gold plans with advanced features like bulk patient messaging, staff management, and detailed analytics.' },
+    { q: 'Is DentistIn really free?', a: 'Yes. Your listing, profile, booking page, and the full practice management suite — appointments, EMR, billing, communications, analytics — are completely free for founding members. No credit card required.' },
     { q: 'How long does setup take?', a: 'Most dentists complete their profile in under 5 minutes. We pre-fill your details from registration — just add your photo and you’re live.' },
     { q: 'Will I get patient enquiries immediately?', a: 'Most dentists receive their first enquiry within 2 weeks of completing their profile. Dentists with photos and reviews get 5x more enquiries.' },
     { q: 'Do I need to download any app?', a: 'No app needed — for you or your patients. Everything works through your browser. Patients can book via WhatsApp link with a single tap.' },

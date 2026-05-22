@@ -5,18 +5,12 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { getCityByDomain, getCityBySlug, type CityConfig } from '@/config/cities'
-import {
-  normalizeTier, tierMeets,
-  effectiveTier,
-  type Tier,
-} from '@/lib/tier'
-
 type NavItem = { href: string; icon: string; label: string; minTier?: 'silver' | 'gold' }
 
-// `minTier` marks a nav item that is FULLY locked below that tier — the
-// sidebar link redirects to /upgrade and the row gets a 🔒. Partially-gated
-// pages (Analytics shows basic stats to free, Communications shows limited
-// templates) have no minTier here; their gating lives inside the page.
+// `minTier` historically marked a nav item that was tier-locked, but the
+// launch-phase override in /lib/tier.ts unlocks every feature for every
+// dentist. We keep the field on the type so historical entries compile
+// without churn, but no UI lock state is rendered.
 const NAV: NavItem[] = [
   { href: '/for-dentists/dashboard',              icon: '📊', label: 'Overview'      },
   { href: '/for-dentists/dashboard/profile',      icon: '✏️', label: 'Edit Profile'  },
@@ -36,7 +30,6 @@ const NAV: NavItem[] = [
   { href: '/for-dentists/dashboard/emr-templates', icon: '📋', label: 'EMR Templates' },
   { href: '/for-dentists/dashboard/analytics',    icon: '📈', label: 'Analytics'     },
   { href: '/for-dentists/dashboard/reports',      icon: '📊', label: 'Reports'       },
-  { href: '/for-dentists/dashboard/upgrade',      icon: '⭐', label: 'Upgrade Plan'  },
 ]
 
 const MOBILE_NAV = [
@@ -45,17 +38,6 @@ const MOBILE_NAV = [
   { href: '/for-dentists/dashboard/patients',     icon: '👥', label: 'Patients'     },
   { href: '/for-dentists/dashboard/enquiries',    icon: '💬', label: 'Enquiries'    },
 ]
-
-// Sidebar tier-pill styling — colour-coded so a glance at the sidebar tells
-// the dentist (and us when we screen-share their dashboard) what plan they're
-// on. Free is grey/neutral; Silver picks up steel/slate; Gold uses the
-// familiar amber/champagne; Featured stays distinct from Gold on the brand.
-const TIER_PILL: Record<Tier, { label: string; color: string; bg: string; border: string }> = {
-  free:     { label: 'Free',       color: '#475569', bg: '#F1F5F9', border: '#CBD5E1' },
-  silver:   { label: '✦ Silver',   color: '#334155', bg: '#E2E8F0', border: '#94A3B8' },
-  gold:     { label: '⭐ Gold',    color: '#92400E', bg: '#FEF3C7', border: '#FDE68A' },
-  featured: { label: '🔥 Featured', color: '#C2410C', bg: '#FFEDD5', border: '#FDBA74' },
-}
 
 interface Props {
   dentist: any
@@ -69,12 +51,7 @@ export default function DashboardShell({ dentist, completionPct, children }: Pro
   const [mobileOpen, setMobileOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
   const addRef = useRef<HTMLDivElement>(null)
-  // `tier` is the dentist's STORED tier (what they actually own — drives the
-  // sidebar pill and the upgrade-page state). `effective` is what gating keys
-  // off; during the launch phase `effectiveTier` returns Gold for everyone so
-  // the dashboard is fully unlocked regardless of stored tier.
-  const tier: Tier = normalizeTier(dentist.tier)
-  const effective: Tier = effectiveTier(dentist.tier, dentist.trial_started_at)
+  // Tier / pricing UI hidden during the launch phase — see /lib/tier.ts.
   // Logo/brand follow the dentist's own city (set on the row, source of truth).
   // window.location.hostname is only used as a last-resort fallback for pre-
   // city-column legacy rows where dentist.city might be null.
@@ -135,16 +112,9 @@ export default function DashboardShell({ dentist, completionPct, children }: Pro
             <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }} title={dentist.clinic_name}>{dentist.clinic_name}</div>
           </div>
         </div>
-        <span style={{
-          display: 'inline-flex', alignItems: 'center', gap: 4,
-          fontSize: 10, fontWeight: 700,
-          padding: '3px 9px', borderRadius: 20,
-          background: TIER_PILL[tier].bg,
-          color: TIER_PILL[tier].color,
-          border: `1px solid ${TIER_PILL[tier].border}`,
-        }}>
-          {TIER_PILL[tier].label}
-        </span>
+        {/* Tier pill intentionally omitted — see /lib/tier.ts for the
+            launch-phase override that unlocks every feature regardless
+            of stored tier. */}
 
         {/* Completion bar */}
         {completionPct < 100 && (
@@ -169,24 +139,22 @@ export default function DashboardShell({ dentist, completionPct, children }: Pro
       <nav style={{ flex: 1, minHeight: 0, padding: '8px 12px', overflowY: 'auto', scrollbarWidth: 'none' as any, msOverflowStyle: 'none' as any }}>
         {NAV.map(item => {
           const isActive = pathname === item.href || (item.href !== '/for-dentists/dashboard' && pathname.startsWith(item.href))
-          const locked = item.minTier ? !tierMeets(effective, item.minTier) : false
           return (
             <Link
               key={item.href}
-              href={locked ? '/for-dentists/dashboard/upgrade' : item.href}
+              href={item.href}
               onClick={() => setMobileOpen(false)}
               style={{
                 display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px',
                 borderRadius: 8, marginBottom: 2, textDecoration: 'none', fontSize: 13,
                 fontWeight: isActive ? 600 : 400,
                 background: isActive ? 'var(--blue-light)' : 'transparent',
-                color: isActive ? 'var(--blue)' : locked ? '#CBD5E1' : 'var(--text-secondary)',
+                color: isActive ? 'var(--blue)' : 'var(--text-secondary)',
                 transition: 'all 0.15s',
               }}
             >
               <span>{item.icon}</span>
               <span style={{ flex: 1 }}>{item.label}</span>
-              {locked && <span style={{ fontSize: 11, marginLeft: 4, opacity: 0.6 }} aria-label="Locked — upgrade required">🔒</span>}
             </Link>
           )
         })}

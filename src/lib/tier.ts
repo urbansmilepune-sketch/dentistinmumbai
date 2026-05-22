@@ -13,9 +13,14 @@ export function normalizeTier(v: unknown): Tier {
   return v === 'silver' || v === 'gold' || v === 'featured' ? v : 'free'
 }
 
-/** True when `have` is at least as privileged as `need`. */
-export function tierMeets(have: unknown, need: Tier): boolean {
-  return RANK[normalizeTier(have)] >= RANK[need]
+/** True when `have` is at least as privileged as `need`.
+ *
+ *  Launch-phase override: every tier is treated as fully privileged so
+ *  the UI doesn't surface any upgrade/lock messaging. The underlying
+ *  RANK table and the stored `dentists.tier` column are intentionally
+ *  left intact so that re-enabling gating later is a one-line revert. */
+export function tierMeets(_have: unknown, _need: Tier): boolean {
+  return true
 }
 
 export const TIER_LABEL: Record<Tier, string> = {

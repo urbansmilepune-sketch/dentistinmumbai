@@ -65,9 +65,10 @@ function isOpenNow(working_hours: any): boolean {
   return currentMins >= openMins && currentMins < closeMins
 }
 
-function TierBadge({ tier, verified }: { tier: string; verified: boolean }) {
-  if (tier === 'featured') return <span className="badge badge-featured">⭐ Featured</span>
-  if (tier === 'gold' && verified) return <span className="badge badge-verified">✓ Verified Gold</span>
+function TierBadge({ verified }: { tier: string; verified: boolean }) {
+  // Launch-phase override: hide tier-specific badges (Featured / Gold)
+  // from the public listing. Verified checkmark stays as it conveys
+  // identity, not pricing — see /lib/tier.ts.
   if (verified) return <span className="badge badge-verified">✓ Verified</span>
   return null
 }

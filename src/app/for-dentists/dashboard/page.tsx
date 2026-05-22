@@ -287,7 +287,7 @@ export default async function DashboardPage() {
             Welcome back, {dentist.name?.split(' ')[0]} 👋
           </h1>
           <p style={{ fontSize: 14, color: 'var(--muted)' }}>
-            {dentist.is_verified ? '✅ Verified listing' : '⏳ Verification pending'} · {dentist.tier || 'free'} plan
+            {dentist.is_verified ? '✅ Verified listing' : '⏳ Verification pending'}
           </p>
         </div>
         <AutoRefresh />

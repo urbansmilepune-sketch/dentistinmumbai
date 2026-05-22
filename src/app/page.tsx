@@ -315,8 +315,7 @@ export default async function HomePage() {
                             {d.clinic_name} · {(d as any).areas?.name || city.cityName}
                           </p>
                           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                            {d.tier === 'featured' && <span className="badge badge-featured">⭐ Featured</span>}
-                            {d.tier === 'gold' && <span className="badge badge-gold">Gold</span>}
+                            {/* Tier badges hidden during launch phase — see /lib/tier.ts. */}
                             {d.experience_years > 0 && (
                               <span className="badge badge-blue">{d.experience_years} yrs exp</span>
                             )}
