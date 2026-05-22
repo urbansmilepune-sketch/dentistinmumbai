@@ -17,6 +17,7 @@ const TABS = [
   { id: 'prescriptions', label: 'Prescriptions', icon: '💊' },
   { id: 'invoices', label: 'Invoices', icon: '🧾' },
   { id: 'plans', label: 'Treatment Plans', icon: '🦷' },
+  { id: 'treatment-plan', label: 'Treatment Plan', icon: '📋' },
   { id: 'emr', label: 'EMR', icon: '🏥' },
   { id: 'consent', label: 'Consent', icon: '📝' },
   { id: 'chart', label: 'Dental Chart', icon: '🦷' },
@@ -637,6 +638,25 @@ export default function PatientDetailPage() {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* DEDICATED TREATMENT-PLAN PAGE — the older "plans" tab is a quick
+          summary; this richer workflow (draft/presented/accepted lifecycle,
+          drag-reorder, per-step completion, convert to invoice, WhatsApp PDF,
+          patient acceptance tracking) lives on its own route so the form
+          state and step manager don't bloat this already-busy file. */}
+      {activeTab === 'treatment-plan' && (
+        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '28px', textAlign: 'center' }}>
+          <div style={{ fontSize: 40, marginBottom: 10 }}>📋</div>
+          <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18, marginBottom: 6 }}>Treatment Plan Workflow</h3>
+          <p style={{ fontSize: 14, color: 'var(--muted)', maxWidth: 520, margin: '0 auto 20px' }}>
+            Build a multi-step plan, track patient acceptance, mark steps completed one-by-one, share a PDF on WhatsApp, and convert the whole plan into an invoice in one click.
+          </p>
+          <Link href={`/for-dentists/dashboard/patients/${patientId}/treatment-plan`}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '11px 22px', minHeight: 44, background: 'var(--blue)', color: '#fff', borderRadius: 10, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
+            Open Treatment Plans →
+          </Link>
         </div>
       )}
 
