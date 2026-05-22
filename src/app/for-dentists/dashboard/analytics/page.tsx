@@ -1,7 +1,9 @@
+import { Suspense } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import FeatureGate from '@/components/FeatureGate'
 import { effectiveTier } from '@/lib/tier'
+import AnalyticsTabs from './AnalyticsTabs'
 
 export const dynamic = 'force-dynamic'
 
@@ -98,11 +100,18 @@ export default async function AnalyticsPage() {
 
   return (
     <div>
-      <div style={{ marginBottom: 24 }}>
+      <div style={{ marginBottom: 20 }}>
         <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 4 }}>Analytics</h1>
-        <p style={{ fontSize: 14, color: 'var(--muted)' }}>Your profile performance overview</p>
+        <p style={{ fontSize: 14, color: 'var(--muted)' }}>Profile performance + revenue, treatment mix, retention, appointment-flow metrics</p>
       </div>
 
+      {/* Sub-tab switcher. The engagement JSX below is server-rendered
+          inline as `children` so the headline stats stream with the
+          first byte; the Reports view is a client component that
+          mounts the first time the dentist clicks its tab. */}
+      <Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>Loading…</div>}>
+        <AnalyticsTabs>
+          <div>
       {/* Headline stats (visible to every tier) */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 16, marginBottom: 16 }}>
         {FREE_STATS.map(stat => (
@@ -217,6 +226,9 @@ export default async function AnalyticsPage() {
           ))}
         </div>
       </div>
+          </div>
+        </AnalyticsTabs>
+      </Suspense>
     </div>
   )
 }
