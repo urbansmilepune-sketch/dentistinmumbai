@@ -6,6 +6,7 @@ import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import DentalChart from '@/components/DentalChart'
 import PerioChart from '@/components/dental/PerioChart'
+import ToothChart from '@/components/dental/ToothChart'
 import ImageVault from '@/components/dental/ImageVault'
 import { downloadInvoicePdf } from '@/lib/invoicePdf'
 import ScheduleRecallButton from './ScheduleRecallButton'
@@ -18,6 +19,7 @@ const TABS = [
   { id: 'invoices', label: 'Invoices', icon: '🧾' },
   { id: 'plans', label: 'Treatment Plans', icon: '🦷' },
   { id: 'treatment-plan', label: 'Treatment Plan', icon: '📋' },
+  { id: 'dental-chart', label: 'Dental Chart', icon: '🦷' },
   { id: 'emr', label: 'EMR', icon: '🏥' },
   { id: 'consent', label: 'Consent', icon: '📝' },
   { id: 'chart', label: 'Dental Chart', icon: '🦷' },
@@ -705,7 +707,16 @@ export default function PatientDetailPage() {
         </div>
       )}
 
-      {/* DENTAL CHART — two sub-views: the FDI tooth chart (caries, RCT,
+      {/* DENTAL CHART (V2) — interactive ToothChart with shape-per-class,
+          modal condition picker, view/edit toggle, save, print, and
+          per-tooth history. Coexists with the older "chart" tab below,
+          which keeps the FDI tooth chart + periodontal sub-tabs together
+          for users who rely on that workflow. */}
+      {activeTab === 'dental-chart' && (
+        <ToothChart patientId={patientId} dentistId={dentistId} />
+      )}
+
+      {/* DENTAL CHART (legacy) — two sub-views: the FDI tooth chart (caries, RCT,
           restorations, missing teeth) and the periodontal chart (pocket
           depth / BOP / recession / mobility / furcation). Keeping them in
           sibling sub-tabs avoids cramming a 12th top-level tab into the
