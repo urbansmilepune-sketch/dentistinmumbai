@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import DentalChart from '@/components/DentalChart'
 import PerioChart from '@/components/dental/PerioChart'
 import ToothChart from '@/components/dental/ToothChart'
 import ImageVault from '@/components/dental/ImageVault'
@@ -22,7 +21,6 @@ const TABS = [
   { id: 'dental-chart', label: 'Dental Chart', icon: '🦷' },
   { id: 'emr', label: 'EMR', icon: '🏥' },
   { id: 'consent', label: 'Consent', icon: '📝' },
-  { id: 'chart', label: 'Dental Chart', icon: '🦷' },
   // Unified vault — replaces the older `xrays` and `photos` tabs which
   // queried two separate tables (xray_images + patient_photos). Both
   // legacy tables were merged into patient_images by migration
@@ -64,6 +62,10 @@ const TAB_ALIASES: Record<string, string> = {
   // Spelling-tolerant aliases for the lab-work tab.
   labwork: 'lab',
   'lab-work': 'lab',
+  // The legacy `chart` top-level tab folded into the new `dental-chart`
+  // tab (which now houses both the FDI tooth chart and the perio chart
+  // as sub-tabs). Old bookmarks land on the same content.
+  chart: 'dental-chart',
 }
 
 export default function PatientDetailPage() {
@@ -707,21 +709,12 @@ export default function PatientDetailPage() {
         </div>
       )}
 
-      {/* DENTAL CHART (V2) — interactive ToothChart with shape-per-class,
-          modal condition picker, view/edit toggle, save, print, and
-          per-tooth history. Coexists with the older "chart" tab below,
-          which keeps the FDI tooth chart + periodontal sub-tabs together
-          for users who rely on that workflow. */}
+      {/* DENTAL CHART — interactive ToothChart (caries / RCT / crown /
+          missing / implant / bridge / fracture / sensitivity) plus the
+          periodontal chart (pocket depth, BOP, recession, mobility,
+          furcation) as sibling sub-tabs under one top-level tab so we
+          don't bloat the patient strip with two near-identical labels. */}
       {activeTab === 'dental-chart' && (
-        <ToothChart patientId={patientId} dentistId={dentistId} />
-      )}
-
-      {/* DENTAL CHART (legacy) — two sub-views: the FDI tooth chart (caries, RCT,
-          restorations, missing teeth) and the periodontal chart (pocket
-          depth / BOP / recession / mobility / furcation). Keeping them in
-          sibling sub-tabs avoids cramming a 12th top-level tab into the
-          patient strip. */}
-      {activeTab === 'chart' && (
         <div>
           <div style={{ display: 'flex', gap: 8, marginBottom: 16, borderBottom: '1px solid var(--border)' }}>
             {([
@@ -746,7 +739,7 @@ export default function PatientDetailPage() {
               </button>
             ))}
           </div>
-          {chartSubTab === 'tooth' && <DentalChart patientId={patientId} dentistId={dentistId} />}
+          {chartSubTab === 'tooth' && <ToothChart patientId={patientId} dentistId={dentistId} />}
           {chartSubTab === 'perio' && <PerioChart patientId={patientId} dentistId={dentistId} />}
         </div>
       )}
