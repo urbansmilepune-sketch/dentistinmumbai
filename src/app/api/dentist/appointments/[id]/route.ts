@@ -18,6 +18,7 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { getDentistOwner } from '@/lib/dentistSession'
 import { sendAppointmentConfirmedToPatient, sendAppointmentCancelledToPatient } from '@/lib/email'
 import { sendSMS } from '@/lib/sms'
+import { autoCreateRecallForCompletedVisit } from '@/lib/recall'
 
 const VALID_STATUSES = ['pending', 'confirmed', 'completed', 'cancelled', 'no_show'] as const
 type Status = typeof VALID_STATUSES[number]
@@ -86,7 +87,7 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
   // for any appointment in the DB just by knowing the id.
   const { data: appt, error: lookupErr } = await db
     .from('appointments')
-    .select('id, dentist_id, patient_name, patient_email, patient_phone, appt_date, time_slot, reference_no, status')
+    .select('id, dentist_id, patient_id, patient_name, patient_email, patient_phone, appt_date, time_slot, reference_no, status')
     .eq('id', id)
     .maybeSingle()
   if (lookupErr) {
@@ -225,5 +226,43 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
     }
   }
 
-  return NextResponse.json({ success: true, status: updated.status, appointment: updated })
+  // Side effect: when the visit is closed out as 'completed', schedule a
+  // 6-month recall for the patient. We try to resolve a patient_id from
+  // the appointment row directly; manual walk-ins without one fall back to
+  // a phone-number match against the dentist's patient list. If neither
+  // yields a patient we silently skip — the dashboard's "Schedule Recall"
+  // button on the patient profile is still available as a manual escape
+  // hatch. The recall helper itself dedupes on (patient_id, type) so a
+  // re-completion or back-to-back visits don't stack duplicate recalls.
+  let recall: { id: string; due_date: string } | null = null
+  if (status === 'completed') {
+    // appt is the pre-update row from the ownership lookup; patient_id is
+    // selected explicitly above. Narrow off the inferred type instead of
+    // reaching for `any`.
+    let pid: string | null = (appt as { patient_id: string | null }).patient_id ?? null
+    if (!pid && updated.patient_phone) {
+      const phoneDigits = String(updated.patient_phone).replace(/\D/g, '')
+      if (phoneDigits.length >= 4) {
+        const tail = phoneDigits.slice(-10)
+        const { data: matchedPatient } = await db
+          .from('patients')
+          .select('id, phone')
+          .eq('dentist_id', owner.id)
+          .ilike('phone', `%${tail}`)
+          .limit(1)
+          .maybeSingle()
+        if (matchedPatient?.id) pid = matchedPatient.id
+      }
+    }
+    if (pid) {
+      recall = await autoCreateRecallForCompletedVisit({
+        db,
+        dentist_id: owner.id,
+        patient_id: pid,
+        visit_date: updated.appt_date,
+      })
+    }
+  }
+
+  return NextResponse.json({ success: true, status: updated.status, appointment: updated, recall })
 }

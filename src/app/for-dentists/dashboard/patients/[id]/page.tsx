@@ -8,6 +8,7 @@ import DentalChart from '@/components/DentalChart'
 import PerioChart from '@/components/dental/PerioChart'
 import ImageVault from '@/components/dental/ImageVault'
 import { downloadInvoicePdf } from '@/lib/invoicePdf'
+import ScheduleRecallButton from './ScheduleRecallButton'
 
 const TABS = [
   { id: 'overview', label: 'Overview', icon: '👤' },
@@ -247,6 +248,9 @@ export default function PatientDetailPage() {
             {patient.blood_group && <span style={{ color: '#7C3AED', fontWeight: 600 }}>{patient.blood_group}</span>}
             <span>📞 {patient.phone}</span>
           </div>
+        </div>
+        <div style={{ marginLeft: 'auto' }}>
+          <ScheduleRecallButton patientId={patientId} dentistId={dentistId} />
         </div>
       </div>
 

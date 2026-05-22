@@ -87,6 +87,7 @@ export default function AppointmentsPage() {
   const [locations, setLocations] = useState<{ id: string; name: string | null; is_primary: boolean }[]>([])
   const [updating, setUpdating] = useState<string | null>(null)
   const [statusError, setStatusError] = useState<string | null>(null)
+  const [recallToast, setRecallToast] = useState<string | null>(null)
   const [treatments, setTreatments] = useState<{ id: string; name: string }[]>([])
   const [showAdd, setShowAdd] = useState(() => searchParams.get('new') === '1')
   const [saving, setSaving] = useState(false)
@@ -282,24 +283,30 @@ export default function AppointmentsPage() {
   async function updateStatus(id: string, status: string) {
     setUpdating(id); setStatusError(null)
 
-    // Confirm/decline transitions route through the server so the API can
-    // attach side effects — most importantly emailing the patient when the
-    // appointment is confirmed. Other transitions (completed, no_show) keep
-    // using the direct RLS-gated supabase update path; if those grow their
-    // own side effects, expand the PATCH route.
-    if (status === 'confirmed' || status === 'cancelled') {
+    // Confirm/decline AND complete transitions route through the server so
+    // the API can attach side effects — confirmation/cancellation emails,
+    // and (for 'completed') auto-creating a 6-month recall reminder. Pure
+    // no_show flips keep using the direct RLS-gated supabase update path.
+    if (status === 'confirmed' || status === 'cancelled' || status === 'completed') {
       const res = await fetch(`/api/dentist/appointments/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status }),
       })
+      const body = await res.json().catch(() => ({} as any))
       setUpdating(null)
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
         setStatusError(body.error || body.message || 'Status change failed.')
         return
       }
       setAppointments(prev => prev.map(a => a.id === id ? { ...a, status } : a))
+      if (status === 'completed' && body?.recall?.due_date) {
+        const dueLabel = new Date(body.recall.due_date).toLocaleDateString('en-IN', {
+          day: 'numeric', month: 'short', year: 'numeric',
+        })
+        setRecallToast(`Recall scheduled for ${dueLabel}`)
+        setTimeout(() => setRecallToast(null), 5000)
+      }
       return
     }
 
@@ -370,6 +377,13 @@ export default function AppointmentsPage() {
         <div style={{ background: '#FEE2E2', border: '1px solid #FECACA', color: '#991B1B', padding: '12px 14px', borderRadius: 10, fontSize: 13, marginBottom: 16, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
           <span>{statusError}</span>
           <button onClick={() => setStatusError(null)} style={{ background: 'none', border: 'none', color: '#991B1B', cursor: 'pointer', fontFamily: 'var(--font-body)', fontWeight: 700 }}>✕</button>
+        </div>
+      )}
+
+      {recallToast && (
+        <div style={{ background: '#DCFCE7', border: '1px solid #BBF7D0', color: '#166534', padding: '12px 14px', borderRadius: 10, fontSize: 13, marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <span>📅 {recallToast}</span>
+          <button onClick={() => setRecallToast(null)} style={{ background: 'none', border: 'none', color: '#166534', cursor: 'pointer', fontFamily: 'var(--font-body)', fontWeight: 700 }}>✕</button>
         </div>
       )}
 
