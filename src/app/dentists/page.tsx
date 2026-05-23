@@ -8,6 +8,7 @@ import DentistCard from './DentistCard'
 import Pagination from './Pagination'
 import SortSelect from './SortSelect'
 import { haversineKm } from '@/lib/distance'
+import { isOpenNowFromHours } from '@/lib/time'
 import NationalDentistsDiscover from '@/components/national/NationalDentistsDiscover'
 
 // headers() forces dynamic rendering; ISR revalidate is therefore moot.
@@ -145,6 +146,13 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
   // EMI filter
   if (emiFilter) query = query.eq('emi_available', true)
 
+  // Minimum rating filter. Dentists with NULL avg_rating (no reviews) won't
+  // match — "no reviews" is not the same as "at least 4 stars".
+  if (ratingFilter) {
+    const minRating = parseFloat(ratingFilter)
+    if (Number.isFinite(minRating)) query = query.gte('avg_rating', minRating)
+  }
+
   // Fee filter — Indian dental consultation prices typically range ₹100–₹2000.
   if (feeFilter) {
     if (feeFilter === 'under500') query = query.lt('consultation_fee', 500)
@@ -159,15 +167,19 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
     if (sortBy === 'fee_asc') query = query.order('consultation_fee', { ascending: true })
     else if (sortBy === 'fee_desc') query = query.order('consultation_fee', { ascending: false })
     else if (sortBy === 'experience') query = query.order('experience_years', { ascending: false })
-    else query = query.order('tier').order('is_verified', { ascending: false }).order('created_at', { ascending: false })
-
-    // DB-side pagination when distance isn't involved.
-    const from = (page - 1) * PER_PAGE
-    query = query.range(from, from + PER_PAGE - 1)
+    else query = query.order('rank_score', { ascending: false })
   } else {
     // For distance sort we still apply a default DB order so the network
     // payload is deterministic, but we paginate in memory below.
     query = query.order('tier').order('created_at', { ascending: false })
+  }
+
+  // DB-side pagination only when nothing forces an in-memory pass. Distance
+  // sort and openNow (working_hours JSONB × IST time) both need the full
+  // filter result set before we can slice into pages.
+  if (!hasCoords && !openNowFilter) {
+    const from = (page - 1) * PER_PAGE
+    query = query.range(from, from + PER_PAGE - 1)
   }
 
   const { data: rawDentists, count } = await query
@@ -178,27 +190,41 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
   let totalCount = count || 0
   let totalPages = Math.ceil(totalCount / PER_PAGE)
 
-  if (hasCoords) {
-    const lat = userLat as number
-    const lng = userLng as number
-    const enriched = dentists.map(d => {
-      const dl = typeof d.lat === 'number' ? d.lat : null
-      const dg = typeof d.lng === 'number' ? d.lng : null
-      const distance_km = (dl !== null && dg !== null) ? haversineKm(lat, lng, dl, dg) : null
-      return { ...d, distance_km }
-    })
-    enriched.sort((a, b) => {
-      // Dentists without coords sink to the bottom; among those with coords,
-      // closest first.
-      if (a.distance_km === null && b.distance_km === null) return 0
-      if (a.distance_km === null) return 1
-      if (b.distance_km === null) return -1
-      return a.distance_km - b.distance_km
-    })
-    totalCount = enriched.length
+  if (hasCoords || openNowFilter) {
+    let processed: DentistRow[] = dentists
+
+    // Open-now is a JS-side filter: working_hours is JSONB keyed by
+    // day-of-week and "open right now" depends on IST clock time, neither
+    // of which the Supabase query builder can express ergonomically.
+    if (openNowFilter) {
+      processed = processed.filter(d => isOpenNowFromHours((d as any).working_hours))
+    }
+
+    if (hasCoords) {
+      const lat = userLat as number
+      const lng = userLng as number
+      processed = processed.map(d => {
+        const dl = typeof d.lat === 'number' ? d.lat : null
+        const dg = typeof d.lng === 'number' ? d.lng : null
+        const distance_km = (dl !== null && dg !== null) ? haversineKm(lat, lng, dl, dg) : null
+        return { ...d, distance_km } as DentistRow
+      })
+      processed.sort((a, b) => {
+        // Dentists without coords sink to the bottom; among those with coords,
+        // closest first.
+        const ad = (a as any).distance_km as number | null
+        const bd = (b as any).distance_km as number | null
+        if (ad === null && bd === null) return 0
+        if (ad === null) return 1
+        if (bd === null) return -1
+        return ad - bd
+      })
+    }
+
+    totalCount = processed.length
     totalPages = Math.ceil(totalCount / PER_PAGE)
     const from = (page - 1) * PER_PAGE
-    dentists = enriched.slice(from, from + PER_PAGE) as unknown as DentistRow[]
+    dentists = processed.slice(from, from + PER_PAGE)
   }
 
   const view = (params.view as 'list' | 'grid') || 'list'

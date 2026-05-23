@@ -28,6 +28,10 @@
     {
       "path": "/api/cron/recalls",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/rank-scores",
+      "schedule": "35 2 * * *"
     }
   ]
 }

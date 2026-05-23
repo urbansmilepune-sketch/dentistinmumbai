@@ -8,6 +8,9 @@ const supabase = createClient(
 
 export async function POST(request: NextRequest) {
   try {
+    const forwarded = request.headers.get('x-forwarded-for')
+    const ip = forwarded ? forwarded.split(',')[0].trim() : null
+
     const { dentist_id, event_type } = await request.json()
     // event_type: 'profile_view' | 'whatsapp_click' | 'call_click' | 'booking_click' | 'case_share'
     // case_share is attributed to the case's *author* — the sharer can be
@@ -26,7 +29,7 @@ export async function POST(request: NextRequest) {
 
     // Insert event log
     await supabase.from('analytics_events').insert({
-      dentist_id, event_type,
+      dentist_id, event_type, ip,
       created_at: new Date().toISOString(),
     })
 

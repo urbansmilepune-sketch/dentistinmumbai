@@ -10,6 +10,7 @@ import ShowMoreButton from './ShowMoreButton'
 import CostGuide from './CostGuide'
 import AreaFAQAccordion from './AreaFAQAccordion'
 import DentistCard from '@/components/DentistCard'
+import { isOpenNowFromHours } from '@/lib/time'
 
 // headers()-based city resolution forces dynamic rendering. Previous
 // generateStaticParams + ISR have been removed; per-city traffic is small
@@ -71,8 +72,11 @@ function getSEOContent(areaName: string, zone: string, dentistCount: number, cit
   }
 }
 
-export default async function AreaPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function AreaPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<Record<string, string>> }) {
   const { slug } = await params
+  const sp = await searchParams
+  const ratingFilter = sp.rating || ''
+  const openNowFilter = sp.open === 'true'
   const supabase = await createClient()
   const h = await headers()
   const city = getCityBySlug(h.get('x-city-slug'))
@@ -91,24 +95,37 @@ export default async function AreaPage({ params }: { params: Promise<{ slug: str
   // Fetch dentists in this area (belt-and-suspenders city filter — area_id
   // already encodes city, but explicit filter guards against any cross-city
   // FK quirk).
-  const { data: dentists } = await supabase
+  let dentistQuery = supabase
     .from('dentists')
     .select(`
       id, slug, name, clinic_name, qualifications, experience_years,
       gender, consultation_fee, emi_available, is_verified, tier,
-      profile_photo, whatsapp, phone, working_hours,
+      profile_photo, whatsapp, phone, working_hours, avg_rating,
       areas(name, slug),
       dentist_treatments(treatments(name, slug))
     `)
     .eq('area_id', area.id)
     .eq('is_active', true)
     .eq('city', citySlug)
-    .order('tier')
-    .order('is_verified', { ascending: false })
+    .order('rank_score', { ascending: false })
     .limit(20)
 
+  // Minimum rating filter. Dentists with NULL avg_rating (no reviews) won't
+  // match — "no reviews" is not the same as "at least 4 stars".
+  if (ratingFilter) {
+    const minRating = parseFloat(ratingFilter)
+    if (Number.isFinite(minRating)) dentistQuery = dentistQuery.gte('avg_rating', minRating)
+  }
+
+  const { data: dentists } = await dentistQuery
+
+  // openNow is a JS-side filter: working_hours is JSONB keyed by day-of-week
+  // and "open right now" depends on IST clock time. The .limit(20) above is
+  // a curation cap, not pagination — open-now narrows within those 20.
   const isMumbai = city.citySlug === 'mumbai'
-  const dentistList = dentists || []
+  const dentistList = openNowFilter
+    ? (dentists || []).filter(d => isOpenNowFromHours((d as any).working_hours))
+    : (dentists || [])
   const visibleDentists = dentistList.slice(0, 4)
   const hiddenDentists = dentistList.slice(4)
   // Mumbai groups "nearby" by suburban-rail line. Other cities don't carry

@@ -123,8 +123,7 @@ export const getCityHomeData = unstable_cache(
         .select(DENTIST_LIST_SELECT)
         .eq('is_active', true)
         .eq('city', citySlug)
-        .order('tier')
-        .order('created_at', { ascending: false })
+        .order('rank_score', { ascending: false })
         .limit(6),
       supabase
         .from('dentists')
@@ -133,7 +132,7 @@ export const getCityHomeData = unstable_cache(
         .eq('is_verified', true)
         .eq('city', citySlug)
         .in('tier', ['featured', 'gold', 'silver'])
-        .order('tier')
+        .order('rank_score', { ascending: false })
         .limit(6),
     ])
 

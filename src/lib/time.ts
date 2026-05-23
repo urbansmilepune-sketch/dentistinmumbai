@@ -27,3 +27,16 @@ export function istDayTime(now: Date): { dayKey: string; hour: number; minute: n
   const hour = hourNum === 24 ? 0 : hourNum
   return { dayKey: weekday, hour, minute }
 }
+
+export function isOpenNowFromHours(working_hours: any): boolean {
+  if (!working_hours) return false
+  const { dayKey, hour, minute } = istDayTime(new Date())
+  const dayHours = working_hours[dayKey]
+  if (!dayHours?.is_open) return false
+  const [openH, openM] = (dayHours.open_time || '09:00').split(':').map(Number)
+  const [closeH, closeM] = (dayHours.close_time || '19:00').split(':').map(Number)
+  const currentMins = hour * 60 + minute
+  const openMins = openH * 60 + openM
+  const closeMins = closeH * 60 + closeM
+  return currentMins >= openMins && currentMins < closeMins
+}
