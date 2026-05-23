@@ -73,6 +73,43 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   // budget when wrapped in a generic.
   const applyCity = (q: any): any => (cityFilter ? q.eq('city', cityFilter) : q)
 
+  // Dentists lookup — fetched once up front so the appointments queries
+  // below can a) join in JS instead of relying on a `dentists!inner(…)`
+  // FK resolution (the appointments table's dentist_id FK isn't
+  // discoverable to PostgREST, which previously made every appointments
+  // count + the Top-10 leaderboard come back empty), and b) translate
+  // a `?city=` filter into an `.in('dentist_id', …)` clause since the
+  // appointments row itself carries no city column. The select is slim
+  // enough that fetching every dentist (active + inactive) stays cheap
+  // at current scale and avoids juggling two dentists fetches.
+  type DentLookup = {
+    id: string
+    name: string
+    slug: string
+    clinic_name: string | null
+    city: string | null
+    is_active: boolean | null
+  }
+  const { data: allDentistsLookupRaw } = await adminClient
+    .from('dentists')
+    .select('id, name, slug, clinic_name, city, is_active')
+  const allDentistsLookup = (allDentistsLookupRaw || []) as DentLookup[]
+  const dentistById = new Map(allDentistsLookup.map(d => [d.id, d]))
+  // Null when no city filter is active. An empty array would otherwise
+  // collapse `applyApptCity` into `.in('dentist_id', [])` which returns
+  // zero rows — which is the right answer for a city with no dentists,
+  // but the wrong answer for "no filter selected".
+  const cityDentistIds: string[] | null = cityFilter
+    ? allDentistsLookup.filter(d => d.city === cityFilter).map(d => d.id)
+    : null
+  // Appointments / enquiries / patients / gallery_photos / analytics_events
+  // don't carry their own `city` column, so the URL `?city=` param has to
+  // be translated into a dentist_id IN (…) clause via this helper. Plain
+  // `applyCity` would wrongly chain `.eq('city', …)` on a non-existent
+  // column for these tables.
+  const applyApptCity = (q: any): any =>
+    (cityDentistIds ? q.in('dentist_id', cityDentistIds) : q)
+
   const [
     { count: dentistCount },
     { count: appointmentCount },
@@ -102,7 +139,6 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     { data: apptDentistRowsAll },
     { data: apptDentistRows30 },
     // --- City Overview (always all cities, ignores cityFilter) ---
-    { data: allDentistSlim },
     { data: allRegistrationsSlim },
     { data: allPatientDentistIds },
     { data: commsDentists },
@@ -130,11 +166,11 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     { count: newRegsTodayCount },
   ] = await Promise.all([
     applyCity(adminClient.from('dentists').select('*', { count: 'exact', head: true }).eq('is_active', true)),
-    applyCity(adminClient.from('appointments').select('*, dentists!inner(city)', { count: 'exact', head: true })),
+    applyApptCity(adminClient.from('appointments').select('*', { count: 'exact', head: true })),
     applyCity(adminClient.from('enquiries').select('*, dentists!inner(city)', { count: 'exact', head: true })),
     applyCity(adminClient.from('dentists').select('id, slug, name, clinic_name, email, qualifications, phone, tier, is_verified, is_active, city, areas(name, slug)').order('created_at', { ascending: false }).limit(100)),
     applyCity(adminClient.from('dentist_registrations').select('*').order('created_at', { ascending: false }).limit(100)),
-    applyCity(adminClient.from('appointments').select('*, dentists!inner(name, city), treatments(name)').order('created_at', { ascending: false }).limit(50)),
+    applyApptCity(adminClient.from('appointments').select('*, treatments(name)').order('created_at', { ascending: false }).limit(50)),
     applyCity(adminClient.from('enquiries').select('*, dentists!inner(name, city)').order('created_at', { ascending: false }).limit(50)),
     // Reviews don't carry city — filter via the joined dentist.
     cityFilter
@@ -158,15 +194,16 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     cityFilter
       ? adminClient.from('analytics_events').select('event_type, dentists!inner(city)').eq('dentists.city', cityFilter).gte('created_at', thirtyDaysAgoIso)
       : adminClient.from('analytics_events').select('event_type').gte('created_at', thirtyDaysAgoIso),
-    applyCity(adminClient.from('appointments').select('*, dentists!inner(city)', { count: 'exact', head: true }).gte('created_at', thirtyDaysAgoIso)),
+    applyApptCity(adminClient.from('appointments').select('*', { count: 'exact', head: true }).gte('created_at', thirtyDaysAgoIso)),
     applyCity(adminClient.from('dentist_registrations').select('*', { count: 'exact', head: true }).eq('status', 'approved').gte('created_at', weekAgoIso)),
     applyCity(adminClient.from('dentist_registrations').select('*', { count: 'exact', head: true }).eq('status', 'rejected').gte('created_at', weekAgoIso)),
     applyCity(adminClient.from('dentists').select('id, name, slug, clinic_name, profile_views, city, areas(name)').eq('is_active', true).order('profile_views', { ascending: false, nullsFirst: false }).limit(10)),
     applyCity(adminClient.from('dentists').select('id, name, slug, clinic_name, whatsapp_clicks, city, areas(name)').eq('is_active', true).order('whatsapp_clicks', { ascending: false, nullsFirst: false }).limit(10)),
-    applyCity(adminClient.from('appointments').select('dentist_id, dentists!inner(id, name, slug, clinic_name, city)').limit(5000)),
-    applyCity(adminClient.from('appointments').select('dentist_id, dentists!inner(id, name, slug, clinic_name, city)').gte('created_at', thirtyDaysAgoIso).limit(5000)),
-    // City overview — always global, never filtered.
-    adminClient.from('dentists').select('id, city, is_active'),
+    applyApptCity(adminClient.from('appointments').select('dentist_id').limit(5000)),
+    applyApptCity(adminClient.from('appointments').select('dentist_id').gte('created_at', thirtyDaysAgoIso).limit(5000)),
+    // City overview — always global, never filtered. The dentists axis
+    // comes from the up-front `allDentistsLookup` fetch, so only the
+    // registrations + patients pivots stay in this Promise.all.
     adminClient.from('dentist_registrations').select('city, status'),
     adminClient.from('patients').select('dentist_id'),
     // Communications-tab dropdown — must show every dentist regardless of
@@ -179,18 +216,18 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     applyCity(adminClient.from('dentists').select('*', { count: 'exact', head: true }).eq('is_active', true).eq('tier', 'silver')),
 
     // --- New: booking funnel ---
-    applyCity(adminClient.from('appointments').select('*, dentists!inner(city)', { count: 'exact', head: true }).gte('created_at', monthStartIso)),
+    applyApptCity(adminClient.from('appointments').select('*', { count: 'exact', head: true }).gte('created_at', monthStartIso)),
     cityFilter
       ? adminClient.from('patients').select('*, dentists!inner(city)', { count: 'exact', head: true }).eq('dentists.city', cityFilter).gte('created_at', monthStartIso)
       : adminClient.from('patients').select('*', { count: 'exact', head: true }).gte('created_at', monthStartIso),
     // Slim "bookings this month" rows used for the by-city pivot. Limit
     // 5000 mirrors the existing apptDentistRows30 cap — comfortably above
     // realistic monthly volume at current scale.
-    applyCity(adminClient.from('appointments').select('dentist_id, dentists!inner(city)').gte('created_at', monthStartIso).limit(5000)),
+    applyApptCity(adminClient.from('appointments').select('dentist_id').gte('created_at', monthStartIso).limit(5000)),
     // patient_id list across ALL appointments (city-filtered) for returning-
     // rate + avg-appts-per-patient computation. Excludes legacy rows with
     // no patient_id link.
-    applyCity(adminClient.from('appointments').select('patient_id, dentists!inner(city)').not('patient_id', 'is', null).limit(20000)),
+    applyApptCity(adminClient.from('appointments').select('patient_id, dentist_id').not('patient_id', 'is', null).limit(20000)),
 
     // --- New: content health ---
     cityFilter
@@ -233,7 +270,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     //     not "appointments created today"). Registrations don't carry an
     //     appt_date — we filter on created_at >= UTC-midnight to keep the
     //     today bucket consistent across server restarts.
-    applyCity(adminClient.from('appointments').select('*, dentists!inner(city)', { count: 'exact', head: true }).eq('appt_date', todayIstIso)),
+    applyApptCity(adminClient.from('appointments').select('*', { count: 'exact', head: true }).eq('appt_date', todayIstIso)),
     applyCity(adminClient.from('dentist_registrations').select('*', { count: 'exact', head: true }).gte('created_at', todayStartIso)),
   ])
 
@@ -275,20 +312,25 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const conversionPct = dc > 0 ? (paidCount / dc) * 100 : 0
   const avgRevenuePerPaid = paidCount > 0 ? mrr / paidCount : 0
 
-  // Top by appointments — aggregate JS-side
-  type ApptRow = { dentist_id: string; dentists: { id: string; name: string; slug: string; clinic_name: string | null } | null }
+  // Top by appointments — aggregate JS-side. Rows come back as bare
+  // dentist_id slugs (we dropped the `dentists!inner(…)` join because
+  // PostgREST can't resolve the appointments→dentists FK) and the
+  // display fields are stitched in from `dentistById`.
+  type ApptRow = { dentist_id: string | null }
   function topDentistsByAppt(rows: ApptRow[], limit = 10) {
     const counts = new Map<string, { id: string; name: string; slug: string; clinic_name: string | null; count: number }>()
     for (const r of rows) {
-      if (!r.dentist_id || !r.dentists) continue
+      if (!r.dentist_id) continue
+      const d = dentistById.get(r.dentist_id)
+      if (!d) continue
       const existing = counts.get(r.dentist_id)
       if (existing) existing.count++
-      else counts.set(r.dentist_id, { id: r.dentists.id, name: r.dentists.name, slug: r.dentists.slug, clinic_name: r.dentists.clinic_name, count: 1 })
+      else counts.set(r.dentist_id, { id: d.id, name: d.name, slug: d.slug, clinic_name: d.clinic_name, count: 1 })
     }
     return Array.from(counts.values()).sort((a, b) => b.count - a.count).slice(0, limit)
   }
-  const topByAppointments = topDentistsByAppt((apptDentistRowsAll || []) as unknown as ApptRow[])
-  const topByAppointments30 = topDentistsByAppt((apptDentistRows30 || []) as unknown as ApptRow[])
+  const topByAppointments = topDentistsByAppt((apptDentistRowsAll || []) as ApptRow[])
+  const topByAppointments30 = topDentistsByAppt((apptDentistRows30 || []) as ApptRow[])
 
   // Areas split — populated vs empty (opportunity)
   type AreaRow = { id: string; name: string; zone: string | null; slug: string; dentist_count: number | null }
@@ -301,22 +343,14 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   // because Postgres group-by needs an RPC and our totals (≤ a few thousand
   // dentists / regs / patients) are trivial to fold in memory.
   // -------------------------------------------------------------------------
-  type DentSlim = { id: string; city: string | null; is_active: boolean | null }
   type RegSlim = { city: string | null; status: string | null }
   type PatSlim = { dentist_id: string | null }
-  const dentSlim = (allDentistSlim || []) as DentSlim[]
   const regSlim = (allRegistrationsSlim || []) as RegSlim[]
   const patSlim = (allPatientDentistIds || []) as PatSlim[]
 
-  // dentist_id → city map for the patients pivot
-  const dentistCityById = new Map<string, string>()
-  for (const d of dentSlim) {
-    if (d.id && d.city) dentistCityById.set(d.id, d.city)
-  }
-
   const patientCountByCity = new Map<string, number>()
   for (const p of patSlim) {
-    const c = p.dentist_id ? dentistCityById.get(p.dentist_id) : undefined
+    const c = p.dentist_id ? dentistById.get(p.dentist_id)?.city : undefined
     if (!c) continue
     patientCountByCity.set(c, (patientCountByCity.get(c) ?? 0) + 1)
   }
@@ -334,12 +368,14 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const avgBookingsPerDentist = dc > 0 ? (appointmentCount || 0) / dc : 0
 
   // Bookings-by-city — derived JS-side from the slim "this month" appt rows.
-  // Pivot uses the joined dentists.city so dentists rows with a null city
-  // (rare legacy) just fall out instead of bucketing into "unknown".
-  type ApptCityRow = { dentist_id: string | null; dentists: { city: string | null } | null }
+  // Looks up city via `dentistById` because the appointments row itself
+  // doesn't carry a city column; rows whose dentist isn't in the map
+  // (deleted dentist, stale join) just fall out instead of bucketing
+  // into "unknown".
+  type ApptCityRow = { dentist_id: string | null }
   const bookingsByCityMap = new Map<string, number>()
-  for (const r of (appointmentsThisMonthSlim || []) as unknown as ApptCityRow[]) {
-    const c = r.dentists?.city
+  for (const r of (appointmentsThisMonthSlim || []) as ApptCityRow[]) {
+    const c = r.dentist_id ? dentistById.get(r.dentist_id)?.city : undefined
     if (!c) continue
     bookingsByCityMap.set(c, (bookingsByCityMap.get(c) ?? 0) + 1)
   }
@@ -505,7 +541,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
 
   const cityOverview = (Object.keys(CITY_CONFIGS) as CitySlug[]).map(slug => {
     const cfg = CITY_CONFIGS[slug]
-    const dentistsHere = dentSlim.filter(d => d.city === slug)
+    const dentistsHere = allDentistsLookup.filter(d => d.city === slug)
     const regsHere = regSlim.filter(r => r.city === slug)
     return {
       slug,
@@ -591,12 +627,23 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     },
   }
 
+  // Appointments rows are fetched without the `dentists!inner(name, city)`
+  // join (PostgREST can't resolve the FK), so we hydrate a `dentists`
+  // field on each row from `dentistById` before handing off to the
+  // client. AdminPageClient renders `(a.dentists as any)?.name` for the
+  // dentist column — leaving it null cleanly falls through to the `—`
+  // placeholder.
+  const appointmentsForClient = (appointments || []).map((a: any) => ({
+    ...a,
+    dentists: a.dentist_id ? dentistById.get(a.dentist_id) ?? null : null,
+  }))
+
   return (
     <AdminPageClient
       stats={stats}
       dentists={dentists || []}
       registrations={registrations || []}
-      appointments={appointments || []}
+      appointments={appointmentsForClient}
       enquiries={enquiries || []}
       reviews={reviews || []}
       areas={areas || []}

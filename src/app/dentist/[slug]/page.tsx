@@ -12,6 +12,7 @@ import ProfileTabs from './ProfileTabs'
 import LocationTabs from './LocationTabs'
 import ViewTracker from './ViewTracker'
 import TrackedLink from './TrackedLink'
+import TrackedBookingLink from './TrackedBookingLink'
 import ClinicContactButton from './ClinicContactButton'
 import ReviewForm from '@/components/ReviewForm'
 import CitiesFooterLinks from '@/components/CitiesFooterLinks'
@@ -239,11 +240,12 @@ export default async function DentistProfilePage({ params }: Props) {
                   📞 Call Clinic
                 </TrackedLink>
               )}
-              <Link
+              <TrackedBookingLink
+                dentistId={dentist.id}
                 href={`/book/${dentist.slug}`}
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px 20px', background: 'var(--blue)', color: '#fff', borderRadius: 10, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
                 📅 Book Appointment
-              </Link>
+              </TrackedBookingLink>
             </div>
           </div>
 
@@ -389,11 +391,12 @@ export default async function DentistProfilePage({ params }: Props) {
             📞 Call
           </TrackedLink>
         )}
-        <Link
+        <TrackedBookingLink
+          dentistId={dentist.id}
           href={`/book/${dentist.slug}`}
           style={{ flex: 1.2, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 52, padding: '0 8px', background: 'var(--blue)', color: '#fff', borderRadius: 12, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
           📅 Book
-        </Link>
+        </TrackedBookingLink>
       </div>
 
       {/* Floating clinic-contact button — public-profile-only, talks to the
