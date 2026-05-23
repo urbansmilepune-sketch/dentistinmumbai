@@ -79,7 +79,10 @@ export default function RecallsPage() {
   const [loading, setLoading] = useState(true)
   const [rows, setRows] = useState<RecallRow[]>([])
   const [lastVisitByPatient, setLastVisitByPatient] = useState<Map<string, string>>(new Map())
-  const [filter, setFilter] = useState<FilterKey>('week')
+  // Land on 'all' so the dentist always sees every recall on first paint —
+  // 'week' as a default looks broken when the only recall is overdue or
+  // sent (the time-window match is empty even though rows exist).
+  const [filter, setFilter] = useState<FilterKey>('all')
   const [busyRow, setBusyRow] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
@@ -93,6 +96,10 @@ export default function RecallsPage() {
       if (!dentist) { setLoading(false); return }
 
       const [{ data: rc }, { data: appts }] = await Promise.all([
+        // Deliberately no due_date / status filter — the page needs the
+        // full list so the All tab and the summary tiles (overdue, sent,
+        // total) are all driven from a single fetch. The visible filter
+        // is applied client-side in `filtered` below.
         supabase
           .from('recall_reminders')
           .select('*, patients(id, name, phone, email)')

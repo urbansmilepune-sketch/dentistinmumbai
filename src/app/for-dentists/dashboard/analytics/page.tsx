@@ -1,5 +1,6 @@
 import { Suspense } from 'react'
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import FeatureGate from '@/components/FeatureGate'
 import { effectiveTier } from '@/lib/tier'
@@ -21,6 +22,19 @@ export default async function AnalyticsPage() {
 
   const sevenDaysAgoIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
 
+  // analytics_events RLS blocks the user-bound (anon-key + cookie) client
+  // from SELECTing even the dentist's own rows. The track route inserts
+  // into analytics_events using the service-role key, so the data is
+  // there — but reading it back requires the same elevation. Lifetime
+  // counters on `dentists` (profile_views, etc.) come through the normal
+  // client because that row is RLS-readable. The dentist_id filter below
+  // is pinned to the auth-resolved dentist row, so this is not a
+  // privilege escalation.
+  const adminClient = createServiceClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  )
+
   // Fetch stats
   const [
     { count: totalAppts },
@@ -37,7 +51,7 @@ export default async function AnalyticsPage() {
     supabase.from('enquiries').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id),
     supabase.from('reviews').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id).eq('status', 'approved'),
     supabase.from('appointments').select('appt_date, status').eq('dentist_id', dentist.id).order('appt_date', { ascending: false }).limit(30),
-    supabase.from('analytics_events').select('event_type, created_at').eq('dentist_id', dentist.id).gte('created_at', sevenDaysAgoIso),
+    adminClient.from('analytics_events').select('event_type, created_at').eq('dentist_id', dentist.id).gte('created_at', sevenDaysAgoIso),
   ])
 
   // Build last-7-days matrix [{ dayLabel, profile_view, whatsapp_click, call_click, booking_click }]
@@ -164,7 +178,10 @@ export default async function AnalyticsPage() {
         </FeatureGate>
       )}
 
-      {/* Weekly engagement breakdown — Gold-only (conversion-funnel adjacent). */}
+      {/* Weekly engagement breakdown — Gold-only (conversion-funnel adjacent).
+          Bar chart shows total events per day in brand blue; per-channel
+          breakdown is in a CSS-only hover tooltip so the chart stays
+          server-rendered (no client component / hydration cost). */}
       <FeatureGate
         requiredTier="gold"
         featureName="Engagement funnel"
@@ -172,40 +189,91 @@ export default async function AnalyticsPage() {
         dentistTier={tier}
       >
       <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '24px', marginBottom: 24 }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 20, gap: 12, flexWrap: 'wrap' }}>
           <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16 }}>Engagement — Last 7 Days</h3>
-          <span style={{ fontSize: 12, color: 'var(--muted)' }}>profile views, WhatsApp / call / booking clicks</span>
+          <span style={{ fontSize: 12, color: 'var(--muted)' }}>Hover a bar for the channel breakdown</span>
         </div>
         {!hasAnyEvents ? (
           <p style={{ fontSize: 13, color: 'var(--muted)', padding: '16px 0' }}>No engagement events recorded in the last 7 days yet.</p>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead>
-                <tr style={{ background: 'var(--bg)' }}>
-                  <th style={{ padding: '8px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: 'var(--muted)' }}>Day</th>
-                  {EVENT_TYPES.map(t => (
-                    <th key={t} style={{ padding: '8px 12px', textAlign: 'right', fontSize: 11, fontWeight: 600, color: EVENT_META[t].color }}>
-                      {EVENT_META[t].label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {dayBuckets.map(b => (
-                  <tr key={b.key} style={{ borderTop: '1px solid var(--border)' }}>
-                    <td style={{ padding: '8px 12px', color: 'var(--text-secondary)' }}>{b.label}</td>
-                    {EVENT_TYPES.map(t => (
-                      <td key={t} style={{ padding: '8px 12px', textAlign: 'right', fontWeight: b.counts[t] > 0 ? 600 : 400, color: b.counts[t] > 0 ? EVENT_META[t].color : 'var(--muted)' }}>
-                        {b.counts[t]}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          (() => {
+            // maxDayTotal anchors the bar heights; clamp to ≥1 so a single
+            // tall day still leaves room above the label.
+            const dayTotals = dayBuckets.map(b => EVENT_TYPES.reduce((n, t) => n + b.counts[t], 0))
+            const maxDayTotal = Math.max(...dayTotals, 1)
+            return (
+              <div className="eng-chart" style={{ display: 'flex', alignItems: 'flex-end', gap: 12, height: 160, paddingTop: 8 }}>
+                {dayBuckets.map((b, i) => {
+                  const total = dayTotals[i]
+                  // Bars with 0 events render as a thin baseline so the day
+                  // is still anchored on the x-axis instead of vanishing.
+                  const barHeight = total > 0 ? Math.max((total / maxDayTotal) * 120, 6) : 2
+                  return (
+                    <div key={b.key} className="eng-bar" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, position: 'relative' }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: total > 0 ? 'var(--blue)' : 'var(--muted)' }}>{total}</span>
+                      <div
+                        style={{
+                          width: '100%',
+                          background: 'var(--blue)',
+                          borderRadius: '4px 4px 0 0',
+                          height: barHeight,
+                          opacity: total > 0 ? 1 : 0.18,
+                          transition: 'opacity 0.15s',
+                        }}
+                      />
+                      <span style={{ fontSize: 10, color: 'var(--muted)', textAlign: 'center', lineHeight: 1.2 }}>{b.label}</span>
+
+                      <div className="eng-tip" role="tooltip">
+                        <div style={{ fontSize: 11, fontWeight: 700, color: '#fff', marginBottom: 6 }}>{b.label}</div>
+                        {EVENT_TYPES.map(t => (
+                          <div key={t} style={{ display: 'flex', justifyContent: 'space-between', gap: 14, fontSize: 11, color: 'rgba(255,255,255,0.85)' }}>
+                            <span>{EVENT_META[t].label}</span>
+                            <span style={{ fontWeight: 700, color: '#fff' }}>{b.counts[t]}</span>
+                          </div>
+                        ))}
+                        <div style={{ borderTop: '1px solid rgba(255,255,255,0.25)', marginTop: 6, paddingTop: 6, display: 'flex', justifyContent: 'space-between', gap: 14, fontSize: 11 }}>
+                          <span style={{ color: 'rgba(255,255,255,0.85)' }}>Total</span>
+                          <span style={{ fontWeight: 800, color: '#fff' }}>{total}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })()
         )}
+        <style>{`
+          .eng-bar .eng-tip {
+            position: absolute;
+            bottom: calc(100% + 8px);
+            left: 50%;
+            transform: translateX(-50%);
+            background: #0F1923;
+            color: #fff;
+            padding: 10px 12px;
+            border-radius: 8px;
+            min-width: 160px;
+            box-shadow: 0 6px 20px rgba(15,25,35,0.25);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.12s;
+            z-index: 5;
+          }
+          .eng-bar .eng-tip::after {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 6px solid transparent;
+            border-top-color: #0F1923;
+          }
+          .eng-bar:hover .eng-tip,
+          .eng-bar:focus-within .eng-tip {
+            opacity: 1;
+          }
+        `}</style>
       </div>
       </FeatureGate>
 

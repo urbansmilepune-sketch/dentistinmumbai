@@ -21,6 +21,19 @@ interface Photo {
   category: string
 }
 
+// Gallery sections rendered on this page. Keys must match the
+// GALLERY_CATEGORIES whitelist in /api/cloudinary/upload — adding a section
+// here without updating the API will make uploads 400.
+const SECTIONS: Array<{ key: string; label: string; desc: string; optional?: boolean }> = [
+  { key: 'interior',       label: 'Clinic Interior',         desc: 'Reception, waiting area, treatment rooms' },
+  { key: 'exterior',       label: 'Clinic Exterior',         desc: 'Front of clinic, signage, entrance' },
+  { key: 'team',           label: 'Team & Faculty',          desc: 'Dentist + staff photos' },
+  { key: 'equipment',      label: 'Equipment & Instruments', desc: 'Chairs, X-ray machines, sterilization' },
+  { key: 'certifications', label: 'Certifications & Awards', desc: 'Degrees, certificates, recognitions' },
+  { key: 'before_after',   label: 'Before & After Cases',    desc: 'Clinical result photos', optional: true },
+]
+const SECTION_KEYS = new Set(SECTIONS.map(s => s.key))
+
 export default function PhotosPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
@@ -34,7 +47,6 @@ export default function PhotosPage() {
 
   const profileRef = useRef<HTMLInputElement>(null)
   const coverRef = useRef<HTMLInputElement>(null)
-  const galleryRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     async function load() {
@@ -67,14 +79,20 @@ export default function PhotosPage() {
     load()
   }, [])
 
-  async function uploadFile(file: File, type: PhotoType) {
+  // For gallery uploads, `category` picks which dentist photos section the
+  // new row lands in. Profile/cover ignore it.
+  async function uploadFile(file: File, type: PhotoType, category?: string) {
     if (file.size > 10 * 1024 * 1024) { setError('File too large. Max 10MB.'); return }
     if (!file.type.startsWith('image/')) { setError('Please upload an image file.'); return }
 
-    setUploading(type); setError('')
+    // Uploading state key — gallery uploads carry their category so each
+    // section's spinner only spins for its own in-flight upload.
+    const stateKey = type === 'gallery' && category ? `gallery:${category}` : type
+    setUploading(stateKey); setError('')
     const formData = new FormData()
     formData.append('file', file)
     formData.append('type', type)
+    if (type === 'gallery' && category) formData.append('category', category)
 
     try {
       const res = await fetch('/api/cloudinary/upload', { method: 'POST', body: formData })
@@ -154,7 +172,108 @@ export default function PhotosPage() {
     </div>
   )
 
+  // One categorized gallery section — owns its own hidden file input so we
+  // can route uploads to the correct gallery_photos.category without
+  // tracking "which section was clicked" in component state.
+  const CategorySection = ({ section, photos, atTotalLimit }: { section: typeof SECTIONS[number]; photos: Photo[]; atTotalLimit: boolean }) => {
+    const inputRef = useRef<HTMLInputElement>(null)
+    const stateKey = `gallery:${section.key}`
+    const isUploading = uploading === stateKey
+    const triggerPick = () => { if (!atTotalLimit && !isUploading) inputRef.current?.click() }
+
+    return (
+      <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '24px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', marginBottom: 4 }}>
+          <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16 }}>
+            {section.label}
+            {section.optional && <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 500, color: 'var(--muted)' }}>(optional)</span>}
+          </h3>
+          <span style={{ fontSize: 12, color: 'var(--muted)' }}>{photos.length} photo{photos.length === 1 ? '' : 's'}</span>
+        </div>
+        <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 16 }}>{section.desc}</p>
+
+        {photos.length === 0 ? (
+          // Empty state — full-width dropzone prompts the dentist to add the
+          // first photo for this category.
+          <div
+            onClick={triggerPick}
+            style={{
+              minHeight: 140, border: '2px dashed var(--border)', borderRadius: 12,
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              cursor: atTotalLimit ? 'not-allowed' : 'pointer', padding: '24px', background: 'var(--bg)', gap: 6,
+              opacity: atTotalLimit ? 0.5 : 1,
+            }}
+          >
+            {isUploading ? (
+              <>
+                <div style={{ width: 32, height: 32, border: '3px solid var(--blue)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                <span style={{ fontSize: 13, color: 'var(--muted)' }}>Uploading…</span>
+              </>
+            ) : (
+              <>
+                <span style={{ fontSize: 28 }}>📤</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--blue)' }}>Add {section.label}</span>
+                <span style={{ fontSize: 11, color: 'var(--muted)' }}>JPG, PNG, WebP · Max 10MB</span>
+              </>
+            )}
+          </div>
+        ) : (
+          // Photo grid — uploaded tiles + an inline add tile (until total limit hit).
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12 }}>
+            {!atTotalLimit && (
+              <div
+                onClick={triggerPick}
+                style={{ aspectRatio: '1', border: '2px dashed var(--border)', borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--bg)', gap: 6 }}
+              >
+                {isUploading ? (
+                  <div style={{ width: 28, height: 28, border: '3px solid var(--blue)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                ) : (
+                  <>
+                    <span style={{ fontSize: 28 }}>+</span>
+                    <span style={{ fontSize: 12, color: 'var(--blue)', fontWeight: 600 }}>Add Photo</span>
+                  </>
+                )}
+              </div>
+            )}
+            {photos.map(photo => (
+              <div key={photo.id} style={{ aspectRatio: '1', borderRadius: 12, overflow: 'hidden', position: 'relative', border: '1px solid var(--border)' }}>
+                <img src={photo.url} alt={photo.caption || section.label} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <button
+                  onClick={() => deletePhoto(photo.id)}
+                  style={{ position: 'absolute', top: 6, right: 6, width: 24, height: 24, borderRadius: '50%', background: 'rgba(0,0,0,0.6)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >✕</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={e => {
+            const file = e.target.files?.[0]
+            if (file) uploadFile(file, 'gallery', section.key)
+            // Reset so re-selecting the same file fires onChange again.
+            e.target.value = ''
+          }}
+        />
+      </div>
+    )
+  }
+
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300 }}><p style={{ color: 'var(--muted)' }}>Loading...</p></div>
+
+  // Bucket photos by category — xray rows and any unknown values are filtered
+  // out so a stray category in the DB doesn't silently vanish from the UI.
+  const photosBySection = new Map<string, Photo[]>()
+  for (const s of SECTIONS) photosBySection.set(s.key, [])
+  for (const p of gallery) {
+    if (SECTION_KEYS.has(p.category)) photosBySection.get(p.category)!.push(p)
+  }
+  const visibleGalleryCount = Array.from(photosBySection.values()).reduce((n, arr) => n + arr.length, 0)
+  const atTotalLimit = visibleGalleryCount >= GALLERY_LIMIT[tier]
 
   return (
     <div style={{ maxWidth: 720 }}>
@@ -209,71 +328,45 @@ export default function PhotosPage() {
           </div>
         </div>
 
-        {/* Gallery */}
-        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '24px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-            <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16 }}>Clinic Gallery</h3>
-            <span style={{ fontSize: 12, color: 'var(--muted)' }}>{gallery.length} / {GALLERY_LIMIT[tier]} photos</span>
-          </div>
-          <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 20 }}>Clinic interior, equipment, treatment rooms, before/after photos</p>
-
-          {!tierMeets(tier, 'silver') && gallery.length >= GALLERY_LIMIT.free && (
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 12,
-              background: '#FEF3C7', border: '1px solid #FDE68A',
-              borderRadius: 10, padding: '12px 14px',
-              fontSize: 13, color: '#92400E', marginBottom: 16, flexWrap: 'wrap',
-            }}>
-              <span>🔒 Free plan caps the gallery at <strong>{GALLERY_LIMIT.free}</strong> photos.</span>
-              <a href="/for-dentists/dashboard/upgrade"
-                style={{ color: 'var(--blue)', fontWeight: 700, textDecoration: 'none', marginLeft: 'auto' }}>
-                Upgrade for {GALLERY_LIMIT.silver} photos →
-              </a>
+        {/* Categorized clinic gallery — one section per photo type. The total
+            count across all sections counts toward the tier's GALLERY_LIMIT;
+            individual sections do not have their own caps. The divider here
+            visually breaks Profile/Cover (identity photos) from the clinic
+            gallery (location/team photos) so the page reads as two groups. */}
+        <div style={{ marginTop: 12 }}>
+          <hr style={{ border: 0, borderTop: '1px solid var(--border)', margin: '0 0 16px' }} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+            <div>
+              <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 20, marginBottom: 2 }}>Clinic Photos</h2>
+              <p style={{ fontSize: 13, color: 'var(--muted)' }}>Show patients what your clinic and team look like across six categories.</p>
             </div>
-          )}
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12, marginBottom: 16 }}>
-            {/* Upload tile */}
-            {gallery.length < GALLERY_LIMIT[tier] && (
-              <div
-                onClick={() => galleryRef.current?.click()}
-                style={{ aspectRatio: '1', border: '2px dashed var(--border)', borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--bg)', gap: 6 }}
-              >
-                {uploading === 'gallery' ? (
-                  <div style={{ width: 28, height: 28, border: '3px solid var(--blue)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-                ) : (
-                  <>
-                    <span style={{ fontSize: 28 }}>+</span>
-                    <span style={{ fontSize: 12, color: 'var(--blue)', fontWeight: 600 }}>Add Photo</span>
-                  </>
-                )}
-              </div>
-            )}
-
-            {/* Photo tiles */}
-            {gallery.map(photo => (
-              <div key={photo.id} style={{ aspectRatio: '1', borderRadius: 12, overflow: 'hidden', position: 'relative', border: '1px solid var(--border)' }}>
-                <img src={photo.url} alt={photo.caption || 'Clinic photo'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                <button
-                  onClick={() => deletePhoto(photo.id)}
-                  style={{ position: 'absolute', top: 6, right: 6, width: 24, height: 24, borderRadius: '50%', background: 'rgba(0,0,0,0.6)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                >✕</button>
-                {photo.category && (
-                  <div style={{ position: 'absolute', bottom: 6, left: 6, fontSize: 10, fontWeight: 600, padding: '2px 6px', background: 'rgba(0,0,0,0.6)', color: '#fff', borderRadius: 4 }}>{photo.category.replace('_', ' ')}</div>
-                )}
-              </div>
-            ))}
+            <span style={{ fontSize: 12, color: 'var(--muted)' }}>{visibleGalleryCount} / {GALLERY_LIMIT[tier]} photos</span>
           </div>
-
-          <input ref={galleryRef as any} type="file" accept="image/*" style={{ display: 'none' }}
-            onChange={e => { const file = e.target.files?.[0]; if (file) uploadFile(file, 'gallery') }} />
-
-          {gallery.length === 0 && (
-            <div style={{ textAlign: 'center', padding: '20px', color: 'var(--muted)', fontSize: 14 }}>
-              No photos yet. Upload your first clinic photo above.
-            </div>
-          )}
         </div>
+
+        {!tierMeets(tier, 'silver') && visibleGalleryCount >= GALLERY_LIMIT.free && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 12,
+            background: '#FEF3C7', border: '1px solid #FDE68A',
+            borderRadius: 10, padding: '12px 14px',
+            fontSize: 13, color: '#92400E', flexWrap: 'wrap',
+          }}>
+            <span>🔒 Free plan caps the gallery at <strong>{GALLERY_LIMIT.free}</strong> photos across all sections.</span>
+            <a href="/for-dentists/dashboard/upgrade"
+              style={{ color: 'var(--blue)', fontWeight: 700, textDecoration: 'none', marginLeft: 'auto' }}>
+              Upgrade for {GALLERY_LIMIT.silver} photos →
+            </a>
+          </div>
+        )}
+
+        {SECTIONS.map(section => (
+          <CategorySection
+            key={section.key}
+            section={section}
+            photos={photosBySection.get(section.key) || []}
+            atTotalLimit={atTotalLimit}
+          />
+        ))}
 
         {/* Tips */}
         <div style={{ background: 'var(--blue-light)', border: '1px solid #BFDBFE', borderRadius: 16, padding: '20px' }}>

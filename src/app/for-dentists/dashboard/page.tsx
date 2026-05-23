@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import TodayWhatsAppButton, { type TodayAppt } from './TodayWhatsAppButton'
@@ -58,6 +59,18 @@ export default async function DashboardPage() {
   _ms.setUTCDate(1); _ms.setUTCHours(0, 0, 0, 0)
   const monthStartIso = _ms.toISOString()
 
+  // analytics_events has RLS that blocks the authenticated-dentist role
+  // from SELECTing even their own rows — the lifetime counter columns on
+  // `dentists` (profile_views, whatsapp_clicks) work because they live on
+  // a row the dentist can read, but the per-event log table doesn't. Use
+  // the service-role client for the MTD aggregate; the dentist_id filter
+  // is locked to the auth-resolved dentist row above so this isn't a
+  // privilege escalation.
+  const adminClient = createServiceClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  )
+
   const [
     { count: appointmentCount },
     { count: enquiryCount },
@@ -94,7 +107,7 @@ export default async function DashboardPage() {
       .select('total, payment_status')
       .eq('dentist_id', dentist.id)
       .in('payment_status', ['pending', 'overdue']),
-    supabase
+    adminClient
       .from('analytics_events')
       .select('event_type')
       .eq('dentist_id', dentist.id)

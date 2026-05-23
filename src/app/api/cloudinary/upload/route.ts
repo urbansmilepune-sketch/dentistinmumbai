@@ -24,6 +24,12 @@ const ALLOWED_TYPES = ['profile', 'cover', 'gallery', 'xray', 'patient_photo'] a
 type UploadType = typeof ALLOWED_TYPES[number]
 const MAX_SIZE = 10 * 1024 * 1024
 
+// gallery_photos.category values used by the dentist photos page. Must match
+// the SECTIONS keys in src/app/for-dentists/dashboard/photos/page.tsx. The
+// xray endpoint writes its own category ('xray') and is gated separately.
+const GALLERY_CATEGORIES = ['exterior', 'interior', 'equipment', 'team', 'certifications', 'before_after'] as const
+type GalleryCategory = typeof GALLERY_CATEGORIES[number]
+
 const TRANSFORMS: Record<UploadType, object[]> = {
   profile:       [{ width: 400, height: 400, crop: 'fill', gravity: 'face' }],
   cover:         [{ width: 1200, height: 400, crop: 'fill', gravity: 'center', quality: 'auto:good' }],
@@ -66,8 +72,10 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData()
     const file = formData.get('file') as File | null
     const type = formData.get('type') as string | null
+    const rawCategory = formData.get('category') as string | null
     console.log('[upload] formData', {
       type,
+      category: rawCategory,
       fileName: file?.name,
       fileType: file?.type,
       fileSize: file?.size,
@@ -80,6 +88,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'File must be an image' }, { status: 400 })
     if (file.size > MAX_SIZE)
       return NextResponse.json({ error: 'File too large. Max 10MB.' }, { status: 400 })
+
+    // For gallery uploads the client picks a category (one of the 6 dentist
+    // photos sections). Validate explicitly — an unknown value would silently
+    // create orphan rows that no section renders. Default to 'interior' for
+    // backwards compat with older clients that don't send the field.
+    let galleryCategory: GalleryCategory = 'interior'
+    if (type === 'gallery') {
+      if (rawCategory) {
+        if (!(GALLERY_CATEGORIES as readonly string[]).includes(rawCategory)) {
+          return NextResponse.json({ error: `Invalid category. Must be: ${GALLERY_CATEGORIES.join(', ')}` }, { status: 400 })
+        }
+        galleryCategory = rawCategory as GalleryCategory
+      }
+    }
 
     const arrayBuffer = await file.arrayBuffer()
     const base64 = `data:${file.type};base64,${Buffer.from(arrayBuffer).toString('base64')}`
@@ -144,7 +166,7 @@ export async function POST(request: NextRequest) {
       const insertPayload = {
         dentist_id: dentist.id,
         url: result.secure_url,
-        category: uploadType === 'xray' ? 'xray' : 'interior',
+        category: uploadType === 'xray' ? 'xray' : galleryCategory,
       }
       console.log('[upload] gallery_photos insert payload', insertPayload)
       const { data: photoRow, error: insertErr } = await supabase
