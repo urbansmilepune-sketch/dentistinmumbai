@@ -22,6 +22,7 @@ const NAV: NavItem[] = [
   { href: '/for-dentists/dashboard/patients',     icon: '👥', label: 'Patients'      },
   { href: '/for-dentists/dashboard/billing',      icon: '💰', label: 'Billing'       },
   { href: '/for-dentists/dashboard/lab-work',     icon: '🦷', label: 'Lab Work'      },
+  { href: '/for-dentists/dashboard/inventory',    icon: '📦', label: 'Inventory'     },
   { href: '/for-dentists/dashboard/recalls',      icon: '📅', label: 'Recalls'       },
   { href: '/for-dentists/dashboard/enquiries',    icon: '💬', label: 'Enquiries'     },
   { href: '/for-dentists/dashboard/communications', icon: '📣', label: 'Communications' },
