@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /for-dentists/dashboard/
+Disallow: /admin/
+Disallow: /api/
+
+Sitemap: https://dentistinmumbai.in/sitemap.xml

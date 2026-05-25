@@ -38,13 +38,13 @@ export async function generateMetadata(): Promise<Metadata> {
   const brand = cityBrandName(city) // e.g. DentistInPune
   return {
     title: `Dentist in ${city.cityName} | Book Verified Dentists | ${brand}`,
-    description: `Find and book verified dentists in ${city.cityName}. Browse ${city.cityName}'s top dental clinics for implants, braces, root canal, teeth whitening and more. Book appointment in 30 seconds.`,
-    keywords: `dentist in ${city.cityName}, dental clinic ${city.cityName}, best dentist ${city.cityName}, dental implants ${city.cityName}, orthodontist ${city.cityName}`,
-    alternates: { canonical: origin },
+    description: `Find and book the best dentists in ${city.cityName}. Verified clinics, online appointments, patient reviews. Book your dental appointment online today — free consultation booking.`,
+    keywords: `dentist in ${city.cityName}, dental clinic ${city.cityName}, best dentist ${city.cityName}, dental implants ${city.cityName}, root canal ${city.cityName}, teeth whitening ${city.cityName}, orthodontist ${city.cityName}`,
+    alternates: { canonical: `${origin}/` },
     openGraph: {
       title: `Dentist in ${city.cityName} | ${brand}`,
-      description: `Book verified dentists in ${city.cityName} online`,
-      url: origin,
+      description: `Book verified dentists in ${city.cityName} online. Read reviews, check fees, book instantly.`,
+      url: `${origin}/`,
       siteName: brand,
       locale: 'en_IN',
       type: 'website',
@@ -148,9 +148,25 @@ export default async function HomePage() {
     medicalSpecialty: 'Dentistry',
   }
 
+  // WebSite + SearchAction wires up Google's sitelinks search box so the
+  // SERP shows an in-result search field that submits to /search?q=…
+  const websiteJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    name: brandName,
+    url: `https://${city.domain}`,
+    description: `Find verified dentists in ${city.cityName}`,
+    potentialAction: {
+      '@type': 'SearchAction',
+      target: `https://${city.domain}/search?q={search_term_string}`,
+      'query-input': 'required name=search_term_string',
+    },
+  }
+
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }} />
       {/* NAV */}
       <header style={{ background: '#fff', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 100, backdropFilter: 'blur(8px)' }}>
         <nav className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 68 }}>

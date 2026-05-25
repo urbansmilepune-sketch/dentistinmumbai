@@ -56,25 +56,21 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   const brand = `DentistIn${city.cityName.replace(/\s+/g, '')}`
   const areaName = (d.areas as any)?.name || city.cityName
-  // Pick the most search-friendly qualifier for the title — first listed
-  // specialty if any, otherwise the qualifications string. Falls back to
-  // "Dentist" so the title stays grammatical when the row is sparse.
-  const specialization = (Array.isArray(d.specialties) && d.specialties[0])
-    || d.qualifications
-    || 'Dentist'
-  const bioSnippet = d.bio ? d.bio.slice(0, 150).trim() : ''
-  const description = bioSnippet
-    ? `Book appointment with ${d.name} at ${d.clinic_name} in ${areaName}. ${bioSnippet}${d.bio && d.bio.length > 150 ? '…' : ''}`
-    : `Book appointment with ${d.name} at ${d.clinic_name} in ${areaName}.`
+  const clinicLabel = d.clinic_name || 'Dental Clinic'
+  const experienceSegment = d.experience_years ? ` ${d.experience_years} years experience.` : ''
+  const qualifications = d.qualifications || 'BDS'
+  const title = `Dr. ${d.name} - ${clinicLabel} | ${areaName} | ${brand}`
+  const description = `Book appointment with Dr. ${d.name} at ${clinicLabel} in ${areaName}, ${city.cityName}. ${qualifications}.${experienceSegment} Online booking available.`
   const url = `${cityOrigin(city)}/dentist/${slug}`
   const ogImage = d.profile_photo || undefined
 
   return {
-    title: `${d.name} - ${specialization} in ${city.cityName} | ${brand}`,
+    title,
     description,
+    keywords: `Dr ${d.name}, ${d.clinic_name || ''}, dentist ${areaName}, dental clinic ${city.cityName}, book dentist online`,
     alternates: { canonical: url },
     openGraph: {
-      title: `${d.name} - ${specialization} in ${city.cityName}`,
+      title,
       description,
       url,
       siteName: brand,
@@ -84,7 +80,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     },
     twitter: {
       card: ogImage ? 'summary_large_image' : 'summary',
-      title: `${d.name} - ${specialization} in ${city.cityName}`,
+      title,
       description,
       ...(ogImage ? { images: [ogImage] } : {}),
     },
@@ -170,13 +166,28 @@ export default async function DentistProfilePage({ params }: Props) {
   // requirements. image enables the dentist's photo to surface in the
   // knowledge-panel / search-result thumbnail.
   const jsonLd = {
-    '@context': 'https://schema.org', '@type': ['Dentist', 'Physician'],
-    name: dentist.name, medicalSpecialty: 'Dentistry',
-    description: dentist.bio || `Dentist at ${dentist.clinic_name}`,
+    '@context': 'https://schema.org',
+    '@type': ['Dentist', 'Physician'],
+    name: dentist.clinic_name || dentist.name,
+    medicalSpecialty: 'Dentistry',
+    description: dentist.bio || `Dental clinic in ${areaName}`,
     ...(dentist.profile_photo ? { image: dentist.profile_photo } : {}),
-    address: { '@type': 'PostalAddress', addressLocality: areaName, addressCountry: 'IN' },
+    url: `${origin}/dentist/${slug}`,
+    telephone: dentist.phone,
+    address: {
+      '@type': 'PostalAddress',
+      ...(dentist.address ? { streetAddress: dentist.address } : {}),
+      addressLocality: areaName,
+      addressRegion: city.cityName,
+      addressCountry: 'IN',
+    },
     areaServed: { '@type': 'City', name: city.cityName },
-    telephone: dentist.phone, url: `${origin}/dentist/${slug}`,
+    ...(dentist.latitude && dentist.longitude
+      ? { geo: { '@type': 'GeoCoordinates', latitude: dentist.latitude, longitude: dentist.longitude } }
+      : {}),
+    openingHours: 'Mo-Sa 09:00-20:00',
+    priceRange: dentist.consultation_fee ? `₹${dentist.consultation_fee}` : '₹500-₹2000',
+    ...(dentist.maps_embed ? { hasMap: dentist.maps_embed } : {}),
     ...(avgRating && { aggregateRating: { '@type': 'AggregateRating', ratingValue: avgRating, reviewCount: approvedReviews.length } }),
   }
 
@@ -296,15 +307,35 @@ export default async function DentistProfilePage({ params }: Props) {
             <section id="treatments" className="profile-section">
               <h2 className="profile-section-title">Treatments &amp; Fees</h2>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {treatments.map((dt: any) => (
-                  <div key={dt.treatments?.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', background: '#fff', border: '1px solid var(--border)', borderRadius: 12 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <span style={{ fontSize: 22 }}>{dt.treatments?.icon}</span>
-                      <span style={{ fontWeight: 600, fontSize: 15 }}>{dt.treatments?.name}</span>
-                    </div>
-                    {(dt.fee_from || dt.fee_to) && <span style={{ fontSize: 14, color: 'var(--blue)', fontWeight: 700 }}>{dt.fee_from && dt.fee_to ? `₹${dt.fee_from}–₹${dt.fee_to}` : dt.fee_from ? `From ₹${dt.fee_from}` : ''}</span>}
-                  </div>
-                ))}
+                {treatments.map((dt: any) => {
+                  const t = dt.treatments
+                  if (!t) return null
+                  const fee = (dt.fee_from || dt.fee_to)
+                    ? (dt.fee_from && dt.fee_to ? `₹${dt.fee_from}–₹${dt.fee_to}` : dt.fee_from ? `From ₹${dt.fee_from}` : '')
+                    : ''
+                  // Each row deep-links into the booking flow with the
+                  // treatment name pre-selected — the booking page reads
+                  // ?treatment=… and matches it to the dentist's treatment
+                  // list. We use TrackedBookingLink so the click counts as
+                  // a booking_click in analytics, same as the hero CTA.
+                  return (
+                    <TrackedBookingLink
+                      key={t.id}
+                      dentistId={dentist.id}
+                      href={`/book/${dentist.slug}?treatment=${encodeURIComponent(t.name)}`}
+                      className="profile-treatment-row"
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <span style={{ fontSize: 22 }}>{t.icon}</span>
+                        <span style={{ fontWeight: 600, fontSize: 15 }}>{t.name}</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        {fee && <span style={{ fontSize: 14, color: 'var(--blue)', fontWeight: 700 }}>{fee}</span>}
+                        <span className="profile-treatment-cta" aria-hidden>Book →</span>
+                      </div>
+                    </TrackedBookingLink>
+                  )
+                })}
               </div>
             </section>
           )}
@@ -486,6 +517,36 @@ export default async function DentistProfilePage({ params }: Props) {
         html { scroll-behavior: smooth; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         .profile-sections { padding-bottom: 24px; }
+        .profile-treatment-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 14px 18px;
+          background: #fff;
+          border: 1px solid var(--border);
+          border-radius: 12px;
+          text-decoration: none;
+          color: var(--text);
+          transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+        }
+        .profile-treatment-row:hover {
+          border-color: var(--blue);
+          box-shadow: 0 2px 8px rgba(0,87,168,0.08);
+          transform: translateY(-1px);
+        }
+        .profile-treatment-cta {
+          font-size: 13px;
+          font-weight: 700;
+          color: var(--blue);
+          opacity: 0;
+          transition: opacity 0.15s;
+        }
+        .profile-treatment-row:hover .profile-treatment-cta { opacity: 1; }
+        @media (max-width: 768px) {
+          /* On touch, hover never fires — keep the CTA visible so the
+             affordance is obvious. Slightly dimmed so the fee still leads. */
+          .profile-treatment-cta { opacity: 0.7; }
+        }
         .profile-section {
           padding: 32px 0;
           border-top: 1px solid var(--border);
