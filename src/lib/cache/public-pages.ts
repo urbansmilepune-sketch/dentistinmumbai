@@ -75,6 +75,18 @@ export type DentistProfileLocation = {
   areas: { name: string } | null
 }
 
+export type SimilarDentist = {
+  id: string
+  name: string
+  slug: string
+  clinic_name: string | null
+  consultation_fee: number | null
+  profile_photo: string | null
+  specialties: string[] | null
+  qualifications: string | null
+  areas: { name: string } | null
+}
+
 export type DentistProfileData = {
   // The page mixes free-form joined fields (dentist_treatments, gallery_photos,
   // working_hours JSON) — a fully typed shape here would just churn whenever
@@ -83,6 +95,7 @@ export type DentistProfileData = {
   dentist: any
   approvedReviews: DentistProfileReview[]
   locations: DentistProfileLocation[]
+  similarDentists: SimilarDentist[]
 }
 
 const DENTIST_LIST_SELECT =
@@ -163,9 +176,12 @@ export const getDentistProfileData = unstable_cache(
 
     if (!dentist) return null
 
-    // Reviews + locations share the same cache TTL as the dentist row; both
-    // are public and change at roughly the same cadence as the profile.
-    const [{ data: approvedReviews }, { data: locations }] = await Promise.all([
+    // Reviews + locations + similar dentists share the same cache TTL as the
+    // dentist row; all are public and change at roughly the same cadence as
+    // the profile. Similar dentists are 3 other active dentists in the same
+    // city, ranked by rank_score — surfaced in the "More Dentists in {area}"
+    // section at the bottom of the profile.
+    const [{ data: approvedReviews }, { data: locations }, { data: similarDentists }] = await Promise.all([
       supabase
         .from('reviews')
         .select('id, patient_name, rating, review_text, treatment, created_at')
@@ -178,12 +194,21 @@ export const getDentistProfileData = unstable_cache(
         .eq('dentist_id', (dentist as any).id)
         .order('is_primary', { ascending: false })
         .order('created_at'),
+      supabase
+        .from('dentists')
+        .select('id, name, slug, clinic_name, consultation_fee, profile_photo, specialties, qualifications, areas(name)')
+        .eq('is_active', true)
+        .eq('city', (dentist as any).city)
+        .neq('slug', slug)
+        .order('rank_score', { ascending: false })
+        .limit(3),
     ])
 
     return {
       dentist,
       approvedReviews: (approvedReviews ?? []) as unknown as DentistProfileReview[],
       locations: (locations ?? []) as unknown as DentistProfileLocation[],
+      similarDentists: (similarDentists ?? []) as unknown as SimilarDentist[],
     }
   },
   ['dentist-profile-data'],
