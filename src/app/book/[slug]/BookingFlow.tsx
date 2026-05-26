@@ -27,6 +27,10 @@ interface Props {
   // alone drives the slot grid). Non-empty = render a branch picker; the
   // picked branch's working_hours overrides the top-level workingHours.
   locations?: BranchLocation[]
+  // When the patient deep-linked from a treatment row on the dentist's
+  // profile (?treatment=…), the server resolved that to a row id and
+  // passes it here so the dropdown opens pre-selected.
+  initialTreatmentId?: string | null
 }
 
 // Default open hours when the dentist hasn't set working_hours yet:
@@ -91,7 +95,7 @@ function nextDays(n: number): { iso: string; label: string; sub: string }[] {
   return out
 }
 
-export default function BookingFlow({ dentistId, dentistSlug, dentistName, clinicName, areaName, dentistPhone, workingHours, treatments, locations = [] }: Props) {
+export default function BookingFlow({ dentistId, dentistSlug, dentistName, clinicName, areaName, dentistPhone, workingHours, treatments, locations = [], initialTreatmentId = null }: Props) {
   // Multi-branch flow:
   //   - 0 or 1 locations: single-branch dentist. selectedLocationId stays
   //     null, the working_hours/slot fetch ignore the branch parameter.
@@ -135,7 +139,7 @@ export default function BookingFlow({ dentistId, dentistSlug, dentistName, clini
   // confirmed email later when the dentist confirms. Skipping it still
   // creates the booking — no email goes out in that case.
   const [email, setEmail] = useState('')
-  const [treatmentId, setTreatmentId] = useState<string>('')
+  const [treatmentId, setTreatmentId] = useState<string>(initialTreatmentId ?? '')
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)

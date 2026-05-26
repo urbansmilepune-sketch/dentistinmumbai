@@ -8,10 +8,20 @@ import BookingFlow from './BookingFlow'
 
 export const dynamic = 'force-dynamic'
 
-interface Props { params: Promise<{ slug: string }> }
+interface Props {
+  params: Promise<{ slug: string }>
+  searchParams: Promise<{ treatment?: string | string[] }>
+}
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
+function firstQueryValue(v: string | string[] | undefined): string {
+  if (Array.isArray(v)) return v[0] ?? ''
+  return (v ?? '').trim()
+}
+
+export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
   const { slug } = await params
+  const sp = await searchParams
+  const treatmentParam = firstQueryValue(sp?.treatment)
   const supabase = await createClient()
   const h = await headers()
   const city = getCityBySlug(h.get('x-city-slug'))
@@ -22,8 +32,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     .single()
   if (!d) return {}
   const area = (d.areas as any)?.name || city.cityName
-  const title = `Book Appointment — ${d.name} | ${d.clinic_name}, ${area}`
-  const description = `Book an appointment with ${d.name} at ${d.clinic_name} in ${area}. Pick a date, choose a time slot, confirm in seconds.`
+  const titlePrefix = treatmentParam ? `Book ${treatmentParam}` : 'Book Appointment'
+  const title = `${titlePrefix} — ${d.name} | ${d.clinic_name}, ${area}`
+  const description = treatmentParam
+    ? `Book ${treatmentParam} with ${d.name} at ${d.clinic_name} in ${area}. Pick a date, choose a time slot, confirm in seconds.`
+    : `Book an appointment with ${d.name} at ${d.clinic_name} in ${area}. Pick a date, choose a time slot, confirm in seconds.`
   const url = `${cityOrigin(city)}/book/${slug}`
   const images = d.profile_photo ? [{ url: d.profile_photo, alt: d.name ?? 'Dentist' }] : undefined
   return {
@@ -45,8 +58,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   }
 }
 
-export default async function PublicBookingPage({ params }: Props) {
+export default async function PublicBookingPage({ params, searchParams }: Props) {
   const { slug } = await params
+  const sp = await searchParams
+  const treatmentParam = firstQueryValue(sp?.treatment)
   const supabase = await createClient()
   const h = await headers()
   const city = getCityBySlug(h.get('x-city-slug'))
@@ -80,6 +95,17 @@ export default async function PublicBookingPage({ params }: Props) {
     .map(dt => dt.treatments)
     .filter((t: any) => t && t.id) as { id: string; name: string; icon: string | null }[]
 
+  // Match the ?treatment= query param against this dentist's treatment
+  // list (case-insensitive). A match gives us an id to pre-select in the
+  // form; a miss falls back to "General consultation" and the heading
+  // omits the treatment qualifier so the patient isn't misled.
+  const matchedTreatment = treatmentParam
+    ? treatments.find(t => t.name.trim().toLowerCase() === treatmentParam.toLowerCase()) ?? null
+    : null
+  const headingLabel = matchedTreatment
+    ? `Book Appointment for ${matchedTreatment.name}`
+    : 'Book Appointment'
+
   return (
     <main style={{ background: 'var(--bg)', minHeight: '100vh' }}>
       {/* Slim top nav */}
@@ -95,6 +121,12 @@ export default async function PublicBookingPage({ params }: Props) {
       </header>
 
       <div className="container booking-container" style={{ paddingTop: 20, paddingBottom: 80, maxWidth: 640 }}>
+        {/* Page heading — swaps to "Book Appointment for {treatment}" when
+            the patient deep-links from a treatment row on the profile. */}
+        <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, marginBottom: 14, color: 'var(--text)' }}>
+          {headingLabel}
+        </h1>
+
         {/* Dentist header card */}
         <section style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: 20, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 16 }}>
           <div style={{
@@ -105,7 +137,7 @@ export default async function PublicBookingPage({ params }: Props) {
             {dentist.profile_photo ? <img src={dentist.profile_photo} alt={dentist.name ?? ''} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : '👨‍⚕️'}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 18, marginBottom: 4 }}>{dentist.name}</h1>
+            <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 18, marginBottom: 4 }}>{dentist.name}</h2>
             <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               🏥 {dentist.clinic_name}
             </p>
@@ -122,6 +154,7 @@ export default async function PublicBookingPage({ params }: Props) {
           dentistPhone={dentist.whatsapp || dentist.phone || ''}
           workingHours={dentist.working_hours ?? null}
           treatments={treatments}
+          initialTreatmentId={matchedTreatment?.id ?? null}
           locations={(locationRows ?? []).map((r: any) => ({
             id: r.id,
             name: r.name,
