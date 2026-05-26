@@ -20,17 +20,20 @@
 import { useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import ReportsView from './ReportsView'
+import PLView from './PLView'
 
-type SubTab = 'engagement' | 'reports'
+type SubTab = 'engagement' | 'reports' | 'pl'
 
 const TABS: Array<{ key: SubTab; label: string }> = [
   { key: 'engagement', label: '📈 Engagement' },
   { key: 'reports',    label: '📊 Revenue & Reports' },
+  { key: 'pl',         label: '🧾 P&L' },
 ]
 
 export default function AnalyticsTabs({ children }: { children: React.ReactNode }) {
   const searchParams = useSearchParams()
-  const initial: SubTab = searchParams.get('tab') === 'reports' ? 'reports' : 'engagement'
+  const initialParam = searchParams.get('tab')
+  const initial: SubTab = initialParam === 'reports' ? 'reports' : initialParam === 'pl' ? 'pl' : 'engagement'
   const [active, setActive] = useState<SubTab>(initial)
 
   return (
@@ -66,6 +69,9 @@ export default function AnalyticsTabs({ children }: { children: React.ReactNode 
       </div>
       {active === 'reports' && (
         <ReportsView />
+      )}
+      {active === 'pl' && (
+        <PLView />
       )}
     </div>
   )
