@@ -7,6 +7,7 @@ interface Props {
   dentistId: string
   href: string
   style?: CSSProperties
+  className?: string
   children: ReactNode
 }
 
@@ -17,7 +18,7 @@ interface Props {
 // a plain <a> because its callers are tel:/wa.me/ links where prefetch
 // + client-side navigation don't apply; this component is the variant
 // for internal book-flow routes that need next/link semantics.
-export default function TrackedBookingLink({ dentistId, href, style, children }: Props) {
+export default function TrackedBookingLink({ dentistId, href, style, className, children }: Props) {
   function handleClick() {
     fetch('/api/analytics/track', {
       method: 'POST',
@@ -27,7 +28,7 @@ export default function TrackedBookingLink({ dentistId, href, style, children }:
     }).catch(() => {})
   }
   return (
-    <Link href={href} style={style} onClick={handleClick}>
+    <Link href={href} style={style} className={className} onClick={handleClick}>
       {children}
     </Link>
   )
