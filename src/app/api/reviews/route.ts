@@ -60,30 +60,46 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    // Verify OTP
-    const { data: otpRecord } = await supabase
-      .from('review_otps')
-      .select('*')
-      .eq('phone', phone.replace(/\s/g, ''))
-      .eq('otp', otp)
-      .eq('verified', false)
-      .single()
+    try {
+      // Verify OTP. .maybeSingle() so a wrong code returns null cleanly
+      // (the existing `if (!otpRecord)` then surfaces the friendly 400);
+      // .single() would 500 the patient with a PGRST116 instead.
+      const { data: otpRecord, error: otpErr } = await supabase
+        .from('review_otps')
+        .select('*')
+        .eq('phone', phone.replace(/\s/g, ''))
+        .eq('otp', otp)
+        .eq('verified', false)
+        .maybeSingle()
 
-    if (!otpRecord) return NextResponse.json({ error: 'Invalid OTP' }, { status: 400 })
-    if (new Date(otpRecord.expires_at) < new Date()) return NextResponse.json({ error: 'OTP expired. Please resend.' }, { status: 400 })
+      if (otpErr) {
+        console.error('[reviews] otp lookup failed', { code: otpErr.code, message: otpErr.message })
+        return NextResponse.json({ error: 'Could not verify OTP — please try again' }, { status: 500 })
+      }
+      if (!otpRecord) return NextResponse.json({ error: 'Invalid OTP' }, { status: 400 })
+      if (new Date(otpRecord.expires_at) < new Date()) return NextResponse.json({ error: 'OTP expired. Please resend.' }, { status: 400 })
 
-    // Mark OTP as used
-    await supabase.from('review_otps').update({ verified: true }).eq('phone', phone.replace(/\s/g, ''))
+      // Mark OTP as used
+      await supabase.from('review_otps').update({ verified: true }).eq('phone', phone.replace(/\s/g, ''))
 
-    // Submit review
-    const { data, error } = await supabase.from('reviews').insert({
-      dentist_id, patient_name, patient_phone: phone.replace(/\s/g, ''),
-      rating: parseInt(rating), review_text, treatment: treatment || null,
-      status: 'pending', // Admin must approve
-    }).select('id').single()
+      // Submit review. .maybeSingle() because we want a clean null on the
+      // off-chance the insert returns no row (RLS edge cases) rather than
+      // letting .single() throw before we can surface a 500.
+      const { data, error } = await supabase.from('reviews').insert({
+        dentist_id, patient_name, patient_phone: phone.replace(/\s/g, ''),
+        rating: parseInt(rating), review_text, treatment: treatment || null,
+        status: 'pending', // Admin must approve
+      }).select('id').maybeSingle()
 
-    if (error) return NextResponse.json({ error: 'Failed to submit review' }, { status: 500 })
-    return NextResponse.json({ success: true, id: data.id })
+      if (error || !data) {
+        console.error('[reviews] insert failed', { code: error?.code, message: error?.message })
+        return NextResponse.json({ error: 'Failed to submit review' }, { status: 500 })
+      }
+      return NextResponse.json({ success: true, id: data.id })
+    } catch (err: any) {
+      console.error('[reviews] submit_review threw', { name: err?.name, message: err?.message })
+      return NextResponse.json({ error: 'Failed to submit review' }, { status: 500 })
+    }
   }
 
   return NextResponse.json({ error: 'Invalid action' }, { status: 400 })

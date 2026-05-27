@@ -109,7 +109,11 @@ export async function POST(request: NextRequest) {
 
     let treatmentName = 'General Consultation'
     if (treatment_id) {
-      const { data: treatment } = await supabase.from('treatments').select('name').eq('id', treatment_id).single()
+      // .maybeSingle() so a stale / mistyped treatment_id from the booking
+      // widget produces a null row instead of a PGRST116 throw. The booking
+      // itself doesn't depend on this name — it's only used in the dentist
+      // SMS/email — so a missing treatment falls back to the default.
+      const { data: treatment } = await supabase.from('treatments').select('name').eq('id', treatment_id).maybeSingle()
       if (treatment) treatmentName = treatment.name
     }
 
