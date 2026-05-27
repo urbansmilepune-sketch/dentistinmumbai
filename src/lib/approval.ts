@@ -51,6 +51,16 @@ interface ApproveOptions {
    * POST /api/registrations. The flag is written to `dentist_registrations.auto_approved`
    * so the admin panel can distinguish the two paths. */
   autoApproved?: boolean
+  /** Origin of the request that triggered the approval (e.g.
+   * `https://dentistinpune.in`). Used as the magic-link redirect base so
+   * the dentist lands on the city domain they actually registered from.
+   * When omitted, falls back to the city domain stored on the
+   * registration row — which silently defaults to `mumbai` for legacy
+   * rows with NULL/unknown city, the original source of the
+   * "all magic links go to dentistinmumbai.in" bug. Callers in API
+   * routes should pass `request.headers.get('origin')` (with a referer
+   * fallback) to avoid the fallback path. */
+  requestOrigin?: string | null
 }
 
 /**
@@ -230,8 +240,16 @@ export async function approveDentistRegistration(
   // out-of-band). If both fail we still send the email, just without the
   // big "Access Your Dashboard" button — the dentist can use forgot-password
   // to recover. We never bubble this failure up: the approval is done.
+  //
+  // Redirect origin: prefer the caller-supplied requestOrigin (the city
+  // the dentist actually registered from, captured via request headers in
+  // the API route). Fall back to the registration row's city.domain only
+  // when the caller didn't pass one — legacy rows with NULL city
+  // normalize to DEFAULT_CITY = 'mumbai' here, which is the bug shape
+  // this fix targets.
   const cityOrigin = `https://${CITY_CONFIGS[city].domain}`
-  const redirectTo = `${cityOrigin}/auth/callback`
+  const origin = opts.requestOrigin || cityOrigin
+  const redirectTo = `${origin}/auth/callback`
   let authLink: string | null = null
   try {
     const { data: invite, error: inviteErr } = await admin_db.auth.admin.generateLink({

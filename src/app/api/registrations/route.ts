@@ -185,7 +185,14 @@ export async function POST(request: NextRequest) {
     const cityDomain = CITY_CONFIGS[cityValue].domain
 
     if (failReason === null) {
-      const result = await approveDentistRegistration(supabase, data.id, { autoApproved: true })
+      // requestOrigin → the city the dentist registered from. The
+      // approval helper uses it as the magic-link redirect base so the
+      // auth cookie set by Supabase lands on the same apex their
+      // browser will hit next.
+      const requestOrigin = request.headers.get('origin')
+        || request.headers.get('referer')?.split('/').slice(0, 3).join('/')
+        || null
+      const result = await approveDentistRegistration(supabase, data.id, { autoApproved: true, requestOrigin })
       if (result.ok) {
         console.log('[registrations] auto-approved', { ref_no: data.ref_no, slug: result.slug })
         // Tell the admin this happened — but skip the "approve here" alert

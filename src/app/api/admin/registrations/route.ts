@@ -91,7 +91,13 @@ export async function POST(request: NextRequest) {
 
   // Approve path: delegate to the shared helper. autoApproved=false marks
   // this as a manual admin action in the dentist_registrations row.
-  const result = await approveDentistRegistration(admin_db, registration_id, { autoApproved: false })
+  // requestOrigin scopes the magic-link redirect to whichever city
+  // domain the admin clicked Approve from, so the dentist lands on the
+  // same apex their auth cookie will be scoped to.
+  const requestOrigin = request.headers.get('origin')
+    || request.headers.get('referer')?.split('/').slice(0, 3).join('/')
+    || null
+  const result = await approveDentistRegistration(admin_db, registration_id, { autoApproved: false, requestOrigin })
   if (!result.ok) {
     return NextResponse.json(
       { error: result.error, detail: result.detail, code: result.code, hint: result.hint },
