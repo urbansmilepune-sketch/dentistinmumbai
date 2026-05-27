@@ -14,12 +14,29 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   if (!user) redirect('/for-dentists/login')
 
+  // Service role for ALL row lookups in this layout (dentists + staff +
+  // owner dentist). The user-bound client is RLS-gated, and the public
+  // SELECT policy on dentists filters by `is_active = true` — which means
+  // the demo dentist row (is_active stays false so it never appears on
+  // the public city directory) is invisible to the user-bound client even
+  // when the signed-in user IS the demo dentist. Service role bypasses
+  // that and lets the !is_active bypass below actually fire.
+  //
+  // Safety: every query here is scoped by `.eq('email', user.email)` or
+  // `.eq('id', staffRow.dentist_id)` (where staffRow was already matched
+  // by user.email). The service role is never used to read a row the
+  // authenticated user doesn't already own.
+  const admin = createServiceClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  )
+
   // Same two-tier lookup the auth callback uses: try dentists by email first
   // (the clinic owner), then fall back to clinic_staff for invited users.
   // Staff render the dashboard against the OWNER's dentist row — that's the
   // data their role is supposed to act on — while the shell uses staffRole
   // to scope the sidebar to features they're entitled to.
-  const { data: dentist } = await supabase
+  const { data: dentist } = await admin
     .from('dentists')
     .select(DENTIST_FIELDS)
     .eq('email', user.email)
@@ -45,14 +62,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
     )
   }
 
-  // Service role bypasses RLS for the staff lookup + owner dentist load:
-  // staff don't have a policy granting access to dentists at row-fetch time
-  // until the new RLS migration is applied everywhere, and even after,
-  // service role avoids a second round trip for the layout.
-  const admin = createServiceClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  )
+  // Staff fallback path — also keyed by user.email, also via the admin
+  // client (staff have no self-read policy on clinic_staff in pre-RLS-
+  // migration environments and the dentists table is gated as above).
   const { data: staffRow } = await admin
     .from('clinic_staff')
     .select('role, dentist_id, status')
