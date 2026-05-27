@@ -65,20 +65,22 @@ export async function GET(request: NextRequest) {
   // No dentists row → could be a staff invite acceptance. Look up the
   // clinic_staff row and promote it to 'active' if found. We don't update
   // the dentists table; the staff lives entirely in clinic_staff land.
-  // Staff always go to /for-dentists/staff regardless of host — there's no
-  // national equivalent and the staff portal is intentionally city-scoped.
+  // Staff land on the dashboard — the dashboard layout resolves the owner
+  // dentist via clinic_staff.dentist_id and the shell filters the sidebar
+  // to the role's allowed sections. We keep the redirect on the same
+  // origin (host-scoped auth cookie) so the session survives the bounce.
   const { data: staffRow } = await admin
     .from('clinic_staff')
     .select('id, status, user_id')
     .ilike('email', userEmail)
-    .neq('status', 'removed')
+    .neq('status', 'inactive')
     .maybeSingle()
   if (staffRow) {
     await admin
       .from('clinic_staff')
       .update({ status: 'active', user_id: user!.id })
       .eq('id', staffRow.id)
-    return NextResponse.redirect(`${origin}/for-dentists/staff`)
+    return NextResponse.redirect(`${origin}/for-dentists/dashboard`)
   }
 
   // Authenticated but unrecognised — let the landing page's layout decide

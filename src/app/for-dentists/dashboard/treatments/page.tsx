@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { resolveCurrentDentist } from '@/lib/currentDentist'
 
 const SELECT_COLS = 'id, treatment_id, fee_from, fee_to, duration_mins, treatments(id, name, slug, icon)'
 
@@ -27,10 +28,9 @@ export default function TreatmentsPage() {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) { router.push('/for-dentists/login'); return }
 
-        const { data: dentist, error: dentistErr } = await supabase
-          .from('dentists').select('id').eq('email', user.email).single()
-        if (dentistErr || !dentist) {
-          setLoadError(dentistErr?.message || 'No dentist profile found for your account.')
+        const dentist = await resolveCurrentDentist(supabase, 'id')
+        if (!dentist) {
+          setLoadError('No dentist profile found for your account.')
           return
         }
 

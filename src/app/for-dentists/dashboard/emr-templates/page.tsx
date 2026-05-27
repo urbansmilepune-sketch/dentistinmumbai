@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { resolveCurrentDentist } from '@/lib/currentDentist'
 
 type MedRow = { name: string; dosage: string; frequency: string; duration: string }
 type ProcRow = { name: string; tooth_number: string; price: string }
@@ -86,7 +87,7 @@ export default function EmrTemplatesPage() {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/for-dentists/login'); return }
-      const { data: dentist } = await supabase.from('dentists').select('id').eq('email', user.email).single()
+      const dentist = await resolveCurrentDentist(supabase, 'id')
       if (!dentist) { router.push('/for-dentists/login'); return }
       setDentistId(dentist.id)
       const { data, error: e } = await supabase

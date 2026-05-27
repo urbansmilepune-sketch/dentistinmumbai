@@ -21,7 +21,7 @@ interface StaffRow {
   email: string
   name: string | null
   role: Role
-  status: 'invited' | 'active' | 'removed'
+  status: 'pending' | 'active' | 'inactive'
   invited_at: string
   location_id: string | null
   clinic_locations: { id: string; clinic_name: string | null } | null

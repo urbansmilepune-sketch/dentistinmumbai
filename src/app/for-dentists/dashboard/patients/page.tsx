@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
+import { resolveCurrentDentist } from '@/lib/currentDentist'
 
 export default function PatientsPage() {
   const router = useRouter()
@@ -27,7 +28,7 @@ export default function PatientsPage() {
         const supabase = createClient()
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) { router.push('/for-dentists/login'); return }
-        const { data: dentist } = await supabase.from('dentists').select('id').eq('email', user.email).single()
+        const dentist = await resolveCurrentDentist(supabase, 'id')
         if (!dentist) return
         setDentistId(dentist.id)
         const { data } = await supabase.from('patients').select('*').eq('dentist_id', dentist.id).order('created_at', { ascending: false })

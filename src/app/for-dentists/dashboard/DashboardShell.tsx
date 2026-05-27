@@ -5,48 +5,72 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { getCityByDomain, getCityBySlug, type CityConfig } from '@/config/cities'
-type NavItem = { href: string; icon: string; label: string; minTier?: 'silver' | 'gold' }
+export type StaffRole = 'owner' | 'associate_dentist' | 'reception'
+
+type NavItem = {
+  href: string
+  icon: string
+  label: string
+  minTier?: 'silver' | 'gold'
+  // Roles allowed in the sidebar. `null` = clinic owner / dentist (no
+  // staffRole on the layout) — they always see everything. Items with a
+  // `staffRoles` list are visible to those roles too.
+  staffRoles?: StaffRole[]
+}
 
 // `minTier` historically marked a nav item that was tier-locked, but the
 // launch-phase override in /lib/tier.ts unlocks every feature for every
 // dentist. We keep the field on the type so historical entries compile
 // without churn, but no UI lock state is rendered.
+//
+// `staffRoles` is the role filter applied when a staff member (not the
+// clinic owner) is signed in. Reception: appointments, patients, billing,
+// calendar. Associate Dentist additionally: EMR Templates, Treatments.
+// Owner-role staff get the same surface as the clinic owner themselves.
 const NAV: NavItem[] = [
-  { href: '/for-dentists/dashboard',              icon: '📊', label: 'Overview'      },
-  { href: '/for-dentists/dashboard/profile',      icon: '✏️', label: 'Edit Profile'  },
-  { href: '/for-dentists/dashboard/hours',        icon: '🕐', label: 'Working Hours' },
-  { href: '/for-dentists/dashboard/locations',    icon: '🏥', label: 'Locations'     },
-  { href: '/for-dentists/dashboard/staff',        icon: '👥', label: 'Staff', minTier: 'silver' },
-  { href: '/for-dentists/dashboard/appointments', icon: '📅', label: 'Appointments'  },
-  { href: '/for-dentists/dashboard/calendar',     icon: '📆', label: 'Calendar'      },
-  { href: '/for-dentists/dashboard/patients',     icon: '👥', label: 'Patients'      },
-  { href: '/for-dentists/dashboard/billing',      icon: '💰', label: 'Billing'       },
-  { href: '/for-dentists/dashboard/expenses',     icon: '💸', label: 'Expenses'      },
-  { href: '/for-dentists/dashboard/lab-work',     icon: '🦷', label: 'Lab Work'      },
-  { href: '/for-dentists/dashboard/inventory',    icon: '📦', label: 'Inventory'     },
-  { href: '/for-dentists/dashboard/recalls',      icon: '📅', label: 'Recalls'       },
-  { href: '/for-dentists/dashboard/enquiries',    icon: '💬', label: 'Enquiries'     },
-  { href: '/for-dentists/dashboard/communications', icon: '📣', label: 'Communications' },
-  { href: '/for-dentists/dashboard/photos',       icon: '📸', label: 'Photos'        },
-  { href: '/for-dentists/dashboard/treatments',   icon: '🦷', label: 'Treatments'    },
-  { href: '/for-dentists/dashboard/emr-templates', icon: '📋', label: 'EMR Templates' },
-  { href: '/for-dentists/dashboard/analytics',    icon: '📈', label: 'Analytics'     },
+  { href: '/for-dentists/dashboard',              icon: '📊', label: 'Overview',     staffRoles: ['owner', 'associate_dentist', 'reception'] },
+  { href: '/for-dentists/dashboard/profile',      icon: '✏️', label: 'Edit Profile', staffRoles: ['owner'] },
+  { href: '/for-dentists/dashboard/hours',        icon: '🕐', label: 'Working Hours', staffRoles: ['owner'] },
+  { href: '/for-dentists/dashboard/locations',    icon: '🏥', label: 'Locations',    staffRoles: ['owner'] },
+  { href: '/for-dentists/dashboard/staff',        icon: '👥', label: 'Staff', minTier: 'silver', staffRoles: ['owner'] },
+  { href: '/for-dentists/dashboard/appointments', icon: '📅', label: 'Appointments', staffRoles: ['owner', 'associate_dentist', 'reception'] },
+  { href: '/for-dentists/dashboard/calendar',     icon: '📆', label: 'Calendar',     staffRoles: ['owner', 'associate_dentist', 'reception'] },
+  { href: '/for-dentists/dashboard/patients',     icon: '👥', label: 'Patients',     staffRoles: ['owner', 'associate_dentist', 'reception'] },
+  { href: '/for-dentists/dashboard/billing',      icon: '💰', label: 'Billing',      staffRoles: ['owner', 'reception'] },
+  { href: '/for-dentists/dashboard/expenses',     icon: '💸', label: 'Expenses',     staffRoles: ['owner'] },
+  { href: '/for-dentists/dashboard/lab-work',     icon: '🦷', label: 'Lab Work',     staffRoles: ['owner', 'associate_dentist'] },
+  { href: '/for-dentists/dashboard/inventory',    icon: '📦', label: 'Inventory',    staffRoles: ['owner'] },
+  { href: '/for-dentists/dashboard/recalls',      icon: '📅', label: 'Recalls',      staffRoles: ['owner', 'reception'] },
+  { href: '/for-dentists/dashboard/enquiries',    icon: '💬', label: 'Enquiries',    staffRoles: ['owner', 'reception'] },
+  { href: '/for-dentists/dashboard/communications', icon: '📣', label: 'Communications', staffRoles: ['owner'] },
+  { href: '/for-dentists/dashboard/photos',       icon: '📸', label: 'Photos',       staffRoles: ['owner', 'associate_dentist'] },
+  { href: '/for-dentists/dashboard/treatments',   icon: '🦷', label: 'Treatments',   staffRoles: ['owner', 'associate_dentist'] },
+  { href: '/for-dentists/dashboard/emr-templates', icon: '📋', label: 'EMR Templates', staffRoles: ['owner', 'associate_dentist'] },
+  { href: '/for-dentists/dashboard/analytics',    icon: '📈', label: 'Analytics',    staffRoles: ['owner'] },
 ]
 
-const MOBILE_NAV = [
-  { href: '/for-dentists/dashboard',              icon: '📊', label: 'Overview'     },
-  { href: '/for-dentists/dashboard/appointments', icon: '📅', label: 'Appointments' },
-  { href: '/for-dentists/dashboard/patients',     icon: '👥', label: 'Patients'     },
-  { href: '/for-dentists/dashboard/enquiries',    icon: '💬', label: 'Enquiries'    },
+const MOBILE_NAV: NavItem[] = [
+  { href: '/for-dentists/dashboard',              icon: '📊', label: 'Overview',     staffRoles: ['owner', 'associate_dentist', 'reception'] },
+  { href: '/for-dentists/dashboard/appointments', icon: '📅', label: 'Appointments', staffRoles: ['owner', 'associate_dentist', 'reception'] },
+  { href: '/for-dentists/dashboard/patients',     icon: '👥', label: 'Patients',     staffRoles: ['owner', 'associate_dentist', 'reception'] },
+  { href: '/for-dentists/dashboard/enquiries',    icon: '💬', label: 'Enquiries',    staffRoles: ['owner', 'reception'] },
 ]
+
+function visibleNav(items: NavItem[], staffRole: StaffRole | null): NavItem[] {
+  if (!staffRole) return items
+  return items.filter(item => !item.staffRoles || item.staffRoles.includes(staffRole))
+}
 
 interface Props {
   dentist: any
   completionPct: number
+  staffRole?: StaffRole | null
   children: React.ReactNode
 }
 
-export default function DashboardShell({ dentist, completionPct, children }: Props) {
+export default function DashboardShell({ dentist, completionPct, staffRole = null, children }: Props) {
+  const navItems = visibleNav(NAV, staffRole)
+  const mobileItems = visibleNav(MOBILE_NAV, staffRole)
   const pathname = usePathname()
   const router = useRouter()
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -138,7 +162,7 @@ export default function DashboardShell({ dentist, completionPct, children }: Pro
           (Chrome/Safari) is covered by .dash-sidebar nav::-webkit-scrollbar
           in globals.css. */}
       <nav style={{ flex: 1, minHeight: 0, padding: '8px 12px', overflowY: 'auto', scrollbarWidth: 'none' as any, msOverflowStyle: 'none' as any }}>
-        {NAV.map(item => {
+        {navItems.map(item => {
           const isActive = pathname === item.href || (item.href !== '/for-dentists/dashboard' && pathname.startsWith(item.href))
           return (
             <Link
@@ -304,7 +328,7 @@ export default function DashboardShell({ dentist, completionPct, children }: Pro
 
       {/* Mobile bottom nav */}
       <nav className="dash-bottom-nav" aria-label="Dashboard mobile navigation">
-        {MOBILE_NAV.map(item => {
+        {mobileItems.map(item => {
           const isActive = pathname === item.href || (item.href !== '/for-dentists/dashboard' && pathname.startsWith(item.href))
           return (
             <Link key={item.href} href={item.href} className={`dash-bottom-item${isActive ? ' is-active' : ''}`}>

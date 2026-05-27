@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { resolveCurrentDentist } from '@/lib/currentDentist'
 
 type Appt = {
   id: string
@@ -84,7 +85,7 @@ export default function CalendarPage() {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/for-dentists/login'); return }
-      const { data: dentist } = await supabase.from('dentists').select('id').eq('email', user.email).single()
+      const dentist = await resolveCurrentDentist(supabase, 'id')
       if (!dentist) { router.push('/for-dentists/login'); return }
       if (cancelled) return
       setDentistId(dentist.id)

@@ -2,8 +2,8 @@
 //
 // Invite flow (new, token-based — see
 // supabase/migrations/20260517140000_clinic_staff_invite_token.sql):
-//   1. Insert a clinic_staff row with status='invited' and a fresh
-//      64-char random invite_token (or revive a 'removed' row for the
+//   1. Insert a clinic_staff row with status='pending' and a fresh
+//      64-char random invite_token (or revive an 'inactive' row for the
 //      same email — saves the owner re-typing details, and the row gets
 //      a brand-new token so leaked old tokens are dead).
 //   2. Email the staff member /staff-accept?token=… via Resend.
@@ -59,7 +59,7 @@ export async function GET() {
     .from('clinic_staff')
     .select('id, email, name, role, status, invited_at, location_id, clinic_locations(id, clinic_name)')
     .eq('dentist_id', owner.id)
-    .neq('status', 'removed')
+    .neq('status', 'inactive')
     .order('invited_at', { ascending: false })
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ staff: data ?? [] })
@@ -120,7 +120,7 @@ export async function POST(request: NextRequest) {
     const { error: updErr } = await db
       .from('clinic_staff')
       .update({
-        status: 'invited', role, name,
+        status: 'pending', role, name,
         invited_at: new Date().toISOString(),
         accepted_at: null,
         invite_token,
@@ -132,7 +132,7 @@ export async function POST(request: NextRequest) {
   } else {
     const { data: inserted, error: insErr } = await db
       .from('clinic_staff')
-      .insert({ dentist_id: owner.id, email, name, role, status: 'invited', invite_token, location_id })
+      .insert({ dentist_id: owner.id, email, name, role, status: 'pending', invite_token, location_id })
       .select('id')
       .single()
     if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 })

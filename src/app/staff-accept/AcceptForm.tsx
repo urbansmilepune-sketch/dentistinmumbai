@@ -42,15 +42,11 @@ export default function AcceptForm({ token, email }: { token: string; email: str
         return
       }
 
-      // Auto-sign-in so the staff member lands in their staff portal
+      // Auto-sign-in so the staff member lands in the dashboard
       // instead of having to re-type the password on /for-dentists/login.
-      // The destination is /for-dentists/staff (the staff portal), NOT
-      // /for-dentists/dashboard — the dashboard layout looks up the
-      // signed-in user by email in the dentists table and bounces
-      // anyone without a row to /register. Staff have no dentists row
-      // (they live in clinic_staff), so without this redirect every
-      // newly-accepted staff member gets dumped onto the dentist
-      // registration form right after setting their password.
+      // The dashboard layout now resolves staff via clinic_staff and loads
+      // the owner's dentist row as the working context, with the sidebar
+      // filtered to the role's allowed sections.
       const supabase = createClient()
       const { error: signinErr } = await supabase.auth.signInWithPassword({ email, password })
       if (signinErr) {
@@ -59,7 +55,7 @@ export default function AcceptForm({ token, email }: { token: string; email: str
         router.push(`/for-dentists/login?email=${encodeURIComponent(email)}`)
         return
       }
-      router.push('/for-dentists/staff')
+      router.push('/for-dentists/dashboard')
       router.refresh()
     } catch {
       setError('Network error — please retry.')

@@ -15,15 +15,15 @@ export async function DELETE(_request: NextRequest, ctx: { params: Promise<{ id:
   const { id } = await ctx.params
 
   const db = admin()
-  // Soft-remove (status='removed') instead of a hard delete so re-inviting
-  // the same person keeps history. The list query filters 'removed' out so
+  // Soft-remove (status='inactive') instead of a hard delete so re-inviting
+  // the same person keeps history. The list query filters 'inactive' out so
   // they're invisible in the UI either way.
   const { data: existing } = await db.from('clinic_staff').select('id, dentist_id').eq('id', id).maybeSingle()
   if (!existing || existing.dentist_id !== owner.id) {
     return NextResponse.json({ error: 'Staff member not found' }, { status: 404 })
   }
 
-  const { error } = await db.from('clinic_staff').update({ status: 'removed' }).eq('id', id)
+  const { error } = await db.from('clinic_staff').update({ status: 'inactive' }).eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ success: true })
 }

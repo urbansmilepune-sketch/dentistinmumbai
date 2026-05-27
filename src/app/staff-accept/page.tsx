@@ -46,7 +46,7 @@ export default async function StaffAcceptPage({ searchParams }: PageProps) {
   if (!row) {
     return <Shell><Message kind="error" title="Invite link is no longer valid" body="This invite has either already been accepted or been replaced by a newer one. Ask your clinic owner to send a fresh invite." /></Shell>
   }
-  if (row.status !== 'invited') {
+  if (row.status !== 'pending') {
     return <Shell><Message kind="info" title="Invite already accepted" body="You've already set up your account. Use the regular sign-in page to log in." cta={{ href: '/for-dentists/login', label: 'Go to sign in' }} /></Shell>
   }
 

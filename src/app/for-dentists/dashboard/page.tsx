@@ -5,6 +5,7 @@ import Link from 'next/link'
 import TodayWhatsAppButton, { type TodayAppt } from './TodayWhatsAppButton'
 import AutoRefresh from '@/components/AutoRefresh'
 import RecentApptActions from './RecentApptActions'
+import { resolveCurrentDentist } from '@/lib/currentDentist'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,11 +41,10 @@ export default async function DashboardPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/for-dentists/login')
 
-  const { data: dentist } = await supabase
-    .from('dentists')
-    .select('id, name, slug, tier, is_verified, profile_photo, cover_photo, bio, phone, whatsapp, working_hours, maps_embed, created_at')
-    .eq('email', user.email)
-    .single()
+  const dentist = await resolveCurrentDentist<any>(
+    supabase,
+    'id, name, clinic_name, slug, tier, is_verified, profile_photo, cover_photo, bio, phone, whatsapp, working_hours, maps_embed, created_at',
+  )
 
   if (!dentist) redirect('/for-dentists/login')
 
