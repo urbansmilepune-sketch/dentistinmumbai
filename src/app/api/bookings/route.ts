@@ -12,6 +12,7 @@ import {
   sendBookingRequestToDentist,
 } from '@/lib/email'
 import { sendSMS } from '@/lib/sms'
+import { isDemoEmail } from '@/lib/demo'
 
 function generateRef(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
@@ -57,6 +58,25 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+
+    // Demo-profile rejection — before any clash check / patient lookup so
+    // we don't reveal slot availability for the demo dentist either. The
+    // demo row exists so prospects can tour the dashboard; it must NOT
+    // accumulate real patient bookings, even from someone who guessed
+    // the public profile URL. Pair with the layout bypass in
+    // /for-dentists/dashboard/layout.tsx that lets the demo log in
+    // despite is_active = false.
+    const { data: targetDentist } = await supabase
+      .from('dentists')
+      .select('email')
+      .eq('id', dentist_id)
+      .maybeSingle()
+    if (isDemoEmail(targetDentist?.email)) {
+      return NextResponse.json(
+        { error: 'This is a demo profile. Bookings are not available.' },
+        { status: 403 },
+      )
+    }
 
     // Double-booking guard, two layers:
     //   1. This pre-check returns the friendly 409 most of the time.

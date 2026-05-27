@@ -4,6 +4,9 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 import DashboardShell from './DashboardShell'
 import SupportButton from '@/components/SupportButton'
 import { completionPct } from '@/lib/profileCompletion'
+import { isDemoEmail } from '@/lib/demo'
+
+const DENTIST_FIELDS = 'id, slug, name, clinic_name, tier, trial_started_at, is_active, profile_photo, cover_photo, bio, whatsapp, maps_embed, city'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -11,53 +14,78 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   if (!user) redirect('/for-dentists/login')
 
-  // We look the dentist up by email, NOT by current city domain. Each
-  // city is a separate apex with its own supabase auth cookie, so we
-  // serve a dentist whichever host they happened to log in on. The
-  // DashboardShell picks up city branding from window.location, so the
-  // page reads "DentistInMumbai" or "DentistInPune" based on the host;
-  // the dentist's data is always their own row.
+  // Same two-tier lookup the auth callback uses: try dentists by email first
+  // (the clinic owner), then fall back to clinic_staff for invited users.
+  // Staff render the dashboard against the OWNER's dentist row — that's the
+  // data their role is supposed to act on — while the shell uses staffRole
+  // to scope the sidebar to features they're entitled to.
   const { data: dentist } = await supabase
     .from('dentists')
-    .select('id, slug, name, clinic_name, tier, trial_started_at, is_active, profile_photo, cover_photo, bio, whatsapp, maps_embed, city')
+    .select(DENTIST_FIELDS)
     .eq('email', user.email)
     .single()
 
-  if (!dentist) {
-    // Staff members have no dentists row — they live in clinic_staff
-    // and have their own portal at /for-dentists/staff. Before bouncing
-    // to /register, check whether this email belongs to staff at any
-    // clinic. Service role bypasses RLS so the lookup works even though
-    // staff have no policy granting them read on clinic_staff.
-    const admin = createServiceClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  if (dentist) {
+    // Demo profile bypass: the demo dentist row keeps is_active = false so
+    // it never appears in public listings (which filter by is_active), but
+    // we still want the signed-in demo user to reach the dashboard for
+    // prospect walkthroughs. The /api/bookings rejection in tandem keeps
+    // the row write-locked so the demo can't accrue real patient data.
+    if (!dentist.is_active && !isDemoEmail(user.email)) redirect('/for-dentists/pending')
+    const pct = completionPct(dentist)
+    return (
+      <>
+        <DashboardShell dentist={dentist} completionPct={pct} staffRole={null}>
+          {children}
+        </DashboardShell>
+        <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 9999, display: 'flex' }}>
+          <SupportButton />
+        </div>
+      </>
     )
-    const { data: staffRow } = await admin
-      .from('clinic_staff')
-      .select('id')
-      .ilike('email', user.email ?? '')
-      .neq('status', 'removed')
-      .maybeSingle()
-    if (staffRow) redirect('/for-dentists/staff')
+  }
 
+  // Service role bypasses RLS for the staff lookup + owner dentist load:
+  // staff don't have a policy granting access to dentists at row-fetch time
+  // until the new RLS migration is applied everywhere, and even after,
+  // service role avoids a second round trip for the layout.
+  const admin = createServiceClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  )
+  const { data: staffRow } = await admin
+    .from('clinic_staff')
+    .select('role, dentist_id, status')
+    .ilike('email', user.email ?? '')
+    .eq('status', 'active')
+    .maybeSingle()
+
+  if (!staffRow) {
     const email = user.email ?? ''
     redirect(`/for-dentists/register?email=${encodeURIComponent(email)}`)
   }
-  if (!dentist.is_active) redirect('/for-dentists/pending')
 
-  const pct = completionPct(dentist)
+  const { data: ownerDentist } = await admin
+    .from('dentists')
+    .select(DENTIST_FIELDS)
+    .eq('id', staffRow.dentist_id)
+    .single()
+
+  if (!ownerDentist) {
+    // Staff row points at a missing dentist — stale invite from a deleted
+    // clinic. Bounce to register so they can claim their own profile.
+    const email = user.email ?? ''
+    redirect(`/for-dentists/register?email=${encodeURIComponent(email)}`)
+  }
+  if (!ownerDentist.is_active) redirect('/for-dentists/pending')
+
+  const pct = completionPct(ownerDentist)
 
   return (
     <>
-      <DashboardShell dentist={dentist} completionPct={pct}>
+      <DashboardShell dentist={ownerDentist} completionPct={pct} staffRole={staffRow.role}>
         {children}
       </DashboardShell>
-      {/* Mounted here (not in root layout) so the help button is scoped
-          to authenticated dashboard routes by virtue of file-system
-          layout, no client-side pathname matching required. The
-          fixed-position wrapper lives in this layout so the parent
-          owns positioning and the inner component can't hide itself. */}
       <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 9999, display: 'flex' }}>
         <SupportButton />
       </div>
