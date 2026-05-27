@@ -59,6 +59,15 @@ export async function POST(request: NextRequest) {
     if (!phone || !otp || !dentist_id || !patient_name || !rating || !review_text) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
+    // Strict 1-5 integer check. parseInt would silently coerce "3.7" → 3,
+    // "abc" → NaN (insert would 23514 against the reviews CHECK), and
+    // "99" → 99 (DB constraint catches it, but only after the OTP is
+    // burnt). Reject upfront so the patient can fix the value and retry
+    // with the same OTP.
+    const ratingNum = typeof rating === 'number' ? rating : Number(rating)
+    if (!Number.isInteger(ratingNum) || ratingNum < 1 || ratingNum > 5) {
+      return NextResponse.json({ error: 'Rating must be a whole number from 1 to 5' }, { status: 400 })
+    }
 
     try {
       // Verify OTP. .maybeSingle() so a wrong code returns null cleanly
@@ -87,7 +96,7 @@ export async function POST(request: NextRequest) {
       // letting .single() throw before we can surface a 500.
       const { data, error } = await supabase.from('reviews').insert({
         dentist_id, patient_name, patient_phone: phone.replace(/\s/g, ''),
-        rating: parseInt(rating), review_text, treatment: treatment || null,
+        rating: ratingNum, review_text, treatment: treatment || null,
         status: 'pending', // Admin must approve
       }).select('id').maybeSingle()
 

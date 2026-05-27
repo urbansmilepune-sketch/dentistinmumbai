@@ -180,9 +180,9 @@ export default function ExpensesPage() {
     if (salRes.ok) setSalaries((await salRes.json()).salaries || [])
     if (staffRes.ok) {
       const all = ((await staffRes.json()).staff || []) as Staff[]
-      // 'removed' is already filtered server-side; keep invited + active so
+      // 'inactive' is already filtered server-side; keep pending + active so
       // a dentist can record a salary before the staff member accepts.
-      setStaffList(all.filter(s => s.status !== 'removed'))
+      setStaffList(all.filter(s => s.status !== 'inactive'))
     }
     if (!invRes.error) setInvoices((invRes.data as InvoiceLite[]) || [])
 
@@ -370,8 +370,16 @@ export default function ExpensesPage() {
     const res = editingSalary
       ? await fetch(`/api/dentist/salaries/${editingSalary.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       : await fetch('/api/dentist/salaries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...payload, staff_id: salaryModalStaff.id, month, year }) })
-    const j = await res.json().catch(() => ({}))
-    if (!res.ok) { setSalaryError(j?.error || 'Save failed'); setSavingSalary(false); return }
+    // Check res.ok BEFORE parsing the body — a non-2xx with a non-JSON
+    // response (Next runtime error, edge gateway, etc.) would otherwise
+    // resolve via `.catch(() => ({}))` to an empty object and continue to
+    // setSalaryModalStaff(null) as if the save succeeded.
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({} as any))
+      setSalaryError(j?.error || `Save failed (${res.status})`)
+      setSavingSalary(false)
+      return
+    }
     setSalaryModalStaff(null)
     setEditingSalary(null)
     setSavingSalary(false)

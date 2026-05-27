@@ -42,15 +42,19 @@ export async function POST(request: NextRequest) {
   const otp = Math.floor(100000 + Math.random() * 900000).toString()
   const expires_at = new Date(Date.now() + 10 * 60 * 1000).toISOString()
 
-  const { error: insertErr } = await supabase.from('review_otps').insert({
-    phone,
-    otp,
-    dentist_id,
-    expires_at,
-    used: false,
-  })
+  // Upsert on `phone` so a patient who re-clicks "Send OTP" (mistyped the
+  // first code, didn't receive the SMS, etc.) gets a fresh OTP + expiry on
+  // the SAME row instead of a 23505 from the phone-unique index. The
+  // re-request also resets `used` to false so a previously-burnt row
+  // doesn't lock the patient out of resending.
+  const { error: insertErr } = await supabase
+    .from('review_otps')
+    .upsert(
+      { phone, otp, dentist_id, expires_at, used: false },
+      { onConflict: 'phone' },
+    )
   if (insertErr) {
-    console.error('[reviews/otp] insert failed', {
+    console.error('[reviews/otp] upsert failed', {
       code: insertErr.code, message: insertErr.message, details: insertErr.details,
     })
     return NextResponse.json({ error: 'Could not issue OTP' }, { status: 500 })

@@ -61,6 +61,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'No allowed fields to update' }, { status: 400 })
   }
 
+  // Verify the row exists first. Supabase's UPDATE silently succeeds when
+  // zero rows match, so a stale id from the admin UI would return 200
+  // success and the optimistic state update in AdminPageClient would
+  // diverge from the DB. The pre-check converts "no such dentist" into
+  // a 404 that the client now surfaces as a toast.
+  const { data: existing, error: lookupErr } = await admin_db
+    .from('dentists')
+    .select('id')
+    .eq('id', id)
+    .maybeSingle()
+  if (lookupErr) return NextResponse.json({ error: lookupErr.message }, { status: 500 })
+  if (!existing) return NextResponse.json({ error: 'Dentist not found' }, { status: 404 })
+
   const { error } = await admin_db.from('dentists').update(updates).eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ success: true })

@@ -244,6 +244,14 @@ function BillingPageInner() {
     }
     const rawPhone = String(inv.patients?.phone || '').replace(/\D/g, '')
     if (!rawPhone) { alert('Patient phone is missing — add it before sending a payment link.'); return }
+    // wa.me needs a full E.164 number to actually open the chat. A 6- or
+    // 7-digit fragment renders as a broken link; previously we'd build the
+    // URL regardless and the dentist would only find out when their patient
+    // never got the message. 10 digits is the minimum for any Indian mobile.
+    if (rawPhone.length < 10) {
+      alert('Patient phone is too short — needs at least 10 digits to send via WhatsApp.')
+      return
+    }
     setLinkLoading(inv.id)
     try {
       const res = await fetch('/api/payments/create-link', {

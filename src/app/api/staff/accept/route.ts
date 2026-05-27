@@ -12,7 +12,7 @@
 //     to 'active'), uniformly random (32 bytes), AND now expires
 //     30 days after invited_at as belt-and-suspenders. A leaked-but-
 //     not-yet-redeemed token from a year ago cannot be cashed in.
-//   - status='invited' is required at accept time. A redeem of a
+//   - status='pending' is required at accept time. A redeem of a
 //     token that's already been used is impossible because the token
 //     is null'd; but if the row was activated through some other path
 //     (e.g. manual fix), refuse the redeem here too.
@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
   if (!row) {
     return NextResponse.json({ error: 'This invite link is no longer valid. Ask your clinic owner to send a new invite.' }, { status: 410 })
   }
-  if (row.status !== 'invited') {
+  if (row.status !== 'pending') {
     return NextResponse.json({ error: 'This invite has already been accepted. Use the regular sign-in page.' }, { status: 409 })
   }
 
@@ -104,11 +104,20 @@ export async function POST(request: NextRequest) {
   })
 
   if (createErr) {
-    const msg = createErr.message || ''
-    const looksLikeExists = /already registered|already exists|user already|duplicate/i.test(msg)
+    // Branch on the structured HTTP status / code instead of a regex over
+    // the human-readable message. Supabase auth returns 422 with code
+    // 'email_exists' (newer GoTrue) or 'user_already_exists' for the
+    // duplicate-email case; the message text varies by release and was
+    // already an i18n hazard. status === 422 is the stable signal.
+    const errStatus = (createErr as { status?: number }).status
+    const errCode = (createErr as { code?: string }).code || ''
+    const looksLikeExists =
+      errStatus === 422 ||
+      errCode === 'email_exists' ||
+      errCode === 'user_already_exists'
     if (!looksLikeExists) {
       console.error('[staff/accept] createUser failed', createErr)
-      return NextResponse.json({ error: `Could not create your account: ${msg}` }, { status: 500 })
+      return NextResponse.json({ error: `Could not create your account: ${createErr.message || 'unknown error'}` }, { status: 500 })
     }
     const existing = await findAuthUserByEmail(db, row.email)
     if (!existing) {

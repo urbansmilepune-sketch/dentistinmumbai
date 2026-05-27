@@ -39,7 +39,16 @@ export async function POST(request: NextRequest) {
     .single()
   if (!dentist) return NextResponse.json({ error: 'Dentist profile not found' }, { status: 404 })
 
-  const body = await request.json().catch(() => ({} as Record<string, unknown>))
+  // 400 on malformed body instead of falling through to `{}` and then
+  // surfacing the same "Invalid plan or billing period" message — that
+  // conflated a missing field with an unparseable payload, which made
+  // CheckoutButton harder to debug when the JSON was bad.
+  let body: Record<string, unknown>
+  try {
+    body = (await request.json()) as Record<string, unknown>
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
   const key = planKey(body?.plan, body?.billing)
   if (!key) {
     return NextResponse.json({ error: 'Invalid plan or billing period' }, { status: 400 })
