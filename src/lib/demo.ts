@@ -14,7 +14,7 @@
 // surface stays auditable. Comparison is case-insensitive — Supabase
 // stores emails lowercase but auth flows occasionally surface mixed case.
 
-export const DEMO_DENTIST_EMAIL = 'demo@dentistinpune.in'
+export const DEMO_DENTIST_EMAIL = 'ashish17dighade@gmail.com'
 
 export function isDemoEmail(email: string | null | undefined): boolean {
   return !!email && email.toLowerCase() === DEMO_DENTIST_EMAIL
