@@ -19,9 +19,29 @@ export default function ResetPasswordPage() {
   useEffect(() => {
     setCityConfig(getCityByDomain(window.location.hostname))
     const supabase = createClient()
-    supabase.auth.onAuthStateChange((event) => {
+    // Two-source readiness check:
+    //   1. onAuthStateChange fires PASSWORD_RECOVERY exactly once when the
+    //      reset-link redirect lands and the recovery session is exchanged
+    //      from the URL fragment. We MUST wait for it before showing the
+    //      form, otherwise a signed-in dentist visiting /reset-password
+    //      directly could update the password of whatever session they
+    //      happen to hold (theirs OR a leftover staff token).
+    //   2. If the user is bouncing back into this page after navigating
+    //      away, onAuthStateChange may not re-fire — fall back to checking
+    //      whether the current session originated from a recovery flow.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') setReady(true)
     })
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      // amr (auth methods reference) includes 'recovery' when the session
+      // came from a password-reset link. Treat that as the same green
+      // light as the PASSWORD_RECOVERY event.
+      const amr = (session?.user as any)?.amr
+      if (Array.isArray(amr) && amr.some((m: any) => m?.method === 'recovery')) {
+        setReady(true)
+      }
+    })
+    return () => { subscription?.unsubscribe() }
   }, [])
   const brandTld = '.' + cityConfig.domain.split('.').slice(1).join('.')
 
@@ -51,6 +71,18 @@ export default function ResetPasswordPage() {
             <div style={{ fontSize: 56, marginBottom: 16 }}>✅</div>
             <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, marginBottom: 8 }}>Password Updated!</h2>
             <p style={{ color: 'var(--muted)', fontSize: 14 }}>Redirecting you to dashboard...</p>
+          </div>
+        ) : !ready ? (
+          // Guard: never render the password input until we've confirmed a
+          // PASSWORD_RECOVERY session is live. Without this, a normally
+          // signed-in dentist hitting this URL would get a form that
+          // rewrites their own password through supabase.auth.updateUser.
+          <div style={{ textAlign: 'center', padding: '12px 0' }}>
+            <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, marginBottom: 10 }}>Verifying reset link…</h1>
+            <p style={{ fontSize: 14, color: 'var(--muted)', lineHeight: 1.6 }}>
+              If this hangs for more than a few seconds, the link may have expired.{' '}
+              <Link href="/for-dentists/forgot-password" style={{ color: 'var(--blue)', fontWeight: 600 }}>Request a new one</Link>.
+            </p>
           </div>
         ) : (
           <>

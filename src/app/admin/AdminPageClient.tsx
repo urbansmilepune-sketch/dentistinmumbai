@@ -748,19 +748,36 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
   }
   function dismissToast(id: number) { setToasts(t => t.filter(x => x.id !== id)) }
 
-  async function adminAction(endpoint: string, body: any, id: string) {
+  // Returns { ok, error } so callers can gate optimistic state updates on
+  // the actual server response. Previously this swallowed the response and
+  // every caller updated local state unconditionally — a 4xx/5xx from the
+  // admin API would leave the UI showing the new value while the DB still
+  // held the old, and the admin would only notice after a hard refresh.
+  async function adminAction(endpoint: string, body: any, id: string): Promise<{ ok: boolean; error?: string }> {
     setActionLoading(id)
-    await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-    setActionLoading(null)
+    try {
+      const res = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        return { ok: false, error: data?.error || `Request failed (${res.status})` }
+      }
+      return { ok: true }
+    } catch {
+      return { ok: false, error: 'Network error' }
+    } finally {
+      setActionLoading(null)
+    }
   }
 
   async function verifyDentist(id: string, verified: boolean) {
-    await adminAction('/api/admin/dentists', { id, is_verified: !verified }, id)
+    const result = await adminAction('/api/admin/dentists', { id, is_verified: !verified }, id)
+    if (!result.ok) { pushToast('error', result.error || 'Could not update verification status.'); return }
     setDentistList(prev => prev.map(d => d.id === id ? { ...d, is_verified: !verified } : d))
   }
 
   async function changeTier(id: string, tier: string) {
-    await adminAction('/api/admin/dentists', { id, tier }, id)
+    const result = await adminAction('/api/admin/dentists', { id, tier }, id)
+    if (!result.ok) { pushToast('error', result.error || 'Could not update tier.'); return }
     setDentistList(prev => prev.map(d => d.id === id ? { ...d, tier } : d))
   }
 
@@ -798,7 +815,8 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
   }
 
   async function reviewAction(id: string, status: string) {
-    await adminAction('/api/admin/reviews', { id, status }, id)
+    const result = await adminAction('/api/admin/reviews', { id, status }, id)
+    if (!result.ok) { pushToast('error', result.error || 'Could not update review status.'); return }
     setReviewList(prev => prev.map(r => r.id === id ? { ...r, status } : r))
   }
 

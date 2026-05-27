@@ -101,13 +101,17 @@ export async function POST(request: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
-    const { data: existing } = await supabase
-      .from('dentist_registrations')
-      .select('id')
-      .or(`phone.eq.${phone},email.eq.${email}`)
-      .single()
-
-    if (existing) {
+    // Two separate eq() queries instead of .or(`phone.eq.${phone},email.eq.${email}`).
+    // The PostgREST .or() syntax embeds values into a parsed expression
+    // string; a comma, paren, or `).foo(` in the user-supplied phone/email
+    // would let an attacker rewrite the filter (or break the parse and
+    // surface as an empty match that bypasses the dedupe check). Two
+    // explicit eq() calls keep each value strictly as a value.
+    const [phoneCheck, emailCheck] = await Promise.all([
+      supabase.from('dentist_registrations').select('id').eq('phone', phone).maybeSingle(),
+      supabase.from('dentist_registrations').select('id').eq('email', email).maybeSingle(),
+    ])
+    if (phoneCheck.data || emailCheck.data) {
       return NextResponse.json({ error: 'A registration with this phone or email already exists.' }, { status: 409 })
     }
 

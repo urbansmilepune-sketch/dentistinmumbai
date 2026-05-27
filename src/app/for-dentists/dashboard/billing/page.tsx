@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { downloadInvoicePdf } from '@/lib/invoicePdf'
+import { resolveCurrentDentist } from '@/lib/currentDentist'
 
 type DentistMeta = {
   id: string
@@ -69,11 +70,10 @@ function BillingPageInner() {
         const supabase = createClient()
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) { router.push('/for-dentists/login'); return }
-        const { data: dentistRow } = await supabase
-          .from('dentists')
-          .select('id, name, degree, clinic_name, phone, whatsapp, address, mci_number, city, areas(name)')
-          .eq('email', user.email)
-          .single()
+        const dentistRow = await resolveCurrentDentist<DentistMeta>(
+          supabase,
+          'id, name, degree, clinic_name, phone, whatsapp, address, mci_number, city, areas(name)',
+        )
         if (!dentistRow) return
         setDentistId(dentistRow.id)
         setDentist(dentistRow as unknown as DentistMeta)
@@ -232,6 +232,16 @@ function BillingPageInner() {
   // optimistically refetch is skipped here — the dentist sees status update
   // on next refresh.
   async function sendPaymentLink(inv: any) {
+    // Defence-in-depth tenant check. /api/payments/create-link verifies the
+    // invoice belongs to the signed-in dentist before issuing the link, but
+    // a UI that POSTs cross-tenant ids — even by accident, e.g. a stale row
+    // in state — would generate a Razorpay link in the wrong clinic's name
+    // and the patient would see another clinic's note text. This guard
+    // catches that locally before the request ever leaves the browser.
+    if (!dentistId || (inv.dentist_id && inv.dentist_id !== dentistId)) {
+      alert('This invoice does not belong to your account.')
+      return
+    }
     const rawPhone = String(inv.patients?.phone || '').replace(/\D/g, '')
     if (!rawPhone) { alert('Patient phone is missing — add it before sending a payment link.'); return }
     setLinkLoading(inv.id)

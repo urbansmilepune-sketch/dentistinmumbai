@@ -58,10 +58,12 @@ export async function POST(request: NextRequest) {
 
     const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
-    // Double-booking guard. This is a check-then-insert and still has a small
-    // race window — for stronger guarantees add a partial unique index on
-    // (dentist_id, appt_date, time_slot) WHERE status != 'cancelled' and let
-    // the constraint surface 23505 here.
+    // Double-booking guard, two layers:
+    //   1. This pre-check returns the friendly 409 most of the time.
+    //   2. The partial unique index `appointments_slot_unique` (see
+    //      20260527140000_appointments_slot_unique.sql) catches the race
+    //      where two requests both pass the check and both try to insert —
+    //      the loser surfaces 23505 and we map it to the same 409 below.
     let clashQuery = supabase
       .from('appointments')
       .select('id')
@@ -193,6 +195,12 @@ export async function POST(request: NextRequest) {
         code: error.code, message: error.message, details: error.details, hint: error.hint,
         payload_keys: Object.keys(insertPayload),
       })
+      // 23505 from appointments_slot_unique = the race winner already grabbed
+      // this slot. Match the friendly 409 the pre-check returns so the
+      // patient sees a "pick another time" message instead of a generic 500.
+      if (error.code === '23505') {
+        return NextResponse.json({ error: 'This slot is already booked. Please choose another time.' }, { status: 409 })
+      }
       return NextResponse.json({
         error: 'Failed to create booking',
         code: error.code, message: error.message, details: error.details, hint: error.hint,

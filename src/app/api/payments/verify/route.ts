@@ -49,9 +49,11 @@ export async function POST(request: NextRequest) {
   let amountPaise = 0
   let periodDays = FALLBACK_PERIOD_DAYS
   let paidTier: PaidTier | null = null
+  let orderStatus: string | undefined
   try {
     const order: any = await razorpay.orders.fetch(razorpay_order_id)
     amountPaise = Number(order?.amount) || 0
+    orderStatus = typeof order?.status === 'string' ? order.status : undefined
     const noteDays = Number(order?.notes?.period_days)
     if (Number.isFinite(noteDays) && noteDays > 0) periodDays = noteDays
     const notePlan = order?.notes?.plan
@@ -59,6 +61,16 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error('[razorpay verify] order fetch failed', { razorpay_order_id, err })
     return NextResponse.json({ error: 'Could not verify order — please contact support with payment id ' + razorpay_payment_id }, { status: 500 })
+  }
+
+  // A valid HMAC signature only proves the payment_id was issued against this
+  // order_id by Razorpay — it does NOT prove the payment was captured. An
+  // attacker who triggers an order, signs it, then ABORTS before capture
+  // would still pass the signature check above. Only Razorpay's own
+  // accounting (order.status === 'paid') tells us the money actually moved.
+  if (orderStatus !== 'paid') {
+    console.error('[razorpay verify] order not in paid status', { razorpay_order_id, razorpay_payment_id, orderStatus })
+    return NextResponse.json({ error: 'Payment not captured yet — please retry in a few seconds, or contact support with payment id ' + razorpay_payment_id }, { status: 400 })
   }
 
   if (!paidTier) {

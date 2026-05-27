@@ -130,9 +130,16 @@ export default function PatientDetailPage() {
 
       const [{ data: p }, { data: v }, { data: rx }, { data: pl }, { data: inv }, { data: lw }] = await Promise.all([
         supabase.from('patients').select('*').eq('id', patientId).eq('dentist_id', dentist.id).single(),
-        supabase.from('visits').select('*').eq('patient_id', patientId).order('visit_date', { ascending: false }),
-        supabase.from('prescriptions').select('*').eq('patient_id', patientId).order('created_at', { ascending: false }),
-        supabase.from('treatment_plans').select('*, treatment_plan_steps(*)').eq('patient_id', patientId).order('created_at', { ascending: false }),
+        // dentist_id scope on EVERY child query — a determined dentist who
+        // typed another clinic's patient UUID into the URL would otherwise
+        // see that patient's visits, prescriptions, and treatment plans
+        // even though the parent `patients` lookup above correctly returns
+        // null. The page bounces back to /patients when `p` is missing,
+        // but the in-flight queries already fired and a network sniff
+        // would still leak the child rows.
+        supabase.from('visits').select('*').eq('patient_id', patientId).eq('dentist_id', dentist.id).order('visit_date', { ascending: false }),
+        supabase.from('prescriptions').select('*').eq('patient_id', patientId).eq('dentist_id', dentist.id).order('created_at', { ascending: false }),
+        supabase.from('treatment_plans').select('*, treatment_plan_steps(*)').eq('patient_id', patientId).eq('dentist_id', dentist.id).order('created_at', { ascending: false }),
         supabase.from('invoices').select('*, patients(name, phone)').eq('patient_id', patientId).eq('dentist_id', dentist.id).order('invoice_date', { ascending: false }),
         supabase.from('lab_work').select('*').eq('patient_id', patientId).eq('dentist_id', dentist.id).order('created_at', { ascending: false }),
       ])
