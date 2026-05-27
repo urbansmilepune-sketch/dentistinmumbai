@@ -36,7 +36,28 @@ export async function POST(request: NextRequest) {
   if (!dentist) return NextResponse.json({ error: 'No dentist account found with this email' }, { status: 404 })
 
   const city = getCityBySlug((dentist as any).city)
-  const origin = `https://${city.domain}`
+  // Redirect origin priority:
+  //   1. Origin/Referer of the request — i.e. whichever city domain the
+  //      admin is on when sending the link. Each city is a separate apex
+  //      with its own Supabase auth cookie scope, so the magic-link
+  //      callback MUST land on the same origin the admin's own session
+  //      lives on; otherwise the cookie set by Supabase ends up on the
+  //      wrong apex and the dentist's "click → dashboard" loop sends them
+  //      back to /login.
+  //   2. Fallback to the dentist's stored city.domain. This is the legacy
+  //      behaviour and is correct when the dentist row has a populated
+  //      city column AND the admin is on the same city domain. Used only
+  //      when Origin and Referer are both missing (rare — server-to-server
+  //      callers, curl without the headers).
+  //
+  // The previous code skipped (1) entirely and ALWAYS used the dentist
+  // row's city. Legacy rows with NULL or unknown city silently fell
+  // through to DEFAULT_CITY = 'mumbai' in getCityBySlug, which is the
+  // "all magic links redirect to dentistinmumbai.in" symptom.
+  const headerOrigin = request.headers.get('origin')
+    || request.headers.get('referer')?.split('/').slice(0, 3).join('/')
+    || null
+  const origin = headerOrigin || `https://${city.domain}`
 
   // Try a magic link first — works for any dentist who already has an
   // auth.users row (everyone post-approval-fix). For legacy dentists that
