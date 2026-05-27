@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
+import { resolveCurrentDentist } from '@/lib/currentDentist'
 
 type FilterKey = 'all' | 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'no_show'
 
@@ -51,12 +52,17 @@ const TIME_SLOTS = [
 // Status values mirror the DB constraint exactly: pending, confirmed,
 // completed, cancelled, no_show. The dropdown labels and tab labels below
 // are the human-readable presentation of those same values.
+//
+// no_show has its own muted-red palette (distinct from cancelled's brighter
+// red and completed's grey) so the dentist can tell at a glance which
+// closed-out rows were patient ghosting vs. routine closure — those are the
+// rows worth follow-up calls or recall reminders.
 const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }> = {
   pending:   { bg: '#FEF3C7', text: '#92400E', label: 'waiting / walk-in' },
   confirmed: { bg: '#DBEAFE', text: '#1D4ED8', label: 'scheduled'         },
   completed: { bg: '#E5E7EB', text: '#374151', label: 'completed'         },
   cancelled: { bg: '#FEE2E2', text: '#991B1B', label: 'cancelled'         },
-  no_show:   { bg: '#F3F4F6', text: '#374151', label: 'no show'           },
+  no_show:   { bg: '#FFE4E6', text: '#9F1239', label: 'no show'           },
 }
 
 function matchesFilter(status: string, filter: FilterKey): boolean {
@@ -124,11 +130,10 @@ export default function AppointmentsPage() {
       try {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) { router.push('/for-dentists/login'); return }
-        const { data: dentist } = await supabase
-          .from('dentists')
-          .select('id, name, clinic_name, whatsapp, phone')
-          .eq('email', user.email)
-          .single()
+        const dentist = await resolveCurrentDentist<{ id: string; name: string | null; clinic_name: string | null; whatsapp: string | null; phone: string | null }>(
+          supabase,
+          'id, name, clinic_name, whatsapp, phone',
+        )
         if (!dentist) return
         setDentistId(dentist.id)
         setDentistMeta({
@@ -503,6 +508,100 @@ export default function AppointmentsPage() {
         <div style={{ background: '#DCFCE7', border: '1px solid #BBF7D0', color: '#166534', padding: '12px 14px', borderRadius: 10, fontSize: 13, marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <span>📅 {recallToast}</span>
           <button onClick={() => setRecallToast(null)} style={{ background: 'none', border: 'none', color: '#166534', cursor: 'pointer', fontFamily: 'var(--font-body)', fontWeight: 700 }}>✕</button>
+        </div>
+      )}
+
+      {/* Edit Appointment Modal — the openEdit handler / editForm state has
+          been here for a while but the rendered JSX was missing, so the Edit
+          button silently no-op'd. Mirror the Add modal layout; time_slot
+          uses the TIME_SLOTS <select> (NOT a free-text input — the native
+          time picker bug from commit 44e7912 applies here too). */}
+      {editing && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 540, maxHeight: '92vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 24px', borderBottom: '1px solid var(--border)' }}>
+              <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18 }}>Edit Appointment</h2>
+              <button onClick={() => setEditing(null)}
+                style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--muted)' }}>✕</button>
+            </div>
+            <div style={{ padding: 24 }}>
+              {editError && (
+                <div style={{ background: '#FEE2E2', border: '1px solid #FECACA', color: '#991B1B', padding: '10px 14px', borderRadius: 10, marginBottom: 14, fontSize: 13 }}>
+                  {editError}
+                </div>
+              )}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                <div style={{ gridColumn: '1/-1' }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Phone</label>
+                  <input value={editForm.patient_phone} onChange={e => setEditForm(f => ({ ...f, patient_phone: e.target.value }))}
+                    placeholder="10-digit number"
+                    style={{ width: '100%', padding: '12px', minHeight: 48, borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 14, fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Status</label>
+                  <select value={editForm.status} onChange={e => setEditForm(f => ({ ...f, status: e.target.value }))}
+                    style={{ width: '100%', padding: '12px', minHeight: 48, borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 14, fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box', background: '#fff' }}>
+                    <option value="pending">Waiting / Walk-in</option>
+                    <option value="confirmed">Scheduled</option>
+                    <option value="completed">Completed</option>
+                    <option value="cancelled">Cancelled</option>
+                    <option value="no_show">No Show</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Date *</label>
+                  <input type="date" value={editForm.appt_date} onChange={e => setEditForm(f => ({ ...f, appt_date: e.target.value }))}
+                    style={{ width: '100%', padding: '12px', minHeight: 48, borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 14, fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Time *</label>
+                  <select value={editForm.time_slot} onChange={e => setEditForm(f => ({ ...f, time_slot: e.target.value }))}
+                    style={{ width: '100%', padding: '12px', minHeight: 48, borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 14, fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box', background: '#fff' }}>
+                    <option value="">Select time</option>
+                    {TIME_SLOTS.map(slot => (
+                      <option key={slot} value={slot}>{slot}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ gridColumn: '1/-1' }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Treatment</label>
+                  <select value={editForm.treatment_id} onChange={e => setEditForm(f => ({ ...f, treatment_id: e.target.value }))}
+                    style={{ width: '100%', padding: '12px', minHeight: 48, borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 14, fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box', background: '#fff' }}>
+                    <option value="">— No treatment</option>
+                    {treatments.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
+                </div>
+                {locations.length > 0 && (
+                  <div style={{ gridColumn: '1/-1' }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Branch</label>
+                    <select value={editForm.location_id} onChange={e => setEditForm(f => ({ ...f, location_id: e.target.value }))}
+                      style={{ width: '100%', padding: '12px', minHeight: 48, borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 14, fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box', background: '#fff' }}>
+                      <option value="">— Not assigned to a branch</option>
+                      {locations.map(l => (
+                        <option key={l.id} value={l.id}>{l.name || 'Branch'}{l.is_primary ? ' (primary)' : ''}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div style={{ gridColumn: '1/-1' }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Notes</label>
+                  <input value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}
+                    placeholder="Walk-in details, chief complaint…"
+                    style={{ width: '100%', padding: '12px', minHeight: 48, borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 14, fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box' }} />
+                </div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '14px 24px', borderTop: '1px solid var(--border)' }}>
+              <button onClick={() => setEditing(null)} disabled={editSaving}
+                style={{ padding: '12px 20px', minHeight: 48, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
+                Cancel
+              </button>
+              <button onClick={saveEdit} disabled={editSaving}
+                style={{ padding: '12px 24px', minHeight: 48, background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: editSaving ? 'not-allowed' : 'pointer', opacity: editSaving ? 0.6 : 1, fontFamily: 'var(--font-body)' }}>
+                {editSaving ? 'Saving…' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

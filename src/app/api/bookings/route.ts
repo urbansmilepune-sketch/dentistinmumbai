@@ -327,12 +327,3 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url)
-  const dentist_id = searchParams.get('dentist_id')
-  const date = searchParams.get('date')
-  if (!dentist_id || !date) return NextResponse.json({ error: 'Missing params' }, { status: 400 })
-  const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
-  const { data } = await supabase.from('appointments').select('time_slot').eq('dentist_id', dentist_id).eq('appt_date', date).neq('status', 'cancelled')
-  return NextResponse.json({ booked_slots: (data || []).map((a: any) => a.time_slot) })
-}

@@ -5,6 +5,23 @@ const resend = new Resend(process.env.RESEND_API_KEY)
 
 const ADMIN_EMAIL = 'dentistinmumbaiapp@gmail.com'
 
+// TODO(future): Resend bounce/complaint webhook is NOT yet implemented.
+//
+// What's missing:
+//   - A webhook receiver (e.g. /api/webhooks/resend) that verifies the
+//     `Svix-Signature` header against RESEND_WEBHOOK_SECRET.
+//   - A `patients.emails_status` (or sibling) column flipping to 'bounced' /
+//     'complained' / 'unsubscribed' on the relevant Resend events, so the
+//     booking ack / dentist new-request / recall flows can skip dead
+//     addresses instead of burning quota on them.
+//   - Admin surface listing recent bounces so the dentist can clean up
+//     typos in patient records.
+//
+// Until this lands, repeated sends to a bouncing address quietly succeed
+// from the app's point of view (Resend swallows the bounce) and the
+// dentist sees no signal. Low priority because patient_email is optional
+// at booking time, but worth wiring up before we lean on email more.
+
 /**
  * Domains that have been DKIM-verified in Resend and can therefore be used
  * as a from-address without bounces. Anything outside this set is rewritten
