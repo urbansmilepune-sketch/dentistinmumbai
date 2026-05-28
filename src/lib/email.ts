@@ -1,9 +1,18 @@
 import { Resend } from 'resend'
-import { CITY_CONFIGS, DEFAULT_CITY, type CitySlug } from '@/config/cities'
+import { CITY_CONFIGS, DEFAULT_CITY, NATIONAL_HOST, type CitySlug } from '@/config/cities'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
 const ADMIN_EMAIL = 'dentistinmumbaiapp@gmail.com'
+
+/**
+ * From-address for the national professional-network surface
+ * (dentistinindia.in). Lives outside VERIFIED_RESEND_DOMAINS because
+ * 'india' is not a CitySlug — see src/config/cities.ts. Same DKIM
+ * prerequisite applies: the apex must be DKIM-verified in Resend
+ * before sending from this address, or Resend will 403.
+ */
+export const NATIONAL_FROM_EMAIL = `hello@${NATIONAL_HOST}`
 
 // TODO(future): Resend bounce/complaint webhook is NOT yet implemented.
 //
@@ -52,8 +61,13 @@ const VERIFIED_RESEND_DOMAINS: ReadonlySet<CitySlug> = new Set<CitySlug>([
  * values in src/config/cities.ts (both `.in` and `.com` TLDs supported).
  * Unknown slugs and unverified domains both fall back to the mumbai
  * sender so the send still goes through.
+ *
+ * Pass `{ national: true }` for surfaces that live on dentistinindia.in
+ * rather than a city domain — bypasses city resolution and returns
+ * NATIONAL_FROM_EMAIL directly. Used by /api/india/register.
  */
-export function getCityEmail(citySlug?: string | null): string {
+export function getCityEmail(citySlug?: string | null, opts?: { national?: boolean }): string {
+  if (opts?.national) return NATIONAL_FROM_EMAIL
   const slug = (citySlug && Object.prototype.hasOwnProperty.call(CITY_CONFIGS, citySlug)
     ? citySlug
     : DEFAULT_CITY) as CitySlug

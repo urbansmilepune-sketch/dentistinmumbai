@@ -22,6 +22,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { CITY_CONFIGS, type CitySlug, NATIONAL_HOST } from '@/config/cities'
+import { NATIONAL_FROM_EMAIL } from '@/lib/email'
 
 const admin = createServiceClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -239,7 +240,7 @@ export async function POST(request: NextRequest) {
       method: 'POST',
       headers: { Authorization: `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: `DentistIn <hello@${NATIONAL_HOST}>`,
+        from: `DentistIn <${NATIONAL_FROM_EMAIL}>`,
         to: email,
         subject: "Welcome to India's Dental Professional Network",
         html,
