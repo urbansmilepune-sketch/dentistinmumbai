@@ -30,9 +30,11 @@ export async function GET(request: NextRequest) {
 
   // Two account types share the same login: dentists (who own a row in the
   // dentists table) and staff (who own a row in clinic_staff). Route to
-  // whichever applies. If neither, fall through to the dentist landing
-  // and let its layout redirect to /register — preserves the pre-staff
-  // behaviour for any login that doesn't fit either bucket.
+  // whichever applies. If neither, send city-host logins to /onboard so
+  // a Google-authenticated dentist can claim their listing with a minimal
+  // 3-field form (name+email come from the Google profile). National-host
+  // logins still fall through to /feed, which handles unsigned-up users
+  // gracefully via the LinkedIn-style /join flow.
   //
   // We deliberately stay on the same origin for every redirect here. Each
   // city is a separate apex domain (and dentistinindia.in is a separate
@@ -83,8 +85,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${origin}/for-dentists/dashboard`)
   }
 
-  // Authenticated but unrecognised — let the landing page's layout decide
-  // (the dashboard layout redirects to /register; /feed handles unsigned-up
-  // users gracefully).
-  return NextResponse.redirect(`${origin}${dentistLanding}`)
+  // Authenticated but unrecognised. On a city host, send them to /onboard
+  // to fill in the three fields we can't get from Google (clinic_name,
+  // phone, area) before the dashboard gates them out. On the national
+  // host, /feed already handles unsigned-up users — keep that path.
+  if (national) {
+    return NextResponse.redirect(`${origin}${dentistLanding}`)
+  }
+  return NextResponse.redirect(`${origin}/for-dentists/onboard`)
 }
