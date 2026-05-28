@@ -8,6 +8,7 @@ import { CITY_CONFIGS, NATIONAL_ORIGIN, cityOrigin, getCityBySlug, cityBrandName
 import NationalHome from '@/components/national/NationalHome'
 import CitiesFooterLinks from '@/components/CitiesFooterLinks'
 import PopularSearches from '@/components/PopularSearches'
+import DentistMobileStickyBar from '@/components/DentistMobileStickyBar'
 
 // Per-host metadata. dentistinindia.in gets network-framed copy; every
 // city domain gets a "Dentist in <City>" search title tuned for the
@@ -175,7 +176,6 @@ export default async function HomePage() {
           </Link>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Link href="/dentists" className="nav-secondary-link" style={{ padding: '8px 16px', fontWeight: 500, fontSize: 14, color: 'var(--text-secondary)' }}>Find Dentists</Link>
-            <Link href="/for-dentists" className="nav-secondary-link" style={{ padding: '8px 16px', fontWeight: 500, fontSize: 14, color: 'var(--text-secondary)' }}>For Dentists</Link>
             <Link href="/for-dentists/register" className="nav-list-clinic btn btn-primary btn-sm">List Your Clinic</Link>
             <Link href="/dentists" className="nav-mobile-cta btn btn-primary btn-sm">Find Dentists</Link>
           </div>
@@ -213,13 +213,35 @@ export default async function HomePage() {
               marginBottom: 20,
               lineHeight: 1.15,
             }}>
-              {city.heroTitle} — <span style={{ color: '#7DD3FC' }}>Near You</span>
+              Find the Best Dentist <span style={{ color: '#7DD3FC' }}>Near You</span>
             </h1>
             <p className="home-hero-sub" style={{ color: 'rgba(255,255,255,0.8)', fontSize: 18, maxWidth: 520, marginBottom: 40, lineHeight: 1.7 }}>
-              {city.heroSubtitle}. Real reviews, transparent fees, instant booking.
+              Verified dentists, real reviews, instant booking.
             </p>
 
             <SearchBar areas={areaList.map(a => ({ name: a.name, slug: a.slug }))} treatments={treatmentList.map(t => ({ name: t.name, slug: t.slug }))} cityName={city.cityName} />
+
+            {/* Patient-first primary CTA — surfaces /dentists directly so a
+                visitor who doesn't want to narrow by area/treatment still
+                has one obvious next step. White-on-blue contrasts the
+                hero gradient without competing with the search bar. */}
+            <Link href="/dentists" style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              marginTop: 24,
+              padding: '14px 28px',
+              background: '#fff',
+              color: 'var(--blue-dark)',
+              borderRadius: 12,
+              fontFamily: 'var(--font-body)',
+              fontWeight: 700,
+              fontSize: 16,
+              textDecoration: 'none',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+            }}>
+              Find Dentists →
+            </Link>
 
             {/* Quick area chips — top 6 areas by dentist_count (areaList is already city-filtered). */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 28, justifyContent: 'center' }}>
@@ -237,6 +259,66 @@ export default async function HomePage() {
                   {a.name}
                 </Link>
               ))}
+            </div>
+          </div>
+        </section>
+
+        {/* DENTIST STRIP — second-audience CTA right under the hero. The
+            patient-first hero owns the top of the page, so dentists need
+            an obvious "this is for you" moment before they scroll past
+            the featured grid. Sits on --blue-dark for a hard contrast
+            with the white stats bar below. */}
+        <section className="home-dentist-strip" style={{
+          background: 'var(--blue-dark)',
+          padding: '40px 20px',
+          color: '#fff',
+        }}>
+          <div className="container home-dentist-strip-inner" style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 24,
+            flexWrap: 'wrap',
+          }}>
+            <div style={{ maxWidth: 560 }}>
+              <h2 style={{
+                fontFamily: 'var(--font-heading)',
+                fontSize: 'clamp(1.3rem, 2.8vw, 1.8rem)',
+                fontWeight: 800,
+                color: '#fff',
+                marginBottom: 6,
+              }}>
+                Are You a Dentist?
+              </h2>
+              <p style={{ fontSize: 15, color: 'rgba(255,255,255,0.8)', lineHeight: 1.6 }}>
+                List your clinic free and start receiving patients today. Takes 2 minutes.
+              </p>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
+              <Link href="/for-dentists/register" style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                padding: '13px 26px',
+                background: '#FF6135',
+                color: '#fff',
+                borderRadius: 12,
+                fontFamily: 'var(--font-body)',
+                fontWeight: 700,
+                fontSize: 15,
+                textDecoration: 'none',
+                whiteSpace: 'nowrap',
+              }}>
+                List Your Clinic Free →
+              </Link>
+              <Link href="/for-dentists/login" style={{
+                fontSize: 13,
+                color: 'rgba(255,255,255,0.75)',
+                fontWeight: 500,
+                textDecoration: 'underline',
+                textUnderlineOffset: 3,
+              }}>
+                Already registered? Login →
+              </Link>
             </div>
           </div>
         </section>
@@ -527,6 +609,7 @@ export default async function HomePage() {
 
       <PopularSearches citySlug={city.citySlug} cityName={city.cityName} />
       <CitiesFooterLinks currentSlug={city.citySlug} />
+      <DentistMobileStickyBar />
 
       {/* FOOTER */}
       <footer style={{ background: '#0A1628', padding: '56px 20px 24px', color: 'rgba(255,255,255,0.7)' }}>
@@ -590,6 +673,14 @@ export default async function HomePage() {
           .nav-mobile-cta { display: inline-flex !important; }
           .home-hero { padding: 40px 16px 56px !important; }
           .home-hero-sub { font-size: 15px !important; margin-bottom: 24px !important; }
+          .home-dentist-strip { padding: 28px 16px !important; }
+          .home-dentist-strip-inner { flex-direction: column !important; align-items: flex-start !important; gap: 18px !important; }
+          .home-dentist-strip-inner > div:last-child { width: 100%; flex-direction: column !important; align-items: stretch !important; gap: 12px !important; }
+          .home-dentist-strip-inner a[href="/for-dentists/register"] { width: 100%; justify-content: center !important; }
+          /* The mobile sticky bar lives on top of the page bottom; give the
+             footer some breathing room so the © line isn't hidden under
+             the bar. ~64px bar + safe-area inset. */
+          footer { padding-bottom: 88px !important; }
           .home-stats { padding: 20px 16px !important; }
           .home-stats-grid { gap: 12px !important; grid-template-columns: repeat(2, 1fr) !important; }
           .home-stat-value { font-size: 22px !important; }
