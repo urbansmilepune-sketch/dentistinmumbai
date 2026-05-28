@@ -15,6 +15,7 @@ import TrackedBookingLink from './TrackedBookingLink'
 import ClinicContactButton from './ClinicContactButton'
 import ReviewForm from '@/components/ReviewForm'
 import CitiesFooterLinks from '@/components/CitiesFooterLinks'
+import FaqAccordion from '@/components/FaqAccordion'
 
 interface Props { params: Promise<{ slug: string }> }
 
@@ -191,9 +192,115 @@ export default async function DentistProfilePage({ params }: Props) {
     ...(avgRating && { aggregateRating: { '@type': 'AggregateRating', ratingValue: avgRating, reviewCount: approvedReviews.length } }),
   }
 
+  // Auto-generated FAQ. Built from whatever profile fields the dentist has
+  // filled in — every dentist gets the booking-CTA question, the rest are
+  // gated on the underlying field being non-empty so we don't ship an
+  // answer like "Dr. X speaks " with a trailing nothing. The same items
+  // feed the FAQPage JSON-LD below for rich-result eligibility.
+  const drName = `Dr. ${dentist.name}`
+  const clinicLabel = dentist.clinic_name || 'the clinic'
+  const explicitArea = (dentist.areas as any)?.name as string | undefined
+  const treatmentNames: string[] = treatments
+    .map((dt: any) => dt.treatments?.name)
+    .filter((n: unknown): n is string => typeof n === 'string' && n.length > 0)
+  const openDays = DAY_KEYS.filter(d => dentist.working_hours?.[d]?.is_open)
+
+  const faqItems: { q: string; a: string }[] = []
+
+  if (explicitArea) {
+    faqItems.push({
+      q: `Which area does ${drName} practice in?`,
+      a: `${drName} practices at ${clinicLabel} in ${explicitArea}, ${city.cityName}.`,
+    })
+  }
+  if (treatmentNames.length > 0) {
+    faqItems.push({
+      q: `What treatments does ${drName} offer?`,
+      a: `${drName} offers ${treatmentNames.join(', ')}. You can book any of these treatments online.`,
+    })
+  }
+  if (Array.isArray(dentist.specialties) && dentist.specialties.length > 0) {
+    faqItems.push({
+      q: `What is ${drName}'s specialization?`,
+      a: `${drName} specialises in ${(dentist.specialties as string[]).join(', ')}.`,
+    })
+  }
+  if (dentist.qualifications && String(dentist.qualifications).trim()) {
+    faqItems.push({
+      q: `What are ${drName}'s qualifications?`,
+      a: `${drName} holds ${dentist.qualifications}.${dentist.mci_number ? ` MCI Registration: ${dentist.mci_number}.` : ''}`,
+    })
+  }
+  if (dentist.address && String(dentist.address).trim()) {
+    faqItems.push({
+      q: `Where is ${drName}'s clinic located?`,
+      a: `${clinicLabel} is located at ${dentist.address}${explicitArea ? `, ${explicitArea}, ${city.cityName}` : `, ${city.cityName}`}.`,
+    })
+  }
+  if (typeof dentist.experience_years === 'number' && dentist.experience_years > 0) {
+    faqItems.push({
+      q: `How many years of experience does ${drName} have?`,
+      a: `${drName} has ${dentist.experience_years} years of clinical experience in dentistry.`,
+    })
+  }
+  // Booking question is unconditional — slug + clinic name are guaranteed
+  // on every active dentist row, and this is the SEO-targeted "how do I
+  // contact this dentist" question that Google likes to surface as a
+  // rich snippet.
+  {
+    const channels: string[] = [`book online at ${origin}/book/${dentist.slug}`]
+    if (dentist.phone) channels.push(`call the clinic at ${dentist.phone}`)
+    if (waUrl) channels.push('message on WhatsApp')
+    faqItems.push({
+      q: `How can I book an appointment with ${drName}?`,
+      a: `To book an appointment with ${drName} at ${clinicLabel}, ${channels.join(', or ')}.`,
+    })
+  }
+  if (dentist.consultation_fee) {
+    faqItems.push({
+      q: `What is ${drName}'s consultation fee?`,
+      a: `${drName}'s consultation fee is ₹${dentist.consultation_fee}. Individual treatment fees vary by procedure — see the Treatments & Fees section above.`,
+    })
+  }
+  if (openDays.length > 0) {
+    const timingLines = DAY_KEYS.map(d => {
+      const dh = dentist.working_hours?.[d]
+      if (!dh?.is_open) return `${DAY_LABELS[d]}: Closed`
+      return `${DAY_LABELS[d]}: ${dh.open_time}–${dh.close_time}`
+    })
+    faqItems.push({
+      q: `What are ${drName}'s clinic timings?`,
+      a: timingLines.join('. ') + '.',
+    })
+  }
+  if (Array.isArray(dentist.languages) && dentist.languages.length > 0) {
+    faqItems.push({
+      q: `What languages does ${drName} speak?`,
+      a: `${drName} speaks ${(dentist.languages as string[]).join(', ')}.`,
+    })
+  }
+
+  // Schema.org FAQPage — Google requires the FAQ to be visible on the page
+  // (which it is, in the accordion below) and the questions must match the
+  // visible text. The same array drives both, so they never drift.
+  const faqJsonLd = faqItems.length > 0
+    ? {
+        '@context': 'https://schema.org',
+        '@type': 'FAQPage',
+        mainEntity: faqItems.map(({ q, a }) => ({
+          '@type': 'Question',
+          name: q,
+          acceptedAnswer: { '@type': 'Answer', text: a },
+        })),
+      }
+    : null
+
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      {faqJsonLd && (
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }} />
+      )}
       <ViewTracker dentistId={dentist.id} />
       <header style={{ background: '#fff', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 100 }}>
         <nav className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 64 }}>
@@ -387,7 +494,20 @@ export default async function DentistProfilePage({ params }: Props) {
             </div>
           </section>
 
-          {/* ─── SECTION 6: LOCATION ──────────────────────────────────────── */}
+          {/* ─── SECTION 6: FAQ ───────────────────────────────────────────── */}
+          {/* Auto-generated from the dentist's profile fields — see the
+              faqItems builder above. The same array is emitted as FAQPage
+              JSON-LD in the document head for Google rich-result eligibility,
+              so the visible accordion and the structured data can never
+              disagree. */}
+          {faqItems.length > 0 && (
+            <section id="faq" className="profile-section">
+              <h2 className="profile-section-title">Frequently Asked Questions</h2>
+              <FaqAccordion items={faqItems} />
+            </section>
+          )}
+
+          {/* ─── SECTION 7: LOCATION ──────────────────────────────────────── */}
           <section id="location" className="profile-section">
             <h2 className="profile-section-title">Find Us</h2>
 
@@ -429,7 +549,7 @@ export default async function DentistProfilePage({ params }: Props) {
             )}
           </section>
 
-          {/* ─── SECTION 7: SIMILAR DENTISTS ──────────────────────────────── */}
+          {/* ─── SECTION 8: SIMILAR DENTISTS ──────────────────────────────── */}
           {similarDentists.length > 0 && (
             <section id="similar" className="profile-section">
               <h2 className="profile-section-title">More Dentists in {areaName}</h2>
