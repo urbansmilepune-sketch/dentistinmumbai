@@ -35,6 +35,15 @@ const ADMIN_EMAIL = 'dentistinmumbaiapp@gmail.com'
  */
 const VERIFIED_RESEND_DOMAINS: ReadonlySet<CitySlug> = new Set<CitySlug>([
   'mumbai',
+  'pune',
+  'nagpur',
+  'kolhapur',
+  'surat',
+  'sambhajinagar',
+  // Nashik DKIM still pending in Resend at the time this was added — sends
+  // from hello@dentistinnashik.com will 403 until verification completes.
+  // The Sentry capture in lib/approval.ts surfaces the failure if it happens.
+  'nashik',
 ])
 
 /**
