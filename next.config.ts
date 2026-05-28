@@ -2,7 +2,24 @@ import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Consolidate empty city domains into Mumbai so traffic doesn't hit blank
+  // pages. Matched by request host, with path preserved on the destination.
+  async redirects() {
+    return [
+      {
+        source: '/:path*',
+        has: [{ type: 'host', value: '(www\\.)?dentistinthane\\.com' }],
+        destination: 'https://dentistinmumbai.in/:path*',
+        permanent: true,
+      },
+      {
+        source: '/:path*',
+        has: [{ type: 'host', value: '(www\\.)?dentistinnavimumbai\\.in' }],
+        destination: 'https://dentistinmumbai.in/:path*',
+        permanent: true,
+      },
+    ]
+  },
 };
 
 // `withSentryConfig` wires up source-map upload (when SENTRY_AUTH_TOKEN is

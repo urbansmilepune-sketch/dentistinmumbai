@@ -20,8 +20,13 @@ interface Props {
 }
 
 export default function CitiesFooterLinks({ currentSlug }: Props) {
+  // Thane and Navi Mumbai redirect to Mumbai at the domain level (see
+  // next.config.ts), so showing them as separate cities here would be a
+  // dead-end click.
+  const consolidatedIntoMumbai: CitySlug[] = ['thane', 'navimumbai']
   const others = (Object.values(CITY_CONFIGS) as Array<typeof CITY_CONFIGS[CitySlug]>)
     .filter(c => c.citySlug !== currentSlug)
+    .filter(c => !consolidatedIntoMumbai.includes(c.citySlug))
 
   return (
     <section style={{
