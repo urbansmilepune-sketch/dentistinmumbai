@@ -824,8 +824,14 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
     const num = buildWhatsAppNumber(d.whatsapp || d.phone)
     if (!num) return
     const origin = cityOrigin(getCityBySlug(d.city))
+    // Some dentist rows store the name with the "Dr." honorific baked in
+    // ("Dr. Tarika"), others store the bare name. Strip a leading "Dr." /
+    // "dr." (with or without the dot) so re-prefixing produces a single
+    // "Dr. Tarika", not "Dr. Dr. Tarika".
+    const bareName = String(d.name || '').replace(/^\s*dr\.?\s+/i, '').trim()
+    const drName = `Dr. ${bareName}`
     const message =
-      `Hi Dr. ${d.name}! 👋\n\n` +
+      `Hi ${drName}! 👋\n\n` +
       `Welcome to DentistIn — your free clinic profile is now LIVE! 🎉\n\n` +
       `Your profile: ${origin}/dentist/${d.slug}\n\n` +
       `Complete your profile in 5 minutes to start getting patients:\n` +
