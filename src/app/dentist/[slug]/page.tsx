@@ -197,7 +197,13 @@ export default async function DentistProfilePage({ params }: Props) {
   // gated on the underlying field being non-empty so we don't ship an
   // answer like "Dr. X speaks " with a trailing nothing. The same items
   // feed the FAQPage JSON-LD below for rich-result eligibility.
-  const drName = `Dr. ${dentist.name}`
+  // Some dentists store their name with the "Dr." honorific baked in
+  // ("Dr. Sweety Dighade"), others store just the bare name ("Sweety
+  // Dighade"). Strip any leading "Dr." / "dr." (with or without a dot,
+  // any amount of trailing whitespace) before re-adding a single prefix,
+  // so the FAQ never reads "Dr. Dr. ...".
+  const bareName = String(dentist.name || '').replace(/^\s*dr\.?\s+/i, '').trim()
+  const drName = `Dr. ${bareName}`
   const clinicLabel = dentist.clinic_name || 'the clinic'
   const explicitArea = (dentist.areas as any)?.name as string | undefined
   const treatmentNames: string[] = treatments
