@@ -34,6 +34,7 @@ export default function RegisterPage() {
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess] = useState(false)
   const [refNo, setRefNo] = useState('')
+  const [autoApproved, setAutoApproved] = useState(false)
   const [error, setError] = useState('')
   const [prefilledFromLogin, setPrefilledFromLogin] = useState(false)
   const [planFromUrl, setPlanFromUrl] = useState<Plan | null>(null)
@@ -126,6 +127,7 @@ export default function RegisterPage() {
       const data = await res.json()
       if (data.ref_no) {
         setRefNo(data.ref_no)
+        setAutoApproved(data.auto_approved === true)
         setSuccess(true)
       } else {
         setError(data.error || 'Something went wrong. Please try again.')
@@ -321,16 +323,25 @@ export default function RegisterPage() {
               </div>
 
               <div style={{ background: 'var(--bg)', borderRadius: 14, padding: '24px', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 28 }}>
-                {[
-                  { icon: '✅', text: `We will build and activate your clinic profile for ${form.clinic_name} in ${form.area === '__other__' ? form.area_name_raw : form.area} within 24 hours.` },
-                  { icon: '📱', text: `We'll call you on ${form.phone} to collect photos and more details.` },
-                  { icon: '🏅', text: `Your Founding Member badge and priority placement are reserved permanently.` },
-                ].map((item, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 12 }}>
-                    <span style={{ fontSize: 20, flexShrink: 0 }}>{item.icon}</span>
-                    <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6 }}>{item.text}</p>
+                {autoApproved ? (
+                  <div style={{ display: 'flex', gap: 12 }}>
+                    <span style={{ fontSize: 20, flexShrink: 0 }}>✅</span>
+                    <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                      <strong>Your profile is being activated!</strong> We&apos;ve sent a login link to <strong>{form.email}</strong>. Click it to access your dashboard. Check spam if you don&apos;t see it in 2 minutes.
+                    </p>
                   </div>
-                ))}
+                ) : (
+                  [
+                    { icon: '✅', text: `We will build and activate your clinic profile for ${form.clinic_name} in ${form.area === '__other__' ? form.area_name_raw : form.area} within 24 hours.` },
+                    { icon: '📱', text: `We'll call you on ${form.phone} to collect photos and more details.` },
+                    { icon: '🏅', text: `Your Founding Member badge and priority placement are reserved permanently.` },
+                  ].map((item, i) => (
+                    <div key={i} style={{ display: 'flex', gap: 12 }}>
+                      <span style={{ fontSize: 20, flexShrink: 0 }}>{item.icon}</span>
+                      <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6 }}>{item.text}</p>
+                    </div>
+                  ))
+                )}
               </div>
 
               <Link href="/for-dentists" style={{ display: 'inline-block', padding: '12px 28px', background: 'var(--blue)', color: '#fff', borderRadius: 10, fontWeight: 600, fontSize: 14, textDecoration: 'none' }}>

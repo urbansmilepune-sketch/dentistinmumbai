@@ -11,6 +11,7 @@
 // its existing { error, detail, code, hint } envelope; the public route
 // converts a failure into "leave it pending" without 500-ing the dentist).
 import type { SupabaseClient } from '@supabase/supabase-js'
+import * as Sentry from '@sentry/nextjs'
 import { CITY_CONFIGS, DEFAULT_CITY, type CitySlug } from '@/config/cities'
 import { sendApprovalEmail } from '@/lib/email'
 
@@ -269,6 +270,10 @@ export async function approveDentistRegistration(
     }
   } catch (err) {
     console.error(`${tag} generateLink failed`, err)
+    Sentry.captureException(err, {
+      tags: { area: 'approval-magiclink', autoApproved: String(autoApproved) },
+      extra: { registration_id, email: reg.email },
+    })
   }
 
   sendApprovalEmail({
@@ -279,7 +284,13 @@ export async function approveDentistRegistration(
     selected_plan: plan,
     city,
     auth_link: authLink,
-  }).catch(err => console.error(`${tag} approval email failed`, err))
+  }).catch(err => {
+    console.error(`${tag} approval email failed`, err)
+    Sentry.captureException(err, {
+      tags: { area: 'approval-email', autoApproved: String(autoApproved) },
+      extra: { registration_id, email: reg.email, has_auth_link: authLink !== null },
+    })
+  })
 
   return { ok: true, slug }
 }

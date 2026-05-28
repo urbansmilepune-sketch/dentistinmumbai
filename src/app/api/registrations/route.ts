@@ -218,12 +218,28 @@ export async function POST(request: NextRequest) {
     const adminMsg = `New dentist registration: ${name}, ${clinic_name}, ${areaForDisplay}, ${phone}. Approve here: https://${cityDomain}/admin`
     const waUrl = `https://wa.me/${ADMIN_WHATSAPP}?text=${encodeURIComponent(adminMsg)}`
 
-    Promise.all([
+    // Promise.allSettled (not Promise.all) so one failure doesn't mask the
+    // others — if the dentist welcome email fails we still want visibility
+    // into whether the admin alerts went out. Each rejection is captured
+    // individually to Sentry with a step tag.
+    const notificationSteps = ['admin-email', 'dentist-email', 'admin-alert', 'whatsapp-ping'] as const
+    Promise.allSettled([
       sendRegistrationEmailToAdmin({ name, clinic_name, area: areaForDisplay, phone, email, qualification, ref_no, city: cityValue }),
       sendRegistrationEmailToDentist({ name, clinic_name, area: areaForDisplay, phone, ref_no, to_email: email, city: cityValue }),
       sendNewRegistrationAdminAlert({ name, clinic_name, area: areaForDisplay, phone, city: cityValue }),
       fetch(waUrl, { method: 'GET' }).catch(() => null),
-    ]).catch(err => console.error('Admin notification failed:', err))
+    ]).then(results => {
+      results.forEach((r, i) => {
+        if (r.status === 'rejected') {
+          const step = notificationSteps[i]
+          console.error(`[registrations] ${step} failed:`, r.reason)
+          Sentry.captureException(r.reason, {
+            tags: { area: 'registration-notification', step },
+            extra: { ref_no, email, city: cityValue },
+          })
+        }
+      })
+    })
 
     return NextResponse.json({ ref_no: data.ref_no, success: true, auto_approved: false })
   } catch (error: any) {
