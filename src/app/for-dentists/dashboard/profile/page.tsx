@@ -392,7 +392,7 @@ export default function EditProfilePage() {
             <input type="number" value={form.experience_years} onChange={e => setForm(f => ({ ...f, experience_years: e.target.value }))} placeholder="e.g. 10" style={inputStyle} />
           </div>
           <div>
-            <label style={labelStyle}>MCI / DCI Registration No.</label>
+            <label style={labelStyle}>MCI / DCI Registration No. (required for verified badge)</label>
             <input value={form.mci_number} onChange={e => setForm(f => ({ ...f, mci_number: e.target.value }))} placeholder="Your registration number" style={inputStyle} />
           </div>
           <div>

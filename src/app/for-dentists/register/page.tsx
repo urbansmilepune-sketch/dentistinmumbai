@@ -2,18 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { getCityByDomain, CITY_CONFIGS, DEFAULT_CITY, type CitySlug, type CityConfig } from '@/config/cities'
 
-const QUALIFICATIONS = ['BDS', 'BDS + MDS', 'BDS + Fellowship', 'MDS Specialist', 'BDS + Diploma']
-
 type AreaStatus = 'idle' | 'loading' | 'ready' | 'error'
-
-function generateRef(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-  let ref = 'DIM-DR-'
-  for (let i = 0; i < 5; i++) ref += chars[Math.floor(Math.random() * chars.length)]
-  return ref
-}
 
 type Plan = 'monthly' | 'annual'
 
@@ -27,14 +19,12 @@ function parsePlan(v: string | null): Plan | null {
 }
 
 export default function RegisterPage() {
+  const router = useRouter()
   const [form, setForm] = useState({
     name: '', phone: '', email: '', clinic_name: '',
-    area: '', area_name_raw: '', qualification: '', mci_registration: '',
+    area: '', area_name_raw: '',
   })
   const [submitting, setSubmitting] = useState(false)
-  const [success, setSuccess] = useState(false)
-  const [refNo, setRefNo] = useState('')
-  const [autoApproved, setAutoApproved] = useState(false)
   const [error, setError] = useState('')
   const [prefilledFromLogin, setPrefilledFromLogin] = useState(false)
   const [planFromUrl, setPlanFromUrl] = useState<Plan | null>(null)
@@ -92,7 +82,7 @@ export default function RegisterPage() {
   }
 
   async function handleSubmit() {
-    const required = ['name', 'phone', 'email', 'clinic_name', 'area', 'qualification', 'mci_registration']
+    const required = ['name', 'phone', 'email', 'clinic_name', 'area']
     const missing = required.filter(k => !form[k as keyof typeof form])
     if (missing.length > 0) { setError('Please fill all required fields.'); return }
     if (!/^\d{10}$/.test(form.phone.replace(/\s/g, ''))) { setError('Please enter a valid 10-digit phone number.'); return }
@@ -125,13 +115,16 @@ export default function RegisterPage() {
         }),
       })
       const data = await res.json()
-      if (data.ref_no) {
-        setRefNo(data.ref_no)
-        setAutoApproved(data.auto_approved === true)
-        setSuccess(true)
-      } else {
-        setError(data.error || 'Something went wrong. Please try again.')
+      if (data.success && data.redirect) {
+        // Auth cookie was set on the response by the API route's
+        // signInWithPassword call. router.refresh() drops any cached RSC
+        // payload from before the cookie existed; router.push then takes
+        // the dentist into the now-authenticated dashboard.
+        router.refresh()
+        router.push(data.redirect)
+        return
       }
+      setError(data.error || 'Something went wrong. Please try again.')
     } catch {
       setError('Network error. Please try again.')
     }
@@ -161,11 +154,9 @@ export default function RegisterPage() {
 
       <main style={{ padding: '48px 20px' }}>
         <div style={{ maxWidth: 600, margin: '0 auto' }}>
-          {!success ? (
-            <>
-              {prefilledFromLogin && (
+          {prefilledFromLogin && (
                 <div style={{ padding: '14px 18px', background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: 12, fontSize: 14, color: '#92400E', marginBottom: 24, lineHeight: 1.5 }}>
-                  <strong>No account found for {form.email}.</strong> Please complete the registration below to claim your free listing — your profile will be activated within 24 hours.
+                  <strong>No account found for {form.email}.</strong> Please complete the registration below to claim your free listing — you&apos;ll be signed in to your dashboard right away.
                 </div>
               )}
               {/* The legacy "?plan=monthly|annual" deep-link banner is
@@ -188,7 +179,7 @@ export default function RegisterPage() {
 
               {/* Trust bar */}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, justifyContent: 'center', marginBottom: 32 }}>
-                {['✅ Free forever', '✅ Profile live in 24 hrs', '✅ No commission', '✅ No credit card'].map(item => (
+                {['✅ Free forever', '✅ Profile live instantly', '✅ No commission', '✅ No credit card'].map(item => (
                   <span key={item} style={{ fontSize: 13, fontWeight: 600, color: 'var(--blue-dark)' }}>{item}</span>
                 ))}
               </div>
@@ -266,25 +257,12 @@ export default function RegisterPage() {
                               style={inputStyle}
                             />
                             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
-                              We&apos;ll add this area to {cityConfig.cityName} once your registration is approved.
+                              We&apos;ll add this area to {cityConfig.cityName} once your listing is live.
                             </div>
                           </div>
                         )}
                       </>
                     )}
-                  </div>
-
-                  <div>
-                    <label style={labelStyle}>Qualification *</label>
-                    <select value={form.qualification} onChange={e => update('qualification', e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-                      <option value="">Select qualification</option>
-                      {QUALIFICATIONS.map(q => <option key={q} value={q}>{q}</option>)}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label style={labelStyle}>MCI / DCI Registration No. *</label>
-                    <input value={form.mci_registration} onChange={e => update('mci_registration', e.target.value)} placeholder="Your registration number" style={inputStyle} />
                   </div>
 
                   {/* Hidden city field — set on mount from window.location.hostname so the
@@ -303,52 +281,10 @@ export default function RegisterPage() {
                   >{submitting ? 'Submitting...' : '🏅 Claim My Free Listing →'}</button>
 
                   <p style={{ textAlign: 'center', fontSize: 12, color: 'var(--muted)' }}>
-                    Completely free · No credit card · No hidden charges · Profile live within 24 hours
+                    Completely free · No credit card · No hidden charges · Profile live instantly
                   </p>
                 </div>
               </div>
-            </>
-          ) : (
-            /* Success */
-            <div style={{ background: '#fff', borderRadius: 20, border: '1px solid var(--border)', padding: '48px 32px', textAlign: 'center' }}>
-              <div style={{ fontSize: 72, marginBottom: 20 }}>🎉</div>
-              <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 28, marginBottom: 8 }}>
-                Welcome, {form.name.split(' ')[0]}!
-              </h2>
-              <p style={{ color: 'var(--muted)', fontSize: 16, marginBottom: 28 }}>Your registration is confirmed.</p>
-
-              <div style={{ background: 'var(--blue-light)', border: '1px solid #BFDBFE', borderRadius: 14, padding: '20px', marginBottom: 28 }}>
-                <p style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>Reference Number</p>
-                <p style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, color: 'var(--blue)' }}>{refNo}</p>
-              </div>
-
-              <div style={{ background: 'var(--bg)', borderRadius: 14, padding: '24px', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 28 }}>
-                {autoApproved ? (
-                  <div style={{ display: 'flex', gap: 12 }}>
-                    <span style={{ fontSize: 20, flexShrink: 0 }}>✅</span>
-                    <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                      <strong>Your profile is being activated!</strong> We&apos;ve sent a login link to <strong>{form.email}</strong>. Click it to access your dashboard. Check spam if you don&apos;t see it in 2 minutes.
-                    </p>
-                  </div>
-                ) : (
-                  [
-                    { icon: '✅', text: `We will build and activate your clinic profile for ${form.clinic_name} in ${form.area === '__other__' ? form.area_name_raw : form.area} within 24 hours.` },
-                    { icon: '📱', text: `We'll call you on ${form.phone} to collect photos and more details.` },
-                    { icon: '🏅', text: `Your Founding Member badge and priority placement are reserved permanently.` },
-                  ].map((item, i) => (
-                    <div key={i} style={{ display: 'flex', gap: 12 }}>
-                      <span style={{ fontSize: 20, flexShrink: 0 }}>{item.icon}</span>
-                      <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6 }}>{item.text}</p>
-                    </div>
-                  ))
-                )}
-              </div>
-
-              <Link href="/for-dentists" style={{ display: 'inline-block', padding: '12px 28px', background: 'var(--blue)', color: '#fff', borderRadius: 10, fontWeight: 600, fontSize: 14, textDecoration: 'none' }}>
-                Back to For Dentists →
-              </Link>
-            </div>
-          )}
         </div>
       </main>
     </div>
