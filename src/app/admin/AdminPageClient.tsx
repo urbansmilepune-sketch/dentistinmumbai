@@ -814,6 +814,35 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
     }
   }
 
+  // Opens web.whatsapp.com (or the WhatsApp app on mobile) with the pre-filled
+  // welcome message via wa.me. No state in this admin: just a URL launch —
+  // the admin still has to hit "send" in the WhatsApp tab, which is the
+  // point (manual review of the personalised greeting). Prefers the dedicated
+  // whatsapp column, falls back to the phone column. Number is normalised by
+  // buildWhatsAppNumber (10-digit → +91, anything else passed through).
+  function sendWelcomeWhatsApp(d: any) {
+    const num = buildWhatsAppNumber(d.whatsapp || d.phone)
+    if (!num) return
+    const origin = cityOrigin(getCityBySlug(d.city))
+    const message =
+      `Hi Dr. ${d.name}! 👋\n\n` +
+      `Welcome to DentistIn — your free clinic profile is now LIVE! 🎉\n\n` +
+      `Your profile: ${origin}/dentist/${d.slug}\n\n` +
+      `Complete your profile in 5 minutes to start getting patients:\n` +
+      `✅ Add your photo\n` +
+      `✅ Add treatments + fees\n` +
+      `✅ Set working hours\n` +
+      `✅ Add clinic address\n\n` +
+      `Login to dashboard:\n${origin}/for-dentists/login\n\n` +
+      `Your dashboard includes:\n` +
+      `📅 Online appointment booking\n` +
+      `👥 Patient records\n` +
+      `📊 Profile analytics\n` +
+      `💰 Billing & invoices\n\n` +
+      `Any questions? Reply here.\n— DentistIn Team`
+    window.open(`https://wa.me/${num}?text=${encodeURIComponent(message)}`, '_blank')
+  }
+
   async function reviewAction(id: string, status: string) {
     const result = await adminAction('/api/admin/reviews', { id, status }, id)
     if (!result.ok) { pushToast('error', result.error || 'Could not update review status.'); return }
@@ -1538,6 +1567,20 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
                               </button>
                             )
                           })()}
+                          {/* Welcome WhatsApp — opens wa.me in a new tab with a
+                              pre-filled onboarding message templated against
+                              this dentist's name, city, and slug. Hidden when
+                              no usable phone/whatsapp is on file so we never
+                              render a dead button. */}
+                          {buildWhatsAppNumber(d.whatsapp || d.phone) && (
+                            <button
+                              onClick={() => sendWelcomeWhatsApp(d)}
+                              title={`Open WhatsApp with welcome message for ${d.name}`}
+                              style={{ padding: '4px 10px', background: '#DCFCE7', color: '#166534', border: '1px solid #BBF7D0', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap' }}
+                            >
+                              💬 Welcome
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
