@@ -45,6 +45,18 @@ export default function EditProfilePage() {
     maps_embed: '',
   })
 
+  // Mobile-verify section state. otpStage drives the section's three
+  // visible states: 'idle' (just the Send OTP button), 'sent' (input +
+  // Verify button visible), and 'verified' (success badge, controls
+  // hidden). The phone-edit-resets-verified UX is handled below in the
+  // input onChange.
+  const [phoneVerified, setPhoneVerified] = useState(false)
+  const [otpStage, setOtpStage] = useState<'idle' | 'sent'>('idle')
+  const [otpInput, setOtpInput] = useState('')
+  const [otpBusy, setOtpBusy] = useState(false)
+  const [otpMessage, setOtpMessage] = useState('')
+  const [otpError, setOtpError] = useState('')
+
   useEffect(() => {
     async function load() {
       const supabase = createClient()
@@ -53,7 +65,7 @@ export default function EditProfilePage() {
 
       const { data: dentist } = await supabase
         .from('dentists')
-        .select('id, slug, name, clinic_name, qualifications, degree, experience_years, bio, phone, whatsapp, website, address, consultation_fee, mci_number, emi_available, languages, specialties, maps_embed, city, working_hours')
+        .select('id, slug, name, clinic_name, qualifications, degree, experience_years, bio, phone, whatsapp, website, address, consultation_fee, mci_number, emi_available, languages, specialties, maps_embed, city, working_hours, phone_verified')
         .eq('email', user.email)
         .single()
 
@@ -62,6 +74,7 @@ export default function EditProfilePage() {
         setSlug(dentist.slug || '')
         setSiteBase(`https://${getCityBySlug((dentist as any).city).domain}`)
         setWorkingHours((dentist as any).working_hours || null)
+        setPhoneVerified(!!(dentist as any).phone_verified)
         setForm({
           name: dentist.name || '',
           clinic_name: dentist.clinic_name || '',
@@ -237,6 +250,54 @@ export default function EditProfilePage() {
       bookingUrl,
     ]
     window.open(`https://wa.me/?text=${encodeURIComponent(lines.join('\n'))}`, '_blank', 'noopener,noreferrer')
+  }
+
+  async function sendPhoneOtp() {
+    setOtpBusy(true); setOtpError(''); setOtpMessage('')
+    try {
+      const res = await fetch('/api/dentist/phone-otp/send', { method: 'POST' })
+      const data = await res.json()
+      if (data.success) {
+        if (data.already_verified) {
+          setPhoneVerified(true)
+          setOtpStage('idle')
+          setOtpMessage('')
+        } else {
+          setOtpStage('sent')
+          setOtpInput('')
+          setOtpMessage(`Code sent to ${form.phone}. It expires in 10 minutes.`)
+        }
+      } else {
+        setOtpError(data.error || 'Could not send OTP.')
+      }
+    } catch {
+      setOtpError('Network error. Please try again.')
+    }
+    setOtpBusy(false)
+  }
+
+  async function verifyPhoneOtp() {
+    if (!/^\d{6}$/.test(otpInput)) { setOtpError('Enter the 6-digit code.'); return }
+    setOtpBusy(true); setOtpError(''); setOtpMessage('')
+    try {
+      const res = await fetch('/api/dentist/phone-otp/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ otp: otpInput }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setPhoneVerified(true)
+        setOtpStage('idle')
+        setOtpInput('')
+        setOtpMessage('Mobile verified ✓')
+      } else {
+        setOtpError(data.error || 'Verification failed.')
+      }
+    } catch {
+      setOtpError('Network error. Please try again.')
+    }
+    setOtpBusy(false)
   }
 
   async function handleSave() {
@@ -531,6 +592,114 @@ export default function EditProfilePage() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* Verify Mobile — texts a 6-digit OTP via MSG91 to dentists.phone
+          and flips dentists.phone_verified on a match. The DB trigger
+          dentists_reset_phone_verified clears the flag any time the
+          phone is edited, so the badge stays honest without UI work. */}
+      <div style={sectionStyle}>
+        <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, marginBottom: 6 }}>Verify Mobile</h2>
+        <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 14 }}>
+          Confirm you own this number so patients can trust the contact details on your listing.
+          {phoneVerified ? '' : ' Re-verify after changing the phone above.'}
+        </p>
+
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          gap: 12, flexWrap: 'wrap',
+          padding: '12px 14px', background: 'var(--bg)',
+          border: '1px solid var(--border)', borderRadius: 10, marginBottom: 14,
+        }}>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
+              Current phone
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)' }}>
+              {form.phone || '— not set —'}
+            </div>
+          </div>
+          {phoneVerified && (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              padding: '6px 12px', borderRadius: 999,
+              background: '#DCFCE7', color: '#166534',
+              border: '1px solid #BBF7D0',
+              fontSize: 13, fontWeight: 700,
+            }}>✓ Verified</span>
+          )}
+        </div>
+
+        {!phoneVerified && (
+          <>
+            {otpStage === 'idle' && (
+              <button
+                type="button"
+                onClick={sendPhoneOtp}
+                disabled={otpBusy || !form.phone}
+                style={{
+                  padding: '11px 22px', minHeight: 44,
+                  background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10,
+                  fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: 14,
+                  cursor: (otpBusy || !form.phone) ? 'not-allowed' : 'pointer',
+                  opacity: (otpBusy || !form.phone) ? 0.6 : 1,
+                }}
+              >{otpBusy ? 'Sending…' : 'Send OTP'}</button>
+            )}
+
+            {otpStage === 'sent' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div className="profile-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'end' }}>
+                  <div>
+                    <label style={labelStyle}>6-digit code</label>
+                    <input
+                      value={otpInput}
+                      onChange={e => { setOtpInput(e.target.value.replace(/\D/g, '').slice(0, 6)); setOtpError('') }}
+                      placeholder="123456"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      style={inputStyle}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={verifyPhoneOtp}
+                    disabled={otpBusy || otpInput.length !== 6}
+                    style={{
+                      padding: '11px 22px', minHeight: 44,
+                      background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10,
+                      fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: 14,
+                      cursor: (otpBusy || otpInput.length !== 6) ? 'not-allowed' : 'pointer',
+                      opacity: (otpBusy || otpInput.length !== 6) ? 0.6 : 1,
+                    }}
+                  >{otpBusy ? 'Verifying…' : 'Verify'}</button>
+                </div>
+                <button
+                  type="button"
+                  onClick={sendPhoneOtp}
+                  disabled={otpBusy}
+                  style={{
+                    alignSelf: 'flex-start',
+                    background: 'transparent', border: 'none', padding: 0,
+                    color: 'var(--blue)', fontSize: 12, fontWeight: 600,
+                    cursor: otpBusy ? 'not-allowed' : 'pointer',
+                  }}
+                >Resend code</button>
+              </div>
+            )}
+          </>
+        )}
+
+        {otpMessage && (
+          <div style={{ marginTop: 12, fontSize: 13, color: 'var(--green)', fontWeight: 600 }}>
+            {otpMessage}
+          </div>
+        )}
+        {otpError && (
+          <div style={{ marginTop: 12, padding: '10px 14px', background: '#FEE2E2', border: '1px solid #FECACA', borderRadius: 10, fontSize: 13, color: '#991B1B' }}>
+            ⚠️ {otpError}
+          </div>
+        )}
       </div>
 
       {/* Working hours summary — read-only mirror of dentists.working_hours.
