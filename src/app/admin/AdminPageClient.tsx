@@ -740,6 +740,7 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
   const [linkStatus, setLinkStatus] = useState<Record<string, { state: 'sending' | 'sent' | 'error'; error?: string }>>({})
   const [toasts, setToasts] = useState<ToastItem[]>([])
   const [declineTarget, setDeclineTarget] = useState<{ regId: string; name: string } | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
 
   function pushToast(variant: ToastVariant, message: string) {
     const id = Date.now() + Math.random()
@@ -779,6 +780,39 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
     const result = await adminAction('/api/admin/dentists', { id, tier }, id)
     if (!result.ok) { pushToast('error', result.error || 'Could not update tier.'); return }
     setDentistList(prev => prev.map(d => d.id === id ? { ...d, tier } : d))
+  }
+
+  // Hard-delete: opens the confirm modal, then on confirm hits DELETE
+  // /api/admin/dentists which clears child tables (appointments, patients,
+  // invoices, reviews), removes the dentists row (cascades cover newer
+  // children), and removes the matching auth.users row. Local state drops
+  // the row optimistically only after the server returns ok so a 4xx/5xx
+  // leaves the table accurate.
+  async function performDeleteDentist(id: string, name: string) {
+    setDeleteTarget(null)
+    setActionLoading(id)
+    try {
+      const res = await fetch('/api/admin/dentists', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data?.success) {
+        pushToast('error', data?.error || 'Could not delete dentist.')
+        return
+      }
+      setDentistList(prev => prev.filter(d => d.id !== id))
+      if (data.auth_warning) {
+        pushToast('info', `Dr. ${name} deleted, but auth user cleanup failed: ${data.auth_warning}`)
+      } else {
+        pushToast('success', `Dr. ${name} deleted.`)
+      }
+    } catch {
+      pushToast('error', 'Network error — please try again.')
+    } finally {
+      setActionLoading(null)
+    }
   }
 
   // Manual escape hatch for dentists who registered before the auto-login
@@ -1587,6 +1621,14 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
                               💬 Welcome
                             </button>
                           )}
+                          <button
+                            onClick={() => setDeleteTarget({ id: d.id, name: String(d.name || '').replace(/^\s*dr\.?\s+/i, '').trim() })}
+                            disabled={actionLoading === d.id}
+                            title={`Permanently delete ${d.name}`}
+                            style={{ padding: '4px 10px', background: '#FEE2E2', color: '#991B1B', border: '1px solid #FECACA', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: actionLoading === d.id ? 'wait' : 'pointer', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap' }}
+                          >
+                            🗑 Delete
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -1868,6 +1910,16 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
           reasonPlaceholder="e.g. MCI number could not be verified. Please re-register with a clear photo of your council registration certificate."
           onCancel={() => setDeclineTarget(null)}
           onConfirm={(reason) => performDecline(declineTarget.regId, reason)}
+        />
+      )}
+      {deleteTarget && (
+        <ConfirmModal
+          title={`Delete Dr. ${deleteTarget.name}?`}
+          description={`Are you sure you want to delete Dr. ${deleteTarget.name}? This will permanently remove their profile, all patient data, appointments, and invoices. This cannot be undone.`}
+          confirmLabel="Delete permanently"
+          confirmVariant="danger"
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={() => performDeleteDentist(deleteTarget.id, deleteTarget.name)}
         />
       )}
       <ToastStack toasts={toasts} onDismiss={dismissToast} />

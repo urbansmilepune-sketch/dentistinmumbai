@@ -78,3 +78,78 @@ export async function POST(request: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ success: true })
 }
+
+export async function DELETE(request: NextRequest) {
+  const userClient = await createUserClient()
+  const { data: { user } } = await userClient.auth.getUser()
+  if (!user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const admin_db = createServiceClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  )
+
+  const { data: admin } = await admin_db
+    .from('admin_users')
+    .select('id')
+    .ilike('email', user.email)
+    .maybeSingle()
+  if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const body = await request.json().catch(() => ({} as Record<string, unknown>))
+  const id = typeof body.id === 'string' ? body.id : ''
+  if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
+
+  // Pull the email up-front so we can delete the matching auth.users row
+  // after the dentists delete. The dentists schema has no FK to auth.users
+  // (the link is implicit via the email column), so the auth user has to
+  // be looked up and deleted explicitly.
+  const { data: dentist, error: lookupErr } = await admin_db
+    .from('dentists')
+    .select('id, email')
+    .eq('id', id)
+    .maybeSingle()
+  if (lookupErr) return NextResponse.json({ error: lookupErr.message }, { status: 500 })
+  if (!dentist) return NextResponse.json({ error: 'Dentist not found' }, { status: 404 })
+
+  // Manual cascade for the legacy tables (appointments, patients, invoices,
+  // reviews) that predate the migration directory and may not have
+  // `on delete cascade` on their dentist_id FK. Newer child tables in
+  // /supabase/migrations all set cascade, so they clean up automatically
+  // when the dentists row is deleted below. Order: most-leaf first.
+  for (const table of ['appointments', 'invoices', 'reviews', 'patients'] as const) {
+    const { error: childErr } = await admin_db.from(table).delete().eq('dentist_id', id)
+    if (childErr) {
+      return NextResponse.json({ error: `Failed to delete ${table}: ${childErr.message}` }, { status: 500 })
+    }
+  }
+
+  const { error: dentErr } = await admin_db.from('dentists').delete().eq('id', id)
+  if (dentErr) return NextResponse.json({ error: dentErr.message }, { status: 500 })
+
+  // Best-effort auth-user cleanup. The dentist row is already gone, so a
+  // failure here leaves an orphaned auth user but does not leave a broken
+  // public profile — surface it to the admin via the response but don't
+  // 500 the whole request. supabase-js has no getUserByEmail admin call so
+  // we paginate listUsers; dentist auth volume is small (<1k) so 5 pages
+  // of 200 covers it comfortably.
+  if (dentist.email) {
+    const needle = dentist.email.toLowerCase()
+    let authUserId: string | null = null
+    for (let page = 1; page <= 5; page++) {
+      const { data, error: listErr } = await admin_db.auth.admin.listUsers({ page, perPage: 200 })
+      if (listErr) break
+      const hit = (data.users || []).find(u => u.email?.toLowerCase() === needle)
+      if (hit) { authUserId = hit.id; break }
+      if (!data.users || data.users.length < 200) break
+    }
+    if (authUserId) {
+      const { error: authErr } = await admin_db.auth.admin.deleteUser(authUserId)
+      if (authErr) {
+        return NextResponse.json({ success: true, auth_warning: authErr.message })
+      }
+    }
+  }
+
+  return NextResponse.json({ success: true })
+}
