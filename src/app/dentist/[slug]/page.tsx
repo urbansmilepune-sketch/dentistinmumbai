@@ -415,6 +415,29 @@ export default async function DentistProfilePage({ params }: Props) {
             </section>
           )}
 
+          {/* ─── SECTION 2b: WHY CHOOSE DR. X ─────────────────────────────────
+              Dentist-authored trust bullets. Hidden when the array is empty
+              so unmaintained profiles don't render an empty section header.
+              Filter on non-empty trimmed strings — a dentist who clears a
+              row in the dashboard but doesn't remove it leaves '' behind. */}
+          {Array.isArray(dentist.why_choose_us) && (dentist.why_choose_us as string[]).filter((p: string) => p && p.trim()).length > 0 && (
+            <section id="why-choose" className="profile-section">
+              <h2 className="profile-section-title">Why Choose {drName}?</h2>
+              <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '20px 24px' }}>
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {(dentist.why_choose_us as string[])
+                    .filter((point: string) => point && point.trim())
+                    .map((point: string, i: number) => (
+                      <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                        <span aria-hidden="true" style={{ flexShrink: 0, width: 22, height: 22, borderRadius: '50%', background: '#DCFCE7', color: '#15803D', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, marginTop: 1 }}>✓</span>
+                        <span style={{ fontSize: 15, lineHeight: 1.6, color: 'var(--text-secondary)' }}>{point}</span>
+                      </li>
+                    ))}
+                </ul>
+              </div>
+            </section>
+          )}
+
           {/* ─── SECTION 3: TREATMENTS & FEES ─────────────────────────────── */}
           {treatments.length > 0 && (
             <section id="treatments" className="profile-section">

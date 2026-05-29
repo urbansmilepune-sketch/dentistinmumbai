@@ -43,7 +43,11 @@ export default function EditProfilePage() {
     consultation_fee: '', mci_number: '', emi_available: false,
     languages: [] as string[], specialties: [] as string[],
     maps_embed: '',
+    why_choose_us: [] as string[],
   })
+  // Cap matches the brief ("add up to 5 points"). Enforced in the UI and
+  // re-checked on save below so a stale tab can't sneak a 6th row in.
+  const WHY_CHOOSE_LIMIT = 5
 
   // Mobile-verify section state. otpStage drives the section's three
   // visible states: 'idle' (just the Send OTP button), 'sent' (input +
@@ -65,7 +69,7 @@ export default function EditProfilePage() {
 
       const { data: dentist } = await supabase
         .from('dentists')
-        .select('id, slug, name, clinic_name, qualifications, degree, experience_years, bio, phone, whatsapp, website, address, consultation_fee, mci_number, emi_available, languages, specialties, maps_embed, city, working_hours, phone_verified')
+        .select('id, slug, name, clinic_name, qualifications, degree, experience_years, bio, phone, whatsapp, website, address, consultation_fee, mci_number, emi_available, languages, specialties, maps_embed, why_choose_us, city, working_hours, phone_verified')
         .eq('email', user.email)
         .single()
 
@@ -92,6 +96,7 @@ export default function EditProfilePage() {
           languages: dentist.languages || [],
           specialties: dentist.specialties || [],
           maps_embed: dentist.maps_embed || '',
+          why_choose_us: (dentist as any).why_choose_us || [],
         })
       } else {
         setError(`No dentist profile is linked to ${user.email}. If you registered under a different email, sign out and sign in with that one — otherwise contact support.`)
@@ -338,6 +343,13 @@ export default function EditProfilePage() {
         languages: form.languages,
         specialties: form.specialties,
         maps_embed: normalisedMapsEmbed,
+        // Drop empty/whitespace rows so the public profile doesn't render
+        // an orphaned blank bullet, and cap to WHY_CHOOSE_LIMIT defensively
+        // in case the dentist somehow got past the dashboard's add guard.
+        why_choose_us: form.why_choose_us
+          .map(p => p.trim())
+          .filter(p => p.length > 0)
+          .slice(0, WHY_CHOOSE_LIMIT),
       })
       .eq('id', dentistId)
       .select('id')
@@ -789,6 +801,60 @@ export default function EditProfilePage() {
             >{form.specialties.includes(sp) ? '✓ ' : ''}{sp}</button>
           ))}
         </div>
+      </div>
+
+      {/* Why Choose Me — dentist-authored trust bullets that render on the
+          public profile under "Why Choose Dr. X?". Add/remove buttons keep
+          the list explicitly editable (no comma splitting — a dentist might
+          legitimately type "EMI, no questions asked"); the limit is enforced
+          here AND on save so a stale tab can't sneak past it. */}
+      <div style={sectionStyle}>
+        <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, marginBottom: 6 }}>Why should patients choose you? (add up to {WHY_CHOOSE_LIMIT} points)</h2>
+        <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 16 }}>
+          Each point becomes a green-tick bullet on your public profile. Examples:
+          <em style={{ color: 'var(--text-secondary)' }}> Pain-free treatments · 15+ years experience · Sunday appointments · EMI available · Latest equipment</em>
+        </p>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {form.why_choose_us.map((point, idx) => (
+            <div key={idx} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <span style={{ flexShrink: 0, width: 24, height: 24, borderRadius: '50%', background: '#DCFCE7', color: '#15803D', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800 }}>✓</span>
+              <input
+                value={point}
+                onChange={e => setForm(f => {
+                  const next = [...f.why_choose_us]
+                  next[idx] = e.target.value
+                  return { ...f, why_choose_us: next }
+                })}
+                placeholder={['Pain-free treatments', '15+ years experience', 'Sunday appointments', 'EMI available', 'Latest equipment'][idx] || 'Add a reason patients should pick you'}
+                maxLength={120}
+                style={{ ...inputStyle, flex: 1 }}
+              />
+              <button
+                type="button"
+                onClick={() => setForm(f => ({ ...f, why_choose_us: f.why_choose_us.filter((_, i) => i !== idx) }))}
+                aria-label={`Remove point ${idx + 1}`}
+                style={{ flexShrink: 0, padding: '0 12px', minHeight: 42, background: '#FEE2E2', color: '#991B1B', border: '1px solid #FECACA', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)' }}
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+        </div>
+
+        {form.why_choose_us.length < WHY_CHOOSE_LIMIT ? (
+          <button
+            type="button"
+            onClick={() => setForm(f => ({ ...f, why_choose_us: [...f.why_choose_us, ''] }))}
+            style={{ marginTop: form.why_choose_us.length > 0 ? 14 : 0, padding: '10px 18px', minHeight: 42, background: '#fff', color: 'var(--blue)', border: '1.5px dashed var(--blue)', borderRadius: 10, fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-body)' }}
+          >
+            + Add a point ({form.why_choose_us.length} / {WHY_CHOOSE_LIMIT})
+          </button>
+        ) : (
+          <p style={{ marginTop: 14, fontSize: 12, color: 'var(--muted)' }}>
+            You've added the maximum of {WHY_CHOOSE_LIMIT} points. Remove one to add another.
+          </p>
+        )}
       </div>
 
       {/* Booking QR */}

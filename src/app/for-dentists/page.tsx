@@ -104,6 +104,21 @@ export default async function ForDentistsPage() {
     { name: 'Dr. Sneha Kulkarni', clinic: 'Kulkarni Dental Care', area: 'Powai', text: 'The dashboard shows exactly how many people viewed my profile and clicked WhatsApp.' },
   ]
 
+  // Six-card "Why Choose DentistIn?" grid. Distinct from WHY_CARDS (which
+  // sells the practice-management suite) — these are the higher-level
+  // platform promises a dentist evaluating us in 5 seconds needs to see:
+  // it's free, it makes you discoverable, setup is instant. Order is
+  // deliberate: money objection first, then product depth, then SEO,
+  // then frictionless onboarding.
+  const PLATFORM_BENEFITS = [
+    { icon: '🆓', title: 'Free Forever',           desc: 'No listing fees, no commission on bookings.' },
+    { icon: '📊', title: 'Smart Dashboard',        desc: 'Manage appointments, patients, billing in one place.' },
+    { icon: '📈', title: 'Get Discovered',         desc: 'Appear in Google search when patients look for dentists nearby.' },
+    { icon: '⚡', title: 'Go Live in 2 Minutes',   desc: 'Register and your profile is live instantly.' },
+    { icon: '🦷', title: 'Built for Indian Dentists', desc: 'Designed specifically for dental clinics in India.' },
+    { icon: '📱', title: 'Mobile-Friendly',        desc: 'Patients find and book you from their phones.' },
+  ]
+
   const OBJECTION_BUSTERS = [
     { title: 'Zero commission',     desc: 'Keep 100% of every appointment fee. We never take a cut.' },
     { title: 'No app needed',       desc: 'Patients book via WhatsApp or web — no downloads, no friction.' },
@@ -262,6 +277,31 @@ export default async function ForDentistsPage() {
                   <span style={{ fontWeight: 600, fontSize: 14 }}>{f.title}</span>
                 </div>
                 <span style={{ fontSize: 11, fontWeight: 700, color: '#065F46', background: '#DCFCE7', padding: '2px 8px', borderRadius: 20, flexShrink: 0 }}>FREE</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* WHY CHOOSE DENTISTIN — six-card SaaS-style benefits grid. White
+          background, blue icon chip, plain title + description. Sits between
+          "What's Included" and "How It Works" so a dentist who's just seen
+          the feature list gets the higher-level reasons-to-choose-us before
+          being walked through onboarding. */}
+      <section style={{ padding: '80px 20px', background: '#fff' }}>
+        <div className="container">
+          <div style={{ textAlign: 'center', marginBottom: 52 }}>
+            <p style={{ color: 'var(--blue)', fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Why Choose DentistIn?</p>
+            <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(1.6rem, 3vw, 2.25rem)', maxWidth: 560, margin: '0 auto' }}>
+              Everything a modern Indian dental clinic needs
+            </h2>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 18, maxWidth: 1000, margin: '0 auto' }}>
+            {PLATFORM_BENEFITS.map(card => (
+              <div key={card.title} style={{ padding: '26px 22px', background: '#fff', border: '1px solid var(--border)', borderRadius: 16, boxShadow: '0 1px 2px rgba(15,25,35,0.04)' }}>
+                <div style={{ width: 48, height: 48, borderRadius: 12, background: 'var(--blue-light)', color: 'var(--blue)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, marginBottom: 14 }}>{card.icon}</div>
+                <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, marginBottom: 6, color: 'var(--text)' }}>{card.title}</h3>
+                <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.7 }}>{card.desc}</p>
               </div>
             ))}
           </div>
