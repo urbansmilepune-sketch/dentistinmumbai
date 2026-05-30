@@ -181,7 +181,7 @@ export default function DentistCard({ dentist: d, view }: DentistCardProps) {
         border: '2px solid var(--border)',
       }}>
         {d.profile_photo ? (
-          <img src={d.profile_photo} alt={d.name} style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top', aspectRatio: '1 / 1' }} />
+          <img src={d.profile_photo} alt={d.name} className="dentist-card-photo-img" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top', aspectRatio: '1 / 1' }} />
         ) : (
           <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28 }}>🦷</div>
         )}
@@ -203,7 +203,7 @@ export default function DentistCard({ dentist: d, view }: DentistCardProps) {
           <div style={{ textAlign: 'right', flexShrink: 0 }}>
             <div style={{ fontSize: 12, color: 'var(--muted)' }}>Consultation</div>
             <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 20, color: 'var(--text)' }}>
-              {d.consultation_fee ? `₹${d.consultation_fee}` : 'Call for fee'}
+              {d.consultation_fee ? `₹${d.consultation_fee}` : 'Call for price'}
             </div>
             {rating > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end', marginTop: 4 }}>
@@ -284,7 +284,8 @@ export default function DentistCard({ dentist: d, view }: DentistCardProps) {
         }
         @media (max-width: 640px) {
           .dentist-card-list { padding: 16px !important; gap: 12px !important; flex-direction: column !important; }
-          .dentist-card-list > div:first-child { width: 100% !important; height: 140px !important; border-radius: 12px !important; }
+          .dentist-card-list > div:first-child { width: 100% !important; height: 200px !important; border-radius: 12px !important; }
+          .dentist-card-photo-img { height: 200px !important; width: 100% !important; object-fit: cover !important; object-position: top center !important; }
           .dentist-cta { min-height: 52px; font-size: 14px; flex: 1 1 calc(33.333% - 6px); min-width: 86px; }
         }
         @media (max-width: 360px) {
