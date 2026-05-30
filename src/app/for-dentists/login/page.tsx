@@ -14,6 +14,8 @@ export default function DentistLoginPage() {
   const [showPass, setShowPass] = useState(false)
   const [loading, setLoading] = useState(false)
   const [gLoading, setGLoading] = useState(false)
+  const [magicLoading, setMagicLoading] = useState(false)
+  const [magicSent, setMagicSent] = useState(false)
   const [error, setError] = useState('')
   const [cityConfig, setCityConfig] = useState<CityConfig>(CITY_CONFIGS[DEFAULT_CITY])
   const [national, setNational] = useState(false)
@@ -78,6 +80,23 @@ export default function DentistLoginPage() {
     // doesn't match the dentist's registered city.
     router.push(nextPath())
     router.refresh()
+  }
+
+// Passwordless fallback: dentists who never set (or forgot) a password can
+// get a one-click login link emailed to them. signInWithOtp sends the link;
+// clicking it lands on /auth/callback (same route as Google OAuth), which
+// exchanges the code for a session and routes to the dashboard/feed. We keep
+// emailRedirectTo on the current origin so the host-scoped auth cookie sticks.
+  async function handleMagicLink() {
+    if (!email) { setError('Enter your email address above first, then request a login link.'); return }
+    setError(''); setMagicSent(false); setMagicLoading(true)
+    const { error: otpError } = await supabase.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+    })
+    setMagicLoading(false)
+    if (otpError) { setError('Could not send a login link. Please check the email and try again.'); return }
+    setMagicSent(true)
   }
 
 async function handleGoogle() {
@@ -186,6 +205,23 @@ async function handleGoogle() {
               <div style={{ textAlign: 'right', marginTop: 6 }}>
                 <Link href="/for-dentists/forgot-password" style={{ fontSize: 12, color: 'var(--blue)' }}>Forgot password?</Link>
               </div>
+            </div>
+
+            {/* Magic-link fallback for dentists who don't know their password. */}
+            <div style={{ marginTop: -4 }}>
+              <button
+                type="button"
+                onClick={handleMagicLink}
+                disabled={magicLoading}
+                style={{ background: 'none', border: 'none', padding: 0, fontSize: 13, color: 'var(--blue)', fontWeight: 600, cursor: magicLoading ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-body)', opacity: magicLoading ? 0.7 : 1 }}
+              >
+                {magicLoading ? 'Sending login link…' : 'Forgot password? Get a login link →'}
+              </button>
+              {magicSent && (
+                <div style={{ marginTop: 10, padding: '10px 14px', background: '#DCFCE7', border: '1px solid #BBF7D0', borderRadius: 10, fontSize: 13, color: '#166534', fontWeight: 600 }}>
+                  📧 Check your email for a login link
+                </div>
+              )}
             </div>
             <button
               type="submit" disabled={loading}
