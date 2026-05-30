@@ -226,10 +226,10 @@ export default function InventoryPage() {
     await loadAll()
   }
 
-  async function reorder(it: InventoryItem) {
+  async function reorder(it: InventoryItem, channel: 'whatsapp' | 'dentalsamaan') {
     setBusyRow(it.id); setActionError(null); setActionNotice(null)
     const res = await fetch('/api/dentist/inventory/reorder', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item_id: it.id, channel: 'whatsapp' }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item_id: it.id, channel }),
     })
     setBusyRow(null)
     const j = await res.json().catch(() => ({}))
@@ -241,7 +241,10 @@ export default function InventoryPage() {
       }
       setActionError(j.error || 'Reorder failed.'); return
     }
-    if (j.whatsapp_url) {
+    if (channel === 'dentalsamaan' && j.redirect_url) {
+      window.open(j.redirect_url, '_blank', 'noopener,noreferrer')
+      setActionNotice(`Opening DentalSamaan to order ${it.name} — 90 min delivery.`)
+    } else if (j.whatsapp_url) {
       window.open(j.whatsapp_url, '_blank', 'noopener,noreferrer')
       setActionNotice(`Reorder logged · WhatsApp opened for ${j.supplier_name || 'supplier'}`)
     }
@@ -373,9 +376,11 @@ export default function InventoryPage() {
                   <button onClick={() => quickStock(it, 'use')} disabled={busyRow === it.id || it.current_stock <= 0}
                     style={{ ...rowBtn, background: '#E0E7FF', color: '#3730A3', opacity: it.current_stock <= 0 ? 0.5 : 1 }}>− Use</button>
                   {(s.kind === 'low' || s.kind === 'critical') && (
-                    <button onClick={() => reorder(it)} disabled={busyRow === it.id}
-                      style={{ ...rowBtn, background: '#25D366', color: '#fff' }}>📦 Reorder</button>
+                    <button onClick={() => reorder(it, 'dentalsamaan')} disabled={busyRow === it.id}
+                      style={{ ...rowBtn, background: 'var(--blue)', color: '#fff' }}>📦 Order on DentalSamaan</button>
                   )}
+                  <button onClick={() => reorder(it, 'whatsapp')} disabled={busyRow === it.id}
+                    style={{ ...rowBtn, background: '#25D366', color: '#fff' }}>💬 WhatsApp Supplier</button>
                   <button onClick={() => openEdit(it)} disabled={busyRow === it.id} style={ghostBtn}>✏ Edit</button>
                   <button onClick={() => remove(it)} disabled={busyRow === it.id}
                     style={{ ...ghostBtn, color: '#991B1B', borderColor: '#FECACA' }}>✕</button>
