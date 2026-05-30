@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import QRCode from 'qrcode'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { getCityBySlug } from '@/config/cities'
 import { buildMapsIframe, classifyMapsInput, extractMapsIframeSrc } from '@/lib/maps'
+import PhotoCropModal from './PhotoCropModal'
 
 const HOURS_DAYS: { key: string; label: string }[] = [
   { key: 'mon', label: 'Monday' },
@@ -32,6 +33,16 @@ export default function EditProfilePage() {
   const [slug, setSlug] = useState('')
   const [qrDataUrl, setQrDataUrl] = useState('')
   const [siteBase, setSiteBase] = useState('https://dentistinmumbai.in')
+
+  // Profile-photo upload + crop. The dentist picks a file → we open the crop
+  // modal on a local object URL → on Save we render the 1:1 crop to a Blob and
+  // POST it to /api/cloudinary/upload (type=profile), which resizes to 400×400
+  // and writes dentists.profile_photo server-side.
+  const [profilePhoto, setProfilePhoto] = useState<string | null>(null)
+  const [cropSrc, setCropSrc] = useState<string | null>(null)
+  const [photoSaving, setPhotoSaving] = useState(false)
+  const [photoError, setPhotoError] = useState('')
+  const photoInputRef = useRef<HTMLInputElement>(null)
   // Read-only mirror of dentists.working_hours so the profile page can show
   // a clear weekday summary. The dedicated editor at /dashboard/hours owns
   // the write path — we never UPDATE this column from profile/page.tsx.
@@ -69,7 +80,7 @@ export default function EditProfilePage() {
 
       const { data: dentist } = await supabase
         .from('dentists')
-        .select('id, slug, name, clinic_name, qualifications, degree, experience_years, bio, phone, whatsapp, website, address, consultation_fee, mci_number, emi_available, languages, specialties, maps_embed, why_choose_us, city, working_hours, phone_verified')
+        .select('id, slug, name, clinic_name, qualifications, degree, experience_years, bio, phone, whatsapp, website, address, consultation_fee, mci_number, emi_available, languages, specialties, maps_embed, why_choose_us, city, working_hours, phone_verified, profile_photo')
         .eq('email', user.email)
         .single()
 
@@ -79,6 +90,7 @@ export default function EditProfilePage() {
         setSiteBase(`https://${getCityBySlug((dentist as any).city).domain}`)
         setWorkingHours((dentist as any).working_hours || null)
         setPhoneVerified(!!(dentist as any).phone_verified)
+        setProfilePhoto((dentist as any).profile_photo || null)
         setForm({
           name: dentist.name || '',
           clinic_name: dentist.clinic_name || '',
@@ -305,6 +317,41 @@ export default function EditProfilePage() {
     setOtpBusy(false)
   }
 
+  // File picked → validate and open the crop modal on a local object URL.
+  function onSelectPhoto(file: File) {
+    setPhotoError('')
+    if (!file.type.startsWith('image/')) { setPhotoError('Please choose an image file.'); return }
+    if (file.size > 10 * 1024 * 1024) { setPhotoError('Image too large. Max 10MB.'); return }
+    // Revoke any previous object URL before replacing it so we don't leak.
+    if (cropSrc) URL.revokeObjectURL(cropSrc)
+    setCropSrc(URL.createObjectURL(file))
+  }
+
+  function closeCropModal() {
+    if (cropSrc) URL.revokeObjectURL(cropSrc)
+    setCropSrc(null)
+  }
+
+  // Modal handed us the cropped 1:1 Blob → upload it as the profile photo.
+  // The upload route resizes to 400×400 and writes dentists.profile_photo,
+  // so we just reflect the returned URL back into local state on success.
+  async function onCropSave(blob: Blob) {
+    setPhotoSaving(true); setPhotoError('')
+    try {
+      const formData = new FormData()
+      formData.append('file', new File([blob], 'profile.jpg', { type: 'image/jpeg' }))
+      formData.append('type', 'profile')
+      const res = await fetch('/api/cloudinary/upload', { method: 'POST', body: formData })
+      const data = await res.json()
+      if (!data.success) { setPhotoError(data.error || 'Upload failed.'); setPhotoSaving(false); return }
+      setProfilePhoto(data.url)
+      closeCropModal()
+    } catch {
+      setPhotoError('Upload failed. Please try again.')
+    }
+    setPhotoSaving(false)
+  }
+
   async function handleSave() {
     if (!form.name || !form.clinic_name) { setError('Name and Clinic Name are required'); return }
     if (!dentistId) { setError('No dentist profile is linked to your account. Contact support.'); return }
@@ -440,6 +487,40 @@ export default function EditProfilePage() {
       </div>
 
       {error && <div style={{ padding: '12px 16px', background: '#FEE2E2', border: '1px solid #FECACA', borderRadius: 10, fontSize: 13, color: '#991B1B', marginBottom: 20 }}>{error}</div>}
+
+      {/* Profile Photo — crop-to-square before upload so every dentist's
+          headshot lands face-centred and consistently 1:1 on listing cards. */}
+      <div style={sectionStyle}>
+        <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, marginBottom: 4 }}>Profile Photo</h2>
+        <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 18 }}>
+          A clear, face-centred headshot. You'll crop it to a square before it's saved — this is the photo patients see on your listing card.
+        </p>
+        {photoError && <div style={{ padding: '10px 14px', background: '#FEE2E2', border: '1px solid #FECACA', borderRadius: 10, fontSize: 13, color: '#991B1B', marginBottom: 14 }}>{photoError}</div>}
+        <div style={{ display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ width: 96, height: 96, borderRadius: '50%', overflow: 'hidden', border: '2px solid var(--border)', flexShrink: 0, background: 'var(--blue-light)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {profilePhoto
+              ? <img src={profilePhoto} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top center' }} />
+              : <span style={{ fontSize: 36 }} aria-hidden="true">🦷</span>}
+          </div>
+          <div>
+            <button
+              type="button"
+              onClick={() => photoInputRef.current?.click()}
+              style={{ padding: '11px 22px', minHeight: 44, background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
+            >{profilePhoto ? 'Change Photo' : 'Upload Photo'}</button>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>JPG, PNG, WebP · Max 10MB</div>
+          </div>
+        </div>
+        <input
+          ref={photoInputRef} type="file" accept="image/*" style={{ display: 'none' }}
+          onChange={e => {
+            const file = e.target.files?.[0]
+            if (file) onSelectPhoto(file)
+            // Reset so picking the same file again still fires onChange.
+            e.target.value = ''
+          }}
+        />
+      </div>
 
       {/* Basic Info */}
       <div style={sectionStyle}>
@@ -936,6 +1017,15 @@ export default function EditProfilePage() {
           .profile-save-btn { width: 100%; }
         }
       `}</style>
+
+      {cropSrc && (
+        <PhotoCropModal
+          imageSrc={cropSrc}
+          saving={photoSaving}
+          onCancel={closeCropModal}
+          onSave={onCropSave}
+        />
+      )}
     </div>
   )
 }
