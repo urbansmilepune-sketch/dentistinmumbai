@@ -85,11 +85,24 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
   const userLng = parseCoord(params.lng, 180)
   const hasCoords = userLat !== null && userLng !== null
 
-  // Fetch filter data
-  const [{ data: allAreas }, { data: allTreatments }] = await Promise.all([
-    supabase.from('areas').select('name, slug, dentist_count, zone').eq('city', citySlug).order('dentist_count', { ascending: false }),
+  // Fetch filter data. The areas.dentist_count column is a denormalised cache
+  // that goes stale (every area was reading 0), so we compute the per-area
+  // counts live from the active dentists in this city instead of trusting it.
+  const [{ data: allAreasRaw }, { data: allTreatments }, { data: areaCountRows }] = await Promise.all([
+    supabase.from('areas').select('id, name, slug, zone').eq('city', citySlug),
     supabase.from('treatments').select('name, slug').order('sort_order'),
+    supabase.from('dentists').select('area_id').eq('is_active', true).eq('city', citySlug),
   ])
+
+  const countByArea = new Map<string, number>()
+  for (const row of areaCountRows || []) {
+    if (row.area_id) countByArea.set(row.area_id, (countByArea.get(row.area_id) || 0) + 1)
+  }
+  // Same shape the rest of the page expects (name/slug/zone/dentist_count),
+  // sorted by live count desc as the old DB-side .order() did.
+  const allAreas = (allAreasRaw || [])
+    .map(a => ({ name: a.name, slug: a.slug, zone: a.zone, dentist_count: countByArea.get(a.id) || 0 }))
+    .sort((a, b) => b.dentist_count - a.dentist_count)
 
   // Build dentist query — we ask for lat/lng/specialties/languages too so we
   // can compute distance and apply array-overlap filters in memory if needed.
@@ -297,7 +310,7 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
           </Link>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Link href="/dentists" className="nav-secondary-link" style={{ padding: '8px 16px', fontWeight: 600, fontSize: 14, color: 'var(--blue)' }}>Find Dentists</Link>
-            <Link href="/for-dentists" className="nav-secondary-link" style={{ padding: '8px 16px', fontWeight: 500, fontSize: 14, color: 'var(--text-secondary)' }}>For Dentists</Link>
+            <Link href="/for-dentists/register" className="nav-secondary-link" style={{ padding: '8px 16px', fontWeight: 500, fontSize: 14, color: 'var(--text-secondary)' }}>For Dentists</Link>
             <Link href="/for-dentists/register" className="nav-list-clinic btn btn-primary btn-sm">List Your Clinic</Link>
           </div>
         </nav>
