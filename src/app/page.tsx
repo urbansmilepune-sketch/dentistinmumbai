@@ -9,6 +9,7 @@ import NationalHome from '@/components/national/NationalHome'
 import CitiesFooterLinks from '@/components/CitiesFooterLinks'
 import PopularSearches from '@/components/PopularSearches'
 import DentistMobileStickyBar from '@/components/DentistMobileStickyBar'
+import ExhibitionBanner from '@/components/ExhibitionBanner'
 
 // Per-host metadata. dentistinindia.in gets network-framed copy; every
 // city domain gets a "Dentist in <City>" search title tuned for the
@@ -168,6 +169,9 @@ export default async function HomePage() {
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }} />
+      {/* Famdent exhibition announcement — only on the Pune / Mumbai / Nashik
+          city domains. Dismissal persists in localStorage (client-side). */}
+      {['pune', 'mumbai', 'nashik'].includes(city.citySlug) && <ExhibitionBanner />}
       {/* NAV */}
       <header style={{ background: '#fff', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 100, backdropFilter: 'blur(8px)' }}>
         <nav className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 68 }}>
