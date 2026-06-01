@@ -243,7 +243,7 @@ export default function InventoryPage() {
     }
     if (channel === 'dentalsamaan' && j.redirect_url) {
       window.open(j.redirect_url, '_blank', 'noopener,noreferrer')
-      setActionNotice(`Opening DentalSamaan to order ${it.name} — 90 min delivery.`)
+      setActionNotice(`Opening supply order for ${it.name} — 90 min delivery.`)
     } else if (j.whatsapp_url) {
       window.open(j.whatsapp_url, '_blank', 'noopener,noreferrer')
       setActionNotice(`Reorder logged · WhatsApp opened for ${j.supplier_name || 'supplier'}`)
@@ -377,7 +377,7 @@ export default function InventoryPage() {
                     style={{ ...rowBtn, background: '#E0E7FF', color: '#3730A3', opacity: it.current_stock <= 0 ? 0.5 : 1 }}>− Use</button>
                   {(s.kind === 'low' || s.kind === 'critical') && (
                     <button onClick={() => reorder(it, 'dentalsamaan')} disabled={busyRow === it.id}
-                      style={{ ...rowBtn, background: 'var(--blue)', color: '#fff' }}>📦 Order on DentalSamaan</button>
+                      style={{ ...rowBtn, background: 'var(--blue)', color: '#fff' }}>📦 Order Supplies</button>
                   )}
                   <button onClick={() => reorder(it, 'whatsapp')} disabled={busyRow === it.id}
                     style={{ ...rowBtn, background: '#25D366', color: '#fff' }}>💬 WhatsApp Supplier</button>

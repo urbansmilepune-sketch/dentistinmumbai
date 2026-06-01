@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
     if (!itemId) return NextResponse.json({ error: 'item_id is required' }, { status: 400 })
     const channel = typeof body.channel === 'string' ? body.channel.toLowerCase() : 'whatsapp'
     if (channel !== 'whatsapp' && channel !== 'dentalsamaan') {
-      return NextResponse.json({ error: 'channel must be "whatsapp" or "dentalsamaan"' }, { status: 400 })
+      return NextResponse.json({ error: 'Unsupported reorder channel' }, { status: 400 })
     }
     const quantityRaw = body.quantity
     const quantity = quantityRaw == null || quantityRaw === '' ? null : Number(quantityRaw)
