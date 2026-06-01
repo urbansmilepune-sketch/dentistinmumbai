@@ -27,7 +27,7 @@ export default function FamdentPage() {
         {/* Plain <img> (not next/image) — single above-the-fold asset, no
             layout shift concern, keeps this page dependency-free. */}
         <img
-          src="/logo-pune.png"
+          src="/india-logo.png"
           width={160}
           alt="DentistIn"
           style={{ height: 'auto', marginBottom: 24 }}
