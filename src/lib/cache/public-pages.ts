@@ -7,8 +7,10 @@ import { createAnonClient } from '@/lib/supabase/anon'
 // heavy Supabase round-trips are served from the Next.js Data Cache and
 // only re-hit Supabase after `revalidate` elapses.
 //
-// Cache keys: unstable_cache hashes the function args, so passing
-// citySlug / slug is enough — one entry per city, one per dentist.
+// Cache keys: getCityHomeData puts citySlug in the keyParts array
+// explicitly (see below) rather than trusting unstable_cache's deprecated
+// implicit arg-hashing. getDentistProfileData still relies on arg-hashing
+// for `slug`. Either way: one entry per city, one per dentist.
 //
 // Return types are spelled out explicitly because the project has no
 // generated Supabase schema, so untyped .select() falls back to `never`
@@ -103,64 +105,70 @@ const DENTIST_LIST_SELECT =
 
 export const PREMIUM_FLOOR = 50
 
-export const getCityHomeData = unstable_cache(
-  async (citySlug: string): Promise<CityHomeData> => {
-    const supabase = createAnonClient()
-    const [
-      { data: areas },
-      { data: treatments },
-      { count: premiumCount },
-      { count: dentistCount },
-      { data: allActiveDentists },
-      { data: curatedDentists },
-    ] = await Promise.all([
-      supabase
-        .from('areas')
-        .select('id, name, slug, zone, dentist_count')
-        .eq('city', citySlug)
-        .order('dentist_count', { ascending: false }),
-      supabase.from('treatments').select('id, name, slug, icon').order('sort_order'),
-      supabase
-        .from('dentists')
-        .select('*', { count: 'exact', head: true })
-        .eq('is_active', true)
-        .eq('city', citySlug)
-        .in('tier', ['gold', 'featured']),
-      supabase
-        .from('dentists')
-        .select('*', { count: 'exact', head: true })
-        .eq('is_active', true)
-        .eq('city', citySlug),
-      supabase
-        .from('dentists')
-        .select(DENTIST_LIST_SELECT)
-        .eq('is_active', true)
-        .eq('city', citySlug)
-        .order('rank_score', { ascending: false })
-        .limit(6),
-      supabase
-        .from('dentists')
-        .select(DENTIST_LIST_SELECT)
-        .eq('is_active', true)
-        .eq('is_verified', true)
-        .eq('city', citySlug)
-        .in('tier', ['featured', 'gold', 'silver'])
-        .order('rank_score', { ascending: false })
-        .limit(6),
-    ])
+// Wrapped in a factory so citySlug is in scope for the keyParts array.
+// `['city-home-data', citySlug]` makes the per-city cache partition
+// explicit — belt-and-suspenders against unstable_cache's implicit
+// arg-hashing (deprecated in Next 16). One Data Cache entry per city.
+export function getCityHomeData(citySlug: string): Promise<CityHomeData> {
+  return unstable_cache(
+    async (): Promise<CityHomeData> => {
+      const supabase = createAnonClient()
+      const [
+        { data: areas },
+        { data: treatments },
+        { count: premiumCount },
+        { count: dentistCount },
+        { data: allActiveDentists },
+        { data: curatedDentists },
+      ] = await Promise.all([
+        supabase
+          .from('areas')
+          .select('id, name, slug, zone, dentist_count')
+          .eq('city', citySlug)
+          .order('dentist_count', { ascending: false }),
+        supabase.from('treatments').select('id, name, slug, icon').order('sort_order'),
+        supabase
+          .from('dentists')
+          .select('*', { count: 'exact', head: true })
+          .eq('is_active', true)
+          .eq('city', citySlug)
+          .in('tier', ['gold', 'featured']),
+        supabase
+          .from('dentists')
+          .select('*', { count: 'exact', head: true })
+          .eq('is_active', true)
+          .eq('city', citySlug),
+        supabase
+          .from('dentists')
+          .select(DENTIST_LIST_SELECT)
+          .eq('is_active', true)
+          .eq('city', citySlug)
+          .order('rank_score', { ascending: false })
+          .limit(6),
+        supabase
+          .from('dentists')
+          .select(DENTIST_LIST_SELECT)
+          .eq('is_active', true)
+          .eq('is_verified', true)
+          .eq('city', citySlug)
+          .in('tier', ['featured', 'gold', 'silver'])
+          .order('rank_score', { ascending: false })
+          .limit(6),
+      ])
 
-    return {
-      areas: (areas ?? []) as CityArea[],
-      treatments: (treatments ?? []) as CityTreatment[],
-      premiumCount: premiumCount ?? 0,
-      dentistCount: dentistCount ?? 0,
-      allActiveDentists: (allActiveDentists ?? []) as unknown as FeaturedDentist[],
-      curatedDentists: (curatedDentists ?? []) as unknown as FeaturedDentist[],
-    }
-  },
-  ['city-home-data'],
-  { revalidate: 300, tags: ['city-home', 'dentists', 'areas', 'treatments'] },
-)
+      return {
+        areas: (areas ?? []) as CityArea[],
+        treatments: (treatments ?? []) as CityTreatment[],
+        premiumCount: premiumCount ?? 0,
+        dentistCount: dentistCount ?? 0,
+        allActiveDentists: (allActiveDentists ?? []) as unknown as FeaturedDentist[],
+        curatedDentists: (curatedDentists ?? []) as unknown as FeaturedDentist[],
+      }
+    },
+    ['city-home-data', citySlug],
+    { revalidate: 300, tags: ['city-home', 'dentists', 'areas', 'treatments'] },
+  )()
+}
 
 export const getDentistProfileData = unstable_cache(
   async (slug: string): Promise<DentistProfileData | null> => {
