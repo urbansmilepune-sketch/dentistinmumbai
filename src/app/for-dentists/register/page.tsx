@@ -111,7 +111,7 @@ export default function RegisterPage() {
           area_name_raw: submittingAreaRaw,
           city,
           selected_plan: planFromUrl,
-          founding_number: Math.floor(Math.random() * 250) + 1,
+          founding_number: Math.floor(Math.random() * 1000) + 1,
         }),
       })
       const data = await res.json()
