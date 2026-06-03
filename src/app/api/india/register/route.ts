@@ -138,7 +138,7 @@ export async function POST(request: NextRequest) {
   // ── Insert dentist_registrations row (status approved + auto_approved
   //     so admins know this came via the LinkedIn-style flow) ───────────
   const refNo = `IN-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`
-  const foundingNumber = Math.floor(Math.random() * 250) + 1
+  const foundingNumber = Math.floor(Math.random() * 1000) + 1
   const { error: regErr } = await admin
     .from('dentist_registrations')
     .insert({

@@ -75,11 +75,15 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    const { name, phone, clinic_name, area, founding_number, selected_plan, city } = body
+    const { name, phone, clinic_name, area, selected_plan, city } = body
     const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
     emailForAlert = email || undefined
     const rawAreaName = typeof body.area_name_raw === 'string' ? body.area_name_raw.trim() : null
     const area_name_raw = rawAreaName && rawAreaName.length > 0 ? rawAreaName : null
+    // founding_number is client-supplied — it only drives a cosmetic
+    // "Founding Member #N" badge, so never trust the raw value. Coerce to an
+    // integer and clamp to 1–1000 so a tampered request can't store junk.
+    const founding_number = Math.min(1000, Math.max(1, Math.floor(Number(body.founding_number)) || 1))
 
     if (!name || !phone || !email || !clinic_name) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
