@@ -25,21 +25,17 @@ export default function FamdentPage() {
     >
       <div style={{ width: '100%', maxWidth: 480, textAlign: 'center' }}>
         {/* Plain <img> (not next/image) — single above-the-fold asset, no
-            layout shift concern, keeps this page dependency-free. */}
-        {/* The logo art has a baked-in white background, and its wordmark is
-            dark navy — illegible if knocked out onto this navy page. So we
-            frame it on an intentional white rounded card instead of fighting
-            the white box. Swap for a transparent/white-knockout asset later. */}
+            layout shift concern, keeps this page dependency-free. Shown
+            inline with no card/box; centered horizontally via block +
+            margin auto, with generous spacing below before the headline. */}
         <img
           src="/india-logo.png"
           width={160}
           alt="DentistIn"
           style={{
+            display: 'block',
             height: 'auto',
-            marginBottom: 24,
-            background: '#fff',
-            borderRadius: 8,
-            padding: '12px 16px',
+            margin: '0 auto 40px',
           }}
         />
         <h1 style={{ color: '#fff', fontWeight: 700, fontSize: 32, margin: 0 }}>
