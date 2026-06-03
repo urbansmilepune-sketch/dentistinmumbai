@@ -18,7 +18,12 @@ export async function POST(request: Request) {
   let city = ''
   try {
     const body = await request.json()
-    city = typeof body?.city === 'string' ? body.city.slice(0, 80) : ''
+    const label = typeof body?.city === 'string' ? body.city.slice(0, 80) : ''
+    // "Other" clicks carry the free-text city the dentist typed in `cityInput`.
+    // Store that as the city so booth analytics records their real location
+    // instead of a generic "Other". Fixed-button clicks send no cityInput.
+    const typed = typeof body?.cityInput === 'string' ? body.cityInput.trim().slice(0, 80) : ''
+    city = typed || label
   } catch {
     // Malformed body — still return ok so the client (which has already
     // navigated away) never sees an error; just nothing gets logged.
