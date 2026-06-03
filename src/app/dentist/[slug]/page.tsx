@@ -352,9 +352,9 @@ export default async function DentistProfilePage({ params }: Props) {
                     <div style={{ width: 8, height: 8, borderRadius: '50%', background: openStatus.open ? '#00A878' : '#EF4444' }} />
                     <span style={{ fontSize: 13, fontWeight: 600, color: openStatus.open ? '#00A878' : '#EF4444' }}>{openStatus.label}</span>
                   </div>
-                  {avgRating && <span style={{ fontSize: 13, fontWeight: 600, color: '#F59E0B' }}>★ {avgRating} ({approvedReviews.length} reviews)</span>}
-                  {dentist.consultation_fee && <span style={{ fontSize: 13, color: 'var(--muted)' }}>Consult: <strong>₹{dentist.consultation_fee}</strong></span>}
-                  {dentist.mci_number && <span style={{ fontSize: 12, color: 'var(--muted)' }}>MCI: {dentist.mci_number}</span>}
+                  {avgRating ? <span style={{ fontSize: 13, fontWeight: 600, color: '#F59E0B' }}>★ {avgRating} ({approvedReviews.length} reviews)</span> : null}
+                  {dentist.consultation_fee ? <span style={{ fontSize: 13, color: 'var(--muted)' }}>Consult: <strong>₹{dentist.consultation_fee}</strong></span> : null}
+                  {dentist.mci_number && String(dentist.mci_number).trim() && String(dentist.mci_number).trim() !== '0' ? <span style={{ fontSize: 12, color: 'var(--muted)' }}>MCI: {dentist.mci_number}</span> : null}
                 </div>
                 {dentist.languages && dentist.languages.length > 0 && (
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
