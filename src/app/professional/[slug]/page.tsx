@@ -51,11 +51,16 @@ async function load(slug: string): Promise<{ dentist: DentistRow; cases: CaseRow
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   )
-  const { data: dentist } = await admin
+  // Slugs are not guaranteed globally unique across cities, so a bare
+  // .single() would error (and 404 a valid profile) on a collision. Resolve
+  // deterministically instead: oldest registration owns the canonical slug.
+  const { data: matches } = await admin
     .from('dentists')
     .select('id, name, slug, clinic_name, city, email, qualifications, specialties, is_active, is_verified, experience_years, profile_photo, professional_bio, publications, hospital_affiliations')
     .eq('slug', slug)
-    .single()
+    .order('created_at', { ascending: true })
+    .limit(1)
+  const dentist = matches?.[0]
   if (!dentist) return null
 
   const { data: cases } = await admin
