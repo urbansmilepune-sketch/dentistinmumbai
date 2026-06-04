@@ -60,12 +60,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const clinicLabel = d.clinic_name || 'Dental Clinic'
   const experienceSegment = d.experience_years ? ` ${d.experience_years} years experience.` : ''
   const qualifications = d.qualifications || 'BDS'
-  // Some dentists store the "Dr." honorific in their name ("Dr. Sweety"),
-  // others store the bare name. Strip any leading "dr"/"dr." before re-adding
-  // a single prefix so titles/metadata never read "Dr. Dr. ...". Same
-  // transform the FAQ section uses; applied here at display time so all
+  // Some dentists store the "Dr." honorific in their name ("Dr. Sweety",
+  // "Dr.Amir", "Dr veena"), others store the bare name. Strip a leading
+  // "dr"/"dr." before re-adding a single prefix so titles/metadata never
+  // read "Dr. Dr. ...". The \b word boundary is what makes this safe: it
+  // only fires when "dr" is followed by a dot, space, or end — so a real
+  // name like "Drishti" is left untouched instead of becoming "Dr. ishti".
+  // Same transform the FAQ section uses; applied at display time so all
   // affected profiles are fixed without touching the DB.
-  const bareName = String(d.name || '').replace(/^\s*dr\.?\s*/i, '').trim()
+  const bareName = String(d.name || '').replace(/^\s*dr\b\.?\s*/i, '').trim()
   const drName = `Dr. ${bareName}`
   const title = `${drName} - ${clinicLabel} | ${areaName} | ${brand}`
   const description = `Book appointment with ${drName} at ${clinicLabel} in ${areaName}, ${city.cityName}. ${qualifications}.${experienceSegment} Online booking available.`
@@ -170,11 +173,13 @@ export default async function DentistProfilePage({ params }: Props) {
     : null
 
   // Some dentists store their name with the "Dr." honorific baked in
-  // ("Dr. Sweety Dighade"), others store just the bare name ("Sweety
-  // Dighade"). Strip any leading "Dr." / "dr." (with or without a dot,
-  // any amount of trailing whitespace) before re-adding a single prefix,
-  // so neither the FAQ below nor the JSON-LD name ever reads "Dr. Dr. ...".
-  const bareName = String(dentist.name || '').replace(/^\s*dr\.?\s+/i, '').trim()
+  // ("Dr. Sweety Dighade", "Dr.Amir", "Dr veena"), others store just the
+  // bare name ("Sweety Dighade"). Strip a leading "Dr"/"Dr." before
+  // re-adding a single prefix, so neither the FAQ below nor the JSON-LD
+  // name ever reads "Dr. Dr. ...". The \b word boundary only fires when
+  // "dr" is followed by a dot, space, or end, so a real name like
+  // "Drishti" is left untouched instead of becoming "Dr. ishti".
+  const bareName = String(dentist.name || '').replace(/^\s*dr\b\.?\s*/i, '').trim()
   const drName = `Dr. ${bareName}`
 
   // Dentist is a Schema.org subtype of MedicalBusiness → LocalBusiness, so
