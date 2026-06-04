@@ -60,15 +60,22 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const clinicLabel = d.clinic_name || 'Dental Clinic'
   const experienceSegment = d.experience_years ? ` ${d.experience_years} years experience.` : ''
   const qualifications = d.qualifications || 'BDS'
-  const title = `Dr. ${d.name} - ${clinicLabel} | ${areaName} | ${brand}`
-  const description = `Book appointment with Dr. ${d.name} at ${clinicLabel} in ${areaName}, ${city.cityName}. ${qualifications}.${experienceSegment} Online booking available.`
+  // Some dentists store the "Dr." honorific in their name ("Dr. Sweety"),
+  // others store the bare name. Strip any leading "dr"/"dr." before re-adding
+  // a single prefix so titles/metadata never read "Dr. Dr. ...". Same
+  // transform the FAQ section uses; applied here at display time so all
+  // affected profiles are fixed without touching the DB.
+  const bareName = String(d.name || '').replace(/^\s*dr\.?\s*/i, '').trim()
+  const drName = `Dr. ${bareName}`
+  const title = `${drName} - ${clinicLabel} | ${areaName} | ${brand}`
+  const description = `Book appointment with ${drName} at ${clinicLabel} in ${areaName}, ${city.cityName}. ${qualifications}.${experienceSegment} Online booking available.`
   const url = `${cityOrigin(city)}/dentist/${slug}`
   const ogImage = d.profile_photo || undefined
 
   return {
     title,
     description,
-    keywords: `Dr ${d.name}, ${d.clinic_name || ''}, dentist ${areaName}, dental clinic ${city.cityName}, book dentist online`,
+    keywords: `Dr ${bareName}, ${d.clinic_name || ''}, dentist ${areaName}, dental clinic ${city.cityName}, book dentist online`,
     alternates: { canonical: url },
     openGraph: {
       title,
@@ -162,6 +169,14 @@ export default async function DentistProfilePage({ params }: Props) {
     ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dentist.address)}`
     : null
 
+  // Some dentists store their name with the "Dr." honorific baked in
+  // ("Dr. Sweety Dighade"), others store just the bare name ("Sweety
+  // Dighade"). Strip any leading "Dr." / "dr." (with or without a dot,
+  // any amount of trailing whitespace) before re-adding a single prefix,
+  // so neither the FAQ below nor the JSON-LD name ever reads "Dr. Dr. ...".
+  const bareName = String(dentist.name || '').replace(/^\s*dr\.?\s+/i, '').trim()
+  const drName = `Dr. ${bareName}`
+
   // Dentist is a Schema.org subtype of MedicalBusiness → LocalBusiness, so
   // this satisfies both rich-snippet eligibility and Google's local pack
   // requirements. image enables the dentist's photo to surface in the
@@ -169,7 +184,9 @@ export default async function DentistProfilePage({ params }: Props) {
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': ['Dentist', 'Physician'],
-    name: dentist.clinic_name || dentist.name,
+    // Prefer the clinic name (the LocalBusiness identity); fall back to the
+    // normalised "Dr. <name>" so the schema name never duplicates the prefix.
+    name: dentist.clinic_name || drName,
     medicalSpecialty: 'Dentistry',
     description: dentist.bio || `Dental clinic in ${areaName}`,
     ...(dentist.profile_photo ? { image: dentist.profile_photo } : {}),
@@ -196,14 +213,8 @@ export default async function DentistProfilePage({ params }: Props) {
   // filled in — every dentist gets the booking-CTA question, the rest are
   // gated on the underlying field being non-empty so we don't ship an
   // answer like "Dr. X speaks " with a trailing nothing. The same items
-  // feed the FAQPage JSON-LD below for rich-result eligibility.
-  // Some dentists store their name with the "Dr." honorific baked in
-  // ("Dr. Sweety Dighade"), others store just the bare name ("Sweety
-  // Dighade"). Strip any leading "Dr." / "dr." (with or without a dot,
-  // any amount of trailing whitespace) before re-adding a single prefix,
-  // so the FAQ never reads "Dr. Dr. ...".
-  const bareName = String(dentist.name || '').replace(/^\s*dr\.?\s+/i, '').trim()
-  const drName = `Dr. ${bareName}`
+  // feed the FAQPage JSON-LD below for rich-result eligibility. The
+  // "Dr." normalisation (bareName / drName) is computed above the JSON-LD.
   const clinicLabel = dentist.clinic_name || 'the clinic'
   const explicitArea = (dentist.areas as any)?.name as string | undefined
   const treatmentNames: string[] = treatments
