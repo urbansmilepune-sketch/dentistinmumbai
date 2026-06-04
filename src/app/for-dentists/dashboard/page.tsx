@@ -5,7 +5,9 @@ import Link from 'next/link'
 import TodayWhatsAppButton, { type TodayAppt } from './TodayWhatsAppButton'
 import AutoRefresh from '@/components/AutoRefresh'
 import RecentApptActions from './RecentApptActions'
+import ProfileQRCard from './ProfileQRCard'
 import { resolveCurrentDentist } from '@/lib/currentDentist'
+import { getCityBySlug } from '@/config/cities'
 
 export const dynamic = 'force-dynamic'
 
@@ -43,7 +45,7 @@ export default async function DashboardPage() {
 
   const dentist = await resolveCurrentDentist<any>(
     supabase,
-    'id, name, clinic_name, slug, tier, is_verified, profile_photo, cover_photo, bio, phone, whatsapp, working_hours, maps_embed, created_at',
+    'id, name, clinic_name, slug, city, tier, is_verified, profile_photo, cover_photo, bio, phone, whatsapp, working_hours, maps_embed, created_at',
   )
 
   if (!dentist) redirect('/for-dentists/login')
@@ -51,6 +53,11 @@ export default async function DashboardPage() {
   const todayIso = istTodayIso()
   const todayLabel = istTodayLabel()
   const clinicName = (dentist as any).clinic_name || dentist.name || ''
+  // Public profile URL the overview QR card encodes — resolved from the
+  // dentist's city so the host matches the live listing's domain.
+  const profileUrl = dentist.slug
+    ? `https://${getCityBySlug((dentist as any).city).domain}/dentist/${dentist.slug}`
+    : ''
   // Start of the current calendar month in UTC. Used as the lower bound on
   // "this month" appointment counts and engagement-event aggregates so the
   // cards line up with how a clinic reads "this month" rather than a
@@ -364,6 +371,9 @@ export default async function DashboardPage() {
           </Link>
         ))}
       </div>
+
+      {/* Share Your Profile — always-visible QR to the public listing. */}
+      {profileUrl && <ProfileQRCard profileUrl={profileUrl} clinicName={clinicName} />}
 
       {/* Recent appointments */}
       <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden', marginBottom: 24 }}>

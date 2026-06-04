@@ -971,6 +971,10 @@ export default function EditProfilePage() {
             Your QR will appear once your profile is set up.
           </p>
         ) : (
+          <>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', marginBottom: 14 }}>
+            Your Clinic QR Code — share this with patients to book appointments
+          </div>
           <div style={{ display: 'flex', gap: 24, alignItems: 'center', flexWrap: 'wrap' }}>
             <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.04)', flexShrink: 0 }}>
               {qrDataUrl ? (
@@ -1005,6 +1009,7 @@ export default function EditProfilePage() {
               </p>
             </div>
           </div>
+          </>
         )}
       </div>
 
