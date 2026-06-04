@@ -90,6 +90,25 @@ export function buildMapsIframe(value: string | null | undefined, clinicName: st
   return ''
 }
 
+// A renderable Google embed src carries a `pb` parameter — the long
+// `!1m…`-delimited blob Google generates in the "Embed a map" flow. When
+// that blob is missing, empty, or truncated, Google's embed responds with
+// "Google Maps Platform rejected your request … Invalid 'pb' parameter"
+// *inside* the iframe. We can't read that cross-origin error, so we detect
+// the malformed pb up front and let the dashboard show a friendly hint
+// instead of leaving Google's raw error page on screen. The search-embed
+// form (maps.google.com/maps?q=…) has no pb and isn't affected.
+export function hasValidEmbedPb(src: string | null | undefined): boolean {
+  const s = (src ?? '').trim()
+  if (!s) return false
+  if (!TRUSTED_EMBED_RE.test(s)) return true
+  const m = s.match(/[?&]pb=([^&]*)/i)
+  if (!m) return false
+  let pb: string
+  try { pb = decodeURIComponent(m[1]) } catch { pb = m[1] }
+  return pb.startsWith('!1m')
+}
+
 // Pulls the src attribute out of the iframe form for cases where we want
 // to render the iframe ourselves (e.g. React with explicit attributes
 // instead of dangerouslySetInnerHTML). Returns null if the input is not an

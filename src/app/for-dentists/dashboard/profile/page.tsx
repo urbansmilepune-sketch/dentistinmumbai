@@ -6,7 +6,7 @@ import QRCode from 'qrcode'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { getCityBySlug } from '@/config/cities'
-import { buildMapsIframe, classifyMapsInput, extractMapsIframeSrc } from '@/lib/maps'
+import { buildMapsIframe, classifyMapsInput, extractMapsIframeSrc, hasValidEmbedPb } from '@/lib/maps'
 import PhotoCropModal from './PhotoCropModal'
 
 const HOURS_DAYS: { key: string; label: string }[] = [
@@ -355,6 +355,13 @@ export default function EditProfilePage() {
   async function handleSave() {
     if (!form.name || !form.clinic_name) { setError('Name and Clinic Name are required'); return }
     if (!dentistId) { setError('No dentist profile is linked to your account. Contact support.'); return }
+    // If the dentist typed anything into the maps field, insist on the full
+    // <iframe> embed — a bare URL or short link silently fails to render on
+    // the public profile, so reject it here rather than save something blank.
+    if (form.maps_embed.trim() && !form.maps_embed.includes('<iframe')) {
+      setError('Please paste the full <iframe> embed code from Google Maps.')
+      return
+    }
     setSaving(true); setError(''); setSaved(false)
 
     // Normalise the maps field on save: a pasted Google Maps URL becomes a
@@ -439,6 +446,10 @@ export default function EditProfilePage() {
   // on submit. Empty input → no preview.
   const mapsResolved = buildMapsIframe(form.maps_embed, form.clinic_name)
   const mapsPreviewSrc = extractMapsIframeSrc(mapsResolved)
+  // A trusted embed whose `pb` blob is malformed/truncated renders Google's
+  // raw "Invalid 'pb' parameter" error inside the iframe. We can't read that
+  // cross-origin, so we detect it here and swap the frame for a friendly hint.
+  const mapsPreviewOk = !!mapsPreviewSrc && hasValidEmbedPb(mapsPreviewSrc)
   // Drives the inline warning/instructions block: short links can't be
   // embedded and unrecognised pastes need a clear "this isn't a Maps URL"
   // signal so the dentist doesn't think it just silently saved.
@@ -671,7 +682,7 @@ export default function EditProfilePage() {
                 permissive X-Frame-Options, so we can render it with
                 confidence. Other shapes get a message instead of a
                 potentially blank frame. */}
-            {mapsKind === 'iframe' && mapsPreviewSrc && (
+            {mapsKind === 'iframe' && mapsPreviewSrc && mapsPreviewOk && (
               <div style={{ marginTop: 10, border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
                 <iframe
                   src={mapsPreviewSrc}
@@ -681,6 +692,17 @@ export default function EditProfilePage() {
                   referrerPolicy="no-referrer-when-downgrade"
                   title="Map preview"
                 />
+              </div>
+            )}
+
+            {/* Malformed embed — the iframe src is the trusted /maps/embed
+                form but its `pb` blob is missing/truncated, so Google would
+                render its raw "Invalid 'pb' parameter" error. Show a friendly
+                hint instead. */}
+            {mapsKind === 'iframe' && mapsPreviewSrc && !mapsPreviewOk && (
+              <div style={{ marginTop: 10, padding: '12px 14px', background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: 10, fontSize: 13, color: '#92400E', lineHeight: 1.6 }}>
+                ⚠️ Map preview unavailable. Please update your embed code — get a
+                fresh one from Google Maps → Share → Embed a map.
               </div>
             )}
           </div>
