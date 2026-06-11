@@ -30,7 +30,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     .single()
   if (!area) return { title: 'Area Not Found' }
   return {
-    title: `Best Dentists in ${area.name}, ${city.cityName} | ${city.domain}`,
+    title: `Best Dentists in ${area.name}, ${city.cityName}`,
     description: `Find top-rated, verified dentists in ${area.name}, ${city.cityName}. Compare fees, read reviews, book appointments. ${area.dentist_count || 0}+ dentists listed.`,
     alternates: { canonical: `https://${city.domain}/area/${slug}` },
   }
@@ -388,7 +388,7 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontWeight: 600, fontSize: 13, fontFamily: 'var(--font-heading)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.name}</div>
-                          <div style={{ fontSize: 11, color: 'var(--muted)' }}>{d.consultation_fee ? `₹${d.consultation_fee}` : 'Call for fee'}</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)' }}>{d.consultation_fee ? `₹${d.consultation_fee}` : 'Call for price'}</div>
                         </div>
                       </Link>
                     ))}

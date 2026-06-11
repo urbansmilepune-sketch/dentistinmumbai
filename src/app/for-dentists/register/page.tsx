@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
 import { getCityByDomain, CITY_CONFIGS, DEFAULT_CITY, type CitySlug, type CityConfig } from '@/config/cities'
 
 type AreaStatus = 'idle' | 'loading' | 'ready' | 'error'
@@ -20,10 +21,12 @@ function parsePlan(v: string | null): Plan | null {
 
 export default function RegisterPage() {
   const router = useRouter()
+  const supabase = createClient()
   const [form, setForm] = useState({
     name: '', phone: '', email: '', clinic_name: '',
-    area: '', area_name_raw: '',
+    area: '', area_name_raw: '', password: '',
   })
+  const [showPassword, setShowPassword] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [prefilledFromLogin, setPrefilledFromLogin] = useState(false)
@@ -86,17 +89,13 @@ export default function RegisterPage() {
     const missing = required.filter(k => !form[k as keyof typeof form])
     if (missing.length > 0) { setError('Please fill all required fields.'); return }
     if (!/^\d{10}$/.test(form.phone.replace(/\s/g, ''))) { setError('Please enter a valid 10-digit phone number.'); return }
-    // "Other" path: dropdown sets form.area='__other__' so we know to show
-    // the text input; the typed value lives in form.area_name_raw and is
-    // required before submit.
     if (form.area === '__other__' && !form.area_name_raw.trim()) {
       setError('Please type your area name.'); return
     }
+    if (form.password && form.password.length < 8) {
+      setError('Password must be at least 8 characters.'); return
+    }
 
-    // Build the wire payload: when "Other" is selected we send area=''
-    // (the curated dropdown wasn't used) and area_name_raw=typed. When a
-    // curated area is selected we send the area name and leave
-    // area_name_raw null so analytics can tell the two paths apart.
     const submittingArea = form.area === '__other__' ? '' : form.area
     const submittingAreaRaw = form.area === '__other__' ? form.area_name_raw.trim() : null
 
@@ -112,14 +111,19 @@ export default function RegisterPage() {
           city,
           selected_plan: planFromUrl,
           founding_number: Math.floor(Math.random() * 1000) + 1,
+          password: form.password || undefined,
         }),
       })
       const data = await res.json()
       if (data.success && data.redirect) {
-        // Auth cookie was set on the response by the API route's
-        // signInWithPassword call. router.refresh() drops any cached RSC
-        // payload from before the cookie existed; router.push then takes
-        // the dentist into the now-authenticated dashboard.
+        // Restore the session on the client so the browser's
+        // credential manager can offer to save the password.
+        if (data.session?.access_token) {
+          await supabase.auth.setSession({
+            access_token: data.session.access_token,
+            refresh_token: data.session.refresh_token,
+          })
+        }
         router.refresh()
         router.push(data.redirect)
         return
@@ -203,7 +207,7 @@ export default function RegisterPage() {
 
                   <div>
                     <label style={labelStyle}>Email Address *</label>
-                    <input value={form.email} onChange={e => update('email', e.target.value)} placeholder="your@email.com" type="email" style={inputStyle} />
+                    <input value={form.email} onChange={e => update('email', e.target.value)} placeholder="your@email.com" type="email" autoComplete="email" style={inputStyle} />
                   </div>
 
                   <div>
@@ -263,6 +267,29 @@ export default function RegisterPage() {
                         )}
                       </>
                     )}
+                  </div>
+
+                  {/* Optional password field */}
+                  <div>
+                    <label style={labelStyle}>Set Password <span style={{ fontWeight: 400, color: 'var(--muted)' }}>(optional)</span></label>
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        value={form.password}
+                        onChange={e => update('password', e.target.value)}
+                        placeholder="Min 8 characters"
+                        type={showPassword ? 'text' : 'password'}
+                        autoComplete="new-password"
+                        style={{ ...inputStyle, paddingRight: 44 }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(v => !v)}
+                        style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontSize: 16 }}
+                      >{showPassword ? '🙈' : '👁️'}</button>
+                    </div>
+                    <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>
+                      Set a password to login directly next time. Or leave blank to use magic link.
+                    </p>
                   </div>
 
                   {/* Hidden city field — set on mount from window.location.hostname so the

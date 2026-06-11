@@ -33,7 +33,7 @@ export default function BookingSidebar({ dentist, cityDomain = 'dentistinmumbai.
         <div style={{ background: 'var(--blue)', padding: '16px 20px' }}>
           <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12, marginBottom: 4 }}>Consultation Fee</p>
           <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 28, color: '#fff' }}>
-            {dentist.consultation_fee ? `₹${dentist.consultation_fee}` : 'Call for fee'}
+            {dentist.consultation_fee ? `₹${dentist.consultation_fee}` : 'Call for price'}
           </div>
           {dentist.emi_available && (
             <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.8)', marginTop: 4 }}>✓ EMI Available</div>

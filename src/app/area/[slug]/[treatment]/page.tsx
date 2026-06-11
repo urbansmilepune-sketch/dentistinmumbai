@@ -382,7 +382,7 @@ export default async function AreaTreatmentPage({ params, searchParams }: { para
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontWeight: 600, fontSize: 13, fontFamily: 'var(--font-heading)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.name}</div>
-                          <div style={{ fontSize: 11, color: 'var(--muted)' }}>{d.consultation_fee ? `₹${d.consultation_fee}` : 'Call for fee'}</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)' }}>{d.consultation_fee ? `₹${d.consultation_fee}` : 'Call for price'}</div>
                         </div>
                       </Link>
                     ))}

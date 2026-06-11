@@ -167,22 +167,13 @@ async function handleGoogle() {
             </div>
           )}
 
-          {/* Email/password form.
-              autoComplete is disabled across the form because newly-invited
-              staff land on this domain after clicking the invite link, and
-              a shared-machine browser would otherwise autofill the clinic
-              owner's saved credentials into the staff member's session —
-              they'd then sign in *as* the owner. autoComplete="new-password"
-              on the password field is the only attribute Chrome actually
-              honours to suppress saved-password fill; the form-level and
-              email "off" are belt-and-suspenders. */}
-          <form onSubmit={handleEmail} autoComplete="off" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <form onSubmit={handleEmail} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div>
               <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 6 }}>Email address</label>
               <input
                 type="email" required value={email} onChange={e => setEmail(e.target.value)}
                 placeholder="doctor@example.com"
-                autoComplete="off"
+                autoComplete="email"
                 style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: '1.5px solid var(--border)', fontSize: 14, fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box' as const }}
               />
             </div>
@@ -192,16 +183,13 @@ async function handleGoogle() {
                 <input
                   type={showPass ? 'text' : 'password'} required value={password} onChange={e => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  autoComplete="new-password"
+                  autoComplete="current-password"
                   style={{ width: '100%', padding: '11px 42px 11px 14px', borderRadius: 10, border: '1.5px solid var(--border)', fontSize: 14, fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box' as const }}
                 />
                 <button type="button" onClick={() => setShowPass(!showPass)} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontSize: 16 }}>
                   {showPass ? '🙈' : '👁️'}
                 </button>
               </div>
-              <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.5 }}>
-                Your browser may not autofill saved passwords here for security. Use the Show Password toggle if needed.
-              </p>
               <div style={{ textAlign: 'right', marginTop: 6 }}>
                 <Link href="/for-dentists/forgot-password" style={{ fontSize: 12, color: 'var(--blue)' }}>Forgot password?</Link>
               </div>

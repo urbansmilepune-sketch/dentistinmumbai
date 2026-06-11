@@ -79,7 +79,7 @@ function faqItemsFor(cityName: string, domain: string) {
     },
     {
       q: `How do I list my dental clinic on ${domain}?`,
-      a: `We're currently onboarding founding member dentists — the first 250 listings are completely free, forever. Visit our "For Dentists" page to register your clinic in under 5 minutes.`,
+      a: `We're currently onboarding founding member dentists — the first 1000 listings are completely free, forever. Visit our "For Dentists" page to register your clinic in under 5 minutes.`,
     },
   ]
 }
@@ -569,7 +569,7 @@ export default async function HomePage() {
                   List Your Dental Clinic — <span style={{ color: 'var(--blue)' }}>Free Forever</span>
                 </h2>
                 <p style={{ fontSize: 16, color: 'var(--text-secondary)', lineHeight: 1.7, marginBottom: 24 }}>
-                  The first 250 dentists to join get a free listing permanently. No credit card, no monthly fees. Just more patients finding you on Google.
+                  The first 1000 dentists to join get a free listing permanently. No credit card, no monthly fees. Just more patients finding you on Google.
                 </p>
                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
                   <Link href="/for-dentists/register" className="btn btn-primary">Claim Your Free Listing</Link>
@@ -586,12 +586,12 @@ export default async function HomePage() {
                   boxShadow: 'var(--shadow-md)',
                 }}>
                   <div style={{ fontFamily: 'var(--font-heading)', fontSize: 36, fontWeight: 800, color: 'var(--blue)', lineHeight: 1 }}>47</div>
-                  <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>of 250 claimed</div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>of 1000 claimed</div>
                 </div>
                 <div style={{ marginTop: 16, width: 140, height: 8, background: 'var(--border)', borderRadius: 4, overflow: 'hidden' }}>
-                  <div style={{ width: '19%', height: '100%', background: 'var(--blue)', borderRadius: 4 }} />
+                  <div style={{ width: '5%', height: '100%', background: 'var(--blue)', borderRadius: 4 }} />
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>203 spots remaining</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>953 spots remaining</div>
               </div>
             </div>
           </div>

@@ -23,7 +23,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { data: treatment } = await supabase.from('treatments').select('name').eq('slug', slug).single()
   if (!treatment) return {}
   return {
-    title: `Best ${treatment.name} Dentists in ${city.cityName} | ${city.domain}`,
+    title: `Best ${treatment.name} Dentists in ${city.cityName}`,
     description: `Find top-rated dentists for ${treatment.name} in ${city.cityName}. Compare fees, read reviews, book appointments online.`,
     alternates: { canonical: `${cityOrigin(city)}/treatment/${slug}` },
   }
@@ -118,9 +118,11 @@ export default async function TreatmentPage({ params }: Props) {
                         <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 4 }}>{d.qualifications}{d.experience_years ? ` · ${d.experience_years} yrs exp` : ''}</div>
                         <div style={{ fontSize: 13, color: 'var(--muted)' }}>{d.clinic_name}{areaName ? ` · ${areaName}` : ''}</div>
                         <div style={{ display: 'flex', gap: 12, marginTop: 6, fontSize: 13 }}>
-                          {d.rating && <span style={{ color: '#F59E0B', fontWeight: 600 }}>★ {d.rating}</span>}
-                          {dt?.fee_from && <span style={{ color: 'var(--green)', fontWeight: 600 }}>From ₹{dt.fee_from}</span>}
-                          {d.consultation_fee && <span style={{ color: 'var(--muted)' }}>Consult ₹{d.consultation_fee}</span>}
+                          {d.rating > 0 && <span style={{ color: '#F59E0B', fontWeight: 600 }}>★ {d.rating}</span>}
+                          {dt?.fee_from > 0 && <span style={{ color: 'var(--green)', fontWeight: 600 }}>From ₹{dt.fee_from}</span>}
+                          <span style={{ color: 'var(--muted)' }}>
+                            {d.consultation_fee ? `Consult ₹${d.consultation_fee}` : 'Call for price'}
+                          </span>
                         </div>
                       </div>
                       <Link href={`/dentist/${d.slug}`} style={{ padding: '10px 20px', background: 'var(--blue)', color: '#fff', borderRadius: 10, fontWeight: 600, fontSize: 14, textDecoration: 'none', flexShrink: 0 }}>

@@ -80,10 +80,12 @@ export async function POST(request: NextRequest) {
     emailForAlert = email || undefined
     const rawAreaName = typeof body.area_name_raw === 'string' ? body.area_name_raw.trim() : null
     const area_name_raw = rawAreaName && rawAreaName.length > 0 ? rawAreaName : null
-    // founding_number is client-supplied — it only drives a cosmetic
-    // "Founding Member #N" badge, so never trust the raw value. Coerce to an
-    // integer and clamp to 1–1000 so a tampered request can't store junk.
     const founding_number = Math.min(1000, Math.max(1, Math.floor(Number(body.founding_number)) || 1))
+    // Optional dentist-chosen password. Must be >= 8 chars if supplied.
+    const chosenPassword = typeof body.password === 'string' && body.password.length > 0 ? body.password : null
+    if (chosenPassword !== null && chosenPassword.length < 8) {
+      return NextResponse.json({ error: 'Password must be at least 8 characters.' }, { status: 400 })
+    }
 
     if (!name || !phone || !email || !clinic_name) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -156,7 +158,7 @@ export async function POST(request: NextRequest) {
     // Create the auth.users row first so we can roll back the dentist
     // insert if auth fails (the inverse rollback is harder — deleting a
     // newly-created dentists row would also need to undo any FK cascade).
-    const password = generatePassword()
+    const password = chosenPassword ?? generatePassword()
     const { data: created, error: signupErr } = await admin.auth.admin.createUser({
       email,
       password,
@@ -285,13 +287,8 @@ export async function POST(request: NextRequest) {
     // Supabase auth cookie onto this response, so the dashboard's server
     // component will resolve a signed-in user on the very next request.
     const cookieSupabase = await createCookieClient()
-    const { error: signInErr } = await cookieSupabase.auth.signInWithPassword({ email, password })
+    const { data: signInData, error: signInErr } = await cookieSupabase.auth.signInWithPassword({ email, password })
     if (signInErr) {
-      // We created the auth user with this exact password a moment ago,
-      // so a failure here is unusual — capture it but still return
-      // success: the dentist row + auth user exist and they can sign in
-      // manually via the login page. Better than a 500 wiping their
-      // progress.
       console.error('[registrations] signInWithPassword failed', signInErr)
       Sentry.captureException(signInErr, {
         tags: { area: 'registration-signin' },
@@ -308,6 +305,11 @@ export async function POST(request: NextRequest) {
       redirect: '/for-dentists/dashboard',
       ref_no,
       slug,
+      // Return access/refresh tokens so the client can call setSession()
+      // which triggers the browser's built-in "save password" prompt.
+      session: signInData?.session
+        ? { access_token: signInData.session.access_token, refresh_token: signInData.session.refresh_token }
+        : null,
     })
   } catch (error: any) {
     console.error('Registration error:', error)

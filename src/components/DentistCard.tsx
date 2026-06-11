@@ -65,10 +65,19 @@ function Stars({ rating }: { rating: number }) {
   )
 }
 
+function normalizeDrName(raw: string): string {
+  const bareName = String(raw).replace(/^\s*dr\.?\s*/i, '').trim()
+  const titleCased = bareName.replace(/\w\S*/g, txt =>
+    txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase()
+  )
+  return `Dr. ${titleCased}`
+}
+
 export default function DentistCard({ dentist: d, view }: DentistCardProps) {
   const open = isOpenNow(d.working_hours)
   const treatments = d.dentist_treatments?.map(dt => dt.treatments).filter(Boolean) || []
   const rating = d.avg_rating || 0
+  const displayName = normalizeDrName(d.name)
   // Normalised wa.me link — handles raw, '+91…', '91…' and trunk-prefix
   // numbers, returns null when the column is unusable so the WhatsApp
   // button is skipped entirely.
@@ -101,7 +110,7 @@ export default function DentistCard({ dentist: d, view }: DentistCardProps) {
         </div>
 
         <div style={{ padding: '16px' }}>
-          <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, marginBottom: 2 }}>{d.name}</h3>
+          <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, marginBottom: 2 }}>{displayName}</h3>
           <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 8 }}>
             {d.clinic_name} · {d.areas?.name}
           </p>
@@ -171,7 +180,7 @@ export default function DentistCard({ dentist: d, view }: DentistCardProps) {
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
-              <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17 }}>{d.name}</h3>
+              <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17 }}>{displayName}</h3>
               <TierBadge tier={d.tier} verified={d.is_verified} />
             </div>
             {d.qualifications && <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 2 }}>{d.qualifications}</p>}
@@ -182,7 +191,7 @@ export default function DentistCard({ dentist: d, view }: DentistCardProps) {
           <div style={{ textAlign: 'right', flexShrink: 0 }}>
             <div style={{ fontSize: 12, color: 'var(--muted)' }}>Consultation</div>
             <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 20, color: 'var(--text)' }}>
-              {d.consultation_fee ? `₹${d.consultation_fee}` : 'Call for fee'}
+              {d.consultation_fee ? `₹${d.consultation_fee}` : 'Call for price'}
             </div>
             {rating > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end', marginTop: 4 }}>
