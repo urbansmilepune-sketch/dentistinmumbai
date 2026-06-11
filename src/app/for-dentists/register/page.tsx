@@ -85,14 +85,14 @@ export default function RegisterPage() {
   }
 
   async function handleSubmit() {
-    const required = ['name', 'phone', 'email', 'clinic_name', 'area']
+    const required = ['name', 'phone', 'email', 'clinic_name', 'area', 'password']
     const missing = required.filter(k => !form[k as keyof typeof form])
     if (missing.length > 0) { setError('Please fill all required fields.'); return }
     if (!/^\d{10}$/.test(form.phone.replace(/\s/g, ''))) { setError('Please enter a valid 10-digit phone number.'); return }
     if (form.area === '__other__' && !form.area_name_raw.trim()) {
       setError('Please type your area name.'); return
     }
-    if (form.password && form.password.length < 8) {
+    if (form.password.length < 8) {
       setError('Password must be at least 8 characters.'); return
     }
 
@@ -111,7 +111,7 @@ export default function RegisterPage() {
           city,
           selected_plan: planFromUrl,
           founding_number: Math.floor(Math.random() * 1000) + 1,
-          password: form.password || undefined,
+          password: form.password,
         }),
       })
       const data = await res.json()
@@ -271,7 +271,7 @@ export default function RegisterPage() {
 
                   {/* Optional password field */}
                   <div>
-                    <label style={labelStyle}>Set Password <span style={{ fontWeight: 400, color: 'var(--muted)' }}>(optional)</span></label>
+                    <label style={labelStyle}>Set Password *</label>
                     <div style={{ position: 'relative' }}>
                       <input
                         value={form.password}
@@ -288,7 +288,7 @@ export default function RegisterPage() {
                       >{showPassword ? '🙈' : '👁️'}</button>
                     </div>
                     <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>
-                      Set a password to login directly next time. Or leave blank to use magic link.
+                      You'll use this to login next time.
                     </p>
                   </div>
 

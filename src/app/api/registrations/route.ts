@@ -81,10 +81,9 @@ export async function POST(request: NextRequest) {
     const rawAreaName = typeof body.area_name_raw === 'string' ? body.area_name_raw.trim() : null
     const area_name_raw = rawAreaName && rawAreaName.length > 0 ? rawAreaName : null
     const founding_number = Math.min(1000, Math.max(1, Math.floor(Number(body.founding_number)) || 1))
-    // Optional dentist-chosen password. Must be >= 8 chars if supplied.
-    const chosenPassword = typeof body.password === 'string' && body.password.length > 0 ? body.password : null
-    if (chosenPassword !== null && chosenPassword.length < 8) {
-      return NextResponse.json({ error: 'Password must be at least 8 characters.' }, { status: 400 })
+    const chosenPassword = typeof body.password === 'string' ? body.password : ''
+    if (chosenPassword.length < 8) {
+      return NextResponse.json({ error: 'Password is required (min 8 characters).' }, { status: 400 })
     }
 
     if (!name || !phone || !email || !clinic_name) {
@@ -158,7 +157,7 @@ export async function POST(request: NextRequest) {
     // Create the auth.users row first so we can roll back the dentist
     // insert if auth fails (the inverse rollback is harder — deleting a
     // newly-created dentists row would also need to undo any FK cascade).
-    const password = chosenPassword ?? generatePassword()
+    const password = chosenPassword
     const { data: created, error: signupErr } = await admin.auth.admin.createUser({
       email,
       password,
