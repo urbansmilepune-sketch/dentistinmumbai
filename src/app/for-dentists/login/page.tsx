@@ -177,6 +177,32 @@ async function handleGoogle() {
                 style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: '1.5px solid var(--border)', fontSize: 14, fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box' as const }}
               />
             </div>
+            {/* Prominent magic-link entry point for dentists registered before
+                the password feature — they have no password and need a clear
+                path in before they hit the password field. */}
+            <div>
+              <button
+                type="button"
+                onClick={handleMagicLink}
+                disabled={magicLoading}
+                style={{
+                  width: '100%', padding: '11px 14px',
+                  background: '#fff', border: '1.5px solid var(--blue)',
+                  borderRadius: 10, color: 'var(--blue)',
+                  fontFamily: 'var(--font-body)', fontWeight: 600, fontSize: 14,
+                  cursor: magicLoading ? 'not-allowed' : 'pointer',
+                  opacity: magicLoading ? 0.7 : 1,
+                }}
+              >
+                {magicLoading ? 'Sending login link…' : 'Registered before? Use magic link to login →'}
+              </button>
+              {magicSent && (
+                <div style={{ marginTop: 10, padding: '10px 14px', background: '#DCFCE7', border: '1px solid #BBF7D0', borderRadius: 10, fontSize: 13, color: '#166534', fontWeight: 600 }}>
+                  📧 Check your email for a login link
+                </div>
+              )}
+            </div>
+
             <div>
               <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 6 }}>Password</label>
               <div style={{ position: 'relative' }}>
@@ -193,23 +219,6 @@ async function handleGoogle() {
               <div style={{ textAlign: 'right', marginTop: 6 }}>
                 <Link href="/for-dentists/forgot-password" style={{ fontSize: 12, color: 'var(--blue)' }}>Forgot password?</Link>
               </div>
-            </div>
-
-            {/* Magic-link fallback for dentists who don't know their password. */}
-            <div style={{ marginTop: -4 }}>
-              <button
-                type="button"
-                onClick={handleMagicLink}
-                disabled={magicLoading}
-                style={{ background: 'none', border: 'none', padding: 0, fontSize: 13, color: 'var(--blue)', fontWeight: 600, cursor: magicLoading ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-body)', opacity: magicLoading ? 0.7 : 1 }}
-              >
-                {magicLoading ? 'Sending login link…' : 'Forgot password? Get a login link →'}
-              </button>
-              {magicSent && (
-                <div style={{ marginTop: 10, padding: '10px 14px', background: '#DCFCE7', border: '1px solid #BBF7D0', borderRadius: 10, fontSize: 13, color: '#166534', fontWeight: 600 }}>
-                  📧 Check your email for a login link
-                </div>
-              )}
             </div>
             <button
               type="submit" disabled={loading}
