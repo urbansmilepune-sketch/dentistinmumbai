@@ -190,6 +190,13 @@ export default function AppointmentsPage() {
         const tList = (tx || []).map((r: any) => r.treatments).filter(Boolean) as { id: string; name: string }[]
         setTreatments(tList)
         setLocations((locs || []).map((l: any) => ({ id: l.id, name: l.clinic_name, is_primary: !!l.is_primary })))
+
+        // Load consent templates once for the consent modal
+        const { data: tpls } = await supabase
+          .from('consent_templates')
+          .select('id, form_type, form_title, form_content')
+          .order('form_title')
+        setConsentTemplates((tpls || []) as { id: string; form_type: string; form_title: string; form_content: string }[])
       } finally {
         // Always release the spinner — RLS denial, missing dentist row, or
         // any thrown error in the parallel reads above must not leave the
@@ -343,6 +350,15 @@ export default function AppointmentsPage() {
   // patient row from the appointment's name+phone, links the appointment
   // back, then navigates the dentist to the new patient's profile.
   const [creatingPatientFor, setCreatingPatientFor] = useState<string | null>(null)
+
+  // Consent modal state
+  const [consentModal, setConsentModal] = useState<any | null>(null)
+  const [consentTemplates, setConsentTemplates] = useState<{ id: string; form_type: string; form_title: string; form_content: string }[]>([])
+  const [consentType, setConsentType] = useState('')
+  const [consentContent, setConsentContent] = useState('')
+  const [consentTitle, setConsentTitle] = useState('')
+  const [consentSending, setConsentSending] = useState(false)
+  const [consentError, setConsentError] = useState<string | null>(null)
   async function createAndOpenPatientFile(a: any) {
     setCreatingPatientFor(a.id)
     const supabase = createClient()
@@ -450,6 +466,74 @@ export default function AppointmentsPage() {
       return
     }
     setAppointments(prev => prev.map(a => a.id === id ? { ...a, status } : a))
+  }
+
+  function openConsentModal(a: any) {
+    setConsentModal(a)
+    setConsentType('')
+    setConsentContent('')
+    setConsentTitle('')
+    setConsentError(null)
+  }
+
+  function selectConsentTemplate(formType: string) {
+    setConsentType(formType)
+    const tpl = consentTemplates.find(t => t.form_type === formType)
+    if (tpl) {
+      setConsentTitle(tpl.form_title)
+      setConsentContent(tpl.form_content)
+    }
+  }
+
+  async function sendConsentWhatsApp() {
+    if (!consentModal || !consentType || !consentContent.trim()) {
+      setConsentError('Select a form type and check the content.'); return
+    }
+    const phone = (consentModal.patient_phone || '').replace(/\D/g, '')
+    if (!phone) { setConsentError('No phone number for this patient.'); return }
+    setConsentSending(true)
+    setConsentError(null)
+    const supabase = createClient()
+    const now = new Date().toISOString()
+    const dateStr = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+    const patientName = consentModal.patient_name || 'Patient'
+    const clinicName = dentistMeta.clinic_name || 'Dental Clinic'
+    const doctorName = dentistMeta.name || 'Your Dentist'
+
+    const waText = [
+      `*CONSENT FORM — ${consentTitle}*`,
+      `_${clinicName}_`,
+      '',
+      `Patient: *${patientName}*`,
+      `Date: ${dateStr}`,
+      '',
+      consentContent,
+      '',
+      `By replying *"I CONSENT"* to this message, you (${patientName}) confirm you have read and understood the above and give your informed consent.`,
+      '',
+      `— Dr. ${doctorName}`,
+      clinicName,
+    ].join('\n').trim()
+
+    await supabase.from('consent_forms').insert({
+      dentist_id: dentistId,
+      patient_id: consentModal.patient_id ?? null,
+      appointment_id: consentModal.id,
+      form_type: consentType,
+      form_title: consentTitle,
+      form_text: consentContent,
+      form_content: { __v: 2, text: consentContent },
+      patient_name: patientName,
+      patient_phone: consentModal.patient_phone || null,
+      status: 'sent',
+      sent_at: now,
+      signature_method: 'manual',
+    })
+
+    const waNum = phone.length === 10 ? `91${phone}` : phone
+    window.open(`https://wa.me/${waNum}?text=${encodeURIComponent(waText)}`, '_blank')
+    setConsentSending(false)
+    setConsentModal(null)
   }
 
   // Branch-scoped view: counts and the filtered list both apply the branch
@@ -599,6 +683,62 @@ export default function AppointmentsPage() {
               <button onClick={saveEdit} disabled={editSaving}
                 style={{ padding: '12px 24px', minHeight: 48, background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: editSaving ? 'not-allowed' : 'pointer', opacity: editSaving ? 0.6 : 1, fontFamily: 'var(--font-body)' }}>
                 {editSaving ? 'Saving…' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Consent Form Modal */}
+      {consentModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 580, maxHeight: '92vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 24px', borderBottom: '1px solid var(--border)' }}>
+              <div>
+                <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18 }}>Send Consent Form</h2>
+                <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>Patient: {consentModal.patient_name}</p>
+              </div>
+              <button onClick={() => setConsentModal(null)}
+                style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--muted)' }}>✕</button>
+            </div>
+            <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {consentError && (
+                <div style={{ background: '#FEE2E2', border: '1px solid #FECACA', color: '#991B1B', padding: '10px 14px', borderRadius: 10, fontSize: 13 }}>
+                  {consentError}
+                </div>
+              )}
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Consent form type *</label>
+                <select value={consentType} onChange={e => selectConsentTemplate(e.target.value)}
+                  style={{ width: '100%', padding: '12px', minHeight: 48, borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 14, fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box', background: '#fff' }}>
+                  <option value="">— Select form type</option>
+                  {consentTemplates.map(t => (
+                    <option key={t.id} value={t.form_type}>{t.form_title}</option>
+                  ))}
+                </select>
+              </div>
+              {consentContent && (
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Form content (edit if needed)</label>
+                  <textarea value={consentContent} onChange={e => setConsentContent(e.target.value)}
+                    rows={10}
+                    style={{ width: '100%', padding: '12px', borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 13, fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box', resize: 'vertical', lineHeight: 1.6 }} />
+                </div>
+              )}
+              {!consentModal.patient_phone && (
+                <div style={{ background: '#FEF3C7', border: '1px solid #FDE68A', color: '#92400E', padding: '10px 14px', borderRadius: 10, fontSize: 12 }}>
+                  No phone number on this appointment — WhatsApp cannot be opened. Add a phone number to the appointment first.
+                </div>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '14px 24px', borderTop: '1px solid var(--border)' }}>
+              <button onClick={() => setConsentModal(null)}
+                style={{ padding: '12px 20px', minHeight: 48, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
+                Cancel
+              </button>
+              <button onClick={sendConsentWhatsApp} disabled={consentSending || !consentType}
+                style={{ padding: '12px 24px', minHeight: 48, background: '#25D366', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: (consentSending || !consentType) ? 'not-allowed' : 'pointer', opacity: (consentSending || !consentType) ? 0.6 : 1, fontFamily: 'var(--font-body)' }}>
+                {consentSending ? 'Opening…' : '💬 Send via WhatsApp'}
               </button>
             </div>
           </div>
@@ -914,6 +1054,12 @@ export default function AppointmentsPage() {
                       </button>
                     )
                   })()}
+
+                  {/* Consent form — available on every row */}
+                  <button onClick={() => openConsentModal(a)} title="Send a consent form via WhatsApp"
+                    style={{ ...secondaryBtn, color: '#1D4ED8', borderColor: '#BFDBFE' }}>
+                    📝 Consent
+                  </button>
 
                   {/* Edit — reschedule date/time, swap treatment, fix typos.
                       Available on every row so closed-out appointments can
