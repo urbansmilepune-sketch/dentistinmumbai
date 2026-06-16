@@ -1,13 +1,14 @@
 // POST /api/dentist/phone-otp/send — texts a 6-digit OTP to the
 // signed-in dentist's listed phone so they can verify ownership of the
 // number. Mirrors the patient-side /api/reviews/otp shape (MSG91 Flow,
-// 10-minute expiry, dev-fallback when no template id is configured),
-// but stores rows in dentist_phone_otps keyed on dentist_id to avoid
-// colliding with the patient-keyed review_otps table.
+// 10-minute expiry), but stores rows in dentist_phone_otps keyed on
+// dentist_id to avoid colliding with the patient-keyed review_otps table.
 //
-// Optional env: MSG91_TEMPLATE_ID_DENTIST_OTP. Without it the route
-// logs the OTP and returns success — same dev-friendly behaviour the
-// review OTP endpoint already uses.
+// Template env: MSG91_TEMPLATE_ID_DENTIST_OTP, falling back to the proven
+// MSG91_TEMPLATE_ID_REVIEW_OTP (same single-variable OTP template) so the
+// flow works without a dedicated id wired. If neither is set we return a
+// 503 rather than silently no-op'ing — an unconfigured OTP service must
+// surface as an error, not a fake success.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
@@ -68,9 +69,9 @@ export async function POST(_request: NextRequest) {
   }
 
   const tpl = process.env.MSG91_TEMPLATE_ID_DENTIST_OTP
+    || process.env.MSG91_TEMPLATE_ID_REVIEW_OTP
   if (!tpl) {
-    console.log('[dentist phone-otp send] no template id; OTP for', phoneDigits, ':', otp)
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ error: 'OTP service not configured' }, { status: 503 })
   }
 
   const result = await sendSMS(phoneDigits, tpl, [otp])
