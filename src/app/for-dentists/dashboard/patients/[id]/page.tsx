@@ -46,6 +46,24 @@ const PRESCRIPTION_TEMPLATES = {
   ],
 }
 
+// Common treatment-note templates for the "Quick Notes" dropdown on the visit
+// editor. Selecting one appends its text to the Treatment Done field so the
+// dentist can fill the [  ] placeholders (tooth numbers, materials, shades).
+const QUICK_NOTE_TEMPLATES: { label: string; text: string }[] = [
+  { label: 'Extraction done', text: 'Tooth [  ] extracted under local anaesthesia. Haemostasis achieved. Post-op instructions given. Review after 1 week.' },
+  { label: 'RCT sitting 1', text: 'Access cavity prepared. Pulp extirpated. Canals negotiated and irrigated with NaOCl. Intra-canal medicament placed. Temporary restoration done.' },
+  { label: 'RCT sitting 2 (obturation)', text: 'Canals cleaned, shaped and dried. Obturation done with gutta percha and AH Plus sealer. Post-op X-ray taken. Patient advised for crown.' },
+  { label: 'Scaling done', text: 'Full mouth scaling and polishing done with ultrasonic scaler. Calculus and stains removed. Oral hygiene instructions reinforced. Review after 6 months.' },
+  { label: 'Composite filling done', text: 'Caries excavated under local anaesthesia on tooth [  ]. Cavity prepared, etched and bonding agent applied and light cured. Composite restoration placed incrementally, finished and polished. Occlusion checked.' },
+  { label: 'Crown cementation', text: 'Temporary crown removed. Permanent crown on tooth [  ] checked for fit, margins and occlusion. Crown cemented with luting GIC. Excess cement removed. Occlusion verified.' },
+  { label: 'Impression taken', text: 'Impression of [  ] arch recorded with [  ] impression material. Bite registration taken and shade selected. Case sent to lab. Patient advised for next appointment.' },
+  { label: 'Orthodontic adjustment', text: 'Orthodontic appliance checked. Arch wire [  ] in place. Elastomeric modules replaced and wire adjusted. Oral hygiene reinforced. Next adjustment after 3-4 weeks.' },
+  { label: 'Implant placed', text: 'Under local anaesthesia, full-thickness flap raised at site [  ]. Sequential osteotomy prepared. Implant [  ] placed with good primary stability. Cover screw placed and flap sutured. Post-op instructions and medications given.' },
+  { label: 'Abscess drained', text: 'Incision and drainage of abscess in relation to tooth [  ] done under local anaesthesia. Pus drained and site irrigated with saline. Antibiotics and analgesics prescribed. Review after 2 days.' },
+  { label: 'Denture delivered', text: 'Denture delivered. Fit, retention, extension and occlusion checked and adjusted. Pressure areas relieved. Denture-care and post-insertion instructions given. Review after 1 week.' },
+  { label: 'Review / follow-up', text: 'Patient reviewed. Healing satisfactory and uneventful, no complaints reported. Site examined / sutures removed. Patient advised to continue oral hygiene measures.' },
+]
+
 // Quick-action buttons elsewhere in the dashboard link here with
 // `?tab=treatments|profile|history` — friendly names that don't always match
 // the internal tab id list. Map them to real tabs so the deep link lands on
@@ -113,6 +131,19 @@ export default function PatientDetailPage() {
     title: '', steps: [{ treatment_name: '', tooth_number: '', estimated_cost: '', notes: '' }],
   })
 
+  // AI: smart drug suggestions for the prescription writer.
+  const [diagnosis, setDiagnosis] = useState('')
+  const [aiSuggesting, setAiSuggesting] = useState(false)
+  const [aiSuggestions, setAiSuggestions] = useState<any[]>([])
+  const [aiSuggestError, setAiSuggestError] = useState<string | null>(null)
+
+  // AI: quick-note templates + note refinement for the visit editor.
+  const [showQuickNotes, setShowQuickNotes] = useState(false)
+  const [refining, setRefining] = useState(false)
+  const [refineError, setRefineError] = useState<string | null>(null)
+  // Snapshot of the note before AI refinement so "Undo" can restore it.
+  const [notesBeforeRefine, setNotesBeforeRefine] = useState<string | null>(null)
+
   useEffect(() => {
     async function load() {
       const supabase = createClient()
@@ -167,6 +198,9 @@ export default function PatientDetailPage() {
     if (data) setVisits(prev => [data, ...prev])
     setShowAddVisit(false)
     setVisitForm({ visit_date: new Date().toISOString().split('T')[0], chief_complaint: '', clinical_findings: '', treatment_done: '', materials_used: '', next_appointment_recommended: '', next_appointment_notes: '' })
+    setNotesBeforeRefine(null)
+    setShowQuickNotes(false)
+    setRefineError(null)
     setSaving(false)
   }
 
@@ -182,6 +216,7 @@ export default function PatientDetailPage() {
     if (data) setPrescriptions(prev => [data, ...prev])
     setShowAddRx(false)
     setRxForm({ template: '', medicines: [], instructions: '' })
+    resetAiSuggestions()
     setSaving(false)
   }
 
@@ -232,6 +267,93 @@ export default function PatientDetailPage() {
   function applyTemplate(templateName: string) {
     const meds = PRESCRIPTION_TEMPLATES[templateName as keyof typeof PRESCRIPTION_TEMPLATES] || []
     setRxForm(f => ({ ...f, template: templateName, medicines: meds }))
+  }
+
+  // Reset the AI-suggestion sub-state. Called when the Rx form opens/closes so
+  // a stale diagnosis or old suggestion cards don't leak into the next Rx.
+  function resetAiSuggestions() {
+    setDiagnosis('')
+    setAiSuggestions([])
+    setAiSuggestError(null)
+  }
+
+  async function getAiSuggestions() {
+    const dx = diagnosis.trim()
+    if (!dx) return
+    setAiSuggesting(true)
+    setAiSuggestError(null)
+    setAiSuggestions([])
+    try {
+      const res = await fetch('/api/dentist/ai/prescription-suggest', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ diagnosis: dx, patient_age: patient?.age ?? undefined }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !Array.isArray(data.medicines) || data.medicines.length === 0) {
+        setAiSuggestError(data.error || 'AI unavailable, please write manually')
+      } else {
+        setAiSuggestions(data.medicines)
+      }
+    } catch {
+      setAiSuggestError('AI unavailable, please write manually')
+    } finally {
+      setAiSuggesting(false)
+    }
+  }
+
+  function addSuggestionToRx(s: any) {
+    const med = {
+      name: s.name || '',
+      // The medicines table's "dosage" column is the frequency (e.g. 1-0-1).
+      // Fall back to the dose string if the model didn't split them out.
+      dosage: s.frequency || s.dosage || '',
+      duration: s.duration || '',
+      instructions: s.instructions || '',
+      aiSuggested: true,
+    }
+    setRxForm(f => ({ ...f, medicines: [...f.medicines, med] }))
+  }
+
+  // Quick Notes: append (never replace) the template to the Treatment Done field.
+  function insertQuickNote(text: string) {
+    setVisitForm(f => ({
+      ...f,
+      treatment_done: f.treatment_done.trim() ? `${f.treatment_done.trim()}\n${text}` : text,
+    }))
+    setShowQuickNotes(false)
+  }
+
+  async function refineNotes() {
+    const current = visitForm.treatment_done.trim()
+    if (!current) return
+    setRefining(true)
+    setRefineError(null)
+    try {
+      const res = await fetch('/api/dentist/ai/refine-notes', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ notes: current }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.refined) {
+        setRefineError(data.error || 'AI unavailable, please write manually')
+      } else {
+        setNotesBeforeRefine(visitForm.treatment_done)
+        setVisitForm(f => ({ ...f, treatment_done: data.refined }))
+      }
+    } catch {
+      setRefineError('AI unavailable, please write manually')
+    } finally {
+      setRefining(false)
+    }
+  }
+
+  function undoRefine() {
+    if (notesBeforeRefine != null) {
+      setVisitForm(f => ({ ...f, treatment_done: notesBeforeRefine }))
+      setNotesBeforeRefine(null)
+    }
   }
 
   const inputStyle = { width: '100%', padding: '9px 12px', borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 13, fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box' as const }
@@ -349,8 +471,43 @@ export default function PatientDetailPage() {
                   <textarea value={visitForm.clinical_findings} onChange={e => setVisitForm(f => ({ ...f, clinical_findings: e.target.value }))} placeholder="Examination findings, diagnosis..." rows={3} style={{ ...inputStyle, resize: 'vertical' }} />
                 </div>
                 <div style={{ gridColumn: '1/-1' }}>
-                  <label style={labelStyle}>Treatment Done Today</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+                    <label style={{ ...labelStyle, marginBottom: 0 }}>Treatment Done Today</label>
+                    <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center', position: 'relative' }}>
+                      {/* Quick Notes dropdown — appends a template to the field */}
+                      <button type="button" onClick={() => setShowQuickNotes(s => !s)}
+                        style={{ padding: '5px 10px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
+                        ⚡ Quick Notes ▾
+                      </button>
+                      <button type="button" onClick={refineNotes} disabled={refining || !visitForm.treatment_done.trim()}
+                        style={{ padding: '5px 10px', background: visitForm.treatment_done.trim() ? '#EDE9FE' : 'var(--bg)', color: visitForm.treatment_done.trim() ? '#5B21B6' : 'var(--muted)', border: '1px solid #DDD6FE', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: refining || !visitForm.treatment_done.trim() ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-body)' }}>
+                        {refining ? '✨ Refining…' : '✨ Refine with AI'}
+                      </button>
+                      {notesBeforeRefine != null && (
+                        <button type="button" onClick={undoRefine}
+                          style={{ padding: '5px 10px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
+                          ↶ Undo
+                        </button>
+                      )}
+                      {showQuickNotes && (
+                        <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 6, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 20, width: 260, maxHeight: 320, overflowY: 'auto', padding: 6 }}>
+                          {QUICK_NOTE_TEMPLATES.map(t => (
+                            <button key={t.label} type="button" onClick={() => insertQuickNote(t.text)}
+                              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', background: 'none', border: 'none', borderRadius: 7, fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-body)' }}
+                              onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg)')}
+                              onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
+                              {t.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                   <textarea value={visitForm.treatment_done} onChange={e => setVisitForm(f => ({ ...f, treatment_done: e.target.value }))} placeholder="Procedures performed, teeth treated..." rows={3} style={{ ...inputStyle, resize: 'vertical' }} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>✨ Powered by AI</span>
+                    {refineError && <span style={{ fontSize: 11, color: '#991B1B' }}>{refineError}</span>}
+                  </div>
                 </div>
                 <div style={{ gridColumn: '1/-1' }}>
                   <label style={labelStyle}>Materials Used <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(comma separated)</span></label>
@@ -366,7 +523,7 @@ export default function PatientDetailPage() {
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
-                <button onClick={() => setShowAddVisit(false)} style={{ padding: '9px 18px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>Cancel</button>
+                <button onClick={() => { setShowAddVisit(false); setShowQuickNotes(false); setRefineError(null) }} style={{ padding: '9px 18px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>Cancel</button>
                 <button onClick={saveVisit} disabled={saving} style={{ padding: '9px 20px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>{saving ? 'Saving...' : 'Save Visit'}</button>
               </div>
             </div>
@@ -392,11 +549,52 @@ export default function PatientDetailPage() {
       {activeTab === 'prescriptions' && (
         <div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
-            <button onClick={() => setShowAddRx(true)} style={{ padding: '10px 20px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>+ New Prescription</button>
+            <button onClick={() => { resetAiSuggestions(); setShowAddRx(true) }} style={{ padding: '10px 20px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>+ New Prescription</button>
           </div>
           {showAddRx && (
             <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '24px', marginBottom: 20 }}>
               <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, marginBottom: 16 }}>New Prescription</h3>
+
+              {/* AI — smart drug suggestions by diagnosis */}
+              <div style={{ marginBottom: 16, padding: '14px 16px', background: '#F5F3FF', border: '1px solid #DDD6FE', borderRadius: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <label style={{ ...labelStyle, marginBottom: 0 }}>Diagnosis</label>
+                  <span style={{ fontSize: 11, color: '#7C3AED', fontWeight: 600 }}>✨ Powered by AI</span>
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <input value={diagnosis} onChange={e => setDiagnosis(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); getAiSuggestions() } }}
+                    placeholder="e.g. post extraction, acute pulpitis, pericoronitis" style={{ ...inputStyle, flex: 1, minWidth: 200 }} />
+                  <button type="button" onClick={getAiSuggestions} disabled={aiSuggesting || !diagnosis.trim()}
+                    style={{ padding: '9px 16px', background: !diagnosis.trim() || aiSuggesting ? 'var(--bg)' : '#7C3AED', color: !diagnosis.trim() || aiSuggesting ? 'var(--muted)' : '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: aiSuggesting || !diagnosis.trim() ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap' }}>
+                    {aiSuggesting ? 'Thinking…' : '✨ Get AI Suggestions'}
+                  </button>
+                </div>
+                {aiSuggestError && (
+                  <p style={{ fontSize: 12, color: '#991B1B', marginTop: 8 }}>{aiSuggestError}</p>
+                )}
+                {aiSuggestions.length > 0 && (
+                  <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {aiSuggestions.map((s, i) => (
+                      <div key={i} style={{ background: '#fff', border: '1px solid #DDD6FE', borderRadius: 10, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                        <div style={{ flex: 1, minWidth: 200 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700 }}>{s.name}</div>
+                          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
+                            {[s.dosage, s.frequency, s.duration].filter(Boolean).join(' · ')}
+                          </div>
+                          {s.instructions && <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>📝 {s.instructions}</div>}
+                        </div>
+                        <button type="button" onClick={() => addSuggestionToRx(s)}
+                          style={{ padding: '7px 12px', background: '#7C3AED', color: '#fff', border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap' }}>
+                          + Add to Prescription
+                        </button>
+                      </div>
+                    ))}
+                    <p style={{ fontSize: 11, color: 'var(--muted)' }}>AI suggestions are a starting point — review and edit before saving.</p>
+                  </div>
+                )}
+              </div>
+
               <div style={{ marginBottom: 16 }}>
                 <label style={labelStyle}>Quick Templates</label>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -412,11 +610,16 @@ export default function PatientDetailPage() {
                 <div style={{ marginBottom: 16 }}>
                   <label style={labelStyle}>Medicines</label>
                   {rxForm.medicines.map((med, i) => (
-                    <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 2fr', gap: 8, marginBottom: 8 }}>
-                      <input value={med.name} onChange={e => { const m = [...rxForm.medicines]; m[i].name = e.target.value; setRxForm(f => ({ ...f, medicines: m })) }} placeholder="Medicine name" style={inputStyle} />
-                      <input value={med.dosage} onChange={e => { const m = [...rxForm.medicines]; m[i].dosage = e.target.value; setRxForm(f => ({ ...f, medicines: m })) }} placeholder="1-0-1" style={inputStyle} />
-                      <input value={med.duration} onChange={e => { const m = [...rxForm.medicines]; m[i].duration = e.target.value; setRxForm(f => ({ ...f, medicines: m })) }} placeholder="5 days" style={inputStyle} />
-                      <input value={med.instructions} onChange={e => { const m = [...rxForm.medicines]; m[i].instructions = e.target.value; setRxForm(f => ({ ...f, medicines: m })) }} placeholder="Instructions" style={inputStyle} />
+                    <div key={i} style={{ marginBottom: 8 }}>
+                      {med.aiSuggested && (
+                        <span style={{ display: 'inline-block', marginBottom: 4, fontSize: 10, fontWeight: 700, color: '#5B21B6', background: '#EDE9FE', padding: '2px 8px', borderRadius: 10 }}>✨ AI suggested</span>
+                      )}
+                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 2fr', gap: 8 }}>
+                        <input value={med.name} onChange={e => { const m = [...rxForm.medicines]; m[i].name = e.target.value; setRxForm(f => ({ ...f, medicines: m })) }} placeholder="Medicine name" style={inputStyle} />
+                        <input value={med.dosage} onChange={e => { const m = [...rxForm.medicines]; m[i].dosage = e.target.value; setRxForm(f => ({ ...f, medicines: m })) }} placeholder="1-0-1" style={inputStyle} />
+                        <input value={med.duration} onChange={e => { const m = [...rxForm.medicines]; m[i].duration = e.target.value; setRxForm(f => ({ ...f, medicines: m })) }} placeholder="5 days" style={inputStyle} />
+                        <input value={med.instructions} onChange={e => { const m = [...rxForm.medicines]; m[i].instructions = e.target.value; setRxForm(f => ({ ...f, medicines: m })) }} placeholder="Instructions" style={inputStyle} />
+                      </div>
                     </div>
                   ))}
                   <button onClick={() => setRxForm(f => ({ ...f, medicines: [...f.medicines, { name: '', dosage: '', duration: '', instructions: '' }] }))}
@@ -428,7 +631,7 @@ export default function PatientDetailPage() {
                 <textarea value={rxForm.instructions} onChange={e => setRxForm(f => ({ ...f, instructions: e.target.value }))} placeholder="Avoid cold foods, salt water gargle, follow up in 1 week..." rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
               </div>
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                <button onClick={() => setShowAddRx(false)} style={{ padding: '9px 18px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>Cancel</button>
+                <button onClick={() => { setShowAddRx(false); resetAiSuggestions() }} style={{ padding: '9px 18px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>Cancel</button>
                 <button onClick={saveRx} disabled={saving} style={{ padding: '9px 20px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>{saving ? 'Saving...' : 'Save Prescription'}</button>
               </div>
             </div>
