@@ -1086,6 +1086,23 @@ export default function AppointmentsPage() {
                       💬 WhatsApp
                     </a>
                   )}
+
+                  {/* Share patient-portal access — WhatsApps the patient a link
+                      to dentistinmumbai.in/patient where they log in with their
+                      own number to view records. Uses the current host so the
+                      link is city-correct. */}
+                  {a.patient_phone && (() => {
+                    const host = typeof window !== 'undefined' ? window.location.host : 'dentistinmumbai.in'
+                    const portalText = `Hi ${a.patient_name}, access your dental records at ${host}/patient — enter your mobile number to view your appointments, prescriptions and invoices. — ${dentistMeta.clinic_name || 'our clinic'}`
+                    return (
+                      <a href={waLink(a.patient_phone, portalText)}
+                        target="_blank" rel="noopener noreferrer"
+                        title="Send the patient a link to their records portal"
+                        style={{ ...secondaryBtn, color: '#0F766E', borderColor: '#99F6E4' }}>
+                        🔐 Share Portal Access
+                      </a>
+                    )
+                  })()}
                 </div>
               </div>
             )

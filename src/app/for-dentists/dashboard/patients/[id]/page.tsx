@@ -131,6 +131,10 @@ export default function PatientDetailPage() {
     title: '', steps: [{ treatment_name: '', tooth_number: '', estimated_cost: '', notes: '' }],
   })
 
+  // Patient portal access toggle (Overview tab).
+  const [portalSaving, setPortalSaving] = useState(false)
+  const [portalError, setPortalError] = useState<string | null>(null)
+
   // AI: smart drug suggestions for the prescription writer.
   const [diagnosis, setDiagnosis] = useState('')
   const [aiSuggesting, setAiSuggesting] = useState(false)
@@ -267,6 +271,21 @@ export default function PatientDetailPage() {
   function applyTemplate(templateName: string) {
     const meds = PRESCRIPTION_TEMPLATES[templateName as keyof typeof PRESCRIPTION_TEMPLATES] || []
     setRxForm(f => ({ ...f, template: templateName, medicines: meds }))
+  }
+
+  async function togglePortalAccess() {
+    if (!patient) return
+    setPortalSaving(true)
+    setPortalError(null)
+    const supabase = createClient()
+    const next = !patient.portal_access
+    // .select() so an RLS denial surfaces instead of a silent no-op.
+    const { data, error } = await supabase
+      .from('patients').update({ portal_access: next }).eq('id', patientId).select('id, portal_access')
+    setPortalSaving(false)
+    if (error) { setPortalError(error.message); return }
+    if (!data || data.length === 0) { setPortalError('Update rejected — you may not have permission to edit this patient.'); return }
+    setPatient((p: any) => ({ ...p, portal_access: next }))
   }
 
   // Reset the AI-suggestion sub-state. Called when the Rx form opens/closes so
@@ -444,6 +463,35 @@ export default function PatientDetailPage() {
                 <span style={{ color: 'var(--text)' }}>{item.value}</span>
               </div>
             ))}
+          </div>
+
+          {/* PATIENT PORTAL — enable/disable the patient's self-service portal
+              (dentistinmumbai.in/patient) where they log in with their own
+              mobile number to view appointments, prescriptions and invoices. */}
+          <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '20px' }}>
+            <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, marginBottom: 12 }}>🔐 Patient Portal</h3>
+            <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 14, lineHeight: 1.6 }}>
+              {patient.portal_access
+                ? 'This patient can log in at /patient with their mobile number to view their own records.'
+                : 'Enable to let this patient view their appointments, prescriptions and invoices online.'}
+            </p>
+            {portalError && (
+              <div style={{ background: '#FEE2E2', border: '1px solid #FECACA', color: '#991B1B', padding: '8px 12px', borderRadius: 8, fontSize: 12, marginBottom: 12 }}>{portalError}</div>
+            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <button onClick={togglePortalAccess} disabled={portalSaving}
+                style={{ padding: '9px 18px', borderRadius: 8, border: 'none', fontWeight: 700, fontSize: 13, cursor: portalSaving ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-body)', background: patient.portal_access ? '#FEE2E2' : '#CCFBF1', color: patient.portal_access ? '#991B1B' : '#0F766E' }}>
+                {portalSaving ? 'Saving…' : patient.portal_access ? 'Disable Portal Access' : 'Enable Portal Access'}
+              </button>
+              <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: patient.portal_access ? '#CCFBF1' : 'var(--bg)', color: patient.portal_access ? '#0F766E' : 'var(--muted)' }}>
+                {patient.portal_access ? '● Enabled' : '○ Disabled'}
+              </span>
+            </div>
+            {patient.portal_last_login && (
+              <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 12 }}>
+                Last portal login: {new Date(patient.portal_last_login).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })}
+              </p>
+            )}
           </div>
         </div>
       )}
