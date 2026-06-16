@@ -27,6 +27,41 @@ function normaliseCategory(raw: unknown): Category | null {
   return (CATEGORIES as readonly string[]).includes(v) ? (v as Category) : null
 }
 
+// GET — single item plus its full movement history (use + restock), newest
+// first. Backs the item detail page. Ownership is re-checked server-side since
+// the service role bypasses RLS.
+export async function GET(_request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  try {
+    const owner = await getDentistOwner()
+    if (!owner) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const { id } = await ctx.params
+
+    const db = admin()
+    const { data: item, error: itemErr } = await db
+      .from('inventory_items')
+      .select('id, dentist_id, name, category, current_stock, min_stock_level, unit, expiry_date, supplier_name, supplier_phone, unit_cost, notes, created_at, updated_at')
+      .eq('id', id)
+      .maybeSingle()
+    if (itemErr) return fail('GET.item', itemErr)
+    if (!item || item.dentist_id !== owner.id) {
+      return NextResponse.json({ error: 'Item not found' }, { status: 404 })
+    }
+
+    const { data: movements, error: movErr } = await db
+      .from('inventory_movements')
+      .select('id, type, quantity, notes, created_at')
+      .eq('item_id', id)
+      .eq('dentist_id', owner.id)
+      .order('created_at', { ascending: false })
+      .limit(200)
+    if (movErr) return fail('GET.movements', movErr)
+
+    return NextResponse.json({ item, movements: movements ?? [] })
+  } catch (err) {
+    return fail('GET', err)
+  }
+}
+
 export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
     const owner = await getDentistOwner()

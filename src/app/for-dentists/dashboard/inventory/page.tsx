@@ -9,6 +9,8 @@
 // level, expiry, supplier) go through PATCH on the same endpoint.
 
 import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
+import { createClient } from '@/lib/supabase/client'
 
 const CATEGORIES = [
   { key: 'consumables',   label: 'Consumables'   },
@@ -73,6 +75,28 @@ function statusFor(item: InventoryItem): { kind: 'ok' | 'low' | 'critical'; labe
   return { kind: 'ok', label: 'OK', bg: '#DCFCE7', text: '#166534' }
 }
 
+type StatusKey = 'all' | 'low' | 'expiring' | 'expired' | 'ok'
+
+// Per-item alert flags — drive the clickable alert tiles and the status filter.
+function itemFlags(it: InventoryItem) {
+  const stock = Number(it.current_stock || 0)
+  const min = Number(it.min_stock_level || 0)
+  const low = stock <= min
+  const d = daysUntil(it.expiry_date)
+  const expired = d != null && d < 0
+  const expiring = d != null && d >= 0 && d <= 30
+  return { low, expired, expiring, ok: !low && !expired && !expiring }
+}
+
+// Expiry text colour: green >90 days · amber 30–90 · red <30 days or expired.
+function expiryColorFor(iso: string | null): string {
+  const d = daysUntil(iso)
+  if (d == null) return 'var(--muted)'
+  if (d < 30) return '#991B1B'
+  if (d <= 90) return '#92400E'
+  return '#166534'
+}
+
 const blankForm = () => ({
   name: '',
   category: 'consumables' as CategoryKey,
@@ -100,6 +124,14 @@ export default function InventoryPage() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionNotice, setActionNotice] = useState<string | null>(null)
   const [busyRow, setBusyRow] = useState<string | null>(null)
+  const [statusFilter, setStatusFilter] = useState<StatusKey>('all')
+  // Recent/upcoming appointments for the optional selector in the Use modal.
+  const [appointments, setAppointments] = useState<{ id: string; label: string }[]>([])
+  // Use modal state.
+  const [useItem, setUseItem] = useState<InventoryItem | null>(null)
+  const [useQty, setUseQty] = useState('')
+  const [useApptId, setUseApptId] = useState('')
+  const [useError, setUseError] = useState<string | null>(null)
 
   async function loadAll() {
     const [itemsRes, alertsRes] = await Promise.all([
@@ -117,7 +149,33 @@ export default function InventoryPage() {
   }
 
   useEffect(() => {
-    (async () => { await loadAll(); setLoading(false) })()
+    (async () => {
+      await loadAll()
+      setLoading(false)
+      // Load the dentist's own recent + upcoming appointments for the Use
+      // modal's optional selector. Scoped by dentist_id (not relying on RLS
+      // alone) so the dropdown never leaks another clinic's patients.
+      try {
+        const supabase = createClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user?.email) return
+        const { data: d } = await supabase.from('dentists').select('id').eq('email', user.email).maybeSingle()
+        if (!d?.id) return
+        const since = new Date(); since.setDate(since.getDate() - 7)
+        const sinceIso = `${since.getFullYear()}-${String(since.getMonth() + 1).padStart(2, '0')}-${String(since.getDate()).padStart(2, '0')}`
+        const { data: appts } = await supabase
+          .from('appointments')
+          .select('id, patient_name, appt_date, time_slot, treatments(name)')
+          .eq('dentist_id', d.id)
+          .gte('appt_date', sinceIso)
+          .order('appt_date', { ascending: false })
+          .limit(60)
+        setAppointments((appts || []).map((a: any) => ({
+          id: a.id,
+          label: `${a.patient_name || 'Patient'} · ${new Date(a.appt_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}${a.time_slot ? ' ' + a.time_slot : ''}${a.treatments?.name ? ' · ' + a.treatments.name : ''}`,
+        })))
+      } catch {}
+    })()
   }, [])
 
   const counts = useMemo(() => {
@@ -134,11 +192,30 @@ export default function InventoryPage() {
     const q = search.trim().toLowerCase()
     return items.filter(it => {
       if (filter !== 'all' && it.category !== filter) return false
+      if (statusFilter !== 'all') {
+        const f = itemFlags(it)
+        if (statusFilter === 'low' && !f.low) return false
+        if (statusFilter === 'expiring' && !f.expiring) return false
+        if (statusFilter === 'expired' && !f.expired) return false
+        if (statusFilter === 'ok' && !f.ok) return false
+      }
       if (!q) return true
       const hay = [it.name, it.supplier_name, it.notes, it.unit].filter(Boolean).join(' ').toLowerCase()
       return hay.includes(q)
     })
-  }, [items, filter, search])
+  }, [items, filter, search, statusFilter])
+
+  const statusCounts = useMemo(() => {
+    const c = { low: 0, expiring: 0, expired: 0, ok: 0 }
+    for (const it of items) {
+      const f = itemFlags(it)
+      if (f.low) c.low++
+      if (f.expiring) c.expiring++
+      if (f.expired) c.expired++
+      if (f.ok) c.ok++
+    }
+    return c
+  }, [items])
 
   const lowOrCriticalItems = useMemo(() => items.filter(it => {
     const s = statusFor(it).kind
@@ -251,6 +328,31 @@ export default function InventoryPage() {
     await loadAll()
   }
 
+  function openUse(it: InventoryItem) {
+    setUseItem(it); setUseQty(''); setUseApptId(''); setUseError(null)
+  }
+  async function submitUse() {
+    if (!useItem) return
+    const qty = Number(useQty)
+    if (!Number.isFinite(qty) || qty <= 0) { setUseError('Enter a quantity greater than 0.'); return }
+    if (qty > Number(useItem.current_stock || 0)) { setUseError(`Only ${useItem.current_stock} ${useItem.unit} in stock.`); return }
+    setBusyRow(useItem.id); setUseError(null)
+    // Fold the chosen appointment into the movement note (inventory_movements
+    // has no appointment_id column — we keep the link as readable text).
+    const appt = appointments.find(a => a.id === useApptId)
+    const notes = appt ? `Used during appointment — ${appt.label}` : null
+    const res = await fetch(`/api/dentist/inventory/${useItem.id}/use`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ quantity: qty, notes }),
+    })
+    setBusyRow(null)
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}))
+      setUseError(j.error || 'Use failed.'); return
+    }
+    setUseItem(null)
+    await loadAll()
+  }
+
   if (loading) {
     return <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>Loading inventory…</div>
   }
@@ -278,6 +380,42 @@ export default function InventoryPage() {
         <Tile icon="⚠️" label="Low Stock"          value={String(lowCount)}     accent={lowCount > 0 ? '#92400E' : 'var(--text)'} />
         <Tile icon="⏳" label="Expiring Soon"      value={String(expiringCount)} accent={expiringCount > 0 ? '#991B1B' : 'var(--text)'} />
         <Tile icon="💸" label="Monthly Usage"      value={`₹${Math.round(monthlyValue).toLocaleString('en-IN')}`} />
+      </div>
+
+      {/* Clickable alert tiles — shown only when there's something to act on.
+          Clicking sets the status filter (toggles off if already active). */}
+      {(statusCounts.expired > 0 || statusCounts.expiring > 0 || statusCounts.low > 0) && (
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
+          {statusCounts.expired > 0 && (
+            <AlertTile emoji="🔴" label="Expired" count={statusCounts.expired} bg="#FEE2E2" color="#991B1B"
+              active={statusFilter === 'expired'} onClick={() => setStatusFilter(statusFilter === 'expired' ? 'all' : 'expired')} />
+          )}
+          {statusCounts.expiring > 0 && (
+            <AlertTile emoji="🟡" label="Expiring ≤30 days" count={statusCounts.expiring} bg="#FEF3C7" color="#92400E"
+              active={statusFilter === 'expiring'} onClick={() => setStatusFilter(statusFilter === 'expiring' ? 'all' : 'expiring')} />
+          )}
+          {statusCounts.low > 0 && (
+            <AlertTile emoji="🟠" label="Low stock" count={statusCounts.low} bg="#FFEDD5" color="#9A3412"
+              active={statusFilter === 'low'} onClick={() => setStatusFilter(statusFilter === 'low' ? 'all' : 'low')} />
+          )}
+        </div>
+      )}
+
+      {/* Status filter */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>Status:</span>
+        {([
+          { k: 'all' as StatusKey, label: 'All' },
+          { k: 'low' as StatusKey, label: `Low Stock (${statusCounts.low})` },
+          { k: 'expiring' as StatusKey, label: `Expiring (${statusCounts.expiring})` },
+          { k: 'expired' as StatusKey, label: `Expired (${statusCounts.expired})` },
+          { k: 'ok' as StatusKey, label: `OK (${statusCounts.ok})` },
+        ]).map(t => (
+          <button key={t.k} onClick={() => setStatusFilter(t.k)}
+            style={{ padding: '6px 12px', borderRadius: 20, background: statusFilter === t.k ? '#0F172A' : '#fff', color: statusFilter === t.k ? '#fff' : 'var(--text)', border: `1.5px solid ${statusFilter === t.k ? '#0F172A' : 'var(--border)'}`, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
+            {t.label}
+          </button>
+        ))}
       </div>
 
       {/* Alert banner — only when items are at/below min_stock_level */}
@@ -357,7 +495,7 @@ export default function InventoryPage() {
                   fontSize: 13,
                 }}>
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: 14 }}>{it.name}</div>
+                  <Link href={`/for-dentists/dashboard/inventory/${it.id}`} style={{ fontWeight: 700, fontSize: 14, color: 'var(--blue)', textDecoration: 'none' }}>{it.name}</Link>
                   {it.supplier_name && <div style={{ fontSize: 11, color: 'var(--muted)' }}>🏭 {it.supplier_name}</div>}
                   {it.notes && <div style={{ fontSize: 11, color: 'var(--muted)', fontStyle: 'italic' }}>"{it.notes}"</div>}
                 </div>
@@ -367,13 +505,13 @@ export default function InventoryPage() {
                 <div>
                   <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: s.bg, color: s.text }}>{s.label}</span>
                 </div>
-                <div style={{ fontSize: 12, color: expired ? '#991B1B' : expiring ? '#92400E' : 'var(--muted)', fontWeight: expired || expiring ? 600 : 400 }}>
+                <div style={{ fontSize: 12, color: expiryColorFor(it.expiry_date), fontWeight: expired || expiring ? 600 : 400 }}>
                   {it.expiry_date ? (expired ? `Expired ${fmtDate(it.expiry_date)}` : fmtDate(it.expiry_date)) : '—'}
                 </div>
                 <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                   <button onClick={() => quickStock(it, 'restock')} disabled={busyRow === it.id}
                     style={{ ...rowBtn, background: '#DCFCE7', color: '#166534' }}>+ Restock</button>
-                  <button onClick={() => quickStock(it, 'use')} disabled={busyRow === it.id || it.current_stock <= 0}
+                  <button onClick={() => openUse(it)} disabled={busyRow === it.id || it.current_stock <= 0}
                     style={{ ...rowBtn, background: '#E0E7FF', color: '#3730A3', opacity: it.current_stock <= 0 ? 0.5 : 1 }}>− Use</button>
                   {(s.kind === 'low' || s.kind === 'critical') && (
                     <button onClick={() => reorder(it, 'dentalsamaan')} disabled={busyRow === it.id}
@@ -466,6 +604,40 @@ export default function InventoryPage() {
         </div>
       )}
 
+      {/* Use modal — quantity + optional appointment link */}
+      {useItem && (
+        <div onClick={() => busyRow !== useItem.id && setUseItem(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 440 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 22px', borderBottom: '1px solid var(--border)' }}>
+              <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18 }}>Use stock — {useItem.name}</h2>
+              <button onClick={() => setUseItem(null)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--muted)' }}>✕</button>
+            </div>
+            <div style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ fontSize: 13, color: 'var(--muted)' }}>In stock: <strong style={{ color: 'var(--text)' }}>{useItem.current_stock} {useItem.unit}</strong></div>
+              <div>
+                <Label>How many {useItem.unit} used? *</Label>
+                <input type="number" min="1" autoFocus value={useQty} onChange={e => setUseQty(e.target.value)} placeholder="0" style={inputStyle} />
+              </div>
+              <div>
+                <Label>Link to appointment (optional)</Label>
+                <select value={useApptId} onChange={e => setUseApptId(e.target.value)} style={inputStyle}>
+                  <option value="">— None</option>
+                  {appointments.map(a => <option key={a.id} value={a.id}>{a.label}</option>)}
+                </select>
+              </div>
+              {useError && <div style={{ background: '#FEE2E2', border: '1px solid #FECACA', color: '#991B1B', padding: '10px 12px', borderRadius: 8, fontSize: 13 }}>{useError}</div>}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '14px 22px', borderTop: '1px solid var(--border)' }}>
+              <button onClick={() => setUseItem(null)} style={ghostBtn}>Cancel</button>
+              <button onClick={submitUse} disabled={busyRow === useItem.id} style={{ ...primaryBtn, background: '#3730A3', opacity: busyRow === useItem.id ? 0.7 : 1 }}>
+                {busyRow === useItem.id ? 'Saving…' : 'Deduct stock'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <style>{`
         @media (max-width: 900px) {
           .inv-table, .inv-row {
@@ -499,6 +671,19 @@ function Tile({ icon, label, value, accent }: { icon: string; label: string; val
       </div>
       <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 20, color: accent || 'var(--text)' }}>{value}</div>
     </div>
+  )
+}
+
+function AlertTile({ emoji, label, count, bg, color, active, onClick }: { emoji: string; label: string; count: number; bg: string; color: string; active: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick}
+      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderRadius: 12, background: bg, border: `2px solid ${active ? color : 'transparent'}`, cursor: 'pointer', fontFamily: 'var(--font-body)', textAlign: 'left' }}>
+      <span style={{ fontSize: 18 }}>{emoji}</span>
+      <div>
+        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 20, color, lineHeight: 1 }}>{count}</div>
+        <div style={{ fontSize: 11, fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: '0.04em', marginTop: 2 }}>{label}</div>
+      </div>
+    </button>
   )
 }
 
