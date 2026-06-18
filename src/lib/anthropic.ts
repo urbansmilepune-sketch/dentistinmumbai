@@ -17,11 +17,20 @@ export class AIUnavailableError extends Error {
   }
 }
 
-export async function callClaude(opts: {
+export type ClaudeUsage = {
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+}
+
+// Same call as callClaude but also returns the token usage the API reports, so
+// callers can record it (e.g. the ai_usage_log rate-limit table). callClaude
+// is a thin wrapper over this for the common text-only case.
+export async function callClaudeWithUsage(opts: {
   system: string
   user: string
   maxTokens?: number
-}): Promise<string> {
+}): Promise<{ text: string; usage: ClaudeUsage }> {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) throw new AIUnavailableError('ANTHROPIC_API_KEY is not configured')
 
@@ -55,5 +64,19 @@ export async function callClaude(opts: {
     ? data.content.filter((b: any) => b?.type === 'text').map((b: any) => b.text).join('')
     : ''
   if (!text) throw new AIUnavailableError('Empty response from Anthropic')
-  return text
+
+  const inputTokens = Number(data?.usage?.input_tokens) || 0
+  const outputTokens = Number(data?.usage?.output_tokens) || 0
+  return {
+    text,
+    usage: { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens },
+  }
+}
+
+export async function callClaude(opts: {
+  system: string
+  user: string
+  maxTokens?: number
+}): Promise<string> {
+  return (await callClaudeWithUsage(opts)).text
 }

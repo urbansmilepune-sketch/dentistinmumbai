@@ -6,7 +6,8 @@
 // message — the AI must never block the form.
 import { NextRequest, NextResponse } from 'next/server'
 import { getDentistOwner } from '@/lib/dentistSession'
-import { callClaude } from '@/lib/anthropic'
+import { callClaudeWithUsage } from '@/lib/anthropic'
+import { checkAiRateLimit, logAiUsage } from '@/lib/aiUsage'
 
 const SYSTEM_PROMPT = `You are a dental prescription assistant for Indian dentists.
 When given a dental diagnosis, suggest the standard medications
@@ -69,12 +70,16 @@ export async function POST(request: NextRequest) {
   const ageNum = Number(body.patient_age)
   const patientAge = Number.isFinite(ageNum) && ageNum > 0 && ageNum < 130 ? Math.round(ageNum) : null
 
+  const limit = await checkAiRateLimit(owner.id)
+  if (!limit.ok) return NextResponse.json({ error: limit.message }, { status: 429 })
+
   const userMsg = patientAge
     ? `Diagnosis: ${diagnosis}\nPatient age: ${patientAge} years`
     : `Diagnosis: ${diagnosis}`
 
   try {
-    const raw = await callClaude({ system: SYSTEM_PROMPT, user: userMsg })
+    const { text: raw, usage } = await callClaudeWithUsage({ system: SYSTEM_PROMPT, user: userMsg })
+    await logAiUsage(owner.id, 'prescription-suggest', usage.totalTokens)
     const medicines = parseMedicines(raw)
     if (!medicines.length) return NextResponse.json({ error: AI_DOWN }, { status: 502 })
     return NextResponse.json({ medicines })

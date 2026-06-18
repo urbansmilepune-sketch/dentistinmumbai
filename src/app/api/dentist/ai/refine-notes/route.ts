@@ -5,7 +5,8 @@
 // never blocked.
 import { NextRequest, NextResponse } from 'next/server'
 import { getDentistOwner } from '@/lib/dentistSession'
-import { callClaude } from '@/lib/anthropic'
+import { callClaudeWithUsage } from '@/lib/anthropic'
+import { checkAiRateLimit, logAiUsage } from '@/lib/aiUsage'
 
 const SYSTEM_PROMPT = `You are a clinical documentation assistant for Indian dental practices.
 Rewrite the dentist's rough treatment/consultation note into a clear, professional
@@ -27,8 +28,13 @@ export async function POST(request: NextRequest) {
   const notes = typeof body.notes === 'string' ? body.notes.trim() : ''
   if (!notes) return NextResponse.json({ error: 'Note text is required' }, { status: 400 })
 
+  const limit = await checkAiRateLimit(owner.id)
+  if (!limit.ok) return NextResponse.json({ error: limit.message }, { status: 429 })
+
   try {
-    const refined = (await callClaude({ system: SYSTEM_PROMPT, user: notes })).trim()
+    const { text, usage } = await callClaudeWithUsage({ system: SYSTEM_PROMPT, user: notes })
+    await logAiUsage(owner.id, 'refine-notes', usage.totalTokens)
+    const refined = text.trim()
     if (!refined) return NextResponse.json({ error: AI_DOWN }, { status: 502 })
     return NextResponse.json({ refined })
   } catch (err) {
