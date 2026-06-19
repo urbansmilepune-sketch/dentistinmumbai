@@ -1,14 +1,18 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { getCityByDomain, isNationalHost, CITY_CONFIGS, DEFAULT_CITY, type CityConfig } from '@/config/cities'
 
+type LoginMethod = 'otp' | 'password' | 'magic'
+
 export default function DentistLoginPage() {
   const router = useRouter()
-  const [tab, setTab] = useState<'email' | 'google'>('email')
+  // Default to Email OTP — the simplest path for dentists who never set a
+  // password. Password and Magic Link stay available behind the tab strip.
+  const [method, setMethod] = useState<LoginMethod>('otp')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
@@ -17,6 +21,18 @@ export default function DentistLoginPage() {
   const [magicLoading, setMagicLoading] = useState(false)
   const [magicSent, setMagicSent] = useState(false)
   const [error, setError] = useState('')
+
+  // ── Email-OTP flow state ──────────────────────────────────────────────
+  // otpStep 'email' = collecting the address + "Send OTP"; 'code' = the
+  // 6-box code entry. otpDigits is the per-box value; resendIn counts down
+  // from 30s before the "Resend" link re-enables.
+  const [otpStep, setOtpStep] = useState<'email' | 'code'>('email')
+  const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', ''])
+  const [otpSending, setOtpSending] = useState(false)
+  const [otpVerifying, setOtpVerifying] = useState(false)
+  const [resendIn, setResendIn] = useState(0)
+  const otpBoxRefs = useRef<Array<HTMLInputElement | null>>([])
+  const otpCode = otpDigits.join('')
   const [cityConfig, setCityConfig] = useState<CityConfig>(CITY_CONFIGS[DEFAULT_CITY])
   const [national, setNational] = useState(false)
   const [nextParam, setNextParam] = useState<string>('')
@@ -29,6 +45,13 @@ export default function DentistLoginPage() {
     // value here since this is a 'use client' component.
     setNextParam(new URLSearchParams(window.location.search).get('next') ?? '')
   }, [])
+
+  // Resend cooldown: tick down to 0 once a code has been sent.
+  useEffect(() => {
+    if (resendIn <= 0) return
+    const t = setTimeout(() => setResendIn(s => s - 1), 1000)
+    return () => clearTimeout(t)
+  }, [resendIn])
   const brandLeft = national ? 'dentistinindia' : cityConfig.domain.split('.')[0]
   const brandTld = national ? '.in' : '.' + cityConfig.domain.split('.').slice(1).join('.')
   // The orange chunk between "DentistIn" and the TLD. National host shows
@@ -111,6 +134,108 @@ async function handleGoogle() {
   if (authError) { setError('Google sign-in failed.'); setGLoading(false) }
 }
 
+  // ── Email-OTP handlers ────────────────────────────────────────────────
+  // Step 1: email a 6-digit code. On success move to the code step and start
+  // the 30s resend cooldown. Used for both the first send and "Resend".
+  async function handleSendOtp() {
+    if (!email) { setError('Enter your email address first.'); return }
+    setError(''); setOtpSending(true)
+    try {
+      const res = await fetch('/api/auth/email-otp/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setError(data?.error || 'Could not send the code. Please try again.'); return }
+      setOtpStep('code')
+      setOtpDigits(['', '', '', '', '', ''])
+      setResendIn(30)
+      // Focus the first box once it renders.
+      setTimeout(() => otpBoxRefs.current[0]?.focus(), 50)
+    } catch {
+      setError('Network error. Please try again.')
+    } finally {
+      setOtpSending(false)
+    }
+  }
+
+  // Step 2: verify the code. The server returns a one-time magic link; we
+  // navigate to it (full-page, since it's a Supabase URL) so /auth/callback
+  // sets the session cookie and routes to the dashboard.
+  async function handleVerifyOtp() {
+    if (otpCode.length !== 6) { setError('Enter the full 6-digit code.'); return }
+    setError(''); setOtpVerifying(true)
+    try {
+      const res = await fetch('/api/auth/email-otp/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, otp: otpCode }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data?.redirect_url) {
+        setError(data?.error || 'Could not verify the code. Please try again.')
+        setOtpDigits(['', '', '', '', '', ''])
+        setTimeout(() => otpBoxRefs.current[0]?.focus(), 50)
+        return
+      }
+      window.location.href = data.redirect_url
+    } catch {
+      setError('Network error. Please try again.')
+      setOtpVerifying(false)
+    }
+  }
+
+  function setOtpDigit(i: number, ch: string) {
+    setOtpDigits(prev => {
+      const next = [...prev]
+      next[i] = ch
+      return next
+    })
+  }
+
+  function handleOtpBoxChange(i: number, raw: string) {
+    const d = raw.replace(/\D/g, '')
+    if (!d) { setOtpDigit(i, ''); return }
+    // Take the last typed digit so retyping over a filled box works.
+    setOtpDigit(i, d[d.length - 1])
+    if (i < 5) otpBoxRefs.current[i + 1]?.focus()
+  }
+
+  function handleOtpKeyDown(i: number, e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Backspace' && !otpDigits[i] && i > 0) {
+      otpBoxRefs.current[i - 1]?.focus()
+    }
+  }
+
+  function handleOtpPaste(i: number, e: React.ClipboardEvent<HTMLInputElement>) {
+    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6 - i)
+    if (!pasted) return
+    e.preventDefault()
+    setOtpDigits(prev => {
+      const next = [...prev]
+      for (let k = 0; k < pasted.length; k++) next[i + k] = pasted[k]
+      return next
+    })
+    const last = Math.min(i + pasted.length, 5)
+    otpBoxRefs.current[last]?.focus()
+  }
+
+  // Auto-verify the moment all six boxes are filled — saves a click. The
+  // verifying guard stops the effect from firing twice for one full code.
+  useEffect(() => {
+    if (method === 'otp' && otpStep === 'code' && otpCode.length === 6 && !otpVerifying) {
+      handleVerifyOtp()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [otpCode])
+
+  function switchMethod(m: LoginMethod) {
+    setMethod(m)
+    setError('')
+    setMagicSent(false)
+  }
+
   return (
     <div style={{ minHeight: '100vh', display: 'flex' }}>
       {/* Left brand panel */}
@@ -167,64 +292,137 @@ async function handleGoogle() {
             </div>
           )}
 
-          <form onSubmit={handleEmail} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div>
-              <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 6 }}>Email address</label>
-              <input
-                type="email" required value={email} onChange={e => setEmail(e.target.value)}
-                placeholder="doctor@example.com"
-                autoComplete="email"
-                style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: '1.5px solid var(--border)', fontSize: 14, fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box' as const }}
-              />
-            </div>
-            {/* Prominent magic-link entry point for dentists registered before
-                the password feature — they have no password and need a clear
-                path in before they hit the password field. */}
-            <div>
+          {/* Login-method tabs. Email OTP is first and default — the simplest
+              path for dentists with no password. Password + Magic Link remain. */}
+          <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 12, marginBottom: 18 }}>
+            {([
+              { key: 'otp', label: 'Email OTP' },
+              { key: 'password', label: 'Password' },
+              { key: 'magic', label: 'Magic Link' },
+            ] as Array<{ key: LoginMethod; label: string }>).map(m => (
               <button
+                key={m.key}
                 type="button"
-                onClick={handleMagicLink}
-                disabled={magicLoading}
+                onClick={() => switchMethod(m.key)}
                 style={{
-                  width: '100%', padding: '11px 14px',
-                  background: '#fff', border: '1.5px solid var(--blue)',
-                  borderRadius: 10, color: 'var(--blue)',
-                  fontFamily: 'var(--font-body)', fontWeight: 600, fontSize: 14,
-                  cursor: magicLoading ? 'not-allowed' : 'pointer',
-                  opacity: magicLoading ? 0.7 : 1,
+                  flex: 1, padding: '9px 6px', borderRadius: 9, border: 'none',
+                  cursor: 'pointer', fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: 13,
+                  background: method === m.key ? 'var(--blue)' : 'transparent',
+                  color: method === m.key ? '#fff' : 'var(--muted)',
+                  transition: 'background 0.15s',
                 }}
               >
-                {magicLoading ? 'Sending login link…' : 'Registered before? Use magic link to login →'}
+                {m.label}
               </button>
+            ))}
+          </div>
+
+          {/* Shared email field. Locked during OTP code entry so the address
+              the code was sent to can't drift out from under the verify call. */}
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 6 }}>Email address</label>
+            <input
+              type="email" value={email} onChange={e => setEmail(e.target.value)}
+              placeholder="doctor@example.com"
+              autoComplete="email"
+              disabled={method === 'otp' && otpStep === 'code'}
+              style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: '1.5px solid var(--border)', fontSize: 14, fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box' as const, background: (method === 'otp' && otpStep === 'code') ? 'var(--bg)' : '#fff' }}
+            />
+          </div>
+
+          {/* ── Email OTP ─────────────────────────────────────────────── */}
+          {method === 'otp' && otpStep === 'email' && (
+            <button
+              type="button" onClick={handleSendOtp} disabled={otpSending}
+              style={{ width: '100%', padding: '13px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: 15, cursor: otpSending ? 'not-allowed' : 'pointer', opacity: otpSending ? 0.7 : 1 }}
+            >{otpSending ? 'Sending code…' : 'Send OTP to Email'}</button>
+          )}
+
+          {method === 'otp' && otpStep === 'code' && (
+            <div>
+              <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 12 }}>
+                Enter the 6-digit code sent to <strong style={{ color: 'var(--text)' }}>{email}</strong>
+              </p>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', marginBottom: 16 }}>
+                {otpDigits.map((d, i) => (
+                  <input
+                    key={i}
+                    ref={el => { otpBoxRefs.current[i] = el }}
+                    value={d}
+                    onChange={e => handleOtpBoxChange(i, e.target.value)}
+                    onKeyDown={e => handleOtpKeyDown(i, e)}
+                    onPaste={e => handleOtpPaste(i, e)}
+                    inputMode="numeric"
+                    autoComplete={i === 0 ? 'one-time-code' : 'off'}
+                    maxLength={1}
+                    aria-label={`Digit ${i + 1}`}
+                    style={{ width: '100%', aspectRatio: '1', textAlign: 'center', padding: '0', borderRadius: 10, border: '1.5px solid var(--border)', fontSize: 22, fontWeight: 700, fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box' as const, minWidth: 0 }}
+                  />
+                ))}
+              </div>
+              <button
+                type="button" onClick={handleVerifyOtp} disabled={otpVerifying || otpCode.length !== 6}
+                style={{ width: '100%', padding: '13px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: 15, cursor: (otpVerifying || otpCode.length !== 6) ? 'not-allowed' : 'pointer', opacity: (otpVerifying || otpCode.length !== 6) ? 0.6 : 1 }}
+              >{otpVerifying ? 'Verifying…' : 'Verify & Login'}</button>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+                <button
+                  type="button"
+                  onClick={() => { setOtpStep('email'); setError(''); setOtpDigits(['', '', '', '', '', '']) }}
+                  style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 12, color: 'var(--muted)' }}
+                >← Use a different email</button>
+                {resendIn > 0 ? (
+                  <span style={{ fontSize: 12, color: 'var(--muted)' }}>Resend in {resendIn}s</span>
+                ) : (
+                  <button
+                    type="button" onClick={handleSendOtp} disabled={otpSending}
+                    style={{ background: 'none', border: 'none', padding: 0, cursor: otpSending ? 'not-allowed' : 'pointer', fontSize: 12, color: 'var(--blue)', fontWeight: 600 }}
+                  >{otpSending ? 'Sending…' : 'Resend OTP'}</button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Password ──────────────────────────────────────────────── */}
+          {method === 'password' && (
+            <form onSubmit={handleEmail} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div>
+                <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 6 }}>Password</label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type={showPass ? 'text' : 'password'} required value={password} onChange={e => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    autoComplete="current-password"
+                    style={{ width: '100%', padding: '11px 42px 11px 14px', borderRadius: 10, border: '1.5px solid var(--border)', fontSize: 14, fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box' as const }}
+                  />
+                  <button type="button" onClick={() => setShowPass(!showPass)} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontSize: 16 }}>
+                    {showPass ? '🙈' : '👁️'}
+                  </button>
+                </div>
+                <div style={{ textAlign: 'right', marginTop: 6 }}>
+                  <Link href="/for-dentists/forgot-password" style={{ fontSize: 12, color: 'var(--blue)' }}>Forgot password?</Link>
+                </div>
+              </div>
+              <button
+                type="submit" disabled={loading}
+                style={{ width: '100%', padding: '13px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: 15, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}
+              >{loading ? 'Signing in...' : submitLabel}</button>
+            </form>
+          )}
+
+          {/* ── Magic Link ────────────────────────────────────────────── */}
+          {method === 'magic' && (
+            <div>
+              <button
+                type="button" onClick={handleMagicLink} disabled={magicLoading}
+                style={{ width: '100%', padding: '13px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: 15, cursor: magicLoading ? 'not-allowed' : 'pointer', opacity: magicLoading ? 0.7 : 1 }}
+              >{magicLoading ? 'Sending login link…' : 'Send me a magic link'}</button>
               {magicSent && (
-                <div style={{ marginTop: 10, padding: '10px 14px', background: '#DCFCE7', border: '1px solid #BBF7D0', borderRadius: 10, fontSize: 13, color: '#166534', fontWeight: 600 }}>
+                <div style={{ marginTop: 12, padding: '10px 14px', background: '#DCFCE7', border: '1px solid #BBF7D0', borderRadius: 10, fontSize: 13, color: '#166534', fontWeight: 600 }}>
                   📧 Check your email for a login link
                 </div>
               )}
             </div>
-
-            <div>
-              <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 6 }}>Password</label>
-              <div style={{ position: 'relative' }}>
-                <input
-                  type={showPass ? 'text' : 'password'} required value={password} onChange={e => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  autoComplete="current-password"
-                  style={{ width: '100%', padding: '11px 42px 11px 14px', borderRadius: 10, border: '1.5px solid var(--border)', fontSize: 14, fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box' as const }}
-                />
-                <button type="button" onClick={() => setShowPass(!showPass)} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontSize: 16 }}>
-                  {showPass ? '🙈' : '👁️'}
-                </button>
-              </div>
-              <div style={{ textAlign: 'right', marginTop: 6 }}>
-                <Link href="/for-dentists/forgot-password" style={{ fontSize: 12, color: 'var(--blue)' }}>Forgot password?</Link>
-              </div>
-            </div>
-            <button
-              type="submit" disabled={loading}
-              style={{ width: '100%', padding: '13px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: 15, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}
-            >{loading ? 'Signing in...' : submitLabel}</button>
-          </form>
+          )}
 
           {/* Divider */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '20px 0' }}>

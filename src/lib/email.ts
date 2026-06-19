@@ -477,6 +477,52 @@ export async function sendApprovalEmail(data: {
   })
 }
 
+/**
+ * Login OTP for the "Email OTP" method on the dentist login page. Sends a
+ * 6-digit code the dentist types back to sign in. Branded with the city
+ * from-address (DKIM-verified via getCityEmail) like every other template.
+ *
+ * Subject carries the code itself ("Your DentistIn Login Code: 123456") so it
+ * is glanceable from the inbox list; the body shows it large and centred. The
+ * code is the only dynamic value and is numeric, so no HTML-escaping is needed.
+ */
+export async function sendLoginOtpEmail(data: {
+  to_email: string
+  otp: string
+  city?: string
+}) {
+  const city = resolveCity(data.city)
+  return resend.emails.send({
+    from: getCityEmail(city.citySlug),
+    to: data.to_email,
+    subject: `Your DentistIn Login Code: ${data.otp}`,
+    text: `Your DentistIn login code is ${data.otp}. It expires in 10 minutes. If you didn't request this, you can ignore this email.`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+        <div style="text-align: center; margin-bottom: 24px;">
+          <span style="font-family: Arial, sans-serif; font-weight: bold; font-size: 20px; color: #0057A8;">DentistIn<span style="color: #FF6135;">${city.cityName.replace(/\s+/g, '')}</span></span>
+        </div>
+        <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 32px 28px; text-align: center;">
+          <p style="color: #0F1923; font-size: 16px; font-weight: 600; margin: 0 0 6px;">Your login code</p>
+          <p style="color: #64748b; font-size: 13px; margin: 0 0 22px;">Enter this code on the sign-in page to log in.</p>
+          <div style="background: #F1F5F9; border: 1px solid #e2e8f0; border-radius: 10px; padding: 18px 12px; margin-bottom: 22px;">
+            <span style="font-family: 'Courier New', monospace; font-size: 38px; font-weight: 800; letter-spacing: 10px; color: #0057A8;">${data.otp}</span>
+          </div>
+          <p style="color: #64748b; font-size: 13px; line-height: 1.6; margin: 0;">
+            This code expires in <strong>10 minutes</strong> and can be used once.
+          </p>
+        </div>
+        <p style="color: #94a3b8; font-size: 12px; text-align: center; line-height: 1.6; margin: 20px 0 0;">
+          Didn't try to sign in? You can safely ignore this email — no one can access your account without this code.
+        </p>
+        <p style="color: #cbd5e1; font-size: 11px; text-align: center; margin: 10px 0 0;">
+          © ${new Date().getFullYear()} DentistIn. All rights reserved.
+        </p>
+      </div>
+    `,
+  })
+}
+
 // ─── Appointment notification helpers ────────────────────────────────────
 // Three shapes covering the booking lifecycle:
 //   - sendBookingRequestToPatient: ack after the patient submits a booking
