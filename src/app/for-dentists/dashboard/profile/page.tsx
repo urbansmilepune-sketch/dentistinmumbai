@@ -43,6 +43,18 @@ export default function EditProfilePage() {
   const [photoSaving, setPhotoSaving] = useState(false)
   const [photoError, setPhotoError] = useState('')
   const photoInputRef = useRef<HTMLInputElement>(null)
+
+  // Clinic branding — logo + digital signature. Each uploads directly to its
+  // own API route (which resizes via Cloudinary and writes the dentists row)
+  // and reflects the returned URL back into local state. "Remove" clears the
+  // column with an RLS-aware update, same write path as handleSave below.
+  const [clinicLogo, setClinicLogo] = useState<string | null>(null)
+  const [signature, setSignature] = useState<string | null>(null)
+  const [logoBusy, setLogoBusy] = useState(false)
+  const [signatureBusy, setSignatureBusy] = useState(false)
+  const [brandingError, setBrandingError] = useState('')
+  const logoInputRef = useRef<HTMLInputElement>(null)
+  const signatureInputRef = useRef<HTMLInputElement>(null)
   // Read-only mirror of dentists.working_hours so the profile page can show
   // a clear weekday summary. The dedicated editor at /dashboard/hours owns
   // the write path — we never UPDATE this column from profile/page.tsx.
@@ -80,7 +92,7 @@ export default function EditProfilePage() {
 
       const { data: dentist } = await supabase
         .from('dentists')
-        .select('id, slug, name, clinic_name, qualifications, degree, experience_years, bio, phone, whatsapp, website, address, consultation_fee, mci_number, emi_available, languages, specialties, maps_embed, why_choose_us, city, working_hours, phone_verified, profile_photo')
+        .select('id, slug, name, clinic_name, qualifications, degree, experience_years, bio, phone, whatsapp, website, address, consultation_fee, mci_number, emi_available, languages, specialties, maps_embed, why_choose_us, city, working_hours, phone_verified, profile_photo, clinic_logo_url, signature_url')
         .eq('email', user.email)
         .single()
 
@@ -91,6 +103,8 @@ export default function EditProfilePage() {
         setWorkingHours((dentist as any).working_hours || null)
         setPhoneVerified(!!(dentist as any).phone_verified)
         setProfilePhoto((dentist as any).profile_photo || null)
+        setClinicLogo((dentist as any).clinic_logo_url || null)
+        setSignature((dentist as any).signature_url || null)
         setForm({
           name: dentist.name || '',
           clinic_name: dentist.clinic_name || '',
@@ -350,6 +364,56 @@ export default function EditProfilePage() {
       setPhotoError('Upload failed. Please try again.')
     }
     setPhotoSaving(false)
+  }
+
+  // Branding uploads — the route validates type/size server-side too, but we
+  // pre-check here so the dentist gets an instant message instead of a
+  // round-trip. On success we reflect the returned Cloudinary URL into state.
+  async function uploadBranding(file: File, kind: 'logo' | 'signature') {
+    setBrandingError('')
+    const maxMb = kind === 'logo' ? 2 : 1
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setBrandingError('Please choose a JPEG, PNG or WebP image.'); return
+    }
+    if (file.size > maxMb * 1024 * 1024) {
+      setBrandingError(`Image too large. Max ${maxMb}MB.`); return
+    }
+    const setBusy = kind === 'logo' ? setLogoBusy : setSignatureBusy
+    setBusy(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await fetch(`/api/dentist/upload-${kind}`, { method: 'POST', body: formData })
+      const data = await res.json()
+      if (!res.ok || !data.url) { setBrandingError(data.error || 'Upload failed.'); setBusy(false); return }
+      if (kind === 'logo') setClinicLogo(data.url)
+      else setSignature(data.url)
+    } catch {
+      setBrandingError('Upload failed. Please try again.')
+    }
+    setBusy(false)
+  }
+
+  // Remove clears the column with the same RLS-aware update the profile save
+  // uses — .select('id') makes a denied write observable.
+  async function removeBranding(kind: 'logo' | 'signature') {
+    if (!dentistId) return
+    setBrandingError('')
+    const setBusy = kind === 'logo' ? setLogoBusy : setSignatureBusy
+    setBusy(true)
+    const column = kind === 'logo' ? 'clinic_logo_url' : 'signature_url'
+    const supabase = createClient()
+    const { data, error } = await supabase
+      .from('dentists')
+      .update({ [column]: null })
+      .eq('id', dentistId)
+      .select('id')
+    setBusy(false)
+    if (error || !data || data.length === 0) {
+      setBrandingError('Could not remove the image. Please try again.'); return
+    }
+    if (kind === 'logo') setClinicLogo(null)
+    else setSignature(null)
   }
 
   async function handleSave() {
@@ -1011,6 +1075,91 @@ export default function EditProfilePage() {
           </div>
           </>
         )}
+      </div>
+
+      {/* Clinic Branding — logo + signature used on invoices and
+          prescriptions. Uploads go straight to their own API routes (which
+          resize via Cloudinary and write the dentists row); "Remove" clears
+          the column. Teal-underlined heading per the brand spec. */}
+      <div style={sectionStyle}>
+        <h2 style={{
+          fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, marginBottom: 4,
+          display: 'inline-block', paddingBottom: 6, borderBottom: '3px solid #0FB5AE',
+        }}>Clinic Branding</h2>
+        <p style={{ fontSize: 13, color: 'var(--muted)', margin: '10px 0 18px' }}>
+          Add your clinic logo and signature once — they're printed automatically on every invoice and prescription you generate.
+        </p>
+        {brandingError && <div style={{ padding: '10px 14px', background: '#FEE2E2', border: '1px solid #FECACA', borderRadius: 10, fontSize: 13, color: '#991B1B', marginBottom: 14 }}>{brandingError}</div>}
+
+        <div className="profile-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          {/* Card 1 — Clinic Logo */}
+          <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: 20 }}>
+            <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, marginBottom: 14 }}>Clinic Logo</h3>
+            <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ width: 80, height: 80, borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border)', flexShrink: 0, background: 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {clinicLogo
+                  ? <img src={clinicLogo} alt="Clinic logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                  : <span style={{ fontSize: 30 }} aria-hidden="true">🏥</span>}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => logoInputRef.current?.click()}
+                  disabled={logoBusy}
+                  style={{ padding: '9px 18px', minHeight: 40, background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: 13, cursor: logoBusy ? 'not-allowed' : 'pointer', opacity: logoBusy ? 0.6 : 1 }}
+                >{logoBusy ? 'Uploading…' : clinicLogo ? 'Replace Logo' : 'Upload Logo'}</button>
+                {clinicLogo && !logoBusy && (
+                  <button
+                    type="button"
+                    onClick={() => removeBranding('logo')}
+                    style={{ padding: 0, background: 'transparent', border: 'none', color: '#991B1B', fontSize: 12, fontWeight: 600, cursor: 'pointer', textAlign: 'left', fontFamily: 'var(--font-body)' }}
+                  >Remove</button>
+                )}
+              </div>
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 14, lineHeight: 1.5 }}>
+              Appears on invoices and prescriptions. Recommended: square image, min 200×200px, PNG or JPG.
+            </p>
+            <input
+              ref={logoInputRef} type="file" accept="image/*" style={{ display: 'none' }}
+              onChange={e => { const f = e.target.files?.[0]; if (f) uploadBranding(f, 'logo'); e.target.value = '' }}
+            />
+          </div>
+
+          {/* Card 2 — Digital Signature */}
+          <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: 20 }}>
+            <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, marginBottom: 14 }}>Digital Signature</h3>
+            <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ width: 200, height: 60, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', flexShrink: 0, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {signature
+                  ? <img src={signature} alt="Signature" style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#fff' }} />
+                  : <span style={{ fontSize: 12, color: 'var(--muted)' }}>No signature uploaded</span>}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => signatureInputRef.current?.click()}
+                  disabled={signatureBusy}
+                  style={{ padding: '9px 18px', minHeight: 40, background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: 13, cursor: signatureBusy ? 'not-allowed' : 'pointer', opacity: signatureBusy ? 0.6 : 1 }}
+                >{signatureBusy ? 'Uploading…' : signature ? 'Replace Signature' : 'Upload Signature'}</button>
+                {signature && !signatureBusy && (
+                  <button
+                    type="button"
+                    onClick={() => removeBranding('signature')}
+                    style={{ padding: 0, background: 'transparent', border: 'none', color: '#991B1B', fontSize: 12, fontWeight: 600, cursor: 'pointer', textAlign: 'left', fontFamily: 'var(--font-body)' }}
+                  >Remove</button>
+                )}
+              </div>
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 14, lineHeight: 1.5 }}>
+              Appears at the bottom of prescriptions. Sign on white paper, photograph or scan, upload.
+            </p>
+            <input
+              ref={signatureInputRef} type="file" accept="image/*" style={{ display: 'none' }}
+              onChange={e => { const f = e.target.files?.[0]; if (f) uploadBranding(f, 'signature'); e.target.value = '' }}
+            />
+          </div>
+        </div>
       </div>
 
       {/* Save button bottom — on mobile this lifts off the page into a

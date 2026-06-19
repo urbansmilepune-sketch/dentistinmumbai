@@ -362,7 +362,16 @@ export default async function DentistProfilePage({ params }: Props) {
                   {dentist.emi_available && <span style={{ fontSize: 11, fontWeight: 700, color: '#92400E', background: '#FEF3C7', padding: '2px 8px', borderRadius: 20 }}>💳 EMI Available</span>}
                 </div>
                 <p style={{ fontSize: 14, color: 'var(--muted)', marginBottom: 4 }}>{dentist.qualifications}{dentist.experience_years ? ` · ${dentist.experience_years} yrs exp` : ''}</p>
-                <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 8 }}>🏥 {dentist.clinic_name} · 📍 {areaName}, {city.cityName}</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
+                  {dentist.clinic_logo_url && (
+                    <img
+                      src={cloudinaryDeliveryUrl(dentist.clinic_logo_url) || dentist.clinic_logo_url}
+                      alt={`${dentist.clinic_name || 'Clinic'} logo`}
+                      style={{ height: 48, width: 'auto', maxWidth: 96, objectFit: 'contain', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', padding: 3, flexShrink: 0 }}
+                    />
+                  )}
+                  <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>🏥 {dentist.clinic_name} · 📍 {areaName}, {city.cityName}</p>
+                </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <div style={{ width: 8, height: 8, borderRadius: '50%', background: openStatus.open ? '#00A878' : '#EF4444' }} />

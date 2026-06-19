@@ -13,7 +13,7 @@ async function fetchPrescription(id: string) {
   const supabase = admin()
   const { data } = await supabase
     .from('prescriptions')
-    .select('*, patients(name, age, phone, gender, allergies), dentists(name, degree, clinic_name, phone, mci_number, address, city, areas(name))')
+    .select('*, patients(name, age, phone, gender, allergies), dentists(name, degree, clinic_name, phone, mci_number, address, city, areas(name), clinic_logo_url, signature_url)')
     .eq('id', id)
     .single()
   return data
@@ -82,6 +82,8 @@ function generatePrescriptionHTML(rx: any, opts: { autoPrint?: boolean } = {}) {
     ? dentist.address
     : (dentist?.areas?.name ? `${dentist.areas.name}, ${city.cityName}` : city.cityName)
   const clinicPhone = dentist?.phone || ''
+  const logoUrl = dentist?.clinic_logo_url || ''
+  const signatureUrl = dentist?.signature_url || ''
 
   return `
 <!DOCTYPE html>
@@ -130,6 +132,7 @@ function generatePrescriptionHTML(rx: any, opts: { autoPrint?: boolean } = {}) {
     ${mci ? `<div class="reg">MCI / DCI Reg. No: ${escapeHtml(mci)}</div>` : ''}
   </div>
   <div class="header-right">
+    ${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="Clinic logo" style="max-height:60px;max-width:120px;width:auto;height:auto;background:#fff;border-radius:6px;padding:4px;margin-bottom:8px;display:inline-block" />` : ''}
     <p style="font-size:10px;opacity:0.7;text-transform:uppercase;letter-spacing:0.05em">Date</p>
     <p style="font-size:14px;font-weight:700">${escapeHtml(date)}</p>
     <p style="font-size:11px;opacity:0.85;margin-top:6px">${escapeHtml(time)}</p>
@@ -163,9 +166,12 @@ function generatePrescriptionHTML(rx: any, opts: { autoPrint?: boolean } = {}) {
   <div class="footer">
     <div class="stamp-box">Clinic Stamp</div>
     <div class="signature">
-      <div class="line"></div>
+      ${signatureUrl
+        ? `<img src="${escapeHtml(signatureUrl)}" alt="Doctor's signature" style="max-width:160px;max-height:50px;width:auto;height:auto;object-fit:contain;background:#fff;margin:0 auto 4px;display:block" />`
+        : `<div class="line"></div>`}
+      <p class="role" style="margin-bottom:4px">Doctor's Signature</p>
       <p class="name">${escapeHtml(doctorName)}${degree ? ', ' + escapeHtml(degree) : ''}</p>
-      <p class="role">Signature${mci ? ' · MCI ' + escapeHtml(mci) : ''}</p>
+      ${mci ? `<p class="role">Reg. No: ${escapeHtml(mci)}</p>` : ''}
     </div>
   </div>
   <div style="font-size:11px;color:#64748b;margin-top:24px;">

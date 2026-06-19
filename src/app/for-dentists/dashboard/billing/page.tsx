@@ -72,7 +72,7 @@ function BillingPageInner() {
         if (!user) { router.push('/for-dentists/login'); return }
         const dentistRow = await resolveCurrentDentist<DentistMeta>(
           supabase,
-          'id, name, degree, clinic_name, phone, whatsapp, address, mci_number, city, areas(name)',
+          'id, name, degree, clinic_name, phone, whatsapp, address, mci_number, city, areas(name), clinic_logo_url',
         )
         if (!dentistRow) return
         setDentistId(dentistRow.id)

@@ -28,6 +28,32 @@ export type InvoiceDentist = {
   mci_number?: string | null
   city: string | null
   areas?: { name: string | null } | null
+  clinic_logo_url?: string | null
+}
+
+// Load a (Cloudinary) image URL into a PNG data URL plus its natural size so
+// jsPDF can embed it with a known format and a correct aspect ratio.
+// crossOrigin='anonymous' keeps the canvas untainted — Cloudinary delivery
+// sends Access-Control-Allow-Origin, so toDataURL won't throw. Resolves null
+// on any failure so a flaky logo never blocks the invoice download.
+function loadImageData(url: string): Promise<{ dataUrl: string; width: number; height: number } | null> {
+  return new Promise(resolve => {
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width = img.naturalWidth
+        canvas.height = img.naturalHeight
+        const ctx = canvas.getContext('2d')
+        if (!ctx) { resolve(null); return }
+        ctx.drawImage(img, 0, 0)
+        resolve({ dataUrl: canvas.toDataURL('image/png'), width: img.naturalWidth, height: img.naturalHeight })
+      } catch { resolve(null) }
+    }
+    img.onerror = () => resolve(null)
+    img.src = url
+  })
 }
 
 export type InvoiceItem = {
@@ -53,7 +79,7 @@ export type Invoice = {
   patients?: { name?: string | null; phone?: string | null } | null
 }
 
-export function downloadInvoicePdf(inv: Invoice, dentist: InvoiceDentist) {
+export async function downloadInvoicePdf(inv: Invoice, dentist: InvoiceDentist) {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' })
 
   // A4 in points: 595 × 842. Hardcoded so the column x-coordinates below stay
@@ -87,33 +113,54 @@ export function downloadInvoicePdf(inv: Invoice, dentist: InvoiceDentist) {
   // ============================================================
   // HEADER (y: 40-120)
   // ============================================================
+  // Optional clinic logo, top-left. We cap the rendered height at 56pt so the
+  // mark sits alongside the clinic-name/address block (which runs y≈48-122)
+  // without colliding with the address lines; the text block shifts right by
+  // the logo's width + a gutter. textX/addrWidth fall back to the original
+  // full-width layout when there's no logo.
+  let textX = MARGIN
+  let addrWidth = 280
+  if (dentist.clinic_logo_url) {
+    const logo = await loadImageData(dentist.clinic_logo_url)
+    if (logo && logo.width > 0 && logo.height > 0) {
+      const LOGO_MAX_H = 56
+      const LOGO_MAX_W = 90
+      let h = LOGO_MAX_H
+      let w = (logo.width / logo.height) * h
+      if (w > LOGO_MAX_W) { w = LOGO_MAX_W; h = (logo.height / logo.width) * w }
+      doc.addImage(logo.dataUrl, 'PNG', MARGIN, 44, w, h)
+      textX = MARGIN + w + 14
+      addrWidth = 280 - (textX - MARGIN)
+    }
+  }
+
   // Clinic name — bold 18pt blue at y=60
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(18)
   doc.setTextColor(0, 87, 168)
-  doc.text(dentist.clinic_name || dentist.name || 'Clinic', MARGIN, 60)
+  doc.text(dentist.clinic_name || dentist.name || 'Clinic', textX, 60)
 
   // Doctor name + degree — 10pt dark at y=76
   if (doctorName) {
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(10)
     doc.setTextColor(40, 40, 40)
-    doc.text(degree ? `${doctorName}, ${degree}` : doctorName, MARGIN, 76)
+    doc.text(degree ? `${doctorName}, ${degree}` : doctorName, textX, 76)
   }
 
   // Address — 9pt grey, up to 2 lines (long addresses were being truncated to
-  // one line; 280pt wraps before the right-side INVOICE block at x=315+).
+  // one line; ~280pt wraps before the right-side INVOICE block at x=315+).
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9)
   doc.setTextColor(100, 100, 100)
-  const addrLines = doc.splitTextToSize(clinicAddress, 280) as string[]
-  if (addrLines[0]) doc.text(addrLines[0], MARGIN, 89)
-  if (addrLines[1]) doc.text(addrLines[1], MARGIN, 100)
+  const addrLines = doc.splitTextToSize(clinicAddress, addrWidth) as string[]
+  if (addrLines[0]) doc.text(addrLines[0], textX, 89)
+  if (addrLines[1]) doc.text(addrLines[1], textX, 100)
 
   // Phone — 9pt grey at y=111 (pushed down to make room for 2-line address)
-  if (phone) doc.text(`Phone: ${phone}`, MARGIN, 111)
+  if (phone) doc.text(`Phone: ${phone}`, textX, 111)
   // MCI — 9pt grey at y=122
-  if (mci) doc.text(`Reg No: ${mci}`, MARGIN, 122)
+  if (mci) doc.text(`Reg No: ${mci}`, textX, 122)
 
   // Right side: INVOICE label + meta
   doc.setFont('helvetica', 'bold')
