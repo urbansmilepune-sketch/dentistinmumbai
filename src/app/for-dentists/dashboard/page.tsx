@@ -6,6 +6,7 @@ import TodayWhatsAppButton, { type TodayAppt } from './TodayWhatsAppButton'
 import AutoRefresh from '@/components/AutoRefresh'
 import RecentApptActions from './RecentApptActions'
 import ProfileQRCard from './ProfileQRCard'
+import RequestReviewCard from './RequestReviewCard'
 import { resolveCurrentDentist } from '@/lib/currentDentist'
 import { getCityBySlug } from '@/config/cities'
 
@@ -374,6 +375,9 @@ export default async function DashboardPage() {
 
       {/* Share Your Profile — always-visible QR to the public listing. */}
       {profileUrl && <ProfileQRCard profileUrl={profileUrl} clinicName={clinicName} />}
+
+      {/* Get Your First Review — WhatsApp a review request to an existing patient. */}
+      {profileUrl && <RequestReviewCard profileUrl={profileUrl} clinicName={clinicName} dentistName={dentist.name || ''} />}
 
       {/* Recent appointments */}
       <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden', marginBottom: 24 }}>
