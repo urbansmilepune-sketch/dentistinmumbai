@@ -11,15 +11,18 @@ type LoginMethod = 'otp' | 'password' | 'magic'
 export default function DentistLoginPage() {
   const router = useRouter()
   // Default to Email OTP — the simplest path for dentists who never set a
-  // password. Password and Magic Link stay available behind the tab strip.
+  // password. Password is the only other surfaced method; magic link was
+  // removed from the UI (handleMagicLink is kept for internal use only).
   const [method, setMethod] = useState<LoginMethod>('otp')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
   const [loading, setLoading] = useState(false)
   const [gLoading, setGLoading] = useState(false)
-  const [magicLoading, setMagicLoading] = useState(false)
-  const [magicSent, setMagicSent] = useState(false)
+  // Magic-link state is kept for handleMagicLink (no UI — see below). Only the
+  // setters are referenced, so the value slots are intentionally omitted.
+  const [, setMagicLoading] = useState(false)
+  const [, setMagicSent] = useState(false)
   const [error, setError] = useState('')
 
   // ── Email-OTP flow state ──────────────────────────────────────────────
@@ -74,7 +77,6 @@ export default function DentistLoginPage() {
   const submitLabel    = national ? 'Sign In' : 'Sign In to Dashboard'
   const joinHref       = national ? '/join' : '/for-dentists'
   const joinCta        = national ? 'Join the network →' : 'List your clinic free →'
-  const magicLinkLine  = national ? 'Check your email for your magic sign-in link' : 'Check your email for your dashboard access link'
 
   const supabase = createClient()
 
@@ -110,6 +112,11 @@ export default function DentistLoginPage() {
 // clicking it lands on /auth/callback (same route as Google OAuth), which
 // exchanges the code for a session and routes to the dashboard/feed. We keep
 // emailRedirectTo on the current origin so the host-scoped auth cookie sticks.
+//
+// Kept intentionally but NOT wired to any UI — magic link was removed from the
+// login surface (password + Email OTP only). Preserved here so it can be
+// re-enabled internally without rebuilding the flow.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async function handleMagicLink() {
     if (!email) { setError('Enter your email address above first, then request a login link.'); return }
     setError(''); setMagicSent(false); setMagicLoading(true)
@@ -277,15 +284,6 @@ async function handleGoogle() {
           <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 4 }}>Welcome back, Doctor</h1>
           <p style={{ color: 'var(--muted)', fontSize: 14, marginBottom: 20 }}>{rightSubLine}</p>
 
-          {/* First-login nudge: dentists who just registered get a one-click
-              magic link in their approval email rather than a password —
-              this banner steers them toward their inbox so they don't waste
-              time trying password combinations that don't exist. */}
-          <div style={{ padding: '12px 14px', background: '#E8F3FF', border: '1px solid #BFDBFE', borderRadius: 10, fontSize: 13, color: 'var(--blue-dark)', marginBottom: 20, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-            <span style={{ fontSize: 16, lineHeight: 1.2 }}>📧</span>
-            <span><strong>Just registered?</strong> {magicLinkLine} — no password needed for your first sign-in.</span>
-          </div>
-
           {error && (
             <div style={{ padding: '12px 16px', background: '#FEE2E2', border: '1px solid #FECACA', borderRadius: 10, fontSize: 13, color: '#991B1B', marginBottom: 20 }}>
               {error}
@@ -293,12 +291,12 @@ async function handleGoogle() {
           )}
 
           {/* Login-method tabs. Email OTP is first and default — the simplest
-              path for dentists with no password. Password + Magic Link remain. */}
+              path for dentists with no password; Password is the alternative.
+              (Magic link was removed from the UI — see handleMagicLink.) */}
           <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 12, marginBottom: 18 }}>
             {([
               { key: 'otp', label: 'Email OTP' },
               { key: 'password', label: 'Password' },
-              { key: 'magic', label: 'Magic Link' },
             ] as Array<{ key: LoginMethod; label: string }>).map(m => (
               <button
                 key={m.key}
@@ -407,21 +405,6 @@ async function handleGoogle() {
                 style={{ width: '100%', padding: '13px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: 15, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}
               >{loading ? 'Signing in...' : submitLabel}</button>
             </form>
-          )}
-
-          {/* ── Magic Link ────────────────────────────────────────────── */}
-          {method === 'magic' && (
-            <div>
-              <button
-                type="button" onClick={handleMagicLink} disabled={magicLoading}
-                style={{ width: '100%', padding: '13px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: 15, cursor: magicLoading ? 'not-allowed' : 'pointer', opacity: magicLoading ? 0.7 : 1 }}
-              >{magicLoading ? 'Sending login link…' : 'Send me a magic link'}</button>
-              {magicSent && (
-                <div style={{ marginTop: 12, padding: '10px 14px', background: '#DCFCE7', border: '1px solid #BBF7D0', borderRadius: 10, fontSize: 13, color: '#166534', fontWeight: 600 }}>
-                  📧 Check your email for a login link
-                </div>
-              )}
-            </div>
           )}
 
           {/* Divider */}
