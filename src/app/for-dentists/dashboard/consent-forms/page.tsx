@@ -15,6 +15,7 @@ interface Template {
   form_title: string
   form_content: string
   is_system: boolean
+  is_active?: boolean
 }
 
 interface PatientOpt {
@@ -89,6 +90,9 @@ export default function ConsentFormsPage() {
   const [manualName, setManualName] = useState('')
   const [manualPhone, setManualPhone] = useState('')
   const [selectedType, setSelectedType] = useState('')
+  // The dropdown is keyed by template id (not form_type) so a custom copy that
+  // reuses a system template's form_type doesn't collide.
+  const [selectedTemplateId, setSelectedTemplateId] = useState('')
   const [formContent, setFormContent] = useState('')
   const [formTitle, setFormTitle] = useState('')
   const [sending, setSending] = useState(false)
@@ -112,7 +116,7 @@ export default function ConsentFormsPage() {
 
       const [{ data: tpls }, { data: cf }] = await Promise.all([
         supabase.from('consent_templates')
-          .select('id, form_type, form_title, form_content, is_system')
+          .select('id, form_type, form_title, form_content, is_system, is_active')
           .order('is_system', { ascending: false })
           .order('form_title'),
         supabase.from('consent_forms')
@@ -145,12 +149,17 @@ export default function ConsentFormsPage() {
     return () => clearTimeout(t)
   }, [patientQuery, searchPatients])
 
-  function selectTemplate(type: string) {
-    setSelectedType(type)
-    const tpl = templates.find(t => t.form_type === type)
+  function selectTemplate(id: string) {
+    setSelectedTemplateId(id)
+    const tpl = templates.find(t => t.id === id)
     if (tpl) {
+      setSelectedType(tpl.form_type)
       setFormTitle(tpl.form_title)
       setFormContent(tpl.form_content)
+    } else {
+      setSelectedType('')
+      setFormTitle('')
+      setFormContent('')
     }
   }
 
@@ -254,6 +263,7 @@ export default function ConsentFormsPage() {
     setManualName('')
     setManualPhone('')
     setSelectedType('')
+    setSelectedTemplateId('')
     setFormContent('')
     setFormTitle('')
   }
@@ -266,6 +276,11 @@ export default function ConsentFormsPage() {
     setForms(prev => prev.filter(f => f.id !== id))
     setDeleting(null)
   }
+
+  // Split for the send dropdown: system templates first, then the dentist's
+  // active custom ones under a "My Templates" group.
+  const systemTemplates = templates.filter(t => t.is_system && t.is_active !== false)
+  const customTemplates = templates.filter(t => !t.is_system && t.is_active !== false)
 
   const filteredForms = statusFilter === 'all'
     ? forms
@@ -369,13 +384,22 @@ export default function ConsentFormsPage() {
             {/* Form type */}
             <div>
               <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Consent form type *</label>
-              <select value={selectedType} onChange={e => selectTemplate(e.target.value)} style={{ ...inp }}>
+              <select value={selectedTemplateId} onChange={e => selectTemplate(e.target.value)} style={{ ...inp }}>
                 <option value="">— Select form type</option>
-                {templates.map(t => (
-                  <option key={t.id} value={t.form_type}>
-                    {t.is_system ? '' : '★ '}{t.form_title}
-                  </option>
-                ))}
+                {systemTemplates.length > 0 && (
+                  <optgroup label="System Templates">
+                    {systemTemplates.map(t => (
+                      <option key={t.id} value={t.id}>{t.form_title}</option>
+                    ))}
+                  </optgroup>
+                )}
+                {customTemplates.length > 0 && (
+                  <optgroup label="My Templates">
+                    {customTemplates.map(t => (
+                      <option key={t.id} value={t.id}>{t.form_title}</option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
             </div>
 
