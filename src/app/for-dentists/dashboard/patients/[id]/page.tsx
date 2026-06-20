@@ -997,7 +997,7 @@ export default function PatientDetailPage() {
               </button>
             ))}
           </div>
-          {chartSubTab === 'tooth' && <ToothChart patientId={patientId} dentistId={dentistId} />}
+          {chartSubTab === 'tooth' && <ToothChart patientId={patientId} dentistId={dentistId} patientName={patient?.name} dentistName={dentistName} />}
           {chartSubTab === 'perio' && <PerioChart patientId={patientId} dentistId={dentistId} />}
         </div>
       )}

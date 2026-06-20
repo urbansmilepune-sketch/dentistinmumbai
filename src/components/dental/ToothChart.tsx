@@ -1,93 +1,82 @@
 'use client'
 
-// Interactive FDI tooth chart — the V2 dental chart that powers the
-// "dental-chart" tab on the patient detail page. Differs from the older
-// src/components/DentalChart.tsx in three ways:
-//   1. Shape per tooth class (molar / premolar / canine / incisor) instead
-//      of uniform rectangles, so the chart visually reads as an arch.
-//   2. Modal condition selector with notes + treatment date + per-tooth
-//      change history, instead of an inline panel.
-//   3. View / Edit toggle plus a dedicated Print view (window.print() with
-//      a print-only stylesheet) so the dentist can hand the patient a hard
-//      copy in one click.
+// Photorealistic 32-tooth FDI dental chart — the "Tooth Chart" sub-tab on the
+// patient detail page. Replaces the earlier flat-rectangle chart that wrote a
+// single JSONB blob to `dental_charts`. This version:
+//   1. Renders anatomically distinct SVG shapes per tooth class (incisor /
+//      canine / premolar / molar) with radial-gradient fills + highlights so
+//      each tooth reads as a 3D object on the dark canvas.
+//   2. Supports 19 clinical conditions, each with its own colour + gradient.
+//   3. Persists one row per (patient, tooth, condition) in
+//      public.dental_chart_entries (see migration 20260620120000) instead of a
+//      single JSONB row, so conditions are queryable/reportable.
 //
-// Storage: rows in public.dental_charts, one per (patient_id, dentist_id),
-// payload in `tooth_data` JSONB. The legacy DentalChart writes to
-// `chart_data` on the same row — both columns coexist (see migration
-// 20260522150000_dental_charts.sql). On save we UPSERT so the unique
-// (patient_id, dentist_id) constraint keeps the row count at one.
+// Upper teeth (11-28) are drawn crown-down / root-up; lower teeth (31-48) are
+// flipped so the crown points up — the way an open mouth presents to the
+// dentist. Each arch is one horizontal row split at the midline, with the
+// patient's right (the viewer's left) leading, matching how a dentist charts
+// while facing the patient.
+//
+// Persistence: the component is self-contained — it loads existing rows on
+// mount (unless `existingEntries` is supplied) and on Save replaces the
+// patient+dentist's rows wholesale (delete-then-insert) so the table always
+// mirrors the on-screen state, even when a tooth's condition changes (a plain
+// upsert keyed on (patient,tooth,condition) would orphan the previous
+// condition's row). An optional `onSave` callback fires with the saved rows.
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 // ---------------------------------------------------------------------------
-// Types
+// Conditions
 // ---------------------------------------------------------------------------
 
 export type ConditionId =
-  | 'healthy' | 'decay' | 'rct' | 'crown' | 'missing'
-  | 'implant' | 'bridge' | 'fracture' | 'sensitivity'
+  | 'healthy' | 'caries' | 'rct' | 'crown' | 'missing' | 'implant'
+  | 'bridge_abutment' | 'bridge_pontic' | 'fracture' | 'sensitivity'
+  | 'abscess' | 'impacted' | 'partially_erupted' | 'wear_attrition'
+  | 'erosion' | 'fluorosis' | 'hypoplasia' | 'mobility' | 'recession'
 
-export type ToothCondition = {
-  tooth_number: number
-  condition: ConditionId
-  notes?: string
-  treatment_date?: string
-  // Append-only audit trail — every Save snapshot pushes a HistoryEntry so
-  // the dentist can see "this 36 was healthy on Jan 3, became decay on
-  // Feb 12, RCT done on Mar 4". Stored inside the tooth's JSON so we don't
-  // need a separate dental_chart_events table.
-  history?: HistoryEntry[]
+type ConditionMeta = { label: string; color: string; border: string; emoji: string }
+
+const CONDITIONS: Record<ConditionId, ConditionMeta> = {
+  healthy:           { label: 'Healthy',            color: '#F5F0E8', border: '#C8B89A', emoji: '✓'  },
+  caries:            { label: 'Caries / Decay',     color: '#8B4513', border: '#5C2E0A', emoji: '●'  },
+  rct:               { label: 'Root Canal (RCT)',   color: '#E8D5B7', border: '#B8860B', emoji: 'RC' },
+  crown:             { label: 'Crown',              color: '#FFD700', border: '#B8860B', emoji: 'C'  },
+  missing:           { label: 'Missing / Extracted',color: '#E0E0E0', border: '#9E9E9E', emoji: 'X'  },
+  implant:           { label: 'Implant',            color: '#B0C4DE', border: '#4682B4', emoji: 'I'  },
+  bridge_abutment:   { label: 'Bridge Abutment',    color: '#DEB887', border: '#8B6914', emoji: 'BA' },
+  bridge_pontic:     { label: 'Bridge Pontic',      color: '#D2B48C', border: '#8B6914', emoji: 'BP' },
+  fracture:          { label: 'Fracture / Crack',   color: '#FF6B6B', border: '#CC0000', emoji: '⚡' },
+  sensitivity:       { label: 'Sensitivity',        color: '#87CEEB', border: '#4169E1', emoji: 'S'  },
+  abscess:           { label: 'Abscess',            color: '#FF4500', border: '#8B0000', emoji: 'A'  },
+  impacted:          { label: 'Impacted',           color: '#DDA0DD', border: '#800080', emoji: 'IM' },
+  partially_erupted: { label: 'Partially Erupted',  color: '#98FB98', border: '#228B22', emoji: 'PE' },
+  wear_attrition:    { label: 'Wear / Attrition',   color: '#D2691E', border: '#8B4513', emoji: 'W'  },
+  erosion:           { label: 'Erosion',            color: '#FFA500', border: '#CC7000', emoji: 'E'  },
+  fluorosis:         { label: 'Fluorosis',          color: '#F0FFF0', border: '#90EE90', emoji: 'FL' },
+  hypoplasia:        { label: 'Hypoplasia',         color: '#FFFACD', border: '#DAA520', emoji: 'H'  },
+  mobility:          { label: 'Mobility',           color: '#FFB6C1', border: '#FF1493', emoji: 'M'  },
+  recession:         { label: 'Gum Recession',      color: '#FA8072', border: '#DC143C', emoji: 'GR' },
 }
 
-export type HistoryEntry = {
-  condition: ConditionId
-  notes?: string
-  treatment_date?: string
-  recorded_at: string
-}
-
-type ToothMap = Record<string, ToothCondition>
-
-interface Props {
-  patientId: string
-  dentistId: string
-  // When true the chart is rendered without the Edit / Save controls — used
-  // for read-only contexts (e.g. embedding inside a printable summary).
-  readonly?: boolean
-}
+const CONDITION_IDS = Object.keys(CONDITIONS) as ConditionId[]
+const SEVERITIES = ['mild', 'moderate', 'severe'] as const
+type Severity = typeof SEVERITIES[number]
+// Tooth surfaces — Mesial / Occlusal (Incisal) / Distal / Buccal / Lingual.
+const SURFACES = ['M', 'O', 'D', 'B', 'L'] as const
 
 // ---------------------------------------------------------------------------
-// Constants — FDI numbering + condition palette + tooth-class shapes
+// FDI layout — one row per arch, split at the midline. Patient's right leads
+// (viewer's left), matching a dentist facing the patient.
 // ---------------------------------------------------------------------------
 
-// FDI numbering: 1=upper-right, 2=upper-left, 3=lower-left, 4=lower-right.
-// Order matters — the arrays are rendered left-to-right as the dentist
-// faces the patient. UPPER_RIGHT shows centre→back (11..18) so that 11 sits
-// adjacent to 21 in the midline.
 const UPPER_RIGHT = [18, 17, 16, 15, 14, 13, 12, 11]
 const UPPER_LEFT  = [21, 22, 23, 24, 25, 26, 27, 28]
 const LOWER_RIGHT = [48, 47, 46, 45, 44, 43, 42, 41]
 const LOWER_LEFT  = [31, 32, 33, 34, 35, 36, 37, 38]
 
-const CONDITIONS: Array<{ id: ConditionId; label: string; color: string; symbol: string; description: string }> = [
-  { id: 'healthy',     label: 'Healthy',          color: '#FFFFFF', symbol: '',  description: 'No condition recorded' },
-  { id: 'decay',       label: 'Decay / Cavity',   color: '#DC2626', symbol: '●', description: 'Caries present' },
-  { id: 'rct',         label: 'Root Canal Done',  color: '#F59E0B', symbol: '◎', description: 'Endodontic treatment completed' },
-  { id: 'crown',       label: 'Crown',            color: '#3B82F6', symbol: '♛', description: 'Crown fitted' },
-  { id: 'missing',     label: 'Missing / Extracted', color: '#9CA3AF', symbol: '✕', description: 'Tooth absent' },
-  { id: 'implant',     label: 'Implant',          color: '#10B981', symbol: '⬡', description: 'Dental implant placed' },
-  { id: 'bridge',      label: 'Bridge',           color: '#8B5CF6', symbol: '━', description: 'Part of a bridge' },
-  { id: 'fracture',    label: 'Fracture',         color: '#F97316', symbol: '⚡', description: 'Tooth fractured' },
-  { id: 'sensitivity', label: 'Sensitivity',      color: '#BAE6FD', symbol: '~', description: 'Reported sensitivity' },
-]
-
-const CONDITION_BY_ID: Record<ConditionId, typeof CONDITIONS[number]> =
-  Object.fromEntries(CONDITIONS.map(c => [c.id, c])) as any
-
-// Tooth class by FDI second digit. Mirrors textbook anatomy: 1-2 incisors,
-// 3 canine, 4-5 premolars, 6-8 molars. Used to pick width/shape so the
-// rendered arch isn't a uniform grid.
 type ToothClass = 'incisor' | 'canine' | 'premolar' | 'molar'
 function toothClass(n: number): ToothClass {
   const pos = n % 10
@@ -97,579 +86,674 @@ function toothClass(n: number): ToothClass {
   return 'molar'
 }
 
-// Width per class — molars are widest, incisors narrowest. Heights are
-// uniform so the arch reads as a clean band.
-const CLASS_WIDTH: Record<ToothClass, number> = {
-  molar: 42, premolar: 34, canine: 30, incisor: 26,
+// ---------------------------------------------------------------------------
+// Colour helpers — derive a light "specular" stop for each gradient so the
+// crown looks lit from the upper-left.
+// ---------------------------------------------------------------------------
+
+function lighten(hex: string, amt: number): string {
+  const h = hex.replace('#', '')
+  const num = parseInt(h.length === 3 ? h.split('').map(c => c + c).join('') : h, 16)
+  const r = (num >> 16) & 0xff, g = (num >> 8) & 0xff, b = num & 0xff
+  const mix = (c: number) => Math.round(c + (255 - c) * amt)
+  return `#${[mix(r), mix(g), mix(b)].map(c => c.toString(16).padStart(2, '0')).join('')}`
 }
 
 // ---------------------------------------------------------------------------
-// Tooth — SVG-based to support real shapes (canines need a pointed tip,
-// molars get rounded corners). One <Tooth> renders one box; the parent
-// <ToothChart> composes them into the four quadrants.
+// Tooth shapes — paths drawn crown-down / root-up in a 28×56 viewBox. `fill`
+// is the radial-gradient url, `stroke` the condition border, `highlight` the
+// specular sheen. (Taken from the brief's anatomy, recentred to 28 wide.)
 // ---------------------------------------------------------------------------
 
-function Tooth({
-  number, condition, onClick, isUpper, readonly,
+type ShapeProps = { fill: string; stroke: string; highlight: string }
+
+function IncisorShape({ fill, stroke, highlight }: ShapeProps) {
+  return (
+    <g>
+      <path d="M14,2 Q12,0 10,8 Q8,20 12,28 Q14,32 16,28 Q20,20 18,8 Q16,0 14,2 Z"
+        fill={fill} stroke={stroke} strokeWidth="0.5" opacity="0.7" />
+      <rect x="6" y="28" width="16" height="20" rx="3" fill={fill} stroke={stroke} strokeWidth="1" />
+      <rect x="8" y="30" width="5" height="14" rx="2" fill={highlight} opacity="0.4" />
+    </g>
+  )
+}
+
+function CanineShape({ fill, stroke, highlight }: ShapeProps) {
+  return (
+    <g>
+      <path d="M14,0 Q11,0 9,10 Q7,24 12,34 Q14,38 16,34 Q21,24 19,10 Q17,0 14,0 Z"
+        fill={fill} stroke={stroke} strokeWidth="0.5" opacity="0.7" />
+      <path d="M6,34 Q6,28 14,24 Q22,28 22,34 L22,48 Q22,52 18,52 L10,52 Q6,52 6,48 Z"
+        fill={fill} stroke={stroke} strokeWidth="1" />
+      <path d="M8,34 Q10,30 14,27" stroke={highlight} strokeWidth="2" fill="none" opacity="0.5" />
+    </g>
+  )
+}
+
+function PremolarShape({ fill, stroke, highlight }: ShapeProps) {
+  return (
+    <g>
+      <path d="M10,0 Q8,0 7,12 Q6,24 10,32 Q12,36 14,32 Z" fill={fill} stroke={stroke} strokeWidth="0.5" opacity="0.7" />
+      <path d="M18,0 Q20,0 21,12 Q22,24 18,32 Q16,36 14,32 Z" fill={fill} stroke={stroke} strokeWidth="0.5" opacity="0.7" />
+      <rect x="5" y="30" width="18" height="22" rx="4" fill={fill} stroke={stroke} strokeWidth="1" />
+      <path d="M6,34 Q9,30 13,32 Q14,33 15,32 Q19,30 22,34" stroke={stroke} strokeWidth="0.8" fill="none" />
+      <ellipse cx="10" cy="38" rx="2.5" ry="4" fill={highlight} opacity="0.35" />
+    </g>
+  )
+}
+
+function MolarShape({ fill, stroke, highlight }: ShapeProps) {
+  return (
+    <g>
+      <path d="M8,0 Q6,0 5,10 Q4,20 8,28 Q10,32 12,28 Z" fill={fill} stroke={stroke} strokeWidth="0.5" opacity="0.7" />
+      <path d="M14,0 Q13,0 12,14 Q11,24 14,30 Q16,30 17,24 Q20,14 19,0 Z" fill={fill} stroke={stroke} strokeWidth="0.5" opacity="0.7" />
+      <path d="M20,0 Q22,0 23,10 Q24,20 20,28 Q18,32 16,28 Z" fill={fill} stroke={stroke} strokeWidth="0.5" opacity="0.7" />
+      <rect x="3" y="26" width="22" height="22" rx="5" fill={fill} stroke={stroke} strokeWidth="1" />
+      <line x1="14" y1="27" x2="14" y2="47" stroke={stroke} strokeWidth="0.6" opacity="0.4" />
+      <line x1="4" y1="37" x2="24" y2="37" stroke={stroke} strokeWidth="0.6" opacity="0.4" />
+      <ellipse cx="9" cy="32" rx="3" ry="3.5" fill={highlight} opacity="0.3" />
+      <ellipse cx="19" cy="32" rx="3" ry="3.5" fill={highlight} opacity="0.3" />
+    </g>
+  )
+}
+
+function shapeFor(cls: ToothClass): (p: ShapeProps) => React.ReactElement {
+  switch (cls) {
+    case 'incisor': return IncisorShape
+    case 'canine': return CanineShape
+    case 'premolar': return PremolarShape
+    case 'molar': return MolarShape
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Shared <defs> — one radial gradient per condition plus the implant screw
+// pattern. Rendered once into a 0×0 SVG; tooth SVGs reference these by url(#…)
+// (gradient/pattern refs resolve document-wide, not per-SVG).
+// ---------------------------------------------------------------------------
+
+function ChartDefs() {
+  return (
+    <svg width={0} height={0} style={{ position: 'absolute' }} aria-hidden>
+      <defs>
+        {CONDITION_IDS.map(id => {
+          const c = CONDITIONS[id]
+          return (
+            <radialGradient key={id} id={`tc-${id}-grad`} cx="35%" cy="30%">
+              <stop offset="0%" stopColor={lighten(c.color, 0.5)} />
+              <stop offset="45%" stopColor={c.color} />
+              <stop offset="100%" stopColor={c.border} />
+            </radialGradient>
+          )
+        })}
+        {/* Screw-thread texture for implants — diagonal hatch tinted to the
+            implant's steel-blue border. */}
+        <pattern id="tc-implant-screw" width="6" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(0)">
+          <rect width="6" height="4" fill={CONDITIONS.implant.color} />
+          <line x1="0" y1="1" x2="6" y2="1" stroke={CONDITIONS.implant.border} strokeWidth="1.1" />
+          <line x1="0" y1="3" x2="6" y2="3" stroke={CONDITIONS.implant.border} strokeWidth="0.7" opacity="0.6" />
+        </pattern>
+      </defs>
+    </svg>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// One tooth
+// ---------------------------------------------------------------------------
+
+function ToothCell({
+  number, condition, isUpper, selected, readonly, onClick,
 }: {
   number: number
-  condition: ToothCondition | undefined
-  onClick: () => void
+  condition: ConditionId
   isUpper: boolean
+  selected: boolean
   readonly: boolean
+  onClick: (e: React.MouseEvent) => void
 }) {
   const cls = toothClass(number)
-  const cId = (condition?.condition ?? 'healthy') as ConditionId
-  const meta = CONDITION_BY_ID[cId] ?? CONDITION_BY_ID.healthy
-  const isMissing = cId === 'missing'
-  const isHealthy = cId === 'healthy'
+  const meta = CONDITIONS[condition]
+  const isMissing = condition === 'missing'
+  const isImplant = condition === 'implant'
+  const Shape = shapeFor(cls)
 
-  const w = CLASS_WIDTH[cls]
-  const h = 56
-  const fill = isHealthy ? '#FFFFFF' : meta.color
-  const stroke = isHealthy ? '#94A3B8' : meta.color
-  const symbolColor = isHealthy
-    ? '#94A3B8'
-    : (cId === 'sensitivity' ? '#075985' : '#FFFFFF')
-
-  // Per-class shape path. SVG path is drawn within a w×h viewbox; canines
-  // taper to a point at the occlusal edge (the chewing surface), molars +
-  // premolars are rounded rectangles, incisors are sharper rectangles.
-  // `isUpper` flips the tip direction for canines so the crown points down
-  // on the upper arch and up on the lower arch — the way a real mouth
-  // looks when you open it.
-  const path = (() => {
-    const r = 4 // corner radius
-    if (cls === 'canine') {
-      // Pointed tip — apex on the occlusal edge.
-      if (isUpper) {
-        return `M ${r},0 H ${w - r} Q ${w},0 ${w},${r} V ${h * 0.55} L ${w / 2},${h} L 0,${h * 0.55} V ${r} Q 0,0 ${r},0 Z`
-      }
-      return `M 0,${h - r} L ${w / 2},0 L ${w},${h - r} V ${h - r} Q ${w},${h} ${w - r},${h} H ${r} Q 0,${h} 0,${h - r} Z`
-    }
-    if (cls === 'molar') {
-      // Slightly wider at the occlusal edge to suggest the cusp face.
-      return `M ${r},0 H ${w - r} Q ${w},0 ${w},${r} V ${h - r} Q ${w},${h} ${w - r},${h} H ${r} Q 0,${h} 0,${h - r} V ${r} Q 0,0 ${r},0 Z`
-    }
-    // Premolar + incisor — same rounded rectangle, only widths differ.
-    return `M ${r},0 H ${w - r} Q ${w},0 ${w},${r} V ${h - r} Q ${w},${h} ${w - r},${h} H ${r} Q 0,${h} 0,${h - r} V ${r} Q 0,0 ${r},0 Z`
-  })()
+  const fill = `url(#tc-${condition}-grad)`
+  const stroke = meta.border
+  const highlight = '#FFFFFF'
 
   return (
-    <div
+    <button
+      type="button"
       onClick={readonly ? undefined : onClick}
+      className="tc-tooth"
+      data-selected={selected ? 'true' : undefined}
+      title={`Tooth ${number} — ${meta.label}`}
       style={{
-        display: 'flex', flexDirection: 'column', alignItems: 'center',
-        cursor: readonly ? 'default' : 'pointer', gap: 3,
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+        background: selected ? 'rgba(0,137,123,0.30)' : 'transparent',
+        border: selected ? '1px solid #00897B' : '1px solid transparent',
+        borderRadius: 8, padding: '4px 2px', cursor: readonly ? 'default' : 'pointer',
+        transition: 'all 0.15s', font: 'inherit',
       }}
-      title={`Tooth ${number}${condition ? ` — ${meta.label}` : ''}${condition?.notes ? `\n${condition.notes}` : ''}`}
     >
-      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="tooth-svg" style={{ opacity: isMissing ? 0.45 : 1 }}>
-        <path d={path} fill={fill} stroke={stroke} strokeWidth={isHealthy ? 1.5 : 2} />
-        {/* Symbol overlay — kept inside the shape so screenshots/PDFs read clearly */}
-        {meta.symbol && !isHealthy && (
-          <text x={w / 2} y={h / 2 + (cls === 'canine' && isUpper ? -3 : 0)}
-            textAnchor="middle" dominantBaseline="middle"
-            fontSize={cls === 'molar' ? 18 : 16} fontWeight={700}
-            fill={symbolColor} style={{ pointerEvents: 'none' }}>
-            {meta.symbol}
-          </text>
-        )}
-        {/* Missing teeth get an X across the whole shape — overrides the symbol */}
+      {isUpper && <span style={{ fontSize: 9, color: '#94A3B8', fontWeight: 600 }}>{number}</span>}
+      <svg width={28} height={56} viewBox="0 0 28 56" style={{ display: 'block', opacity: isMissing ? 0.4 : 1 }}>
+        <g transform={isUpper ? undefined : 'translate(0,56) scale(1,-1)'}>
+          <Shape fill={fill} stroke={stroke} highlight={highlight} />
+          {/* Implant: overlay the screw-thread texture down the root. */}
+          {isImplant && (
+            <rect x="9" y="2" width="10" height="26" rx="3" fill="url(#tc-implant-screw)" opacity="0.85" stroke={stroke} strokeWidth="0.5" />
+          )}
+        </g>
+        {/* Missing: faded shape with an X, never a gap. Drawn upright (not
+            flipped) so the X reads the same on both arches. */}
         {isMissing && (
           <>
-            <line x1={4} y1={4} x2={w - 4} y2={h - 4} stroke="#374151" strokeWidth={2} />
-            <line x1={w - 4} y1={4} x2={4} y2={h - 4} stroke="#374151" strokeWidth={2} />
+            <line x1="6" y1="18" x2="22" y2="44" stroke="#6B7280" strokeWidth="2.5" />
+            <line x1="22" y1="18" x2="6" y2="44" stroke="#6B7280" strokeWidth="2.5" />
           </>
         )}
       </svg>
-      <span style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600 }}>{number}</span>
-    </div>
+      {!isUpper && <span style={{ fontSize: 9, color: '#94A3B8', fontWeight: 600 }}>{number}</span>}
+      {condition !== 'healthy' && !isMissing && (
+        <span style={{
+          fontSize: 8, lineHeight: 1, fontWeight: 800, color: '#fff',
+          background: meta.border, borderRadius: 4, padding: '1px 3px', minWidth: 12, textAlign: 'center',
+        }}>{meta.emoji}</span>
+      )}
+    </button>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Main component
-// ---------------------------------------------------------------------------
-
-export default function ToothChart({ patientId, dentistId, readonly = false }: Props) {
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [chartId, setChartId] = useState<string | null>(null)
-  const [tooth, setTooth] = useState<ToothMap>({})
-  // Snapshot of saved state — Save button greys out until tooth diverges
-  // from this, so a fresh dirty save is required before the dentist can
-  // close the page assuming everything stuck.
-  const [savedTooth, setSavedTooth] = useState<ToothMap>({})
-  const [updatedAt, setUpdatedAt] = useState<string | null>(null)
-  const [editMode, setEditMode] = useState(!readonly)
-  const [activeTooth, setActiveTooth] = useState<number | null>(null)
-  const [historyOpen, setHistoryOpen] = useState(false)
-
-  useEffect(() => {
-    async function load() {
-      try {
-        const supabase = createClient()
-        const { data } = await supabase
-          .from('dental_charts')
-          .select('id, tooth_data, updated_at')
-          .eq('patient_id', patientId)
-          .eq('dentist_id', dentistId)
-          .maybeSingle()
-        if (data) {
-          setChartId(data.id)
-          const td = (data.tooth_data ?? {}) as ToothMap
-          setTooth(td)
-          setSavedTooth(td)
-          setUpdatedAt(data.updated_at ?? null)
-        }
-      } finally {
-        setLoading(false)
-      }
-    }
-    if (patientId && dentistId) load()
-  }, [patientId, dentistId])
-
-  const dirty = useMemo(() => JSON.stringify(tooth) !== JSON.stringify(savedTooth), [tooth, savedTooth])
-
-  function openTooth(n: number) {
-    if (!editMode) return
-    setActiveTooth(n)
-  }
-
-  function applyCondition(n: number, condition: ConditionId, notes: string, treatmentDate: string) {
-    setTooth(prev => {
-      const existing = prev[String(n)]
-      const newEntry: HistoryEntry = {
-        condition,
-        notes: notes || undefined,
-        treatment_date: treatmentDate || undefined,
-        recorded_at: new Date().toISOString(),
-      }
-      // Only push to history if the snapshot meaningfully changes.
-      const lastInHistory = existing?.history?.[existing.history.length - 1]
-      const sameAsLast = lastInHistory
-        && lastInHistory.condition === condition
-        && (lastInHistory.notes || undefined) === (notes || undefined)
-        && (lastInHistory.treatment_date || undefined) === (treatmentDate || undefined)
-      const history = sameAsLast
-        ? existing!.history!
-        : [...(existing?.history ?? []), newEntry]
-      return {
-        ...prev,
-        [String(n)]: {
-          tooth_number: n, condition,
-          notes: notes || undefined,
-          treatment_date: treatmentDate || undefined,
-          history,
-        },
-      }
-    })
-    setActiveTooth(null)
-  }
-
-  function clearTooth(n: number) {
-    setTooth(prev => {
-      const next = { ...prev }
-      delete next[String(n)]
-      return next
-    })
-    setActiveTooth(null)
-  }
-
-  async function save() {
-    setSaving(true)
-    setError(null)
-    const supabase = createClient()
-    // UPSERT against the (patient_id, dentist_id) unique constraint so we
-    // don't have to branch on "did the row exist". onConflict targets the
-    // composite key added by the migration.
-    const { data, error: upErr } = await supabase
-      .from('dental_charts')
-      .upsert(
-        { patient_id: patientId, dentist_id: dentistId, tooth_data: tooth },
-        { onConflict: 'patient_id,dentist_id' }
-      )
-      .select('id, updated_at')
-      .single()
-    setSaving(false)
-    if (upErr || !data) {
-      setError(upErr?.message || 'Could not save chart.')
-      return
-    }
-    setChartId(data.id)
-    setSavedTooth(tooth)
-    setUpdatedAt(data.updated_at ?? null)
-  }
-
-  function print() {
-    // The print-only stylesheet (injected below) hides the page chrome and
-    // expands the chart panel to full width before window.print() fires.
-    window.print()
-  }
-
-  // Flat list of history entries across every tooth, newest first — feeds
-  // the slide-out history panel.
-  const flatHistory = useMemo(() => {
-    const rows: Array<{ tooth: number; entry: HistoryEntry }> = []
-    for (const t of Object.values(tooth)) {
-      for (const e of (t.history ?? [])) rows.push({ tooth: t.tooth_number, entry: e })
-    }
-    return rows.sort((a, b) => b.entry.recorded_at.localeCompare(a.entry.recorded_at))
-  }, [tooth])
-
-  const recordedCount = Object.keys(tooth).length
-
-  if (loading) {
-    return <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)' }}>Loading dental chart…</div>
-  }
-
-  return (
-    <div className="tooth-chart-root">
-      {/* Print-only stylesheet. Scoped via @media print so it has zero
-          effect on the live dashboard layout. */}
-      <style>{`
-        @media print {
-          body * { visibility: hidden; }
-          .tooth-chart-root, .tooth-chart-root * { visibility: visible; }
-          .tooth-chart-root { position: absolute; left: 0; top: 0; width: 100%; padding: 20px; }
-          .tooth-chart-noprint { display: none !important; }
-          .tooth-svg { page-break-inside: avoid; }
-        }
-        @keyframes toothchart-fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
-        .tooth-chart-modal { animation: toothchart-fade-in 120ms ease-out; }
-      `}</style>
-
-      {/* Top bar — view/edit toggle, save, print, history */}
-      <div className="tooth-chart-noprint" style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-        <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16 }}>🦷 Dental Chart (FDI)</h3>
-        {updatedAt && (
-          <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-            Updated {new Date(updatedAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
-          </span>
-        )}
-        <span style={{ flex: 1 }} />
-        {!readonly && (
-          <div style={{ display: 'flex', gap: 4, background: 'var(--bg)', borderRadius: 8, padding: 3 }}>
-            {[{ k: false, l: 'View' }, { k: true, l: 'Edit' }].map(opt => (
-              <button key={String(opt.k)} onClick={() => setEditMode(opt.k)}
-                style={{
-                  padding: '6px 14px', border: 'none', borderRadius: 6,
-                  background: editMode === opt.k ? '#fff' : 'transparent',
-                  color: editMode === opt.k ? 'var(--blue)' : 'var(--muted)',
-                  fontWeight: 700, fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-body)',
-                  boxShadow: editMode === opt.k ? '0 1px 2px rgba(0,0,0,0.08)' : 'none',
-                }}>
-                {opt.l}
-              </button>
-            ))}
-          </div>
-        )}
-        <button onClick={() => setHistoryOpen(true)} disabled={flatHistory.length === 0}
-          style={btn('var(--bg)', 'var(--text)', flatHistory.length === 0)}>
-          🕒 History ({flatHistory.length})
-        </button>
-        <button onClick={print} style={btn('var(--bg)', 'var(--text)')}>
-          🖨 Print
-        </button>
-        {!readonly && editMode && (
-          <button onClick={save} disabled={saving || !dirty}
-            style={btn('var(--blue)', '#fff', saving || !dirty)}>
-            {saving ? 'Saving…' : (dirty ? '💾 Save Chart' : '✓ Saved')}
-          </button>
-        )}
-      </div>
-
-      {error && (
-        <div className="tooth-chart-noprint" style={{ background: '#FEE2E2', border: '1px solid #FECACA', color: '#991B1B', padding: '10px 14px', borderRadius: 10, fontSize: 13, marginBottom: 12 }}>
-          {error}
-        </div>
-      )}
-
-      {/* Chart canvas */}
-      <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '20px 16px', overflowX: 'auto' }}>
-        <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--muted)', fontWeight: 600, marginBottom: 8 }}>UPPER ARCH</div>
-        <ArchRow numbers={[...UPPER_RIGHT, ...UPPER_LEFT]} isUpper tooth={tooth} onClick={openTooth} readonly={!editMode || readonly} midlineAfter={UPPER_RIGHT.length} />
-
-        <div style={{ borderTop: '2px dashed #CBD5E1', margin: '14px 0 12px', position: 'relative' }}>
-          <span style={{ position: 'absolute', left: '50%', top: -10, transform: 'translateX(-50%)', background: '#fff', padding: '0 10px', fontSize: 10, color: 'var(--muted)', fontWeight: 600, letterSpacing: 1 }}>
-            PATIENT&apos;S LEFT ◀ ▶ PATIENT&apos;S RIGHT
-          </span>
-        </div>
-
-        <ArchRow numbers={[...LOWER_RIGHT, ...LOWER_LEFT]} isUpper={false} tooth={tooth} onClick={openTooth} readonly={!editMode || readonly} midlineAfter={LOWER_RIGHT.length} />
-        <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--muted)', fontWeight: 600, marginTop: 8 }}>LOWER ARCH</div>
-      </div>
-
-      {/* Legend */}
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 14, padding: '10px 14px', background: 'var(--bg)', borderRadius: 10 }}>
-        {CONDITIONS.map(c => (
-          <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text-secondary)' }}>
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              width: 16, height: 16, borderRadius: 3,
-              background: c.id === 'healthy' ? '#FFFFFF' : c.color,
-              border: c.id === 'healthy' ? '1.5px solid #94A3B8' : `1.5px solid ${c.color}`,
-              color: c.id === 'sensitivity' ? '#075985' : '#fff', fontSize: 10, fontWeight: 700,
-            }}>{c.symbol}</span>
-            {c.label}
-          </div>
-        ))}
-      </div>
-
-      {/* Affected teeth summary */}
-      {recordedCount > 0 && (
-        <div style={{ marginTop: 14, background: '#fff', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px' }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', marginBottom: 8 }}>
-            Recorded conditions ({recordedCount})
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {Object.values(tooth)
-              .sort((a, b) => a.tooth_number - b.tooth_number)
-              .map(t => {
-                const meta = CONDITION_BY_ID[t.condition] ?? CONDITION_BY_ID.healthy
-                return (
-                  <button key={t.tooth_number}
-                    onClick={() => editMode && setActiveTooth(t.tooth_number)}
-                    disabled={!editMode}
-                    style={{
-                      fontSize: 11, padding: '3px 9px', borderRadius: 12,
-                      background: meta.color + '22', color: meta.color, fontWeight: 600,
-                      border: `1px solid ${meta.color}66`, cursor: editMode ? 'pointer' : 'default',
-                      fontFamily: 'var(--font-body)',
-                    }}
-                    title={t.notes || ''}>
-                    #{t.tooth_number} {meta.label}{t.notes ? ` · ${t.notes}` : ''}
-                  </button>
-                )
-              })}
-          </div>
-        </div>
-      )}
-
-      {/* Modal condition picker */}
-      {activeTooth !== null && (
-        <ConditionModal
-          toothNumber={activeTooth}
-          current={tooth[String(activeTooth)]}
-          onCancel={() => setActiveTooth(null)}
-          onClear={() => clearTooth(activeTooth)}
-          onApply={(condition, notes, date) => applyCondition(activeTooth, condition, notes, date)}
-        />
-      )}
-
-      {/* History drawer */}
-      {historyOpen && (
-        <HistoryDrawer rows={flatHistory} onClose={() => setHistoryOpen(false)} />
-      )}
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Sub-components
+// Arch row
 // ---------------------------------------------------------------------------
 
 function ArchRow({
-  numbers, isUpper, tooth, onClick, readonly, midlineAfter,
+  numbers, isUpper, getCondition, selectedTooth, readonly, onToothClick,
 }: {
   numbers: number[]
   isUpper: boolean
-  tooth: ToothMap
-  onClick: (n: number) => void
+  getCondition: (n: number) => ConditionId
+  selectedTooth: number | null
   readonly: boolean
-  midlineAfter: number
+  onToothClick: (n: number, e: React.MouseEvent) => void
 }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'center', gap: 4, alignItems: 'flex-end' }}>
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'flex-end', gap: 2 }}>
       {numbers.map((n, idx) => (
         <div key={n} style={{ display: 'flex', alignItems: 'flex-end' }}>
-          <Tooth number={n} condition={tooth[String(n)]} onClick={() => onClick(n)} isUpper={isUpper} readonly={readonly} />
-          {idx === midlineAfter - 1 && <div style={{ width: 14 }} />}
+          <ToothCell
+            number={n}
+            condition={getCondition(n)}
+            isUpper={isUpper}
+            selected={selectedTooth === n}
+            readonly={readonly}
+            onClick={(e) => onToothClick(n, e)}
+          />
+          {idx === numbers.length / 2 - 1 && (
+            <div style={{ width: 14, alignSelf: 'stretch', borderRight: '1px dashed rgba(255,255,255,0.25)' }} />
+          )}
         </div>
       ))}
     </div>
   )
 }
 
-function ConditionModal({
-  toothNumber, current, onApply, onCancel, onClear,
-}: {
-  toothNumber: number
-  current: ToothCondition | undefined
-  onApply: (condition: ConditionId, notes: string, treatmentDate: string) => void
-  onCancel: () => void
-  onClear: () => void
-}) {
-  const [condition, setCondition] = useState<ConditionId>(current?.condition ?? 'decay')
-  const [notes, setNotes] = useState(current?.notes ?? '')
-  const [treatmentDate, setTreatmentDate] = useState(current?.treatment_date ?? '')
-  const cls = toothClass(toothNumber)
+// ---------------------------------------------------------------------------
+// Types + props
+// ---------------------------------------------------------------------------
 
-  return (
-    <div onClick={onCancel}
-      style={{
-        position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.45)',
-        zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
-      }}>
-      <div className="tooth-chart-modal" onClick={e => e.stopPropagation()}
-        style={{
-          background: '#fff', borderRadius: 16, maxWidth: 520, width: '100%',
-          maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 50px rgba(0,0,0,0.25)',
-        }}>
-        <div style={{ padding: '20px 22px 14px', borderBottom: '1px solid var(--border)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{
-              width: 44, height: 44, borderRadius: 10, background: 'var(--blue-light)',
-              color: 'var(--blue)', fontWeight: 800, fontSize: 16,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>{toothNumber}</div>
-            <div>
-              <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 17 }}>Tooth {toothNumber}</div>
-              <div style={{ fontSize: 12, color: 'var(--muted)' }}>{cls.charAt(0).toUpperCase() + cls.slice(1)}</div>
-            </div>
-          </div>
-        </div>
-
-        <div style={{ padding: '18px 22px' }}>
-          <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 8, letterSpacing: 0.4 }}>CONDITION</label>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8, marginBottom: 18 }}>
-            {CONDITIONS.map(c => {
-              const active = condition === c.id
-              return (
-                <button key={c.id} onClick={() => setCondition(c.id)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    padding: '10px 12px', minHeight: 44,
-                    borderRadius: 10, cursor: 'pointer',
-                    border: `1.5px solid ${active ? c.color : 'var(--border)'}`,
-                    background: active ? c.color + (c.id === 'healthy' ? '' : '11') : '#fff',
-                    fontFamily: 'var(--font-body)', textAlign: 'left',
-                  }}>
-                  <span style={{
-                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                    width: 22, height: 22, borderRadius: 4, flexShrink: 0,
-                    background: c.id === 'healthy' ? '#fff' : c.color,
-                    border: c.id === 'healthy' ? '1.5px solid #94A3B8' : 'none',
-                    color: c.id === 'sensitivity' ? '#075985' : '#fff',
-                    fontSize: 12, fontWeight: 700,
-                  }}>{c.symbol}</span>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>{c.label}</div>
-                  </div>
-                </button>
-              )
-            })}
-          </div>
-
-          <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 6, letterSpacing: 0.4 }}>NOTES <span style={{ fontWeight: 500 }}>(optional)</span></label>
-          <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
-            placeholder="e.g. distal caries, plan for composite filling"
-            style={{
-              width: '100%', padding: '9px 12px', borderRadius: 8,
-              border: '1.5px solid var(--border)', fontSize: 13,
-              fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box',
-              resize: 'vertical', marginBottom: 14,
-            }} />
-
-          <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 6, letterSpacing: 0.4 }}>TREATMENT DATE <span style={{ fontWeight: 500 }}>(optional)</span></label>
-          <input type="date" value={treatmentDate} onChange={e => setTreatmentDate(e.target.value)}
-            style={{
-              width: '100%', padding: '9px 12px', borderRadius: 8,
-              border: '1.5px solid var(--border)', fontSize: 13,
-              fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box',
-            }} />
-        </div>
-
-        <div style={{ padding: '14px 22px 20px', display: 'flex', gap: 10, justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border)' }}>
-          {current ? (
-            <button onClick={onClear}
-              style={{ padding: '9px 14px', minHeight: 40, background: '#FEE2E2', color: '#991B1B', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
-              Clear condition
-            </button>
-          ) : <span />}
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={onCancel}
-              style={{ padding: '9px 18px', minHeight: 40, background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
-              Cancel
-            </button>
-            <button onClick={() => onApply(condition, notes, treatmentDate)}
-              style={{ padding: '9px 20px', minHeight: 40, background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
-              Apply
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
+export type ToothEntry = {
+  tooth_number: number
+  condition: ConditionId
+  surfaces?: string[]
+  notes?: string | null
+  severity?: Severity | null
 }
 
-function HistoryDrawer({
-  rows, onClose,
-}: {
-  rows: Array<{ tooth: number; entry: HistoryEntry }>
-  onClose: () => void
-}) {
+interface Props {
+  patientId: string
+  dentistId: string
+  patientName?: string
+  dentistName?: string
+  // Optional seed — when supplied the component skips its own initial load.
+  existingEntries?: ToothEntry[]
+  // Optional callback fired with the persisted rows after a successful save.
+  onSave?: (entries: ToothEntry[]) => void
+  readonly?: boolean
+}
+
+type EntryMap = Record<number, ToothEntry>
+
+function normaliseEntries(rows: ToothEntry[]): EntryMap {
+  const map: EntryMap = {}
+  for (const r of rows) {
+    if (r.condition === 'healthy') continue
+    // One condition per tooth in the UI — last write wins if the table holds
+    // several rows for a tooth.
+    map[r.tooth_number] = {
+      tooth_number: r.tooth_number,
+      condition: r.condition,
+      surfaces: r.surfaces ?? [],
+      notes: r.notes ?? null,
+      severity: r.severity ?? null,
+    }
+  }
+  return map
+}
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
+
+export default function ToothChart({
+  patientId, dentistId, patientName, dentistName,
+  existingEntries, onSave, readonly = false,
+}: Props) {
+  const [loading, setLoading] = useState(!existingEntries)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
+  const [entries, setEntries] = useState<EntryMap>(() => existingEntries ? normaliseEntries(existingEntries) : {})
+  const [savedEntries, setSavedEntries] = useState<EntryMap>(() => existingEntries ? normaliseEntries(existingEntries) : {})
+  // Floating condition picker, anchored near the clicked tooth.
+  const [picker, setPicker] = useState<{ tooth: number; top: number; left: number } | null>(null)
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    if (existingEntries) return
+    let cancelled = false
+    async function load() {
+      try {
+        const supabase = createClient()
+        const { data, error: loadErr } = await supabase
+          .from('dental_chart_entries')
+          .select('tooth_number, condition, surfaces, notes, severity')
+          .eq('patient_id', patientId)
+          .eq('dentist_id', dentistId)
+          .order('tooth_number')
+        if (cancelled) return
+        if (loadErr) { setError(loadErr.message); return }
+        const map = normaliseEntries((data ?? []) as ToothEntry[])
+        setEntries(map)
+        setSavedEntries(map)
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    if (patientId && dentistId) load()
+    else setLoading(false)
+    return () => { cancelled = true }
+  }, [patientId, dentistId, existingEntries])
+
+  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current) }, [])
+
+  const dirty = useMemo(
+    () => JSON.stringify(entries) !== JSON.stringify(savedEntries),
+    [entries, savedEntries],
+  )
+
+  function getCondition(n: number): ConditionId {
+    return entries[n]?.condition ?? 'healthy'
+  }
+
+  function openPicker(n: number, e: React.MouseEvent) {
+    if (readonly) return
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const PICKER_W = 340
+    const PICKER_H = 360
+    // Prefer below the tooth; flip above if it would clip the viewport bottom.
+    const below = rect.bottom + PICKER_H + 12 < window.innerHeight
+    const top = below ? rect.bottom + 8 : Math.max(8, rect.top - PICKER_H - 8)
+    const left = Math.min(
+      Math.max(8, rect.left + rect.width / 2 - PICKER_W / 2),
+      window.innerWidth - PICKER_W - 8,
+    )
+    setPicker({ tooth: n, top, left })
+  }
+
+  function setCondition(n: number, condition: ConditionId) {
+    setEntries(prev => {
+      if (condition === 'healthy') {
+        const next = { ...prev }
+        delete next[n]
+        return next
+      }
+      const existing = prev[n]
+      return {
+        ...prev,
+        [n]: {
+          tooth_number: n,
+          condition,
+          surfaces: existing?.surfaces ?? [],
+          notes: existing?.notes ?? null,
+          severity: existing?.severity ?? null,
+        },
+      }
+    })
+  }
+
+  function patchEntry(n: number, patch: Partial<ToothEntry>) {
+    setEntries(prev => {
+      const existing = prev[n]
+      if (!existing) return prev
+      return { ...prev, [n]: { ...existing, ...patch } }
+    })
+  }
+
+  function clearTooth(n: number) {
+    setEntries(prev => {
+      const next = { ...prev }
+      delete next[n]
+      return next
+    })
+    setPicker(null)
+  }
+
+  function flashToast(msg: string) {
+    setToast(msg)
+    if (toastTimer.current) clearTimeout(toastTimer.current)
+    toastTimer.current = setTimeout(() => setToast(null), 2800)
+  }
+
+  async function save() {
+    setSaving(true)
+    setError(null)
+    const rows: ToothEntry[] = Object.values(entries).map(e => ({
+      tooth_number: e.tooth_number,
+      condition: e.condition,
+      surfaces: e.surfaces ?? [],
+      notes: e.notes?.trim() ? e.notes.trim() : null,
+      severity: e.severity ?? null,
+    }))
+    try {
+      const supabase = createClient()
+      // Replace the patient+dentist's rows wholesale so the table mirrors the
+      // current chart exactly (handles condition changes + clears without
+      // orphaning rows).
+      const { error: delErr } = await supabase
+        .from('dental_chart_entries')
+        .delete()
+        .eq('patient_id', patientId)
+        .eq('dentist_id', dentistId)
+      if (delErr) { setError(delErr.message); return }
+
+      if (rows.length > 0) {
+        const insertRows = rows.map(r => ({
+          patient_id: patientId,
+          dentist_id: dentistId,
+          tooth_number: r.tooth_number,
+          condition: r.condition,
+          surfaces: r.surfaces,
+          notes: r.notes,
+          severity: r.severity,
+        }))
+        const { error: insErr } = await supabase.from('dental_chart_entries').insert(insertRows)
+        if (insErr) { setError(insErr.message); return }
+      }
+      setSavedEntries(entries)
+      onSave?.(rows)
+      flashToast('Chart saved')
+    } catch (e: any) {
+      setError(e?.message || 'Could not save chart.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const recorded = useMemo(
+    () => Object.values(entries).sort((a, b) => a.tooth_number - b.tooth_number),
+    [entries],
+  )
+
+  // "3 caries, 1 RCT, 2 crowns" — ordered by the CONDITIONS declaration.
+  const summaryText = useMemo(() => {
+    const counts: Partial<Record<ConditionId, number>> = {}
+    for (const e of recorded) counts[e.condition] = (counts[e.condition] ?? 0) + 1
+    const parts = CONDITION_IDS
+      .filter(id => id !== 'healthy' && counts[id])
+      .map(id => `${counts[id]} ${CONDITIONS[id].label.split(' / ')[0].toLowerCase()}`)
+    return parts.join(', ')
+  }, [recorded])
+
+  const today = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+  const drName = dentistName
+    ? (/^dr\.?\s/i.test(dentistName) ? dentistName : `Dr. ${dentistName}`)
+    : null
+
+  if (loading) {
+    return <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>Loading dental chart…</div>
+  }
+
   return (
-    <div onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.4)', zIndex: 100,
-        display: 'flex', justifyContent: 'flex-end',
-      }}>
-      <div onClick={e => e.stopPropagation()}
-        style={{
-          background: '#fff', width: 'min(440px, 100%)', height: '100vh',
-          overflowY: 'auto', boxShadow: '-12px 0 32px rgba(0,0,0,0.18)',
-          display: 'flex', flexDirection: 'column',
-        }}>
-        <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, background: '#fff', zIndex: 1 }}>
-          <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 16 }}>🕒 Chart History</h3>
-          <button onClick={onClose} aria-label="Close history"
-            style={{ background: 'none', border: 'none', fontSize: 20, color: 'var(--muted)', cursor: 'pointer' }}>✕</button>
-        </div>
-        {rows.length === 0 ? (
-          <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
-            No history recorded yet. Conditions get added here automatically as you save chart changes.
-          </div>
-        ) : (
-          <ul style={{ listStyle: 'none', padding: '8px 0', margin: 0 }}>
-            {rows.map((r, idx) => {
-              const meta = CONDITION_BY_ID[r.entry.condition] ?? CONDITION_BY_ID.healthy
-              return (
-                <li key={idx} style={{ padding: '12px 20px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                  <div style={{
-                    flexShrink: 0, width: 36, height: 36, borderRadius: 8,
-                    background: meta.color === '#FFFFFF' ? 'var(--bg)' : meta.color,
-                    border: meta.color === '#FFFFFF' ? '1.5px solid #94A3B8' : 'none',
-                    color: meta.id === 'sensitivity' ? '#075985' : '#fff',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 14, fontWeight: 700,
-                  }}>{meta.symbol || '·'}</div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-                      <span style={{ fontWeight: 700, fontSize: 13 }}>Tooth #{r.tooth}</span>
-                      <span style={{ fontSize: 12, color: meta.color, fontWeight: 700 }}>{meta.label}</span>
-                    </div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-                      Recorded {new Date(r.entry.recorded_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
-                      {r.entry.treatment_date && ` · Treatment date: ${new Date(r.entry.treatment_date).toLocaleDateString('en-IN')}`}
-                    </div>
-                    {r.entry.notes && (
-                      <div style={{ fontSize: 12, color: 'var(--text)', marginTop: 4, fontStyle: 'italic' }}>"{r.entry.notes}"</div>
-                    )}
-                  </div>
-                </li>
-              )
-            })}
-          </ul>
+    <div className="tc-root">
+      <ChartDefs />
+      <style>{`
+        .tc-tooth:hover { background: rgba(255,255,255,0.10) !important; border-color: rgba(255,255,255,0.6) !important; }
+        .tc-tooth[data-selected="true"]:hover { background: rgba(0,137,123,0.4) !important; }
+        @keyframes tc-fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+        .tc-picker { animation: tc-fade 110ms ease-out; }
+        @media print {
+          body * { visibility: hidden; }
+          .tc-print, .tc-print * { visibility: visible; }
+          .tc-print { position: absolute; left: 0; top: 0; width: 100%; }
+          .tc-noprint { display: none !important; }
+          .tc-canvas { box-shadow: none !important; }
+          @page { size: landscape; margin: 12mm; }
+        }
+      `}</style>
+
+      {/* Toolbar */}
+      <div className="tc-noprint" style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+        <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16 }}>🦷 Dental Chart (FDI)</h3>
+        <span style={{ flex: 1 }} />
+        <button type="button" onClick={() => window.print()} style={toolBtn('var(--bg)', 'var(--text)')}>🖨 Print Chart</button>
+        {!readonly && (
+          <button type="button" onClick={save} disabled={saving || !dirty} style={toolBtn('var(--blue)', '#fff', saving || !dirty)}>
+            {saving ? 'Saving…' : (dirty ? '💾 Save Chart' : '✓ Saved')}
+          </button>
         )}
       </div>
+
+      {error && (
+        <div className="tc-noprint" style={{ background: '#FEE2E2', border: '1px solid #FECACA', color: '#991B1B', padding: '10px 14px', borderRadius: 10, fontSize: 13, marginBottom: 12 }}>
+          {error}
+        </div>
+      )}
+
+      {/* Dark chart canvas */}
+      <div className="tc-print">
+        <div className="tc-canvas" style={{
+          background: 'linear-gradient(135deg, #1a1a2e 0%, #0d2137 100%)',
+          borderRadius: 16, padding: 24, userSelect: 'none',
+          boxShadow: '0 8px 30px rgba(0,0,0,0.18)',
+        }}>
+          {/* Header */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 18, color: 'rgba(255,255,255,0.92)', fontSize: 13 }}>
+            <span><strong style={{ color: '#fff' }}>Patient:</strong> {patientName || '—'}</span>
+            <span><strong style={{ color: '#fff' }}>Date:</strong> {today}</span>
+            <span><strong style={{ color: '#fff' }}>Dentist:</strong> {drName || '—'}</span>
+          </div>
+
+          {/* Upper arch */}
+          <div style={{ textAlign: 'center', fontSize: 11, color: '#94A3B8', fontWeight: 700, letterSpacing: 1, marginBottom: 6 }}>UPPER JAW (MAXILLA)</div>
+          <ArchRow numbers={[...UPPER_RIGHT, ...UPPER_LEFT]} isUpper getCondition={getCondition} selectedTooth={picker?.tooth ?? null} readonly={readonly} onToothClick={openPicker} />
+
+          {/* Arch gap */}
+          <div style={{ height: 18, margin: '6px 0', borderTop: '1px dashed rgba(255,255,255,0.18)', borderBottom: '1px dashed rgba(255,255,255,0.18)' }} />
+
+          {/* Lower arch */}
+          <ArchRow numbers={[...LOWER_RIGHT, ...LOWER_LEFT]} isUpper={false} getCondition={getCondition} selectedTooth={picker?.tooth ?? null} readonly={readonly} onToothClick={openPicker} />
+          <div style={{ textAlign: 'center', fontSize: 11, color: '#94A3B8', fontWeight: 700, letterSpacing: 1, marginTop: 6 }}>LOWER JAW (MANDIBLE)</div>
+
+          {/* Legend */}
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 18, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.12)' }}>
+            {CONDITION_IDS.map(id => (
+              <span key={id} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10.5, color: 'rgba(255,255,255,0.78)' }}>
+                <span style={{ width: 12, height: 12, borderRadius: 3, background: CONDITIONS[id].color, border: `1.5px solid ${CONDITIONS[id].border}`, flexShrink: 0 }} />
+                {CONDITIONS[id].label}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Summary panel */}
+      <div style={{ marginTop: 16, background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: recorded.length ? 12 : 0, flexWrap: 'wrap' }}>
+          <strong style={{ fontSize: 13 }}>Chart Summary</strong>
+          {recorded.length > 0
+            ? <span style={{ fontSize: 12, color: 'var(--muted)' }}>{summaryText}</span>
+            : <span style={{ fontSize: 12, color: 'var(--muted)' }}>All teeth healthy — tap a tooth to record a condition.</span>}
+        </div>
+        {recorded.length > 0 && (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr>
+                  {['Tooth', 'Condition', 'Severity', 'Surfaces', 'Notes'].map(h => (
+                    <th key={h} style={{ textAlign: 'left', padding: '6px 10px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {recorded.map(e => {
+                  const meta = CONDITIONS[e.condition]
+                  return (
+                    <tr key={e.tooth_number}>
+                      <td style={{ padding: '7px 10px', borderBottom: '1px solid var(--border)', fontWeight: 700 }}>#{e.tooth_number}</td>
+                      <td style={{ padding: '7px 10px', borderBottom: '1px solid var(--border)' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ width: 11, height: 11, borderRadius: 3, background: meta.color, border: `1.5px solid ${meta.border}` }} />
+                          {meta.label}
+                        </span>
+                      </td>
+                      <td style={{ padding: '7px 10px', borderBottom: '1px solid var(--border)', textTransform: 'capitalize' }}>{e.severity || '—'}</td>
+                      <td style={{ padding: '7px 10px', borderBottom: '1px solid var(--border)' }}>{e.surfaces && e.surfaces.length ? e.surfaces.join(', ') : '—'}</td>
+                      <td style={{ padding: '7px 10px', borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)' }}>{e.notes || '—'}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Floating condition picker */}
+      {picker && !readonly && (() => {
+        const n = picker.tooth
+        const entry = entries[n]
+        const current = entry?.condition ?? 'healthy'
+        return (
+          <>
+            {/* outside-click catcher */}
+            <div className="tc-noprint" onClick={() => setPicker(null)} style={{ position: 'fixed', inset: 0, zIndex: 200 }} />
+            <div
+              className="tc-picker tc-noprint"
+              onClick={e => e.stopPropagation()}
+              style={{
+                position: 'fixed', top: picker.top, left: picker.left, width: 340, zIndex: 201,
+                background: '#fff', borderRadius: 14, boxShadow: '0 18px 44px rgba(0,0,0,0.28)',
+                border: '1px solid var(--border)', padding: 14,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <strong style={{ fontSize: 14 }}>Tooth #{n} · {toothClass(n)}</strong>
+                <button type="button" onClick={() => setPicker(null)} aria-label="Close" style={{ background: 'none', border: 'none', fontSize: 18, color: 'var(--muted)', cursor: 'pointer', lineHeight: 1 }}>✕</button>
+              </div>
+
+              {/* 4-col condition grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 12 }}>
+                {CONDITION_IDS.map(id => {
+                  const c = CONDITIONS[id]
+                  const active = current === id
+                  return (
+                    <button key={id} type="button" onClick={() => setCondition(n, id)} title={c.label}
+                      style={{
+                        position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
+                        padding: '8px 2px', borderRadius: 9, cursor: 'pointer', minHeight: 50,
+                        background: c.color, color: '#222',
+                        border: active ? '2.5px solid #00897B' : `1.5px solid ${c.border}`,
+                        fontWeight: 700, fontSize: 11,
+                      }}>
+                      {active && <span style={{ position: 'absolute', top: 2, right: 3, fontSize: 10, color: '#00897B', fontWeight: 900 }}>✓</span>}
+                      <span style={{ fontSize: 12 }}>{c.emoji}</span>
+                      <span style={{ fontSize: 8.5, lineHeight: 1.1, textAlign: 'center', color: '#333' }}>{c.label.split(' / ')[0]}</span>
+                    </button>
+                  )
+                })}
+              </div>
+
+              {/* Severity + surfaces + notes — only meaningful once a condition is set */}
+              {current !== 'healthy' && (
+                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted)', marginBottom: 5, letterSpacing: 0.3 }}>SEVERITY</div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      {SEVERITIES.map(s => {
+                        const on = entry?.severity === s
+                        return (
+                          <button key={s} type="button" onClick={() => patchEntry(n, { severity: on ? null : s })}
+                            style={{ flex: 1, padding: '6px 4px', borderRadius: 7, fontSize: 11, fontWeight: 700, textTransform: 'capitalize', cursor: 'pointer', fontFamily: 'var(--font-body)', border: on ? '2px solid var(--blue)' : '1px solid var(--border)', background: on ? 'var(--blue-light)' : '#fff', color: on ? 'var(--blue)' : 'var(--text)' }}>
+                            {s}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted)', marginBottom: 5, letterSpacing: 0.3 }}>SURFACES</div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      {SURFACES.map(sf => {
+                        const on = entry?.surfaces?.includes(sf) ?? false
+                        return (
+                          <button key={sf} type="button"
+                            onClick={() => patchEntry(n, { surfaces: on ? (entry?.surfaces ?? []).filter(x => x !== sf) : [...(entry?.surfaces ?? []), sf] })}
+                            style={{ width: 34, padding: '6px 0', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)', border: on ? '2px solid var(--blue)' : '1px solid var(--border)', background: on ? 'var(--blue-light)' : '#fff', color: on ? 'var(--blue)' : 'var(--text)' }}>
+                            {sf}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                  <textarea
+                    value={entry?.notes ?? ''}
+                    onChange={e => patchEntry(n, { notes: e.target.value })}
+                    rows={2} placeholder="Notes (optional)"
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 12, fontFamily: 'var(--font-body)', resize: 'vertical', boxSizing: 'border-box', outline: 'none' }}
+                  />
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 12 }}>
+                <button type="button" onClick={() => clearTooth(n)} disabled={!entry}
+                  style={{ padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: entry ? 'pointer' : 'not-allowed', fontFamily: 'var(--font-body)', border: 'none', background: '#FEE2E2', color: '#991B1B', opacity: entry ? 1 : 0.5 }}>
+                  Clear (Healthy)
+                </button>
+                <button type="button" onClick={() => setPicker(null)}
+                  style={{ padding: '8px 18px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)', border: 'none', background: 'var(--blue)', color: '#fff' }}>
+                  Done
+                </button>
+              </div>
+            </div>
+          </>
+        )
+      })()}
+
+      {/* Toast */}
+      {toast && (
+        <div className="tc-noprint" style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: '#0f172a', color: '#fff', padding: '10px 18px', borderRadius: 10, fontSize: 13, fontWeight: 600, boxShadow: '0 8px 24px rgba(0,0,0,0.3)', zIndex: 300 }}>
+          ✓ {toast}
+        </div>
+      )}
     </div>
   )
 }
 
-function btn(bg: string, color: string, disabled = false): React.CSSProperties {
+function toolBtn(bg: string, color: string, disabled = false): React.CSSProperties {
   return {
     padding: '8px 14px', minHeight: 36, background: bg, color, border: 'none',
     borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: disabled ? 'not-allowed' : 'pointer',
