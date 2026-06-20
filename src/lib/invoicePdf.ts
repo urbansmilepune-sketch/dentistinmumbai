@@ -11,11 +11,15 @@
 // lanes regardless of treatment-name length.
 import jsPDF from 'jspdf'
 import { getCityBySlug } from '@/config/cities'
+import { INR_FONT_REGULAR_B64, INR_FONT_BOLD_B64 } from './inrFont'
 
-// jsPDF's built-in Helvetica is WinAnsi/Latin-1 only — it has no glyph for
-// ₹ (U+20B9) and renders it as '¹'. Using "Rs." sidesteps font embedding.
+// jsPDF's built-in Helvetica is WinAnsi/Latin-1 only — it has no glyph for the
+// rupee sign ₹ (U+20B9) and renders it as '¹'. We register a tiny Noto Sans
+// subset (see ./inrFont) and draw every currency amount with it via
+// drawCurrency() below; all other text stays on Helvetica.
+const RUPEE = '₹'
 function formatCurrency(amount: number): string {
-  return 'Rs.' + amount.toLocaleString('en-IN')
+  return RUPEE + amount.toLocaleString('en-IN')
 }
 
 export type InvoiceDentist = {
@@ -82,6 +86,22 @@ export type Invoice = {
 export async function downloadInvoicePdf(inv: Invoice, dentist: InvoiceDentist) {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' })
 
+  // Register the rupee-capable subset font (regular + bold). Only currency
+  // amounts use it — drawCurrency() switches to it, draws, then restores
+  // Helvetica so the rest of the layout is unaffected.
+  doc.addFileToVFS('NotoINR-Regular.ttf', INR_FONT_REGULAR_B64)
+  doc.addFont('NotoINR-Regular.ttf', 'NotoINR', 'normal')
+  doc.addFileToVFS('NotoINR-Bold.ttf', INR_FONT_BOLD_B64)
+  doc.addFont('NotoINR-Bold.ttf', 'NotoINR', 'bold')
+
+  // Draw a pre-formatted currency string at the current font size + colour
+  // using the rupee font, then restore Helvetica for following text.
+  function drawCurrency(text: string, x: number, y: number, opts: { align?: 'left' | 'center' | 'right'; bold?: boolean } = {}) {
+    doc.setFont('NotoINR', opts.bold ? 'bold' : 'normal')
+    doc.text(text, x, y, opts.align ? { align: opts.align } : undefined)
+    doc.setFont('helvetica', 'normal')
+  }
+
   // A4 in points: 595 × 842. Hardcoded so the column x-coordinates below stay
   // self-documenting — jsPDF returns the same numbers but reading them via
   // doc.internal.* makes the layout harder to reason about.
@@ -119,7 +139,6 @@ export async function downloadInvoicePdf(inv: Invoice, dentist: InvoiceDentist) 
   // the logo's width + a gutter. textX/addrWidth fall back to the original
   // full-width layout when there's no logo.
   let textX = MARGIN
-  let addrWidth = 280
   if (dentist.clinic_logo_url) {
     const logo = await loadImageData(dentist.clinic_logo_url)
     if (logo && logo.width > 0 && logo.height > 0) {
@@ -130,15 +149,49 @@ export async function downloadInvoicePdf(inv: Invoice, dentist: InvoiceDentist) 
       if (w > LOGO_MAX_W) { w = LOGO_MAX_W; h = (logo.height / logo.width) * w }
       doc.addImage(logo.dataUrl, 'PNG', MARGIN, 44, w, h)
       textX = MARGIN + w + 14
-      addrWidth = 280 - (textX - MARGIN)
     }
   }
 
-  // Clinic name — bold 18pt blue at y=60
+  // ---- Right meta block: INVOICE title + No + Date, right-aligned at RIGHT_X.
+  // Drawn first so we know how far left it reaches, then keep the clinic
+  // name/address clear of it (this is what fixes the title/clinic-name overlap).
+  const dateStr = new Date(inv.invoice_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+  const metaNo = `No: ${inv.invoice_no}`
+  const metaDate = `Date: ${dateStr}`
+
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(18)
+  doc.setFontSize(22)
+  const invoiceTitleW = doc.getTextWidth('INVOICE')
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(10)
+  const rightBlockW = Math.max(invoiceTitleW, doc.getTextWidth(metaNo), doc.getTextWidth(metaDate))
+  const rightBlockLeft = RIGHT_X - rightBlockW
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(22)
+  doc.setTextColor(15, 25, 35)
+  doc.text('INVOICE', RIGHT_X, 58, { align: 'right' })
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(10)
+  doc.setTextColor(100, 100, 100)
+  doc.text(metaNo, RIGHT_X, 78, { align: 'right' })
+  doc.text(metaDate, RIGHT_X, 92, { align: 'right' })
+
+  // ---- Left block: clinic name + details, constrained to the space left of
+  // the meta block (minus an 18pt gutter). Shrink the name to fit rather than
+  // let it overflow under "INVOICE".
+  const leftColW = Math.max(120, rightBlockLeft - 18 - textX)
+
+  const clinicName = dentist.clinic_name || dentist.name || 'Clinic'
+  doc.setFont('helvetica', 'bold')
   doc.setTextColor(0, 87, 168)
-  doc.text(dentist.clinic_name || dentist.name || 'Clinic', textX, 60)
+  let nameSize = 18
+  doc.setFontSize(nameSize)
+  while (doc.getTextWidth(clinicName) > leftColW && nameSize > 11) {
+    nameSize -= 1
+    doc.setFontSize(nameSize)
+  }
+  doc.text(clinicName, textX, 60)
 
   // Doctor name + degree — 10pt dark at y=76
   if (doctorName) {
@@ -148,12 +201,12 @@ export async function downloadInvoicePdf(inv: Invoice, dentist: InvoiceDentist) 
     doc.text(degree ? `${doctorName}, ${degree}` : doctorName, textX, 76)
   }
 
-  // Address — 9pt grey, up to 2 lines (long addresses were being truncated to
-  // one line; ~280pt wraps before the right-side INVOICE block at x=315+).
+  // Address — 9pt grey, up to 2 lines, wrapped within the left column so it
+  // stays clear of the meta block.
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9)
   doc.setTextColor(100, 100, 100)
-  const addrLines = doc.splitTextToSize(clinicAddress, addrWidth) as string[]
+  const addrLines = doc.splitTextToSize(clinicAddress, leftColW) as string[]
   if (addrLines[0]) doc.text(addrLines[0], textX, 89)
   if (addrLines[1]) doc.text(addrLines[1], textX, 100)
 
@@ -161,19 +214,6 @@ export async function downloadInvoicePdf(inv: Invoice, dentist: InvoiceDentist) 
   if (phone) doc.text(`Phone: ${phone}`, textX, 111)
   // MCI — 9pt grey at y=122
   if (mci) doc.text(`Reg No: ${mci}`, textX, 122)
-
-  // Right side: INVOICE label + meta
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(24)
-  doc.setTextColor(15, 25, 35)
-  doc.text('INVOICE', RIGHT_X, 60, { align: 'right' })
-
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(10)
-  doc.setTextColor(100, 100, 100)
-  doc.text(`No: ${inv.invoice_no}`, RIGHT_X, 76, { align: 'right' })
-  const dateStr = new Date(inv.invoice_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
-  doc.text(`Date: ${dateStr}`, RIGHT_X, 89, { align: 'right' })
 
   // ============================================================
   // DIVIDER at y=136 (pushed down to clear the 2-line address block above)
@@ -241,8 +281,8 @@ export async function downloadInvoicePdf(inv: Invoice, dentist: InvoiceDentist) 
       doc.text(line, COL_TREAT_X, cursorY + (idx * 14))
     })
     doc.text(String(qty), COL_QTY_X, cursorY)
-    doc.text(formatCurrency(unit), COL_PRICE_X, cursorY)
-    doc.text(formatCurrency(lineTotal), COL_TOTAL_X, cursorY, { align: 'right' })
+    drawCurrency(formatCurrency(unit), COL_PRICE_X, cursorY)
+    drawCurrency(formatCurrency(lineTotal), COL_TOTAL_X, cursorY, { align: 'right' })
 
     // Row height = base 22 + 14 per extra wrap line.
     const rowHeight = 22 + Math.max(0, (wrapped.length - 1) * 14)
@@ -253,20 +293,22 @@ export async function downloadInvoicePdf(inv: Invoice, dentist: InvoiceDentist) 
   }
 
   // ============================================================
-  // TOTALS (right-aligned block from x=380)
+  // TOTALS (right) + PAYMENT / NOTES (left) — one band kept tight under the
+  // items table, so there's no large empty gap before the signature.
   // ============================================================
-  cursorY += 20
+  const blockTop = cursorY + 24
   const TOTALS_LABEL_X = 380
   const TOTALS_VALUE_X = RIGHT_X
+  let rightY = blockTop
 
   function totalRow(label: string, value: string, opts: { bold?: boolean; color?: [number, number, number]; size?: number } = {}) {
     doc.setFont('helvetica', opts.bold ? 'bold' : 'normal')
     doc.setFontSize(opts.size ?? 11)
     const c = opts.color ?? [30, 41, 59]
     doc.setTextColor(c[0], c[1], c[2])
-    doc.text(label, TOTALS_LABEL_X, cursorY)
-    doc.text(value, TOTALS_VALUE_X, cursorY, { align: 'right' })
-    cursorY += opts.bold ? 22 : 16
+    doc.text(label, TOTALS_LABEL_X, rightY)
+    drawCurrency(value, TOTALS_VALUE_X, rightY, { align: 'right', bold: opts.bold })
+    rightY += opts.bold ? 22 : 16
   }
 
   totalRow('Subtotal', formatCurrency(Number(inv.subtotal || 0)))
@@ -280,15 +322,13 @@ export async function downloadInvoicePdf(inv: Invoice, dentist: InvoiceDentist) 
   // Divider above grand total
   doc.setDrawColor(200, 200, 200)
   doc.setLineWidth(1)
-  doc.line(TOTALS_LABEL_X, cursorY - 4, TOTALS_VALUE_X, cursorY - 4)
-  cursorY += 4
+  doc.line(TOTALS_LABEL_X, rightY - 4, TOTALS_VALUE_X, rightY - 4)
+  rightY += 4
 
   totalRow('Grand Total', formatCurrency(Number(inv.total || 0)), { bold: true, size: 13, color: [0, 87, 168] })
 
-  // ============================================================
-  // STATUS STAMP (left side, below items)
-  // ============================================================
-  cursorY += 12
+  // Status stamp (PAID / PENDING / OVERDUE) at bottom-right, directly under
+  // the grand total — not floating on the left.
   const stampPalette: Record<string, { fill: [number, number, number]; text: [number, number, number]; label: string }> = {
     paid:    { fill: [220, 252, 231], text: [22, 101, 52],  label: 'PAID'    },
     pending: { fill: [254, 243, 199], text: [146, 64, 14],  label: 'PENDING' },
@@ -297,49 +337,58 @@ export async function downloadInvoicePdf(inv: Invoice, dentist: InvoiceDentist) 
   const status = (inv.payment_status || 'pending') as 'pending' | 'paid' | 'overdue'
   const s = stampPalette[status] ?? stampPalette.pending
   const STAMP_W = 100
-  const STAMP_H = 32
-  const stampX = MARGIN
-  const stampY = cursorY
-
+  const STAMP_H = 30
+  const stampX = RIGHT_X - STAMP_W
+  rightY += 10
   doc.setFillColor(s.fill[0], s.fill[1], s.fill[2])
   doc.setDrawColor(s.text[0], s.text[1], s.text[2])
   doc.setLineWidth(1.5)
-  doc.roundedRect(stampX, stampY, STAMP_W, STAMP_H, 6, 6, 'FD')
+  doc.roundedRect(stampX, rightY, STAMP_W, STAMP_H, 6, 6, 'FD')
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(14)
   doc.setTextColor(s.text[0], s.text[1], s.text[2])
-  doc.text(s.label, stampX + STAMP_W / 2, stampY + STAMP_H / 2 + 5, { align: 'center' })
+  doc.text(s.label, stampX + STAMP_W / 2, rightY + STAMP_H / 2 + 5, { align: 'center' })
+  rightY += STAMP_H
 
-  cursorY = stampY + STAMP_H + 14
+  // Left column (parallel to the totals): payment method + notes.
+  let leftY = blockTop
+  const leftColMaxW = TOTALS_LABEL_X - MARGIN - 20
+
   if (inv.payment_method) {
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(10)
-    doc.setTextColor(60, 60, 60)
-    doc.text(`Payment: ${inv.payment_method}`, MARGIN, cursorY)
-    cursorY += 14
-  }
-
-  // ============================================================
-  // NOTES (full width, optional)
-  // ============================================================
-  if (inv.notes) {
-    cursorY += 8
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(9)
     doc.setTextColor(100, 116, 139)
-    doc.text('NOTES', MARGIN, cursorY)
-    cursorY += 14
+    doc.text('PAYMENT METHOD', MARGIN, leftY)
+    leftY += 15
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(11)
+    doc.setTextColor(40, 40, 40)
+    doc.text(String(inv.payment_method), MARGIN, leftY)
+    leftY += 20
+  }
+
+  if (inv.notes) {
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(9)
+    doc.setTextColor(100, 116, 139)
+    doc.text('NOTES', MARGIN, leftY)
+    leftY += 14
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(10)
     doc.setTextColor(50, 50, 50)
-    const wrapped = doc.splitTextToSize(String(inv.notes), RIGHT_X - MARGIN) as string[]
-    wrapped.forEach(line => { doc.text(line, MARGIN, cursorY); cursorY += 14 })
+    const wrapped = doc.splitTextToSize(String(inv.notes), leftColMaxW) as string[]
+    wrapped.forEach(line => { doc.text(line, MARGIN, leftY); leftY += 14 })
   }
 
+  cursorY = Math.max(leftY, rightY)
+
   // ============================================================
-  // SIGNATURE SECTION — anchored to bottom but never overlaps content above
+  // SIGNATURE SECTION — clinic stamp (left) + signature (right), placed just
+  // below the content with a sensible gap and clamped so it never collides
+  // with the footer. (Previously pinned to PAGE_H-120, leaving a big gap on
+  // short invoices.)
   // ============================================================
-  const SIG_Y = Math.max(cursorY + 60, PAGE_H - 120)
+  const SIG_Y = Math.min(cursorY + 70, PAGE_H - 80)
 
   // Left: clinic stamp box (dashed) w=140 h=60
   const STAMP_BOX_X = MARGIN
