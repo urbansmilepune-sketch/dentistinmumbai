@@ -45,3 +45,12 @@ yarn-error.log*
 next-env.d.ts
 
 .vercel
+
+.env*.local
+
+# local scratch files & scraped data dumps (not part of the app)
+*.xlsx
+scrape_*.py
+/test.txt
+/wwww.txt
+src/lib/*.txt

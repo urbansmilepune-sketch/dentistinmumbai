@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { getCityByDomain, getCityBySlug, type CityConfig } from '@/config/cities'
+import BugReportButton from './BugReportButton'
 export type StaffRole = 'owner' | 'associate_dentist' | 'reception'
 
 type NavItem = {
@@ -194,6 +195,7 @@ export default function DashboardShell({ dentist, completionPct, staffRole = nul
           style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 8, fontSize: 12, color: 'var(--muted)', textDecoration: 'none' }}>
           🔗 View my profile
         </a>
+        <BugReportButton />
         <button onClick={handleLogout}
           style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 8, fontSize: 12, color: '#EF4444', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-body)', width: '100%', textAlign: 'left' }}>
           🚪 Sign out
