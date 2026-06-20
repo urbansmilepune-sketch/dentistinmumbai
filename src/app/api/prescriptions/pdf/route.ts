@@ -64,6 +64,16 @@ function escapeHtml(value: unknown): string {
     .replace(/'/g, '&#39;')
 }
 
+// Prescriptions only capture a single dosage/frequency value per medicine (the
+// form's "1-0-1" field), so the PDF used to print it in both a Dosage and a
+// Frequency column — the same text twice. Collapse them into one column,
+// de-duping so a med that carries both a distinct dosage and frequency still
+// reads cleanly ("500mg · 1-0-1").
+function dosageFrequency(m: any): string {
+  const parts = [m?.dosage, m?.frequency].map(x => String(x ?? '').trim()).filter(Boolean)
+  return Array.from(new Set(parts)).join(' · ')
+}
+
 function generatePrescriptionHTML(rx: any, opts: { autoPrint?: boolean } = {}) {
   const patient = rx.patients
   const dentist = rx.dentists
@@ -149,14 +159,13 @@ function generatePrescriptionHTML(rx: any, opts: { autoPrint?: boolean } = {}) {
   ${patient?.allergies ? `<div class="allergy-box">⚠ KNOWN ALLERGIES: ${escapeHtml(patient.allergies)}</div>` : ''}
   ${rx.medicines?.length > 0 ? `
   <table>
-    <thead><tr><th style="width:4%">#</th><th style="width:24%">Medicine</th><th style="width:14%">Dosage</th><th style="width:14%">Frequency</th><th style="width:14%">Duration</th><th>Instructions</th></tr></thead>
+    <thead><tr><th style="width:4%">#</th><th style="width:26%">Medicine</th><th style="width:20%">Dosage &amp; Frequency</th><th style="width:14%">Duration</th><th>Instructions</th></tr></thead>
     <tbody>
       ${rx.medicines.map((m: any, i: number) => `
       <tr>
         <td>${i + 1}</td>
         <td><strong>${escapeHtml(m.name || '')}</strong></td>
-        <td>${escapeHtml(m.dosage || '')}</td>
-        <td>${escapeHtml(m.frequency || m.dosage || '')}</td>
+        <td>${escapeHtml(dosageFrequency(m))}</td>
         <td>${escapeHtml(m.duration || '')}</td>
         <td>${escapeHtml(m.instructions || '')}</td>
       </tr>`).join('')}

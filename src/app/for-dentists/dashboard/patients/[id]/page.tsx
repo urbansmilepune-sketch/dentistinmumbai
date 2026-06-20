@@ -86,6 +86,21 @@ const TAB_ALIASES: Record<string, string> = {
   chart: 'dental-chart',
 }
 
+// Prescription instruction language. The dentist picks English / Hindi /
+// Marathi (persisted per-dentist in localStorage) and taps a chip to append
+// the localised phrase to the prescription's Special Instructions — which then
+// prints verbatim on the PDF (HTML, so Devanagari renders natively).
+type RxLang = 'en' | 'hi' | 'mr'
+const RX_LANG_LABELS: Record<RxLang, string> = { en: 'English', hi: 'हिंदी', mr: 'मराठी' }
+const INSTRUCTION_PHRASES: Record<RxLang, string>[] = [
+  { en: 'After food',                  hi: 'खाने के बाद',         mr: 'जेवणानंतर' },
+  { en: 'Before food',                 hi: 'खाने से पहले',        mr: 'जेवणाआधी' },
+  { en: 'Morning + Night',             hi: 'सुबह + रात',          mr: 'सकाळी + रात्री' },
+  { en: 'Morning + Afternoon + Night', hi: 'सुबह + दोपहर + रात',   mr: 'सकाळी + दुपारी + रात्री' },
+  { en: 'As needed',                   hi: 'जरूरत के अनुसार',     mr: 'गरजेनुसार' },
+  { en: 'Empty stomach',               hi: 'खाली पेट',            mr: 'रिकाम्या पोटी' },
+]
+
 export default function PatientDetailPage() {
   const router = useRouter()
   const params = useParams()
@@ -126,6 +141,8 @@ export default function PatientDetailPage() {
   const [rxForm, setRxForm] = useState({
     template: '', medicines: [] as any[], instructions: '',
   })
+  // Instruction language for the prescription form (persisted per dentist).
+  const [rxLang, setRxLang] = useState<RxLang>('en')
 
   const [planForm, setPlanForm] = useState({
     title: '', steps: [{ treatment_name: '', tooth_number: '', estimated_cost: '', notes: '' }],
@@ -185,6 +202,29 @@ export default function PatientDetailPage() {
     }
     load()
   }, [patientId])
+
+  // Restore the dentist's saved instruction-language preference once we know
+  // who they are (kept in localStorage so they don't re-pick it every time).
+  useEffect(() => {
+    if (!dentistId || typeof window === 'undefined') return
+    const saved = window.localStorage.getItem(`rx_instr_lang:${dentistId}`)
+    if (saved === 'en' || saved === 'hi' || saved === 'mr') setRxLang(saved)
+  }, [dentistId])
+
+  function changeRxLang(l: RxLang) {
+    setRxLang(l)
+    if (dentistId && typeof window !== 'undefined') {
+      window.localStorage.setItem(`rx_instr_lang:${dentistId}`, l)
+    }
+  }
+
+  // Append a localised instruction phrase to the Special Instructions field.
+  function addInstructionPhrase(phrase: string) {
+    setRxForm(f => {
+      const cur = f.instructions.trim()
+      return { ...f, instructions: cur ? `${cur}, ${phrase}` : phrase }
+    })
+  }
 
   async function saveVisit() {
     setSaving(true)
@@ -664,7 +704,7 @@ export default function PatientDetailPage() {
                       )}
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 2fr', gap: 8 }}>
                         <input value={med.name} onChange={e => { const m = [...rxForm.medicines]; m[i].name = e.target.value; setRxForm(f => ({ ...f, medicines: m })) }} placeholder="Medicine name" style={inputStyle} />
-                        <input value={med.dosage} onChange={e => { const m = [...rxForm.medicines]; m[i].dosage = e.target.value; setRxForm(f => ({ ...f, medicines: m })) }} placeholder="1-0-1" style={inputStyle} />
+                        <input value={med.dosage} onChange={e => { const m = [...rxForm.medicines]; m[i].dosage = e.target.value; setRxForm(f => ({ ...f, medicines: m })) }} placeholder="Dosage & freq (1-0-1)" style={inputStyle} />
                         <input value={med.duration} onChange={e => { const m = [...rxForm.medicines]; m[i].duration = e.target.value; setRxForm(f => ({ ...f, medicines: m })) }} placeholder="5 days" style={inputStyle} />
                         <input value={med.instructions} onChange={e => { const m = [...rxForm.medicines]; m[i].instructions = e.target.value; setRxForm(f => ({ ...f, medicines: m })) }} placeholder="Instructions" style={inputStyle} />
                       </div>
@@ -675,7 +715,36 @@ export default function PatientDetailPage() {
                 </div>
               )}
               <div style={{ marginBottom: 16 }}>
-                <label style={labelStyle}>Special Instructions</label>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+                  <label style={{ ...labelStyle, marginBottom: 0 }}>Special Instructions</label>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {(['en', 'hi', 'mr'] as RxLang[]).map(l => {
+                      const active = rxLang === l
+                      return (
+                        <button key={l} type="button" onClick={() => changeRxLang(l)}
+                          style={{
+                            padding: '5px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-body)',
+                            background: active ? '#0A2558' : '#fff',
+                            color: active ? '#fff' : '#64748B',
+                            fontWeight: active ? 700 : 500,
+                            border: active ? '1px solid #0A2558' : '1px solid #CBD5E1',
+                          }}>
+                          {RX_LANG_LABELS[l]}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+                {/* Tap a phrase to append it (in the selected language) to the
+                    instructions below — it prints as-is on the PDF. */}
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+                  {INSTRUCTION_PHRASES.map((p, i) => (
+                    <button key={i} type="button" onClick={() => addInstructionPhrase(p[rxLang])}
+                      style={{ padding: '5px 10px', borderRadius: 16, fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-body)', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
+                      + {p[rxLang]}
+                    </button>
+                  ))}
+                </div>
                 <textarea value={rxForm.instructions} onChange={e => setRxForm(f => ({ ...f, instructions: e.target.value }))} placeholder="Avoid cold foods, salt water gargle, follow up in 1 week..." rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
               </div>
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
@@ -726,7 +795,7 @@ export default function PatientDetailPage() {
               {rx.medicines?.length > 0 && (
                 <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 12 }}>
                   <thead><tr style={{ background: 'var(--bg)' }}>
-                    {['Medicine', 'Dosage', 'Duration', 'Instructions'].map(h => <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: 'var(--muted)' }}>{h}</th>)}
+                    {['Medicine', 'Dosage & Frequency', 'Duration', 'Instructions'].map(h => <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: 'var(--muted)' }}>{h}</th>)}
                   </tr></thead>
                   <tbody>{rx.medicines.map((med: any, i: number) => (
                     <tr key={i} style={{ borderTop: '1px solid var(--border)' }}>
