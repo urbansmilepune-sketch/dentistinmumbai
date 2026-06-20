@@ -9,6 +9,8 @@ import { resolveCurrentDentist } from '@/lib/currentDentist'
 type TabKey = 'send' | 'all'
 type StatusFilter = 'all' | 'pending' | 'sent' | 'signed'
 
+type Lang = 'en' | 'mr' | 'both'
+
 interface Template {
   id: string
   form_type: string
@@ -16,6 +18,8 @@ interface Template {
   form_content: string
   is_system: boolean
   is_active?: boolean
+  language?: Lang | null
+  template_group?: string | null
 }
 
 interface PatientOpt {
@@ -90,9 +94,11 @@ export default function ConsentFormsPage() {
   const [manualName, setManualName] = useState('')
   const [manualPhone, setManualPhone] = useState('')
   const [selectedType, setSelectedType] = useState('')
-  // The dropdown is keyed by template id (not form_type) so a custom copy that
-  // reuses a system template's form_type doesn't collide.
-  const [selectedTemplateId, setSelectedTemplateId] = useState('')
+  // The dropdown is keyed by a "group key": `grp:<template_group>` for system
+  // templates (so the en + mr versions collapse into one entry) and
+  // `cst:<id>` for the dentist's own custom templates.
+  const [selectedGroupKey, setSelectedGroupKey] = useState('')
+  const [selectedLanguage, setSelectedLanguage] = useState<Lang>('en')
   const [formContent, setFormContent] = useState('')
   const [formTitle, setFormTitle] = useState('')
   const [sending, setSending] = useState(false)
@@ -116,7 +122,7 @@ export default function ConsentFormsPage() {
 
       const [{ data: tpls }, { data: cf }] = await Promise.all([
         supabase.from('consent_templates')
-          .select('id, form_type, form_title, form_content, is_system, is_active')
+          .select('id, form_type, form_title, form_content, is_system, is_active, language, template_group')
           .order('is_system', { ascending: false })
           .order('form_title'),
         supabase.from('consent_forms')
@@ -149,18 +155,74 @@ export default function ConsentFormsPage() {
     return () => clearTimeout(t)
   }, [patientQuery, searchPatients])
 
-  function selectTemplate(id: string) {
-    setSelectedTemplateId(id)
-    const tpl = templates.find(t => t.id === id)
-    if (tpl) {
-      setSelectedType(tpl.form_type)
-      setFormTitle(tpl.form_title)
-      setFormContent(tpl.form_content)
-    } else {
-      setSelectedType('')
-      setFormTitle('')
-      setFormContent('')
+  // Templates that belong to the selected dropdown entry. For a system group
+  // that's the en + mr (or bilingual) rows; for a custom it's the single row.
+  function versionsForKey(key: string): Template[] {
+    if (key.startsWith('grp:')) {
+      const g = key.slice(4)
+      return templates.filter(t => t.is_system && t.is_active !== false && (t.template_group || t.form_type) === g)
     }
+    if (key.startsWith('cst:')) {
+      const id = key.slice(4)
+      return templates.filter(t => t.id === id)
+    }
+    return []
+  }
+
+  // Which language toggles to offer for a selection: EN when an en/both row
+  // exists, मराठी when an mr row exists, Both only when there are genuinely
+  // separate en + mr versions.
+  function availableLangs(versions: Template[]): Lang[] {
+    const hasEn = versions.some(t => t.language === 'en' || t.language === 'both' || !t.language)
+    const hasMr = versions.some(t => t.language === 'mr')
+    const langs: Lang[] = []
+    if (hasEn) langs.push('en')
+    if (hasMr) langs.push('mr')
+    if (hasEn && hasMr) langs.push('both')
+    return langs
+  }
+
+  // Resolve the content for a language (mirrors the spec's getContent).
+  function contentForLang(lang: Lang, versions: Template[]): string {
+    if (lang === 'both') {
+      const en = versions.find(t => t.language === 'en' || t.language === 'both' || !t.language)
+      const mr = versions.find(t => t.language === 'mr')
+      if (en && mr) return en.form_content + '\n\n' + '━'.repeat(40) + '\n\n' + mr.form_content
+      return en?.form_content || mr?.form_content || ''
+    }
+    const t = versions.find(x => x.language === lang || x.language === 'both' || (lang === 'en' && !x.language))
+    return t?.form_content || ''
+  }
+
+  // The version whose title/form_type best represents a language choice.
+  function primaryVersion(lang: Lang, versions: Template[]): Template | undefined {
+    if (lang === 'mr') return versions.find(t => t.language === 'mr') || versions[0]
+    return versions.find(t => t.language === 'en' || t.language === 'both' || !t.language) || versions[0]
+  }
+
+  function applySelection(versions: Template[], lang: Lang) {
+    const pv = primaryVersion(lang, versions)
+    setSelectedType(pv?.form_type || '')
+    setFormTitle(pv?.form_title || '')
+    setFormContent(contentForLang(lang, versions))
+  }
+
+  function handleSelectGroup(key: string) {
+    setSelectedGroupKey(key)
+    if (!key) {
+      setSelectedType(''); setFormTitle(''); setFormContent('')
+      return
+    }
+    const versions = versionsForKey(key)
+    const langs = availableLangs(versions)
+    const lang: Lang = langs.includes('en') ? 'en' : (langs[0] || 'en')
+    setSelectedLanguage(lang)
+    applySelection(versions, lang)
+  }
+
+  function handleSelectLanguage(lang: Lang) {
+    setSelectedLanguage(lang)
+    applySelection(versionsForKey(selectedGroupKey), lang)
   }
 
   function getPatientName() {
@@ -263,7 +325,8 @@ export default function ConsentFormsPage() {
     setManualName('')
     setManualPhone('')
     setSelectedType('')
-    setSelectedTemplateId('')
+    setSelectedGroupKey('')
+    setSelectedLanguage('en')
     setFormContent('')
     setFormTitle('')
   }
@@ -277,10 +340,21 @@ export default function ConsentFormsPage() {
     setDeleting(null)
   }
 
-  // Split for the send dropdown: system templates first, then the dentist's
-  // active custom ones under a "My Templates" group.
-  const systemTemplates = templates.filter(t => t.is_system && t.is_active !== false)
+  // Send dropdown: collapse system templates into one entry per template_group
+  // (en + mr share an entry), then list custom templates individually.
+  const activeSystem = templates.filter(t => t.is_system && t.is_active !== false)
   const customTemplates = templates.filter(t => !t.is_system && t.is_active !== false)
+  const systemGroups = Array.from(
+    new Set(activeSystem.map(t => t.template_group || t.form_type))
+  ).map(g => {
+    const versions = activeSystem.filter(t => (t.template_group || t.form_type) === g)
+    const primary = versions.find(t => t.language === 'en' || t.language === 'both' || !t.language) || versions[0]
+    return { key: `grp:${g}`, label: primary?.form_title || g }
+  })
+
+  // Language toggles available for the current selection.
+  const langOptions = selectedGroupKey ? availableLangs(versionsForKey(selectedGroupKey)) : []
+  const LANG_LABEL: Record<Lang, string> = { en: 'English', mr: 'मराठी', both: 'Both / दोन्ही' }
 
   const filteredForms = statusFilter === 'all'
     ? forms
@@ -384,24 +458,50 @@ export default function ConsentFormsPage() {
             {/* Form type */}
             <div>
               <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Consent form type *</label>
-              <select value={selectedTemplateId} onChange={e => selectTemplate(e.target.value)} style={{ ...inp }}>
+              <select value={selectedGroupKey} onChange={e => handleSelectGroup(e.target.value)} style={{ ...inp }}>
                 <option value="">— Select form type</option>
-                {systemTemplates.length > 0 && (
+                {systemGroups.length > 0 && (
                   <optgroup label="System Templates">
-                    {systemTemplates.map(t => (
-                      <option key={t.id} value={t.id}>{t.form_title}</option>
+                    {systemGroups.map(g => (
+                      <option key={g.key} value={g.key}>{g.label}</option>
                     ))}
                   </optgroup>
                 )}
                 {customTemplates.length > 0 && (
                   <optgroup label="My Templates">
                     {customTemplates.map(t => (
-                      <option key={t.id} value={t.id}>{t.form_title}</option>
+                      <option key={t.id} value={`cst:${t.id}`}>{t.form_title}</option>
                     ))}
                   </optgroup>
                 )}
               </select>
             </div>
+
+            {/* Language toggle — shown once a form type is picked. Switching a
+                tab re-renders the preview instantly. */}
+            {selectedGroupKey && langOptions.length > 0 && (
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6 }}>Language / भाषा</label>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {langOptions.map(l => {
+                    const active = selectedLanguage === l
+                    return (
+                      <button key={l} type="button" onClick={() => handleSelectLanguage(l)}
+                        style={{
+                          padding: '8px 16px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
+                          fontFamily: 'var(--font-body)',
+                          background: active ? '#0A2558' : '#fff',
+                          color: active ? '#fff' : '#64748B',
+                          fontWeight: active ? 700 : 500,
+                          border: active ? '1px solid #0A2558' : '1px solid #CBD5E1',
+                        }}>
+                        {LANG_LABEL[l]}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Actions */}
             {sendError && (

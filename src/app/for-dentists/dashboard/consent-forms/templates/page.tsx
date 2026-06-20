@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentDentist } from '@/lib/currentDentist'
 
+type Lang = 'en' | 'mr' | 'both'
+
 interface Template {
   id: string
   dentist_id: string | null
@@ -15,6 +17,8 @@ interface Template {
   is_system: boolean
   is_default: boolean
   is_active?: boolean
+  language?: Lang | null
+  template_group?: string | null
   created_at: string
 }
 
@@ -31,6 +35,39 @@ function slugify(s: string): string {
   return s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
 }
 
+// Friendly headings for the system template groups; falls back to the raw
+// template_group with underscores spaced out.
+const GROUP_LABELS: Record<string, string> = {
+  extraction: 'Extraction Consent',
+  rct: 'Root Canal',
+  implant: 'Dental Implant',
+  orthodontic: 'Orthodontic',
+  surgery: 'Oral Surgery',
+  anaesthesia: 'Local Anaesthesia',
+  basal_implant: 'Basal Implant',
+}
+function groupLabel(g: string): string {
+  return (GROUP_LABELS[g] || g.replace(/_/g, ' ')).toUpperCase()
+}
+
+// EN (blue) / मराठी (orange) / EN + मराठी (teal) pill.
+function LangBadge({ language }: { language?: Lang | null }) {
+  const map: Record<Lang, { text: string; bg: string; fg: string }> = {
+    en:   { text: 'EN',          bg: '#DBEAFE', fg: '#1D4ED8' },
+    mr:   { text: 'मराठी',       bg: '#FFEDD5', fg: '#C2410C' },
+    both: { text: 'EN + मराठी',  bg: '#CCFBF1', fg: '#0F766E' },
+  }
+  const m = map[language || 'en']
+  return (
+    <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 20, background: m.bg, color: m.fg, fontWeight: 700, whiteSpace: 'nowrap' }}>
+      {m.text}
+    </span>
+  )
+}
+
+// en → both → mr, for stable ordering of versions within a group.
+const LANG_ORDER: Record<Lang, number> = { en: 0, both: 1, mr: 2 }
+
 type ModalMode = 'edit' | 'create' | null
 
 export default function ConsentTemplatesPage() {
@@ -45,11 +82,18 @@ export default function ConsentTemplatesPage() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
-  const [editForm, setEditForm] = useState({
+  const [editForm, setEditForm] = useState<{
+    form_type: string
+    form_title: string
+    form_content: string
+    is_active: boolean
+    language: Lang
+  }>({
     form_type: '',
     form_title: '',
     form_content: '',
     is_active: true,
+    language: 'en',
   })
 
   useEffect(() => {
@@ -61,7 +105,7 @@ export default function ConsentTemplatesPage() {
 
       const { data } = await supabase
         .from('consent_templates')
-        .select('id, dentist_id, form_type, form_title, form_content, is_system, is_default, is_active, created_at')
+        .select('id, dentist_id, form_type, form_title, form_content, is_system, is_default, is_active, language, template_group, created_at')
         .order('is_system', { ascending: false })
         .order('form_title')
       // Hide soft-deleted custom templates (is_active = false). System rows
@@ -80,18 +124,19 @@ export default function ConsentTemplatesPage() {
       form_title: tpl.form_title,
       form_content: tpl.form_content,
       is_active: tpl.is_active ?? true,
+      language: tpl.language ?? 'en',
     })
     setModal('edit')
     setError(null)
   }
 
   function openCreate() {
-    setEditForm({ form_type: '', form_title: '', form_content: '', is_active: true })
+    setEditForm({ form_type: '', form_title: '', form_content: '', is_active: true, language: 'en' })
     setModal('create')
     setError(null)
   }
 
-  const SELECT_COLS = 'id, dentist_id, form_type, form_title, form_content, is_system, is_default, is_active, created_at'
+  const SELECT_COLS = 'id, dentist_id, form_type, form_title, form_content, is_system, is_default, is_active, language, template_group, created_at'
 
   async function handleSave() {
     setError(null)
@@ -117,6 +162,7 @@ export default function ConsentTemplatesPage() {
             is_system: false,
             is_default: false,
             is_active: editForm.is_active,
+            language: editForm.language,
           })
           .select(SELECT_COLS)
           .single()
@@ -135,6 +181,7 @@ export default function ConsentTemplatesPage() {
             form_content: editForm.form_content,
             form_type: formType,
             is_active: editForm.is_active,
+            language: editForm.language,
           })
           .eq('id', selected.id)
         setSaving(false)
@@ -155,6 +202,7 @@ export default function ConsentTemplatesPage() {
           is_system: false,
           is_default: false,
           is_active: editForm.is_active,
+          language: editForm.language,
         })
         .select(SELECT_COLS)
         .single()
@@ -196,6 +244,16 @@ export default function ConsentTemplatesPage() {
   const systemTpls = templates.filter(t => t.is_system)
   const customTpls = templates.filter(t => !t.is_system)
 
+  // System templates grouped by template_group so the en + mr versions show
+  // as a pair under one heading.
+  const systemGroups = Array.from(new Set(systemTpls.map(t => t.template_group || t.form_type)))
+    .map(g => ({
+      g,
+      items: systemTpls
+        .filter(t => (t.template_group || t.form_type) === g)
+        .sort((a, b) => LANG_ORDER[a.language || 'en'] - LANG_ORDER[b.language || 'en']),
+    }))
+
   return (
     <div style={{ maxWidth: 1000 }}>
       {/* Header */}
@@ -221,23 +279,32 @@ export default function ConsentTemplatesPage() {
 
         {/* Left: template list */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {systemTpls.length > 0 && (
+          {systemGroups.length > 0 && (
             <>
               <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', padding: '8px 12px 4px', letterSpacing: '0.05em' }}>
                 SYSTEM TEMPLATES
               </div>
-              {systemTpls.map(t => (
-                <button key={t.id} onClick={() => setSelected(t)}
-                  style={{
-                    width: '100%', textAlign: 'left', padding: '10px 12px', border: 'none',
-                    borderRadius: 8, cursor: 'pointer', fontFamily: 'var(--font-body)',
-                    background: selected?.id === t.id ? 'var(--blue-light)' : 'transparent',
-                    color: selected?.id === t.id ? 'var(--blue)' : 'var(--text)',
-                    fontWeight: selected?.id === t.id ? 700 : 400,
-                  }}>
-                  <div style={{ fontSize: 13 }}>{t.form_title}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{t.form_type}</div>
-                </button>
+              {systemGroups.map(({ g, items }) => (
+                <div key={g} style={{ marginBottom: 4 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#94A3B8', padding: '6px 12px 2px', letterSpacing: '0.04em' }}>
+                    {groupLabel(g)}
+                  </div>
+                  {items.map(t => (
+                    <button key={t.id} onClick={() => setSelected(t)}
+                      style={{
+                        width: '100%', textAlign: 'left', padding: '9px 12px', border: 'none',
+                        borderRadius: 8, cursor: 'pointer', fontFamily: 'var(--font-body)',
+                        background: selected?.id === t.id ? 'var(--blue-light)' : 'transparent',
+                        color: selected?.id === t.id ? 'var(--blue)' : 'var(--text)',
+                        fontWeight: selected?.id === t.id ? 700 : 400,
+                      }}>
+                      <div style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <LangBadge language={t.language} />
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.form_title}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
               ))}
             </>
           )}
@@ -260,8 +327,9 @@ export default function ConsentTemplatesPage() {
                     color: selected?.id === t.id ? 'var(--blue)' : 'var(--text)',
                     fontWeight: selected?.id === t.id ? 700 : 400,
                   }}>
-                  <div style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                     {t.form_title}
+                    <LangBadge language={t.language} />
                     <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 20, background: '#CCFBF1', color: '#0F766E', fontWeight: 700 }}>Custom</span>
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{t.form_type}</div>
@@ -283,6 +351,7 @@ export default function ConsentTemplatesPage() {
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                   <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18, margin: 0 }}>{selected.form_title}</h2>
+                  <LangBadge language={selected.language} />
                   {selected.is_system ? (
                     <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: '#F1F5F9', color: '#64748B', fontWeight: 600 }}>System</span>
                   ) : (
@@ -341,6 +410,26 @@ export default function ConsentTemplatesPage() {
                 <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Template Name *</label>
                 <input value={editForm.form_title} onChange={e => setEditForm(f => ({ ...f, form_title: e.target.value }))}
                   placeholder="e.g. Teeth Whitening Consent" style={inp} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6 }}>Language</label>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {([['en', 'English'], ['mr', 'मराठी'], ['both', 'Both languages in one form']] as [Lang, string][]).map(([val, label]) => {
+                    const active = editForm.language === val
+                    return (
+                      <button key={val} type="button" onClick={() => setEditForm(f => ({ ...f, language: val }))}
+                        style={{
+                          padding: '8px 14px', borderRadius: 8, fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-body)',
+                          background: active ? '#0A2558' : '#fff',
+                          color: active ? '#fff' : '#64748B',
+                          fontWeight: active ? 700 : 500,
+                          border: active ? '1px solid #0A2558' : '1px solid #CBD5E1',
+                        }}>
+                        {label}
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
               <div>
                 <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Form Type *</label>
