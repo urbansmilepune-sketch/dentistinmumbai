@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentDentist } from '@/lib/currentDentist'
 
-type Lang = 'en' | 'mr' | 'both'
+type Lang = 'en' | 'mr' | 'hi' | 'gu' | 'te' | 'ta' | 'both'
 
 interface Template {
   id: string
@@ -50,23 +50,27 @@ function groupLabel(g: string): string {
   return (GROUP_LABELS[g] || g.replace(/_/g, ' ')).toUpperCase()
 }
 
-// EN (blue) / मराठी (orange) / EN + मराठी (teal) pill.
+// Colour-coded language pill — one distinct colour per language.
+const LANG_BADGE: Record<Lang, { text: string; color: string }> = {
+  en:   { text: 'EN',          color: '#1565C0' }, // blue
+  mr:   { text: 'मराठी',       color: '#E65100' }, // orange
+  hi:   { text: 'हिंदी',        color: '#2E7D32' }, // green
+  gu:   { text: 'ગુજરાતી',     color: '#6A1B9A' }, // purple
+  te:   { text: 'తెలుగు',      color: '#00897B' }, // teal
+  ta:   { text: 'தமிழ்',       color: '#C62828' }, // red
+  both: { text: 'EN + मराठी',  color: '#0A2558' }, // navy
+}
 function LangBadge({ language }: { language?: Lang | null }) {
-  const map: Record<Lang, { text: string; bg: string; fg: string }> = {
-    en:   { text: 'EN',          bg: '#DBEAFE', fg: '#1D4ED8' },
-    mr:   { text: 'मराठी',       bg: '#FFEDD5', fg: '#C2410C' },
-    both: { text: 'EN + मराठी',  bg: '#CCFBF1', fg: '#0F766E' },
-  }
-  const m = map[language || 'en']
+  const m = LANG_BADGE[language || 'en']
   return (
-    <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 20, background: m.bg, color: m.fg, fontWeight: 700, whiteSpace: 'nowrap' }}>
+    <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: m.color, color: '#fff', fontWeight: 700, whiteSpace: 'nowrap' }}>
       {m.text}
     </span>
   )
 }
 
-// en → both → mr, for stable ordering of versions within a group.
-const LANG_ORDER: Record<Lang, number> = { en: 0, both: 1, mr: 2 }
+// Stable ordering of versions within a group: en, mr, hi, gu, te, ta, both.
+const LANG_ORDER: Record<Lang, number> = { en: 0, mr: 1, hi: 2, gu: 3, te: 4, ta: 5, both: 6 }
 
 type ModalMode = 'edit' | 'create' | null
 
@@ -414,7 +418,7 @@ export default function ConsentTemplatesPage() {
               <div>
                 <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6 }}>Language</label>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {([['en', 'English'], ['mr', 'मराठी'], ['both', 'Both languages in one form']] as [Lang, string][]).map(([val, label]) => {
+                  {([['en', 'English'], ['mr', 'मराठी'], ['hi', 'हिंदी'], ['gu', 'ગુજરાતી'], ['te', 'తెలుగు'], ['ta', 'தமிழ்'], ['both', 'Both (EN + MR)']] as [Lang, string][]).map(([val, label]) => {
                     const active = editForm.language === val
                     return (
                       <button key={val} type="button" onClick={() => setEditForm(f => ({ ...f, language: val }))}

@@ -9,7 +9,21 @@ import { resolveCurrentDentist } from '@/lib/currentDentist'
 type TabKey = 'send' | 'all'
 type StatusFilter = 'all' | 'pending' | 'sent' | 'signed'
 
-type Lang = 'en' | 'mr' | 'both'
+type Lang = 'en' | 'mr' | 'hi' | 'gu' | 'te' | 'ta' | 'both'
+
+// Full language selector for the send flow. 'both' = English + Marathi in one
+// combined form.
+const LANGUAGES: { code: Lang; label: string; flag: string }[] = [
+  { code: 'en',   label: 'English',   flag: '🇬🇧' },
+  { code: 'mr',   label: 'मराठी',     flag: '🇮🇳' },
+  { code: 'hi',   label: 'हिंदी',      flag: '🇮🇳' },
+  { code: 'gu',   label: 'ગુજરાતી',   flag: '🇮🇳' },
+  { code: 'te',   label: 'తెలుగు',    flag: '🇮🇳' },
+  { code: 'ta',   label: 'தமிழ்',     flag: '🇮🇳' },
+  { code: 'both', label: 'EN + MR',   flag: '🌐' },
+]
+// Single-language codes (everything except the combined 'both').
+const SINGLE_LANGS: Lang[] = ['en', 'mr', 'hi', 'gu', 'te', 'ta']
 
 interface Template {
   id: string
@@ -99,6 +113,8 @@ export default function ConsentFormsPage() {
   // `cst:<id>` for the dentist's own custom templates.
   const [selectedGroupKey, setSelectedGroupKey] = useState('')
   const [selectedLanguage, setSelectedLanguage] = useState<Lang>('en')
+  // Set when the chosen language has no template and we fell back to English.
+  const [langFallback, setLangFallback] = useState<string | null>(null)
   const [formContent, setFormContent] = useState('')
   const [formTitle, setFormTitle] = useState('')
   const [sending, setSending] = useState(false)
@@ -169,42 +185,56 @@ export default function ConsentFormsPage() {
     return []
   }
 
-  // Which language toggles to offer for a selection: EN when an en/both row
-  // exists, मराठी when an mr row exists, Both only when there are genuinely
-  // separate en + mr versions.
+  // The row matching a single language. 'en' also accepts a bilingual 'both'
+  // row (or a legacy row with no language set).
+  function findVersion(lang: Lang, versions: Template[]): Template | undefined {
+    if (lang === 'en') return versions.find(t => t.language === 'en' || t.language === 'both' || !t.language)
+    return versions.find(t => t.language === lang)
+  }
+
+  // Languages that actually have a template for this selection. 'both' is
+  // offered only when separate en + mr versions exist.
   function availableLangs(versions: Template[]): Lang[] {
-    const hasEn = versions.some(t => t.language === 'en' || t.language === 'both' || !t.language)
+    const langs = SINGLE_LANGS.filter(code => !!findVersion(code, versions))
     const hasMr = versions.some(t => t.language === 'mr')
-    const langs: Lang[] = []
-    if (hasEn) langs.push('en')
-    if (hasMr) langs.push('mr')
-    if (hasEn && hasMr) langs.push('both')
+    if (langs.includes('en') && hasMr) langs.push('both')
     return langs
   }
 
   // Resolve the content for a language (mirrors the spec's getContent).
   function contentForLang(lang: Lang, versions: Template[]): string {
     if (lang === 'both') {
-      const en = versions.find(t => t.language === 'en' || t.language === 'both' || !t.language)
+      const en = findVersion('en', versions)
       const mr = versions.find(t => t.language === 'mr')
       if (en && mr) return en.form_content + '\n\n' + '━'.repeat(40) + '\n\n' + mr.form_content
       return en?.form_content || mr?.form_content || ''
     }
-    const t = versions.find(x => x.language === lang || x.language === 'both' || (lang === 'en' && !x.language))
-    return t?.form_content || ''
+    return findVersion(lang, versions)?.form_content || ''
   }
 
   // The version whose title/form_type best represents a language choice.
   function primaryVersion(lang: Lang, versions: Template[]): Template | undefined {
-    if (lang === 'mr') return versions.find(t => t.language === 'mr') || versions[0]
-    return versions.find(t => t.language === 'en' || t.language === 'both' || !t.language) || versions[0]
+    if (lang === 'both') return findVersion('en', versions) || versions[0]
+    return findVersion(lang, versions) || versions[0]
   }
 
   function applySelection(versions: Template[], lang: Lang) {
+    let content = contentForLang(lang, versions)
+    let fallback: string | null = null
+    // If the requested language has no template, fall back to English and
+    // tell the dentist (e.g. a custom form only exists in one language).
+    if (!content && lang !== 'en') {
+      const en = contentForLang('en', versions)
+      if (en) {
+        content = en
+        fallback = LANGUAGES.find(L => L.code === lang)?.label ?? lang
+      }
+    }
     const pv = primaryVersion(lang, versions)
     setSelectedType(pv?.form_type || '')
     setFormTitle(pv?.form_title || '')
-    setFormContent(contentForLang(lang, versions))
+    setFormContent(content)
+    setLangFallback(fallback)
   }
 
   function handleSelectGroup(key: string) {
@@ -327,6 +357,7 @@ export default function ConsentFormsPage() {
     setSelectedType('')
     setSelectedGroupKey('')
     setSelectedLanguage('en')
+    setLangFallback(null)
     setFormContent('')
     setFormTitle('')
   }
@@ -352,9 +383,8 @@ export default function ConsentFormsPage() {
     return { key: `grp:${g}`, label: primary?.form_title || g }
   })
 
-  // Language toggles available for the current selection.
+  // Languages available for the current selection (used to filter the pills).
   const langOptions = selectedGroupKey ? availableLangs(versionsForKey(selectedGroupKey)) : []
-  const LANG_LABEL: Record<Lang, string> = { en: 'English', mr: 'मराठी', both: 'Both / दोन्ही' }
 
   const filteredForms = statusFilter === 'all'
     ? forms
@@ -477,29 +507,41 @@ export default function ConsentFormsPage() {
               </select>
             </div>
 
-            {/* Language toggle — shown once a form type is picked. Switching a
-                tab re-renders the preview instantly. */}
+            {/* Language selector — shown once a form type is picked. Only the
+                languages that actually have a template for this form appear.
+                Switching re-renders the preview instantly. */}
             {selectedGroupKey && langOptions.length > 0 && (
               <div>
-                <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 6 }}>Language / भाषा</label>
+                <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 8 }}>
+                  Choose language for this consent form / संमती पत्राची भाषा निवडा
+                </label>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {langOptions.map(l => {
-                    const active = selectedLanguage === l
+                  {LANGUAGES.filter(lang => langOptions.includes(lang.code)).map(lang => {
+                    const active = selectedLanguage === lang.code
                     return (
-                      <button key={l} type="button" onClick={() => handleSelectLanguage(l)}
+                      <button key={lang.code} type="button" onClick={() => handleSelectLanguage(lang.code)}
                         style={{
-                          padding: '8px 16px', borderRadius: 8, fontSize: 13, cursor: 'pointer',
+                          padding: '8px 14px',
+                          borderRadius: 20,
+                          border: active ? 'none' : '1px solid var(--border)',
+                          background: active ? '#0A2558' : 'white',
+                          color: active ? 'white' : '#64748B',
+                          fontWeight: active ? 700 : 400,
+                          fontSize: 13,
+                          cursor: 'pointer',
                           fontFamily: 'var(--font-body)',
-                          background: active ? '#0A2558' : '#fff',
-                          color: active ? '#fff' : '#64748B',
-                          fontWeight: active ? 700 : 500,
-                          border: active ? '1px solid #0A2558' : '1px solid #CBD5E1',
+                          whiteSpace: 'nowrap',
                         }}>
-                        {LANG_LABEL[l]}
+                        {lang.flag} {lang.label}
                       </button>
                     )
                   })}
                 </div>
+                {langFallback && (
+                  <p style={{ fontSize: 12, color: '#92400E', background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: 8, padding: '8px 12px', marginTop: 8 }}>
+                    This form is not yet available in {langFallback}. Showing English version.
+                  </p>
+                )}
               </div>
             )}
 
