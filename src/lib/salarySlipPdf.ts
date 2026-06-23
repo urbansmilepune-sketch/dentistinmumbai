@@ -3,7 +3,7 @@
 // glyph for U+20B9 and renders it as '¹'), and one-shot doc.save().
 // Caller fetches /api/dentist/salaries/[id]/slip to get the JSON payload,
 // then hands it here.
-import jsPDF from 'jspdf'
+import { jsPDF } from 'jspdf' // v4: named export (see invoicePdf.ts)
 import { getCityBySlug } from '@/config/cities'
 
 const MONTHS = [

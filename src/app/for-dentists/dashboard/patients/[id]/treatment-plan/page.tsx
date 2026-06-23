@@ -19,7 +19,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
-import jsPDF from 'jspdf'
+import { jsPDF } from 'jspdf' // v4: named export (see src/lib/invoicePdf.ts)
 import { createClient } from '@/lib/supabase/client'
 import { getCityBySlug } from '@/config/cities'
 

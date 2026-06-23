@@ -9,7 +9,11 @@
 // alignment. Earlier proportional-width versions overlapped on long values;
 // pinning every column to absolute x keeps Qty / Unit / Total in their own
 // lanes regardless of treatment-name length.
-import jsPDF from 'jspdf'
+// jsPDF 4.x ships the constructor as a NAMED export from its ESM build (which
+// is what Next/webpack bundles); the old default export is no longer the
+// constructor, so `import jsPDF from 'jspdf'` yields a non-constructor and
+// `new jsPDF()` throws "jsPDF is not a constructor" at runtime.
+import { jsPDF } from 'jspdf'
 import { getCityBySlug } from '@/config/cities'
 import { INR_FONT_REGULAR_B64, INR_FONT_BOLD_B64 } from './inrFont'
 

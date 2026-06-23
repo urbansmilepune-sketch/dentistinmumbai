@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import jsPDF from 'jspdf'
+import { jsPDF } from 'jspdf' // v4: named export (see src/lib/invoicePdf.ts)
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
