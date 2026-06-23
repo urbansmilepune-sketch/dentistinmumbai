@@ -15,15 +15,19 @@
 // `new jsPDF()` throws "jsPDF is not a constructor" at runtime.
 import { jsPDF } from 'jspdf'
 import { getCityBySlug } from '@/config/cities'
-import { INR_FONT_REGULAR_B64, INR_FONT_BOLD_B64 } from './inrFont'
 
-// jsPDF's built-in Helvetica is WinAnsi/Latin-1 only — it has no glyph for the
-// rupee sign ₹ (U+20B9) and renders it as '¹'. We register a tiny Noto Sans
-// subset (see ./inrFont) and draw every currency amount with it via
-// drawCurrency() below; all other text stays on Helvetica.
-const RUPEE = '₹'
+// Currency is rendered as an ASCII "Rs." prefix on jsPDF's built-in Helvetica.
+// We previously embedded a Noto Sans subset to print the ₹ glyph (U+20B9, which
+// Helvetica's Latin-1 set lacks), but that TrueType subset fails to parse in
+// jsPDF 4.x — addFont errors during parse, the font's width table is never
+// built, and every currency draw then throws in pdfEscape16
+// ("Cannot read properties of undefined (reading 'widths')"), which is exactly
+// what made invoice downloads fail. "Rs." needs no custom font and is standard
+// on Indian invoices, so it sidesteps the parser bug entirely.
+const RUPEE = 'Rs. '
 function formatCurrency(amount: number): string {
-  return RUPEE + amount.toLocaleString('en-IN')
+  const n = Number(amount)
+  return RUPEE + (Number.isFinite(n) ? n : 0).toLocaleString('en-IN')
 }
 
 export type InvoiceDentist = {
@@ -88,21 +92,29 @@ export type Invoice = {
   patients?: { name?: string | null; phone?: string | null } | null
 }
 
+// Public entry point. Thin wrapper so any failure inside the renderer is
+// logged with the exact invoice + dentist payload that triggered it, then
+// re-thrown for the caller to surface to the dentist. Before this, a throw
+// here was an unhandled rejection — the download button just did nothing.
 export async function downloadInvoicePdf(inv: Invoice, dentist: InvoiceDentist) {
+  try {
+    await renderInvoicePdf(inv, dentist)
+  } catch (err) {
+    console.error('Invoice PDF error:', err)
+    try { console.error('Invoice data:', JSON.stringify(inv)) } catch { /* circular / non-serialisable */ }
+    try { console.error('Dentist data:', JSON.stringify(dentist)) } catch { /* circular / non-serialisable */ }
+    throw err
+  }
+}
+
+async function renderInvoicePdf(inv: Invoice, dentist: InvoiceDentist) {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' })
 
-  // Register the rupee-capable subset font (regular + bold). Only currency
-  // amounts use it — drawCurrency() switches to it, draws, then restores
-  // Helvetica so the rest of the layout is unaffected.
-  doc.addFileToVFS('NotoINR-Regular.ttf', INR_FONT_REGULAR_B64)
-  doc.addFont('NotoINR-Regular.ttf', 'NotoINR', 'normal')
-  doc.addFileToVFS('NotoINR-Bold.ttf', INR_FONT_BOLD_B64)
-  doc.addFont('NotoINR-Bold.ttf', 'NotoINR', 'bold')
-
-  // Draw a pre-formatted currency string at the current font size + colour
-  // using the rupee font, then restore Helvetica for following text.
+  // Draw a pre-formatted currency string at the current font size + colour.
+  // Currency stays on Helvetica (see formatCurrency / RUPEE above) — opts.bold
+  // just toggles the weight to match the surrounding label.
   function drawCurrency(text: string, x: number, y: number, opts: { align?: 'left' | 'center' | 'right'; bold?: boolean } = {}) {
-    doc.setFont('NotoINR', opts.bold ? 'bold' : 'normal')
+    doc.setFont('helvetica', opts.bold ? 'bold' : 'normal')
     doc.text(text, x, y, opts.align ? { align: opts.align } : undefined)
     doc.setFont('helvetica', 'normal')
   }
@@ -145,22 +157,34 @@ export async function downloadInvoicePdf(inv: Invoice, dentist: InvoiceDentist) 
   // full-width layout when there's no logo.
   let textX = MARGIN
   if (dentist.clinic_logo_url) {
-    const logo = await loadImageData(dentist.clinic_logo_url)
-    if (logo && logo.width > 0 && logo.height > 0) {
-      const LOGO_MAX_H = 56
-      const LOGO_MAX_W = 90
-      let h = LOGO_MAX_H
-      let w = (logo.width / logo.height) * h
-      if (w > LOGO_MAX_W) { w = LOGO_MAX_W; h = (logo.height / logo.width) * w }
-      doc.addImage(logo.dataUrl, 'PNG', MARGIN, 44, w, h)
-      textX = MARGIN + w + 14
+    // Whole block guarded: loadImageData resolves null on fetch/CORS failure,
+    // but addImage itself can still throw on a malformed data URL. A logo must
+    // never be the reason an invoice won't download — fall back to the
+    // no-logo layout on any error.
+    try {
+      const logo = await loadImageData(dentist.clinic_logo_url)
+      if (logo && logo.width > 0 && logo.height > 0) {
+        const LOGO_MAX_H = 56
+        const LOGO_MAX_W = 90
+        let h = LOGO_MAX_H
+        let w = (logo.width / logo.height) * h
+        if (w > LOGO_MAX_W) { w = LOGO_MAX_W; h = (logo.height / logo.width) * w }
+        doc.addImage(logo.dataUrl, 'PNG', MARGIN, 44, w, h)
+        textX = MARGIN + w + 14
+      }
+    } catch (e) {
+      console.warn('Invoice logo skipped:', e)
     }
   }
 
   // ---- Right meta block: INVOICE title + No + Date, right-aligned at RIGHT_X.
   // Drawn first so we know how far left it reaches, then keep the clinic
   // name/address clear of it (this is what fixes the title/clinic-name overlap).
-  const dateStr = new Date(inv.invoice_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+  // invoice_date may be null/blank/malformed — fall back to today rather than
+  // rendering "Invalid Date".
+  const parsedDate = inv.invoice_date ? new Date(inv.invoice_date) : null
+  const dateForDisplay = parsedDate && !isNaN(parsedDate.getTime()) ? parsedDate : new Date()
+  const dateStr = dateForDisplay.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
   const metaNo = `No: ${inv.invoice_no}`
   const metaDate = `Date: ${dateStr}`
 
@@ -270,7 +294,21 @@ export async function downloadInvoicePdf(inv: Invoice, dentist: InvoiceDentist) 
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(11)
   doc.setTextColor(30, 41, 59)
-  const items: InvoiceItem[] = Array.isArray(inv.items) ? inv.items : []
+  // items is JSONB. Supabase normally hands it back already parsed as an array,
+  // but a legacy row (or a re-serialised payload) can arrive as a JSON string —
+  // parse that defensively so a string never reaches the render loop and breaks
+  // it. Anything that isn't ultimately an array degrades to an empty table.
+  const items: InvoiceItem[] = (() => {
+    const raw: unknown = inv.items
+    if (Array.isArray(raw)) return raw
+    if (typeof raw === 'string') {
+      try {
+        const parsed = JSON.parse(raw)
+        return Array.isArray(parsed) ? parsed : []
+      } catch { return [] }
+    }
+    return []
+  })()
 
   for (const item of items) {
     const name = String(item.treatment_name ?? item.description ?? '')
@@ -420,15 +458,19 @@ export async function downloadInvoicePdf(inv: Invoice, dentist: InvoiceDentist) 
   // logo; on any failure we fall back silently to the plain line so a flaky
   // image never blocks the download.
   if (dentist.signature_url) {
-    const sig = await loadImageData(dentist.signature_url)
-    if (sig && sig.width > 0 && sig.height > 0) {
-      const SIG_MAX_H = 38
-      const SIG_MAX_W = 150
-      let h = SIG_MAX_H
-      let w = (sig.width / sig.height) * h
-      if (w > SIG_MAX_W) { w = SIG_MAX_W; h = (sig.height / sig.width) * w }
-      // Bottom edge rests 2pt above the signature line, right edge at SIG_LINE_X2.
-      doc.addImage(sig.dataUrl, 'PNG', SIG_LINE_X2 - w, SIG_Y - h - 2, w, h)
+    try {
+      const sig = await loadImageData(dentist.signature_url)
+      if (sig && sig.width > 0 && sig.height > 0) {
+        const SIG_MAX_H = 38
+        const SIG_MAX_W = 150
+        let h = SIG_MAX_H
+        let w = (sig.width / sig.height) * h
+        if (w > SIG_MAX_W) { w = SIG_MAX_W; h = (sig.height / sig.width) * w }
+        // Bottom edge rests 2pt above the signature line, right edge at SIG_LINE_X2.
+        doc.addImage(sig.dataUrl, 'PNG', SIG_LINE_X2 - w, SIG_Y - h - 2, w, h)
+      }
+    } catch (e) {
+      console.warn('Invoice signature skipped:', e)
     }
   }
 
