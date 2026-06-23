@@ -120,7 +120,7 @@ export default function DashboardShell({ dentist, completionPct, staffRole = nul
       {/* Logo */}
       <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
         <Link href="/" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none' }}>
-          <img src={cityConfig.logoPath} alt={cityConfig.domain} style={{ height: 40, width: 'auto', display: 'block' }} />
+          <img src={cityConfig.logoPath} alt={cityConfig.domain} style={{ height: 56, width: 'auto', display: 'block' }} />
         </Link>
       </div>
 
