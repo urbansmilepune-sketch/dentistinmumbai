@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import AutocompleteInput from '@/components/AutocompleteInput'
+import { type RxLang, RX_LANG_LABELS, INSTRUCTION_PHRASES, rxLangStorageKey, isRxLang } from '@/lib/instructionPhrases'
 
 const COMPLAINT_CHIPS = [
   'Tooth Decay', 'Sensitivity', 'Pain in tooth', 'Missing tooth', 'Broken tooth',
@@ -35,7 +36,7 @@ const BUILTIN_MEDICATIONS = [
   'Dexamethasone 0.5mg', 'Prednisolone 10mg',
 ]
 
-type MedRow = { name: string; dosage: string; frequency: string; duration: string }
+type MedRow = { name: string; dosage: string; frequency: string; duration: string; instructions: string }
 type ProcRow = { name: string; tooth_number: string; price: string }
 
 type DbTemplate = {
@@ -96,11 +97,17 @@ export default function NewEmrPage() {
   const [complaints, setComplaints] = useState<string[]>([])
   const [vitals, setVitals] = useState({ bp: '', pulse: '', spo2: '', weight_kg: '', height_cm: '' })
   const [diagnosis, setDiagnosis] = useState('')
-  const [medications, setMedications] = useState<MedRow[]>([{ name: '', dosage: '', frequency: '', duration: '' }])
+  const [medications, setMedications] = useState<MedRow[]>([{ name: '', dosage: '', frequency: '', duration: '', instructions: '' }])
   const [procedures, setProcedures] = useState<ProcRow[]>([{ name: '', tooth_number: '', price: '' }])
   const [advice, setAdvice] = useState('')
   const [followUpDate, setFollowUpDate] = useState('')
   const [followUpNotes, setFollowUpNotes] = useState('')
+  // Instruction language for the medications table (persisted per dentist, and
+  // shared with the prescription form via the same localStorage key). Tapping a
+  // phrase chip appends the localised text to the last-focused medicine's
+  // Instructions field.
+  const [emrLang, setEmrLang] = useState<RxLang>('en')
+  const [focusedMedIdx, setFocusedMedIdx] = useState(0)
 
   useEffect(() => {
     async function load() {
@@ -135,7 +142,7 @@ export default function NewEmrPage() {
       setProcedures(t.procedures.map(p => ({ name: p.name ?? '', tooth_number: p.tooth_number ?? '', price: p.price ?? '' })))
     }
     if (t.medications && t.medications.length > 0) {
-      setMedications(t.medications.map(m => ({ name: m.name ?? '', dosage: m.dosage ?? '', frequency: m.frequency ?? '', duration: m.duration ?? '' })))
+      setMedications(t.medications.map(m => ({ name: m.name ?? '', dosage: m.dosage ?? '', frequency: m.frequency ?? '', duration: m.duration ?? '', instructions: m.instructions ?? '' })))
     }
     if (t.advice && !advice.trim()) setAdvice(t.advice)
 
@@ -149,6 +156,35 @@ export default function NewEmrPage() {
 
   function toggleComplaint(c: string) {
     setComplaints(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c])
+  }
+
+  // Restore the dentist's saved instruction-language preference once we know who
+  // they are (shared with the prescription form so they only pick it once).
+  useEffect(() => {
+    if (!dentistId || typeof window === 'undefined') return
+    const saved = window.localStorage.getItem(rxLangStorageKey(dentistId))
+    if (isRxLang(saved)) setEmrLang(saved)
+  }, [dentistId])
+
+  function changeEmrLang(l: RxLang) {
+    setEmrLang(l)
+    if (dentistId && typeof window !== 'undefined') {
+      window.localStorage.setItem(rxLangStorageKey(dentistId), l)
+    }
+  }
+
+  // Append a localised instruction phrase to the last-focused medicine's
+  // Instructions field (defaults to the first row if none focused yet).
+  function addInstructionPhrase(phrase: string) {
+    setMedications(prev => {
+      if (prev.length === 0) return prev
+      const idx = Math.min(focusedMedIdx, prev.length - 1)
+      return prev.map((row, i) => {
+        if (i !== idx) return row
+        const cur = row.instructions.trim()
+        return { ...row, instructions: cur ? `${cur}, ${phrase}` : phrase }
+      })
+    })
   }
 
   function updateMed(i: number, patch: Partial<MedRow>) {
@@ -348,12 +384,31 @@ export default function NewEmrPage() {
 
       {/* Medications */}
       <div style={cardStyle}>
-        <div style={sectionTitle}>Medications</div>
+        <div style={{ ...sectionTitle, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <span>Medications</span>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {(['en', 'hi', 'mr'] as RxLang[]).map(l => {
+              const active = emrLang === l
+              return (
+                <button key={l} type="button" onClick={() => changeEmrLang(l)}
+                  style={{
+                    padding: '5px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-body)',
+                    background: active ? '#0A2558' : '#fff',
+                    color: active ? '#fff' : '#64748B',
+                    fontWeight: active ? 700 : 500,
+                    border: active ? '1px solid #0A2558' : '1px solid #CBD5E1',
+                  }}>
+                  {RX_LANG_LABELS[l]}
+                </button>
+              )
+            })}
+          </div>
+        </div>
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
             <thead>
               <tr style={{ background: 'var(--bg)' }}>
-                {['Medicine', 'Dosage', 'Frequency', 'Duration', ''].map(h => (
+                {['Medicine', 'Dosage', 'Frequency', 'Duration', 'Instructions', ''].map(h => (
                   <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: 'var(--muted)' }}>{h}</th>
                 ))}
               </tr>
@@ -375,6 +430,11 @@ export default function NewEmrPage() {
                   <td style={{ padding: '6px 8px' }}><input value={m.frequency} onChange={e => updateMed(i, { frequency: e.target.value })} placeholder="1-0-1" style={inputStyle} /></td>
                   <td style={{ padding: '6px 8px' }}><input value={m.duration} onChange={e => updateMed(i, { duration: e.target.value })} placeholder="5 days" style={inputStyle} /></td>
                   <td style={{ padding: '6px 8px' }}>
+                    <input value={m.instructions} onFocus={() => setFocusedMedIdx(i)}
+                      onChange={e => updateMed(i, { instructions: e.target.value })}
+                      placeholder={INSTRUCTION_PHRASES[0][emrLang]} style={inputStyle} aria-label="Medicine instructions" />
+                  </td>
+                  <td style={{ padding: '6px 8px' }}>
                     {medications.length > 1 && (
                       <button type="button" onClick={() => setMedications(prev => prev.filter((_, idx) => idx !== i))}
                         style={{ background: '#FEE2E2', color: '#991B1B', border: 'none', borderRadius: 6, padding: '6px 10px', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: 12, minHeight: 36 }}>✕</button>
@@ -385,8 +445,24 @@ export default function NewEmrPage() {
             </tbody>
           </table>
         </div>
-        <button type="button" onClick={() => setMedications(prev => [...prev, { name: '', dosage: '', frequency: '', duration: '' }])}
+        <button type="button" onClick={() => setMedications(prev => [...prev, { name: '', dosage: '', frequency: '', duration: '', instructions: '' }])}
           style={{ marginTop: 10, fontSize: 13, color: 'var(--blue)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-body)', fontWeight: 600 }}>+ Add medication</button>
+
+        {/* Tap a phrase to append it (in the selected language) to the
+            last-focused medicine's Instructions field. */}
+        <div style={{ marginTop: 14, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+          <p style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
+            Quick instructions ({RX_LANG_LABELS[emrLang]}) → adds to <strong>{medications[Math.min(focusedMedIdx, medications.length - 1)]?.name?.trim() || `Medicine ${Math.min(focusedMedIdx, medications.length - 1) + 1}`}</strong>
+          </p>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {INSTRUCTION_PHRASES.map((p, i) => (
+              <button key={i} type="button" onClick={() => addInstructionPhrase(p[emrLang])}
+                style={{ padding: '5px 10px', borderRadius: 16, fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-body)', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
+                + {p[emrLang]}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Procedures */}

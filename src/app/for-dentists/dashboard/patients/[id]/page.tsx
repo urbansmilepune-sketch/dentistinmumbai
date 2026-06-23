@@ -8,6 +8,7 @@ import PerioChart from '@/components/dental/PerioChart'
 import ToothChart from '@/components/dental/ToothChart'
 import ImageVault from '@/components/dental/ImageVault'
 import { downloadInvoicePdf } from '@/lib/invoicePdf'
+import { type RxLang, RX_LANG_LABELS, INSTRUCTION_PHRASES, rxLangStorageKey, isRxLang } from '@/lib/instructionPhrases'
 import ScheduleRecallButton from './ScheduleRecallButton'
 
 const TABS = [
@@ -85,21 +86,6 @@ const TAB_ALIASES: Record<string, string> = {
   // as sub-tabs). Old bookmarks land on the same content.
   chart: 'dental-chart',
 }
-
-// Prescription instruction language. The dentist picks English / Hindi /
-// Marathi (persisted per-dentist in localStorage) and taps a chip to append
-// the localised phrase to the prescription's Special Instructions — which then
-// prints verbatim on the PDF (HTML, so Devanagari renders natively).
-type RxLang = 'en' | 'hi' | 'mr'
-const RX_LANG_LABELS: Record<RxLang, string> = { en: 'English', hi: 'हिंदी', mr: 'मराठी' }
-const INSTRUCTION_PHRASES: Record<RxLang, string>[] = [
-  { en: 'After food',                  hi: 'खाने के बाद',         mr: 'जेवणानंतर' },
-  { en: 'Before food',                 hi: 'खाने से पहले',        mr: 'जेवणाआधी' },
-  { en: 'Morning + Night',             hi: 'सुबह + रात',          mr: 'सकाळी + रात्री' },
-  { en: 'Morning + Afternoon + Night', hi: 'सुबह + दोपहर + रात',   mr: 'सकाळी + दुपारी + रात्री' },
-  { en: 'As needed',                   hi: 'जरूरत के अनुसार',     mr: 'गरजेनुसार' },
-  { en: 'Empty stomach',               hi: 'खाली पेट',            mr: 'रिकाम्या पोटी' },
-]
 
 export default function PatientDetailPage() {
   const router = useRouter()
@@ -207,14 +193,14 @@ export default function PatientDetailPage() {
   // who they are (kept in localStorage so they don't re-pick it every time).
   useEffect(() => {
     if (!dentistId || typeof window === 'undefined') return
-    const saved = window.localStorage.getItem(`rx_instr_lang:${dentistId}`)
-    if (saved === 'en' || saved === 'hi' || saved === 'mr') setRxLang(saved)
+    const saved = window.localStorage.getItem(rxLangStorageKey(dentistId))
+    if (isRxLang(saved)) setRxLang(saved)
   }, [dentistId])
 
   function changeRxLang(l: RxLang) {
     setRxLang(l)
     if (dentistId && typeof window !== 'undefined') {
-      window.localStorage.setItem(`rx_instr_lang:${dentistId}`, l)
+      window.localStorage.setItem(rxLangStorageKey(dentistId), l)
     }
   }
 
