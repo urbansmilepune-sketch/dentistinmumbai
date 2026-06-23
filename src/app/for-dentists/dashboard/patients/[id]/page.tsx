@@ -158,7 +158,7 @@ export default function PatientDetailPage() {
       if (!user) { router.push('/for-dentists/login'); return }
       const { data: dentist } = await supabase
         .from('dentists')
-        .select('id, name, degree, clinic_name, phone, whatsapp, address, mci_number, city, areas(name), clinic_logo_url')
+        .select('id, name, degree, clinic_name, phone, whatsapp, address, mci_number, city, areas(name), clinic_logo_url, signature_url')
         .eq('email', user.email)
         .single()
       if (!dentist) return
@@ -292,6 +292,19 @@ export default function PatientDetailPage() {
       return
     }
     setInvoices(prev => prev.map(inv => inv.id === id ? { ...inv, payment_status: 'paid' } : inv))
+  }
+
+  // Generate + download the invoice PDF client-side (see src/lib/invoicePdf.ts).
+  // Wrapped so a throw inside jsPDF surfaces as a visible alert instead of a
+  // silent no-op that reads to the dentist as "the download button is broken".
+  async function downloadInvoice(inv: any) {
+    if (!dentistMeta) { setInvoiceActionError('Clinic details are still loading — please try again in a moment.'); return }
+    try {
+      await downloadInvoicePdf(inv, dentistMeta)
+    } catch (err) {
+      console.error('Invoice PDF generation failed', err)
+      setInvoiceActionError('Could not generate the invoice PDF. Please try again.')
+    }
   }
 
   function applyTemplate(templateName: string) {
@@ -873,10 +886,10 @@ export default function PatientDetailPage() {
                                   Mark Paid
                                 </button>
                               )}
-                              <button onClick={() => dentistMeta && downloadInvoicePdf(inv, dentistMeta)}
+                              <button onClick={() => downloadInvoice(inv)}
                                 disabled={!dentistMeta}
                                 style={{ padding: '5px 10px', background: 'var(--blue-light)', color: 'var(--blue)', border: '1px solid #BFDBFE', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: dentistMeta ? 'pointer' : 'not-allowed', fontFamily: 'var(--font-body)' }}>
-                                ⬇ PDF
+                                ⬇ Download PDF
                               </button>
                             </div>
                           </td>

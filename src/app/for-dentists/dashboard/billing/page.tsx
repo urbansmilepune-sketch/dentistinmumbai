@@ -18,6 +18,8 @@ type DentistMeta = {
   mci_number: string | null
   city: string | null
   areas: { name: string | null } | null
+  clinic_logo_url?: string | null
+  signature_url?: string | null
 }
 
 // Next.js 16 requires useSearchParams() to be inside a Suspense boundary;
@@ -72,7 +74,7 @@ function BillingPageInner() {
         if (!user) { router.push('/for-dentists/login'); return }
         const dentistRow = await resolveCurrentDentist<DentistMeta>(
           supabase,
-          'id, name, degree, clinic_name, phone, whatsapp, address, mci_number, city, areas(name), clinic_logo_url',
+          'id, name, degree, clinic_name, phone, whatsapp, address, mci_number, city, areas(name), clinic_logo_url, signature_url',
         )
         if (!dentistRow) return
         setDentistId(dentistRow.id)
@@ -283,9 +285,14 @@ function BillingPageInner() {
     }
   }
 
-  function downloadPdf(inv: any) {
-    if (!dentist) return
-    downloadInvoicePdf(inv, dentist)
+  async function downloadPdf(inv: any) {
+    if (!dentist) { setActionError('Clinic details are still loading — please try again in a moment.'); return }
+    try {
+      await downloadInvoicePdf(inv, dentist)
+    } catch (err) {
+      console.error('Invoice PDF generation failed', err)
+      setActionError('Could not generate the invoice PDF. Please try again.')
+    }
   }
 
   const inputStyle = { width: '100%', padding: '9px 12px', borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 13, fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box' as const }

@@ -37,6 +37,7 @@ export type InvoiceDentist = {
   city: string | null
   areas?: { name: string | null } | null
   clinic_logo_url?: string | null
+  signature_url?: string | null
 }
 
 // Load a (Cloudinary) image URL into a PNG data URL plus its natural size so
@@ -412,6 +413,25 @@ export async function downloadInvoicePdf(inv: Invoice, dentist: InvoiceDentist) 
   // Right: signature line from x=400 to x=555
   const SIG_LINE_X1 = 400
   const SIG_LINE_X2 = RIGHT_X
+
+  // Optional uploaded signature image (dentists.signature_url) sitting just
+  // above the line, right-aligned so it lands over the doctor-name block —
+  // mirrors the prescription PDF footer. Loaded the same way as the clinic
+  // logo; on any failure we fall back silently to the plain line so a flaky
+  // image never blocks the download.
+  if (dentist.signature_url) {
+    const sig = await loadImageData(dentist.signature_url)
+    if (sig && sig.width > 0 && sig.height > 0) {
+      const SIG_MAX_H = 38
+      const SIG_MAX_W = 150
+      let h = SIG_MAX_H
+      let w = (sig.width / sig.height) * h
+      if (w > SIG_MAX_W) { w = SIG_MAX_W; h = (sig.height / sig.width) * w }
+      // Bottom edge rests 2pt above the signature line, right edge at SIG_LINE_X2.
+      doc.addImage(sig.dataUrl, 'PNG', SIG_LINE_X2 - w, SIG_Y - h - 2, w, h)
+    }
+  }
+
   doc.setDrawColor(40, 40, 40)
   doc.setLineWidth(1)
   doc.line(SIG_LINE_X1, SIG_Y, SIG_LINE_X2, SIG_Y)
