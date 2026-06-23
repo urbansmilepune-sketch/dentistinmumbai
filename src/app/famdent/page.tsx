@@ -29,7 +29,7 @@ export default function FamdentPage() {
             inline with no card/box; centered horizontally via block +
             margin auto, with generous spacing below before the headline. */}
         <img
-          src="/india-logo.png"
+          src="/logo-india.svg"
           width={160}
           alt="DentistIn"
           style={{

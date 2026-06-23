@@ -103,7 +103,7 @@ export default function PatientLoginPage() {
       <div style={{ width: '100%', maxWidth: 440 }}>
         {/* Brand */}
         <div style={{ textAlign: 'center', marginTop: 24, marginBottom: 28 }}>
-          <img src="/logo.png" alt="DentistIn" style={{ height: 44, objectFit: 'contain' }} />
+          <img src="/logo-india.svg" alt="DentistIn" style={{ height: 44, objectFit: 'contain' }} />
         </div>
 
         <div style={card}>

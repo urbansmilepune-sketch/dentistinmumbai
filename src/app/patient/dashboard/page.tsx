@@ -161,7 +161,7 @@ export default function PatientDashboardPage() {
       {/* Header */}
       <header style={{ background: '#fff', borderBottom: '1px solid #E2E8F0', position: 'sticky', top: 0, zIndex: 10 }}>
         <div style={{ maxWidth: 760, margin: '0 auto', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <a href="/" title="Home"><img src="/logo.png" alt="DentistIn" style={{ height: 32, objectFit: 'contain' }} /></a>
+          <a href="/" title="Home"><img src="/logo-india.svg" alt="DentistIn" style={{ height: 32, objectFit: 'contain' }} /></a>
           <div style={{ marginLeft: 'auto', textAlign: 'right', minWidth: 0 }}>
             <div style={{ fontWeight: 700, fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{patient.name || 'Patient'}</div>
             <div style={{ fontSize: 12, color: '#64748B', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{clinic.clinic_name || clinic.dentist_name || ''}</div>

@@ -1,7 +1,7 @@
 'use client'
 
 // Brand-mark renderer for dentistinindia.in. Tries the image asset at
-// /india-logo.png first; if the file 404s (not yet uploaded, or the
+// /logo-india.svg first; if the file 404s (not yet uploaded, or the
 // CDN hasn't propagated), the onError handler swaps in a styled text
 // fallback so the nav + hero never show a broken-image icon.
 //
@@ -45,7 +45,7 @@ export default function BrandLogo({ height = 28, fontSize, className, style }: P
 
   return (
     <img
-      src="/india-logo.png"
+      src="/logo-india.svg"
       alt="Dentist In India"
       height={height}
       onError={() => setFailed(true)}
