@@ -13,7 +13,7 @@ import { createClient as createCookieClient } from '@/lib/supabase/server'
 import * as Sentry from '@sentry/nextjs'
 import { CITY_CONFIGS, DEFAULT_CITY, type CitySlug } from '@/config/cities'
 
-const ADMIN_WHATSAPP = '917719903232'
+const ADMIN_WHATSAPP = '917719013232'
 
 function normalizeCity(v: unknown): CitySlug {
   return typeof v === 'string' && Object.prototype.hasOwnProperty.call(CITY_CONFIGS, v) ? (v as CitySlug) : DEFAULT_CITY

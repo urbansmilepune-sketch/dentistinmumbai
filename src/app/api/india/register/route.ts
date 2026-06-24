@@ -29,7 +29,7 @@ const admin = createServiceClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
 )
 
-const ADMIN_WHATSAPP = '917719903232'
+const ADMIN_WHATSAPP = '917719013232'
 
 const SPECIALIZATIONS = new Set([
   'General Dentist',

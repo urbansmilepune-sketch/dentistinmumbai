@@ -10,7 +10,7 @@ import { getCityBySlug } from '@/config/cities'
 // Two payload shapes are supported:
 //
 // 1. Generic — `{ message, to? }`:
-//      { "message": "🚨 Health alert: ...", "to": "917719903232" }
+//      { "message": "🚨 Health alert: ...", "to": "917719013232" }
 //    The cron health-check and registration success/failure pings use this
 //    form. `to` defaults to ADMIN_WHATSAPP (the admin phone) when omitted.
 //
@@ -19,7 +19,7 @@ import { getCityBySlug } from '@/config/cities'
 //      flows; the route composes the message string from the typed fields.
 //      Kept verbatim for backwards compatibility.
 
-const ADMIN_WHATSAPP = '917719903232'
+const ADMIN_WHATSAPP = '917719013232'
 
 export async function POST(request: NextRequest) {
   try {
