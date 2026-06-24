@@ -3,7 +3,7 @@
 
 import { Resend } from 'resend'
 import { CITY_CONFIGS, DEFAULT_CITY, type CitySlug } from '@/config/cities'
-import { getCityEmail } from '@/lib/email'
+import { getCityFrom } from '@/lib/email'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -130,7 +130,7 @@ export async function sendOutreachEmail(input: OutreachSendInput) {
     : DEFAULT_CITY) as CitySlug
 
   return resend.emails.send({
-    from: `DentistIn Team <${getCityEmail(fromSlug)}>`,
+    from: getCityFrom(fromSlug),
     to: input.to_email,
     subject: renderedSubject,
     html,

@@ -76,6 +76,20 @@ export function getCityEmail(citySlug?: string | null, opts?: { national?: boole
 }
 
 /**
+ * The value to put in a Resend `from:` header — the city-branded address from
+ * getCityEmail wrapped in the "DentistIn" display name, e.g.
+ * `DentistIn <hello@dentistinpune.in>`. Without the display name, inboxes
+ * render the sender as the local-part ("hello"); with it they show "DentistIn".
+ *
+ * This wraps getCityEmail rather than rebuilding the address so the DKIM
+ * verification fallback and the `.in`/`.com` TLD handling stay in exactly one
+ * place. Every transactional + outreach send routes its `from:` through here.
+ */
+export function getCityFrom(citySlug?: string | null, opts?: { national?: boolean }): string {
+  return `DentistIn <${getCityEmail(citySlug, opts)}>`
+}
+
+/**
  * Resolve a CitySlug-ish input to a CityConfig with sensible fallback.
  * Email callers pass the city slug they have on the row (or omit it for
  * legacy data), and we use that to brand every template.
@@ -98,7 +112,7 @@ export async function sendRegistrationEmailToAdmin(data: {
 }) {
   const city = resolveCity(data.city)
   return resend.emails.send({
-    from: getCityEmail(city.citySlug),
+    from: getCityFrom(city.citySlug),
     to: ADMIN_EMAIL,
     subject: `🦷 New Dentist Registration — ${data.name} | ${data.ref_no}`,
     html: `
@@ -139,7 +153,7 @@ export async function sendAutoApprovedAdminAlert(data: {
 }) {
   const city = resolveCity(data.city)
   return resend.emails.send({
-    from: getCityEmail(city.citySlug),
+    from: getCityFrom(city.citySlug),
     to: ADMIN_EMAIL,
     subject: `✅ Auto-approved: ${data.name} (${data.ref_no})`,
     text: `Auto-approved at signup: ${data.name}, ${data.clinic_name}, ${data.area}, ${data.phone}. Profile is live at ${city.origin}/dentist/${data.slug}`,
@@ -181,7 +195,7 @@ export async function sendStaffInviteEmail(data: {
       ? 'Associate Dentist'
       : 'Clinic Owner'
   return resend.emails.send({
-    from: getCityEmail(city.citySlug),
+    from: getCityFrom(city.citySlug),
     to: data.to_email,
     subject: `${data.owner_name} invited you to join ${data.clinic_name} on ${city.domain}`,
     html: `
@@ -222,7 +236,7 @@ export async function sendNewRegistrationAdminAlert(data: {
   const city = resolveCity(data.city)
   const summary = `New dentist registration: ${data.name}, ${data.clinic_name}, ${data.area}, ${data.phone}. Approve here: ${city.origin}/admin`
   return resend.emails.send({
-    from: getCityEmail(city.citySlug),
+    from: getCityFrom(city.citySlug),
     to: ADMIN_EMAIL,
     subject: `🚨 New dentist registration — ${data.name}`,
     text: summary,
@@ -246,7 +260,7 @@ export async function sendRegistrationEmailToDentist(data: {
 }) {
   const city = resolveCity(data.city)
   return resend.emails.send({
-    from: getCityEmail(city.citySlug),
+    from: getCityFrom(city.citySlug),
     to: data.to_email,
     subject: `Welcome to ${city.domain} — Your Registration is Confirmed!`,
     html: `
@@ -307,7 +321,7 @@ export async function sendDeclineEmail(data: {
     : ''
 
   return resend.emails.send({
-    from: getCityEmail(city.citySlug),
+    from: getCityFrom(city.citySlug),
     to: data.to_email,
     subject: `Update on your ${city.domain} registration`,
     html: `
@@ -355,7 +369,7 @@ export async function sendProfileReminderEmail(data: {
   `).join('')
 
   return resend.emails.send({
-    from: getCityEmail(city.citySlug),
+    from: getCityFrom(city.citySlug),
     to: data.to_email,
     subject: `Your ${city.domain} profile needs attention 🦷`,
     html: `
@@ -440,7 +454,7 @@ export async function sendApprovalEmail(data: {
           </div>`
 
   return resend.emails.send({
-    from: getCityEmail(city.citySlug),
+    from: getCityFrom(city.citySlug),
     to: data.to_email,
     subject: `🎉 Your ${city.domain} profile is LIVE!`,
     html: `
@@ -493,7 +507,7 @@ export async function sendLoginOtpEmail(data: {
 }) {
   const city = resolveCity(data.city)
   return resend.emails.send({
-    from: getCityEmail(city.citySlug),
+    from: getCityFrom(city.citySlug),
     to: data.to_email,
     subject: `Your DentistIn Login Code: ${data.otp}`,
     text: `Your DentistIn login code is ${data.otp}. It expires in 10 minutes. If you didn't request this, you can ignore this email.`,
@@ -556,7 +570,7 @@ export async function sendBookingRequestToPatient(data: {
     ? `To cancel: reply to this email or call ${escapeHtml(data.clinic_phone)}.`
     : 'To cancel: reply to this email and the clinic will get back to you.'
   return resend.emails.send({
-    from: getCityEmail(city.citySlug),
+    from: getCityFrom(city.citySlug),
     to: data.to_email,
     subject: `Appointment request received — Ref: ${data.reference_no}`,
     html: `
@@ -612,7 +626,7 @@ export async function sendBookingRequestToDentist(data: {
   const dateLabel = formatApptDate(data.appt_date)
   const dashboardUrl = `${city.origin}/for-dentists/dashboard/appointments`
   return resend.emails.send({
-    from: getCityEmail(city.citySlug),
+    from: getCityFrom(city.citySlug),
     to: data.to_email,
     subject: `New appointment request — ${data.patient_name} on ${dateLabel}`,
     html: `
@@ -676,7 +690,7 @@ export async function sendAppointmentConfirmedToPatient(data: {
     ? `We'll see you then. To cancel or reschedule, reply to this email or call ${escapeHtml(data.clinic_phone)}.`
     : `We'll see you then. To cancel or reschedule, reply to this email and the clinic will get back to you.`
   return resend.emails.send({
-    from: getCityEmail(city.citySlug),
+    from: getCityFrom(city.citySlug),
     to: data.to_email,
     subject: `Appointment confirmed ✅ — ${data.clinic_name}`,
     html: `
@@ -731,7 +745,7 @@ export async function sendAppointmentCancelledToPatient(data: {
     ? `Please call <a href="tel:${escapeHtml(data.clinic_phone)}" style="color: #0057A8;">${escapeHtml(data.clinic_phone)}</a> or visit <a href="${city.origin}" style="color: #0057A8;">${city.domain}</a> to rebook.`
     : `Please visit <a href="${city.origin}" style="color: #0057A8;">${city.domain}</a> to rebook.`
   return resend.emails.send({
-    from: getCityEmail(city.citySlug),
+    from: getCityFrom(city.citySlug),
     to: data.to_email,
     subject: `Appointment cancelled — ${data.clinic_name}`,
     html: `
@@ -818,7 +832,7 @@ export async function sendUpgradeConfirmationEmail(data: {
       `).join('')
 
   return resend.emails.send({
-    from: getCityEmail(city.citySlug),
+    from: getCityFrom(city.citySlug),
     to: data.to_email,
     subject: `🎉 Your ${city.domain} ${t.label} plan is now active!`,
     html: `
@@ -876,7 +890,7 @@ export async function sendAdminBulkMessage(data: {
     ? `Hi ${escapeHtml(data.dentist_name.split(' ')[0])},`
     : 'Hello,'
   return resend.emails.send({
-    from: getCityEmail(city.citySlug),
+    from: getCityFrom(city.citySlug),
     to: data.to_email,
     subject: data.subject,
     html: `
@@ -928,7 +942,7 @@ export async function sendPatientMessage(data: {
   const safeDentist = data.dentist_name ? escapeHtml(data.dentist_name) : ''
   const safePhone = data.clinic_phone ? escapeHtml(data.clinic_phone) : ''
   return resend.emails.send({
-    from: getCityEmail(city.citySlug),
+    from: getCityFrom(city.citySlug),
     to: data.to_email,
     subject: data.subject,
     html: `

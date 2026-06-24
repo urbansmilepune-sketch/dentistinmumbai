@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { createClient as createUserClient } from '@/lib/supabase/server'
 import { Resend } from 'resend'
 import { getCityBySlug } from '@/config/cities'
-import { getCityEmail } from '@/lib/email'
+import { getCityFrom } from '@/lib/email'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
 
   // Send branded email with magic link
   await resend.emails.send({
-    from: getCityEmail((dentist as any).city),
+    from: getCityFrom((dentist as any).city),
     to: email,
     subject: `Access your ${city.domain} dashboard — ${dentist.name}`,
     html: `

@@ -25,7 +25,7 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 30
 
 const ALERT_EMAIL = 'dentistinmumbaiapp@gmail.com'
-const ALERT_FROM = 'hello@dentistinmumbai.in'
+const ALERT_FROM = 'DentistIn <hello@dentistinmumbai.in>'
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.dentistinmumbai.in'
 
 type CheckResult = { name: string; ok: boolean; error?: string; detail?: unknown }

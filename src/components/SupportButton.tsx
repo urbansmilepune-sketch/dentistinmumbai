@@ -15,6 +15,14 @@
 import { useEffect, useRef, useState } from 'react'
 
 const ADMIN_WHATSAPP = '917719013232'
+// Human-readable form shown in the popup. Derived from ADMIN_WHATSAPP (not
+// hardcoded separately) so the digits on screen can never drift from the
+// number the WhatsApp/Bug-Report links actually dial. '917719013232' →
+// '+91 77190 13232'.
+const ADMIN_WHATSAPP_DISPLAY = (() => {
+  const local = ADMIN_WHATSAPP.replace(/^91/, '')
+  return `+91 ${local.slice(0, 5)} ${local.slice(5)}`
+})()
 const SUPPORT_EMAIL = 'support@dentistinmumbai.in'
 
 export default function SupportButton() {
@@ -88,6 +96,7 @@ export default function SupportButton() {
               <span style={iconStyle}>💬</span>
               <span style={{ flex: 1 }}>
                 <span style={labelStyle}>WhatsApp Us</span>
+                <span style={{ ...hintStyle, fontWeight: 700, color: '#0F1923' }}>{ADMIN_WHATSAPP_DISPLAY}</span>
                 <span style={hintStyle}>Fastest — we usually reply in minutes</span>
               </span>
             </button>
