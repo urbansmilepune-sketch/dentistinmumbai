@@ -56,6 +56,12 @@ const TEMPLATES: TemplateDef[] = [
     body: `Hi there,\n\nA quick note about Gold — our paid tier that places your clinic at the top of search results in your area and unlocks the full analytics dashboard, PMS tools, and direct lead alerts.\n\nFor a limited time, founding members can lock in Gold at the introductory rate. Open your dashboard's Upgrade page to see the details.\n\nWe'd love to have you on Gold.`,
   },
   {
+    id: 'new-feature',
+    label: 'New Feature Announcement',
+    subject: 'New on the platform: <feature name here>',
+    body: `Hi,\n\nWe just rolled out <feature name> on the platform. <One-sentence description of what it does and why the dentist should care>.\n\nYou can find it in your dashboard under <where>. Reply to this email if you hit any issues.\n\nThanks for being part of the journey.`,
+  },
+  {
     id: 'patient-portal',
     label: 'Patient Portal Announcement',
     subject: 'Your Patient Portal is Ready — DentistIn',
