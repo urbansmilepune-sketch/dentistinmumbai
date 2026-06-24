@@ -5,12 +5,15 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { resolveCurrentDentist } from '@/lib/currentDentist'
+import { whatsappLink } from '@/lib/phone'
 
 export default function PatientsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [loading, setLoading] = useState(true)
   const [dentistId, setDentistId] = useState('')
+  const [dentistName, setDentistName] = useState('')
+  const [clinicName, setClinicName] = useState('')
   const [patients, setPatients] = useState<any[]>([])
   const [search, setSearch] = useState('')
   const [showAdd, setShowAdd] = useState(() => searchParams.get('new') === '1')
@@ -28,9 +31,11 @@ export default function PatientsPage() {
         const supabase = createClient()
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) { router.push('/for-dentists/login'); return }
-        const dentist = await resolveCurrentDentist(supabase, 'id')
+        const dentist = await resolveCurrentDentist<{ id: string; name: string | null; clinic_name: string | null }>(supabase, 'id, name, clinic_name')
         if (!dentist) return
         setDentistId(dentist.id)
+        setDentistName(dentist.name || '')
+        setClinicName(dentist.clinic_name || '')
         const { data } = await supabase.from('patients').select('*').eq('dentist_id', dentist.id).order('created_at', { ascending: false })
         setPatients(data || [])
       } finally {
@@ -233,6 +238,29 @@ export default function PatientsPage() {
                   style={{ padding: '7px 12px', background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A', borderRadius: 8, fontSize: 12, fontWeight: 600, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                   🧾 New Invoice
                 </Link>
+                {/* Portal Access — sends the patient their portal link over
+                    WhatsApp. Disabled (no usable link) when the row has no
+                    phone number, since wa.me can't target a chat without one. */}
+                {(() => {
+                  const portalUrl = `https://dentistinpune.in/patient/portal?id=${p.uhid}`
+                  const message = `Hi ${p.name}, you can now access your dental records and reports online. Click here to view: ${portalUrl} - Dr. ${dentistName}, ${clinicName}`
+                  const href = whatsappLink(p.phone, message)
+                  if (!href) {
+                    return (
+                      <span title="No phone number saved"
+                        style={{ padding: '7px 12px', background: '#E5E7EB', color: '#9CA3AF', borderRadius: 8, fontSize: 12, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'not-allowed' }}>
+                        🔗 Portal Access
+                      </span>
+                    )
+                  }
+                  return (
+                    <a href={href} target="_blank" rel="noopener noreferrer"
+                      title="Send patient their portal link via WhatsApp"
+                      style={{ padding: '7px 12px', background: '#7C3AED', color: '#fff', borderRadius: 8, fontSize: 12, fontWeight: 600, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      🔗 Portal Access
+                    </a>
+                  )
+                })()}
               </div>
             </div>
           ))}
