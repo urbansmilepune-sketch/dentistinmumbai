@@ -179,6 +179,33 @@ interface DentistHealthRow {
   risk_score: number
 }
 
+type ActivityStatus = 'never' | 'inactive' | 'dormant' | 'active'
+
+interface DentistActivityRow {
+  id: string
+  name: string
+  slug: string
+  city: string | null
+  phone: string | null
+  whatsapp: string | null
+  lastLogin: string | null
+  sessions: number
+  status: ActivityStatus
+}
+
+interface DentistActivity {
+  cards: {
+    totalActive: number
+    loggedIn7d: number
+    loggedIn30d: number
+    neverUsed: number
+    notLoggedIn30plus: number
+  }
+  features: { section: string; label: string; count: number }[]
+  rows: DentistActivityRow[]
+  regTrend: { label: string; count: number }[]
+}
+
 interface AdminPageClientProps {
   stats: any
   dentists: any[]
@@ -198,6 +225,10 @@ interface AdminPageClientProps {
    * + the analytics rollup. Pre-computed on the server so the client tab
    * just sorts / filters; no extra round-trip. */
   dentistHealth: DentistHealthRow[]
+  /** Dashboard activity rollup (logins, sessions, feature usage, registration
+   * trend) rendered alongside the at-risk roster in the Dentist Health tab.
+   * Pre-aggregated server-side from the dashboard_* analytics events. */
+  dentistActivity: DentistActivity
   /** Clinical-case moderation queue + reports. Server pre-joins the
    *  case + dentist + first photo so the tab renders without extra
    *  client-side fetches. */
@@ -406,9 +437,36 @@ function flagChip(label: string, color: string, bg: string, border: string) {
   )
 }
 
-function DentistHealthTab({ dentists, cityFilter }: { dentists: DentistHealthRow[]; cityFilter: string | null }) {
+// Visual treatment for the four activity buckets — green / orange / red / grey
+// per the brief. Shared by the activity table rows + status pills.
+const ACTIVITY_STATUS_STYLE: Record<ActivityStatus, { label: string; color: string; bg: string; border: string }> = {
+  active:   { label: 'Active',     color: '#166534', bg: '#DCFCE7', border: '#BBF7D0' },
+  dormant:  { label: 'Dormant',    color: '#92400E', bg: '#FEF3C7', border: '#FDE68A' },
+  inactive: { label: 'Inactive',   color: '#991B1B', bg: '#FEE2E2', border: '#FECACA' },
+  never:    { label: 'Never Used', color: '#475569', bg: '#F1F5F9', border: '#E2E8F0' },
+}
+
+function DentistHealthTab({ dentists, activity, cityFilter }: { dentists: DentistHealthRow[]; activity: DentistActivity; cityFilter: string | null }) {
   const [sort, setSort] = useState<HealthSort>('risk')
   const [atRiskOnly, setAtRiskOnly] = useState(true)
+
+  // Dormant / inactive dentists get a one-click WhatsApp nudge with the
+  // re-engagement copy from the brief. Returns null when there's no usable
+  // number so the caller renders a disabled affordance instead of a dead link.
+  function activityWaHref(row: DentistActivityRow): string | null {
+    const num = buildWhatsAppNumber(row.whatsapp || row.phone)
+    if (!num) return null
+    // Strip a leading "Dr." so re-prefixing doesn't produce "Dr. Dr.".
+    const bare = String(row.name || '').replace(/^\s*dr\.?\s+/i, '').trim()
+    const message =
+      `Hi Dr. ${bare}, we noticed you haven't logged into your DentistIn dashboard recently. ` +
+      `Your clinic profile is live and patients are finding you! ` +
+      `Login at dentistinpune.in/for-dentists/login - Team DentistIn`
+    return `https://wa.me/${num}?text=${encodeURIComponent(message)}`
+  }
+
+  const maxFeature = Math.max(1, ...activity.features.map(f => f.count))
+  const maxReg = Math.max(1, ...activity.regTrend.map(w => w.count))
 
   const list = useMemo(() => {
     const base = atRiskOnly ? dentists.filter(d => d.risk_score > 0) : dentists
@@ -486,10 +544,98 @@ function DentistHealthTab({ dentists, cityFilter }: { dentists: DentistHealthRow
     <div>
       <PageHeader
         title="Dentist Health"
-        subtitle="At-risk dentists across the active roster — booking droughts, incomplete profiles, missing photos or maps. Reach out before they churn."
+        subtitle="Dashboard activity + at-risk signals across the active roster. Spot dentists who've gone quiet or never logged in, see which features get used, and nudge them back before they churn."
       />
       <CityFilterBar cityFilter={cityFilter} label="Scope to city" />
 
+      {/* ───────── SECTION 1 — Activity overview ───────── */}
+      <SectionTitle>Activity overview <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>· dashboard logins</span></SectionTitle>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 16, marginBottom: 28 }}>
+        <StatCard icon="🧑‍⚕️" label="Total active dentists" value={activity.cards.totalActive} color="var(--blue)" />
+        <StatCard icon="✅" label="Logged in · last 7 days" value={activity.cards.loggedIn7d} color="var(--green)" />
+        <StatCard icon="🗓️" label="Logged in · last 30 days" value={activity.cards.loggedIn30d} color="#0EA5E9" />
+        <StatCard icon="🚫" label="Never used dashboard" value={activity.cards.neverUsed} color="#64748B" />
+        <StatCard icon="😴" label="Not logged in · 30+ days" value={activity.cards.notLoggedIn30plus} color="#DC2626" />
+      </div>
+
+      {/* ───────── SECTION 2 — Most used features ───────── */}
+      <SectionTitle>Most used features <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>· dashboard sections opened</span></SectionTitle>
+      <div style={{ ...cardStyle, borderRadius: 16, overflow: 'hidden', marginBottom: 28 }}>
+        {activity.features.length === 0 ? (
+          <div style={{ padding: '32px 24px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+            No dashboard usage recorded yet — this fills in as dentists open dashboard sections.
+          </div>
+        ) : activity.features.map((f, i) => (
+          <div key={f.section} style={{ display: 'grid', gridTemplateColumns: '160px 1fr 60px', alignItems: 'center', gap: 12, padding: '10px 18px', borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{f.label}</span>
+            <div style={{ height: 14, background: 'var(--bg)', borderRadius: 4, overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${(f.count / maxFeature) * 100}%`, background: 'var(--blue)', borderRadius: 4, minWidth: f.count > 0 ? 4 : 0 }} />
+            </div>
+            <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--blue)', textAlign: 'right' }}>{f.count}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* ───────── SECTION 3 — Dentist activity table ───────── */}
+      <SectionTitle>Dentist activity <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>· {activity.rows.length} on the active roster · most-dormant first</span></SectionTitle>
+      <div style={{ ...cardStyle, borderRadius: 16, overflow: 'hidden', marginBottom: 28 }}>
+        {/* Header row */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 2fr) minmax(120px, 1fr) 90px 130px minmax(150px, auto)', gap: 12, alignItems: 'center', padding: '10px 18px', background: '#F8FAFC', borderBottom: `1px solid ${CARD_BORDER}` }}>
+          {['Dentist', 'Last login', 'Sessions', 'Status', 'Action'].map(h => (
+            <span key={h} style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</span>
+          ))}
+        </div>
+        {activity.rows.length === 0 ? (
+          <div style={{ padding: '32px 24px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>No dentists in this scope.</div>
+        ) : activity.rows.map((r, i) => {
+          const s = ACTIVITY_STATUS_STYLE[r.status]
+          const wa = activityWaHref(r)
+          const needsNudge = r.status === 'dormant' || r.status === 'inactive'
+          return (
+            <div key={r.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 2fr) minmax(120px, 1fr) 90px 130px minmax(150px, auto)', gap: 12, alignItems: 'center', padding: '12px 18px', borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</div>
+                <div style={{ marginTop: 3 }}><CityBadge slug={r.city} /></div>
+              </div>
+              <span style={{ fontSize: 12, color: r.lastLogin ? 'var(--text-secondary)' : 'var(--muted)' }}>
+                {r.lastLogin ? new Date(r.lastLogin).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+              </span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: r.sessions > 0 ? 'var(--text)' : 'var(--muted)' }}>{r.sessions}</span>
+              <span>
+                <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: 12, fontSize: 11, fontWeight: 700, background: s.bg, color: s.color, border: `1px solid ${s.border}` }}>{s.label}</span>
+              </span>
+              <span>
+                {needsNudge ? (
+                  wa ? (
+                    <a href={wa} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '6px 10px', minHeight: 32, background: '#25D366', color: '#fff', borderRadius: 7, fontSize: 12, fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' }}>💬 Send WhatsApp</a>
+                  ) : (
+                    <span title="No phone/whatsapp on file" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '6px 10px', minHeight: 32, background: '#fff', color: 'var(--text-secondary)', border: '1px solid #E2E8F0', borderRadius: 7, fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}>💬 Send WhatsApp</span>
+                  )
+                ) : (
+                  <span style={{ fontSize: 12, color: 'var(--muted)' }}>—</span>
+                )}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* ───────── SECTION 4 — Registration trend ───────── */}
+      <SectionTitle>Registration trend <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>· new sign-ups per week · last 8 weeks</span></SectionTitle>
+      <div style={{ ...cardStyle, borderRadius: 16, padding: '24px 24px 18px', marginBottom: 32 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, height: 160 }}>
+          {activity.regTrend.map((w, i) => (
+            <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, height: '100%', justifyContent: 'flex-end' }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--blue)' }}>{w.count}</span>
+              <div style={{ width: '100%', maxWidth: 48, height: `${(w.count / maxReg) * 100}%`, minHeight: w.count > 0 ? 4 : 2, background: w.count > 0 ? 'linear-gradient(180deg, #3B82F6, #1D4ED8)' : 'var(--bg)', borderRadius: '6px 6px 0 0', transition: 'height 0.4s' }} />
+              <span style={{ fontSize: 10, color: 'var(--muted)', textAlign: 'center', whiteSpace: 'nowrap' }}>{w.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ───────── Existing: profile & booking risk roster ───────── */}
+      <SectionTitle>Profile &amp; booking risk <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>· completion + engagement gaps</span></SectionTitle>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16, marginBottom: 20 }}>
         <StatCard icon="🧑‍⚕️" label="Active dentists" value={dentists.length} color="var(--blue)" />
         <StatCard icon="⚠️" label="At risk" value={totalAtRisk} color="#DC2626" />
@@ -726,7 +872,7 @@ function CasesModerationTab({ initialPending, initialReports, onToast }: CasesMo
   )
 }
 
-export default function AdminPageClient({ stats, dentists, registrations, appointments, enquiries, reviews, areas, foundingConfig, analytics, cityFilter, commsDentists, dentistHealth, pendingCases, openReports }: AdminPageClientProps) {
+export default function AdminPageClient({ stats, dentists, registrations, appointments, enquiries, reviews, areas, foundingConfig, analytics, cityFilter, commsDentists, dentistHealth, dentistActivity, pendingCases, openReports }: AdminPageClientProps) {
   const [section, setSection] = useState('dashboard')
   const [dentistList, setDentistList] = useState(dentists)
   const [reviewList, setReviewList] = useState(reviews)
@@ -1486,7 +1632,7 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
 
         {/* DENTIST HEALTH (new tab) */}
         {section === 'dentist-health' && (
-          <DentistHealthTab dentists={dentistHealth} cityFilter={cityFilter} />
+          <DentistHealthTab dentists={dentistHealth} activity={dentistActivity} cityFilter={cityFilter} />
         )}
 
         {/* CASES MODERATION */}

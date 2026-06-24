@@ -66,6 +66,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   // 7 days. Iso lower bound is "now" so we don't catch already-expired rows.
   const sevenDaysAheadIso = new Date(now + 7 * dayMs).toISOString()
   const nowIso = new Date(now).toISOString()
+  // 8-week lower bound for the Dentist Health registration-trend chart.
+  const eightWeeksAgoIso = new Date(now - 56 * dayMs).toISOString()
 
   // Small ergonomic helper so every query reads `applyCity(q)` instead of
   // duplicating the conditional .eq('city', …) on each line. Typed loosely
@@ -164,6 +166,9 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     // --- Today metrics (admin overview) ---
     { count: bookingsTodayCount },
     { count: newRegsTodayCount },
+    // --- Dentist Health activity view (dashboard logins + feature usage) ---
+    { data: dashboardEventsRaw },
+    { data: regTrendRows },
   ] = await Promise.all([
     applyCity(adminClient.from('dentists').select('*', { count: 'exact', head: true }).eq('is_active', true)),
     applyApptCity(adminClient.from('appointments').select('*', { count: 'exact', head: true })),
@@ -272,6 +277,18 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     //     today bucket consistent across server restarts.
     applyApptCity(adminClient.from('appointments').select('*', { count: 'exact', head: true }).eq('appt_date', todayIstIso)),
     applyCity(adminClient.from('dentist_registrations').select('*', { count: 'exact', head: true }).gte('created_at', todayStartIso)),
+
+    // --- Dentist Health activity. Dashboard logins + section-view events
+    //     written by /api/analytics/dashboard-activity. event_type is
+    //     namespaced ('dashboard_login' / 'dashboard_view:<section>') so this
+    //     never collides with the public engagement events in the same table.
+    //     dentist_id is the acting dentist; we aggregate + city-scope JS-side
+    //     against the active roster below. All-time so "never used" and
+    //     "total sessions" are accurate, not just a 30-day window.
+    adminClient.from('analytics_events').select('dentist_id, event_type, created_at').like('event_type', 'dashboard%').order('created_at', { ascending: false }).limit(50000),
+    // Registration trend — last 8 weeks of sign-ups, city-filterable since
+    // dentist_registrations carries its own city column.
+    applyCity(adminClient.from('dentist_registrations').select('created_at').gte('created_at', eightWeeksAgoIso).limit(10000)),
   ])
 
   const dc = dentistCount || 0
@@ -527,6 +544,118 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   }))
 
   // -------------------------------------------------------------------------
+  // Dentist Health — activity view. Folds the dashboard_login / dashboard_view
+  // events into per-dentist login counts, last-login timestamps, and a feature-
+  // usage histogram. Everything is scoped to the active roster (`dentistHealth`,
+  // already city-filtered) so the cards + table respect the ?city= param.
+  // NOTE: these events only started being recorded when the tracking route
+  // shipped, so historically the cards read low / "Never Used" and fill in
+  // over time — they are not retroactive.
+  // -------------------------------------------------------------------------
+  const sevenDayMs = 7 * dayMs
+  const thirtyDayMs = 30 * dayMs
+  const rosterIds = new Set(dentistHealth.map(d => d.id))
+
+  type DashEvent = { dentist_id: string | null; event_type: string; created_at: string }
+  const loginCountByDentist = new Map<string, number>()
+  const lastLoginByDentist = new Map<string, number>() // epoch ms of newest login
+  const featureCountBySection = new Map<string, number>()
+  for (const e of (dashboardEventsRaw || []) as DashEvent[]) {
+    if (!e.dentist_id) continue
+    if (e.event_type === 'dashboard_login') {
+      loginCountByDentist.set(e.dentist_id, (loginCountByDentist.get(e.dentist_id) ?? 0) + 1)
+      const t = new Date(e.created_at).getTime()
+      if (Number.isFinite(t)) {
+        const prev = lastLoginByDentist.get(e.dentist_id)
+        if (prev == null || t > prev) lastLoginByDentist.set(e.dentist_id, t)
+      }
+    } else if (e.event_type.startsWith('dashboard_view:')) {
+      // Feature usage — when a city filter is active, only count visits from
+      // dentists in the scoped roster so the histogram narrows with the page.
+      if (cityFilter && !rosterIds.has(e.dentist_id)) continue
+      const section = e.event_type.slice('dashboard_view:'.length) || 'overview'
+      featureCountBySection.set(section, (featureCountBySection.get(section) ?? 0) + 1)
+    }
+  }
+
+  // Cards 2–5. loggedIn30d intentionally includes the 7d cohort (it's "logged
+  // in within the last 30 days", not "8–30 days ago").
+  let loggedIn7d = 0, loggedIn30d = 0, neverUsedDash = 0, notLoggedIn30plus = 0
+  for (const d of dentistHealth) {
+    const last = lastLoginByDentist.get(d.id)
+    if (last == null) { neverUsedDash++; continue }
+    const age = now - last
+    if (age <= sevenDayMs) loggedIn7d++
+    if (age <= thirtyDayMs) loggedIn30d++
+    else notLoggedIn30plus++
+  }
+
+  // Human labels for the section keys derived from the dashboard nav routes.
+  const FEATURE_LABELS: Record<string, string> = {
+    overview: 'Overview', profile: 'Edit Profile', hours: 'Working Hours',
+    locations: 'Locations', staff: 'Staff', appointments: 'Appointments',
+    calendar: 'Calendar', patients: 'Patients', billing: 'Billing',
+    expenses: 'Expenses', 'lab-work': 'Lab Work', inventory: 'Inventory',
+    recalls: 'Recalls', enquiries: 'Enquiries', communications: 'Communications',
+    photos: 'Photos', treatments: 'Treatments', 'consent-forms': 'Consent Forms',
+    'emr-templates': 'EMR Templates', analytics: 'Analytics', reports: 'Reports',
+    upgrade: 'Upgrade',
+  }
+  const activityFeatures = Array.from(featureCountBySection.entries())
+    .map(([section, count]) => ({ section, label: FEATURE_LABELS[section] || section, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10)
+
+  // Activity status buckets + the sort the brief asks for (Never → Inactive →
+  // Dormant → Active), tie-broken alphabetically for stable ordering.
+  type ActivityStatus = 'never' | 'inactive' | 'dormant' | 'active'
+  function activityStatus(lastMs: number | undefined): ActivityStatus {
+    if (lastMs == null) return 'never'
+    const age = now - lastMs
+    if (age <= sevenDayMs) return 'active'
+    if (age <= thirtyDayMs) return 'dormant'
+    return 'inactive'
+  }
+  const STATUS_ORDER: Record<ActivityStatus, number> = { never: 0, inactive: 1, dormant: 2, active: 3 }
+  const activityRows = dentistHealth.map(d => {
+    const last = lastLoginByDentist.get(d.id)
+    return {
+      id: d.id, name: d.name, slug: d.slug, city: d.city,
+      phone: d.phone, whatsapp: d.whatsapp,
+      lastLogin: last != null ? new Date(last).toISOString() : null,
+      sessions: loginCountByDentist.get(d.id) ?? 0,
+      status: activityStatus(last),
+    }
+  }).sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || a.name.localeCompare(b.name))
+
+  // Registration trend — 8 weekly buckets, oldest first, each a rolling 7-day
+  // window anchored to `now` so the rightmost bar is always "this week".
+  const regTrend = Array.from({ length: 8 }, (_, i) => {
+    const weeksBack = 7 - i // i=0 → 7 weeks ago … i=7 → current week
+    const start = now - (weeksBack + 1) * sevenDayMs
+    const end = now - weeksBack * sevenDayMs
+    return { start, end, count: 0, label: new Date(start).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) }
+  })
+  for (const r of (regTrendRows || []) as Array<{ created_at: string }>) {
+    const t = new Date(r.created_at).getTime()
+    if (!Number.isFinite(t)) continue
+    for (const b of regTrend) { if (t >= b.start && t < b.end) { b.count++; break } }
+  }
+
+  const dentistActivity = {
+    cards: {
+      totalActive: dentistHealth.length,
+      loggedIn7d,
+      loggedIn30d,
+      neverUsed: neverUsedDash,
+      notLoggedIn30plus,
+    },
+    features: activityFeatures,
+    rows: activityRows,
+    regTrend: regTrend.map(b => ({ label: b.label, count: b.count })),
+  }
+
+  // -------------------------------------------------------------------------
   // Outreach rollup. open_rate uses sent_at as the denominator because
   // open tracking only fires after a send; click & registration share the
   // same denominator so the percentages line up on the dashboard.
@@ -652,6 +781,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
       cityFilter={cityFilter}
       commsDentists={commsDentists || []}
       dentistHealth={dentistHealth}
+      dentistActivity={dentistActivity}
       pendingCases={pendingCases || []}
       openReports={openReports || []}
     />

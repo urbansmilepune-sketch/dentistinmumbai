@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import DashboardShell from './DashboardShell'
+import DashboardActivityTracker from './DashboardActivityTracker'
 import SupportButton from '@/components/SupportButton'
 import { completionPct } from '@/lib/profileCompletion'
 import { isDemoEmail } from '@/lib/demo'
@@ -55,6 +56,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         <DashboardShell dentist={dentist} completionPct={pct} staffRole={null}>
           {children}
         </DashboardShell>
+        <DashboardActivityTracker />
         <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 9999, display: 'flex' }}>
           <SupportButton />
         </div>
@@ -98,6 +100,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <DashboardShell dentist={ownerDentist} completionPct={pct} staffRole={staffRow.role}>
         {children}
       </DashboardShell>
+      <DashboardActivityTracker />
       <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 9999, display: 'flex' }}>
         <SupportButton />
       </div>
