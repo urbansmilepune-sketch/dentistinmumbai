@@ -222,3 +222,29 @@ export const getDentistProfileData = unstable_cache(
   ['dentist-profile-data'],
   { revalidate: 60, tags: ['dentist-profile'] },
 )
+
+export type CityAreaLink = {
+  id: number | string
+  name: string
+  slug: string
+  dentist_count: number
+}
+
+// Areas in one city, ranked by how many dentists each has. Powers the
+// "Other areas in <City>" block at the bottom of the dentist profile (a
+// patient on a Wakad dentist wants other Pune areas, not other cities).
+// Cached per-city via unstable_cache's arg-hashing on `citySlug`, same as
+// getDentistProfileData relies on for `slug`.
+export const getCityAreas = unstable_cache(
+  async (citySlug: string): Promise<CityAreaLink[]> => {
+    const supabase = createAnonClient()
+    const { data } = await supabase
+      .from('areas')
+      .select('id, name, slug, dentist_count')
+      .eq('city', citySlug)
+      .order('dentist_count', { ascending: false })
+    return (data ?? []) as unknown as CityAreaLink[]
+  },
+  ['city-areas'],
+  { revalidate: 300, tags: ['areas'] },
+)

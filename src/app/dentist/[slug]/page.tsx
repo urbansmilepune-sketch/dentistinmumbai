@@ -3,7 +3,7 @@ import type { Metadata } from 'next'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { headers } from 'next/headers'
-import { getDentistProfileData } from '@/lib/cache/public-pages'
+import { getDentistProfileData, getCityAreas } from '@/lib/cache/public-pages'
 import { getCityBySlug, cityOrigin } from '@/config/cities'
 import { whatsappLink } from '@/lib/phone'
 import { buildMapsIframe } from '@/lib/maps'
@@ -14,7 +14,7 @@ import ViewTracker from './ViewTracker'
 import TrackedLink from './TrackedLink'
 import TrackedBookingLink from './TrackedBookingLink'
 import ClinicContactButton from './ClinicContactButton'
-import CitiesFooterLinks from '@/components/CitiesFooterLinks'
+import OtherAreas from './OtherAreas'
 import FaqAccordion from '@/components/FaqAccordion'
 import ProfileCover from './ProfileCover'
 import ProofStrip from './ProofStrip'
@@ -151,6 +151,10 @@ export default async function DentistProfilePage({ params }: Props) {
 
   const areaName = (dentist.areas as any)?.name || city.cityName
   const areaSlug = (dentist.areas as any)?.slug as string | undefined
+  // Other areas in the SAME city for the footer block (links to /area/[slug]).
+  // Keyed on the dentist's own city so it stays correct even when the request
+  // host's city slug differs (thane/navimumbai → mumbai domain).
+  const cityAreas = await getCityAreas(dentist.city)
   const treatments = (dentist.dentist_treatments || []) as any[]
   const gallery = (dentist.gallery_photos || []) as any[]
   const galleryPhotos = gallery
@@ -529,7 +533,7 @@ export default async function DentistProfilePage({ params }: Props) {
         phone={dentist.phone ?? null}
       />
 
-      <CitiesFooterLinks currentSlug={dentist.city} />
+      <OtherAreas areas={cityAreas} cityName={dentistCityConfig.cityName} currentAreaSlug={areaSlug} />
 
       <footer style={{ background: '#0A1628', padding: '24px 20px', color: 'rgba(255,255,255,0.6)', textAlign: 'center', marginTop: 40 }}>
         <p style={{ fontSize: 13 }}>© {new Date().getFullYear()} DentistIn. All rights reserved.</p>
@@ -623,7 +627,7 @@ export default async function DentistProfilePage({ params }: Props) {
           .profile-section-title { font-size: 22px; }
         }
         @media (max-width: 768px) {
-          .profile-main { padding-bottom: 92px; }
+          .profile-main { padding-bottom: calc(92px + env(safe-area-inset-bottom, 0px)); }
           .profile-identity-info { text-align: center; }
           .profile-identity {
             flex-direction: column; align-items: center; text-align: center;

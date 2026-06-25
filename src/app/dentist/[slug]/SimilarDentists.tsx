@@ -1,9 +1,13 @@
 // SECTION 10 — More dentists in {area}. Keeps the existing #similar anchor.
 // Distance isn't reliably available, so we don't render it (per the spec's
 // "only real data" rule); photo, name, specialty and fee are shown.
+//
+// The ENTIRE card is a single <Link> to /dentist/[slug] (previously only the
+// little button navigated, which read as "stuck" on tap). Responsive grid:
+// 2 columns on mobile, 3 on desktop.
 
 import Link from 'next/link'
-import { NAVY, TEAL, BRAND_GRADIENT } from './profileTheme'
+import { NAVY, TEAL, TEAL_DARK, BRAND_GRADIENT } from './profileTheme'
 import { normalizeDrName, initialsFrom } from './profileTheme'
 
 interface SimilarDentist {
@@ -18,11 +22,11 @@ interface SimilarDentist {
 
 export default function SimilarDentists({ dentists }: { dentists: SimilarDentist[] }) {
   return (
-    <div className="profile-similar-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
+    <div className="profile-similar-grid">
       {dentists.map(sd => {
         const specialty = (Array.isArray(sd.specialties) && sd.specialties[0]) || sd.qualifications || 'Dentist'
         return (
-          <div key={sd.id} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <Link key={sd.id} href={`/dentist/${sd.slug}`} className="profile-similar-card">
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <div style={{
                 width: 52, height: 52, borderRadius: 12, flexShrink: 0, overflow: 'hidden',
@@ -40,12 +44,44 @@ export default function SimilarDentists({ dentists }: { dentists: SimilarDentist
             {sd.consultation_fee ? (
               <div style={{ fontSize: 13, color: 'var(--muted)' }}>Consult: <strong style={{ color: NAVY }}>₹{sd.consultation_fee.toLocaleString('en-IN')}</strong></div>
             ) : null}
-            <Link href={`/dentist/${sd.slug}`} style={{ marginTop: 'auto', display: 'block', textAlign: 'center', padding: '10px 12px', background: TEAL, color: '#fff', borderRadius: 10, fontWeight: 700, fontSize: 13, textDecoration: 'none' }}>
-              View profile
-            </Link>
-          </div>
+            <span className="profile-similar-cta" aria-hidden>View profile →</span>
+          </Link>
         )
       })}
+
+      <style>{`
+        .profile-similar-grid {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 14px;
+        }
+        .profile-similar-card {
+          display: flex; flex-direction: column; gap: 10px;
+          background: #fff; border: 1px solid var(--border); border-radius: 14px;
+          padding: 16px;
+          text-decoration: none;
+          transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+        }
+        .profile-similar-card:hover {
+          border-color: ${TEAL};
+          box-shadow: 0 4px 14px rgba(20,184,166,0.12);
+          transform: translateY(-2px);
+        }
+        .profile-similar-cta {
+          margin-top: auto;
+          text-align: center;
+          padding: 9px 12px;
+          background: ${TEAL};
+          color: #fff;
+          border-radius: 10px;
+          font-weight: 700;
+          font-size: 13px;
+        }
+        .profile-similar-card:hover .profile-similar-cta { background: ${TEAL_DARK}; }
+        @media (min-width: 769px) {
+          .profile-similar-grid { grid-template-columns: repeat(3, 1fr); }
+        }
+      `}</style>
     </div>
   )
 }
