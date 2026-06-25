@@ -17,6 +17,7 @@ import ClinicContactButton from './ClinicContactButton'
 import OtherAreas from './OtherAreas'
 import FaqAccordion from '@/components/FaqAccordion'
 import ProfileCover from './ProfileCover'
+import AvatarLightbox from './AvatarLightbox'
 import ProofStrip from './ProofStrip'
 import OpenStatusBanner from './OpenStatusBanner'
 import TrustPills from './TrustPills'
@@ -27,7 +28,7 @@ import LocationSection from './LocationSection'
 import SimilarDentists from './SimilarDentists'
 import StickyBookBar from './StickyBookBar'
 import OwnerBanner, { type ChecklistItem } from './OwnerBanner'
-import { NAVY, TEAL, TEAL_DARK, WHATSAPP, BRAND_GRADIENT, normalizeDrName, initialsFrom } from './profileTheme'
+import { NAVY, TEAL, TEAL_DARK, WHATSAPP, normalizeDrName } from './profileTheme'
 import { ShieldCheckIcon, MapPinIcon, PhoneIcon, WhatsAppIcon, CalendarIcon } from './profileIcons'
 
 interface Props { params: Promise<{ slug: string }> }
@@ -380,11 +381,7 @@ export default async function DentistProfilePage({ params }: Props) {
         <div className="container">
           {/* ─── SECTION 2: IDENTITY (overlaps cover) ──────────────────── */}
           <div className="profile-identity">
-            <div className="profile-avatar" style={{
-              background: dentist.profile_photo ? `url(${cloudinaryDeliveryUrl(dentist.profile_photo)}) center/cover` : BRAND_GRADIENT,
-            }}>
-              {!dentist.profile_photo && <span style={{ color: '#fff', fontWeight: 800, fontSize: 26, fontFamily: 'var(--font-heading)' }}>{initialsFrom(dentist.name)}</span>}
-            </div>
+            <AvatarLightbox photo={cloudinaryDeliveryUrl(dentist.profile_photo)} name={dentist.name} />
 
             <div className="profile-identity-info">
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
