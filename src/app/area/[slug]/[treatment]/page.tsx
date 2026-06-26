@@ -5,12 +5,14 @@ import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { getCityBySlug, cityBrandName, cityBrandTld } from '@/config/cities'
 import TreatmentNavTabs from '../TreatmentNavTabs'
-import QuickFilters from '../QuickFilters'
+import ResultFilters from '@/components/ResultFilters'
 import ShowMoreButton from '../ShowMoreButton'
 import CostGuide from '../CostGuide'
 import AreaFAQAccordion from '../AreaFAQAccordion'
-import DentistCard from '@/components/DentistCard'
+import DentistResultCard from '@/components/DentistResultCard'
 import { isOpenNowFromHours } from '@/lib/time'
+import { haversineKm } from '@/lib/distance'
+import { NAVY, NAVY_SOFT, TEAL } from '@/app/dentist/[slug]/profileTheme'
 
 // Mirrors the parent /area/[slug] page: headers()-based city resolution forces
 // dynamic rendering, so no generateStaticParams / ISR here.
@@ -51,11 +53,11 @@ function getTreatmentFAQs(treatmentName: string, areaName: string, dentistCount:
     },
     {
       q: `Are there dentists offering ${treatmentName} open on Sunday in ${areaName}?`,
-      a: `Yes, several dental clinics in ${areaName} offer ${treatmentName} with limited Sunday hours (usually 10am–2pm). Use the "Open Now" filter to find clinics currently accepting patients.`,
+      a: `Yes, several dental clinics in ${areaName} offer ${treatmentName} with limited Sunday hours (usually 10am–2pm). Use the "Open now" filter to find clinics currently accepting patients.`,
     },
     {
       q: `Do dentists in ${areaName} offer EMI for ${treatmentName}?`,
-      a: `Many clinics in ${areaName} offer EMI and no-cost financing options for ${treatmentName}, especially on higher-value treatments. Look for the "EMI Available" badge on the listings below or confirm with the clinic directly.`,
+      a: `Many clinics in ${areaName} offer EMI and no-cost financing options for ${treatmentName}, especially on higher-value treatments. Look for the "EMI" filter on the listings below or confirm with the clinic directly.`,
     },
   ]
 }
@@ -67,11 +69,35 @@ function getSEOContent(treatmentName: string, areaName: string, cityName: string
   }
 }
 
+// GPS coords are user-supplied query params; validate before trusting them.
+function parseCoord(v: string | undefined, range: number): number | null {
+  if (!v) return null
+  const n = Number(v)
+  if (!Number.isFinite(n)) return null
+  if (Math.abs(n) > range) return null
+  return n
+}
+
+const SORT_LABELS: Record<string, string> = {
+  nearest: 'nearest first',
+  rating: 'top rated',
+  fee: 'lowest fee first',
+  best: 'best match',
+}
+
 export default async function AreaTreatmentPage({ params, searchParams }: { params: Promise<{ slug: string; treatment: string }>; searchParams: Promise<Record<string, string>> }) {
   const { slug, treatment: treatmentSlug } = await params
   const sp = await searchParams
   const ratingFilter = sp.rating || ''
   const openNowFilter = sp.open === 'true'
+  const genderFilter = sp.gender || ''
+  const verifiedFilter = sp.verified === 'true'
+  const emiFilter = sp.emi === 'true'
+  const sortBy = sp.sort || ''
+  const userLat = parseCoord(sp.lat, 90)
+  const userLng = parseCoord(sp.lng, 180)
+  const hasCoords = userLat !== null && userLng !== null
+
   const supabase = await createClient()
   const h = await headers()
   const city = getCityBySlug(h.get('x-city-slug'))
@@ -89,50 +115,117 @@ export default async function AreaTreatmentPage({ params, searchParams }: { para
   // links across every area page.
   if (!area || !treatment) notFound()
 
-  // Dentists in this area AND offering this treatment. The !inner join on
-  // dentist_treatments turns the embed into a filter (matches the pattern in
-  // /treatment/[slug]); area + city filters are belt-and-suspenders.
+  // Dentists in this area AND offering this treatment. dentist_treatments!inner
+  // + the treatment_id filter turns the embed into a join filter, so only
+  // matching dentists return AND the embedded row is just this treatment
+  // (giving us its fee_from). avg_rating/review_count (not the legacy `rating`)
+  // match what DentistResultCard reads; lat/lng power the GPS distance sort.
   let dentistQuery = supabase
     .from('dentists')
     .select(`
       id, slug, name, clinic_name, qualifications, experience_years,
       gender, consultation_fee, emi_available, is_verified, tier,
-      profile_photo, whatsapp, phone, working_hours, avg_rating,
+      profile_photo, whatsapp, phone, working_hours, lat, lng,
+      avg_rating, review_count,
       areas(name, slug),
-      dentist_treatments!inner(treatments(name, slug))
+      dentist_treatments!inner(fee_from, fee_to, treatment_id)
     `)
     .eq('area_id', area.id)
     .eq('is_active', true)
     .eq('city', citySlug)
     .eq('dentist_treatments.treatment_id', treatment.id)
-    .order('rank_score', { ascending: false })
-    .limit(20)
 
-  // Minimum rating filter. NULL avg_rating (no reviews) won't match — "no
-  // reviews" is not the same as "at least 4 stars".
+  // Attribute filters — honoured server-side (same set as the area/treatment pages).
+  if (genderFilter) dentistQuery = dentistQuery.eq('gender', genderFilter)
+  if (verifiedFilter) dentistQuery = dentistQuery.eq('is_verified', true)
+  if (emiFilter) dentistQuery = dentistQuery.eq('emi_available', true)
   if (ratingFilter) {
     const minRating = parseFloat(ratingFilter)
     if (Number.isFinite(minRating)) dentistQuery = dentistQuery.gte('avg_rating', minRating)
   }
 
-  const { data: dentists } = await dentistQuery
+  // rank_score is the deterministic DB baseline; distance / fee_from / rating
+  // re-sorts happen in JS below (fee_from lives on the embedded join row).
+  dentistQuery = dentistQuery.order('rank_score', { ascending: false }).limit(100)
 
-  // openNow is a JS-side filter on the JSONB working_hours; .limit(20) is a
-  // curation cap, not pagination.
+  const { data: dentistsRaw } = await dentistQuery
+
+  // Surface this treatment's fee_from on each row for the card note, the stat
+  // row, and the lowest-fee sort.
+  let list = (dentistsRaw || []).map((d: any) => ({
+    ...d,
+    _feeFrom: (typeof d.dentist_treatments?.[0]?.fee_from === 'number' ? d.dentist_treatments[0].fee_from : null) as number | null,
+  }))
+
+  // Distance enrichment + sort when coords are present.
+  if (hasCoords) {
+    const lat = userLat as number
+    const lng = userLng as number
+    list = list.map(d => {
+      const dl = typeof d.lat === 'number' ? d.lat : null
+      const dg = typeof d.lng === 'number' ? d.lng : null
+      const distance_km = dl !== null && dg !== null ? haversineKm(lat, lng, dl, dg) : null
+      return { ...d, distance_km }
+    })
+    list.sort((a, b) => {
+      const ad = a.distance_km as number | null
+      const bd = b.distance_km as number | null
+      if (ad === null && bd === null) return 0
+      if (ad === null) return 1
+      if (bd === null) return -1
+      return ad - bd
+    })
+  } else if (sortBy === 'rating') {
+    list.sort((a, b) => (b.avg_rating || 0) - (a.avg_rating || 0))
+  } else if (sortBy === 'fee') {
+    list.sort((a, b) => {
+      const af = a._feeFrom, bf = b._feeFrom
+      if (af === null && bf === null) return 0
+      if (af === null) return 1
+      if (bf === null) return -1
+      return af - bf
+    })
+  }
+
   const isMumbai = city.citySlug === 'mumbai'
-  const dentistList = openNowFilter
-    ? (dentists || []).filter(d => isOpenNowFromHours((d as any).working_hours))
-    : (dentists || [])
+
+  // Honest stat-row inputs, computed on the full result set (pre open-now
+  // filter so "open now" reflects all matching clinics).
+  const totalOffering = list.length
+  const openNowCount = list.filter(d => isOpenNowFromHours(d.working_hours)).length
+  const feeFroms = list.map(d => d._feeFrom).filter((f): f is number => typeof f === 'number' && f > 0)
+  const lowestFee = feeFroms.length ? Math.min(...feeFroms) : null
+
+  const dentistList = openNowFilter ? list.filter(d => isOpenNowFromHours(d.working_hours)) : list
   const visibleDentists = dentistList.slice(0, 4)
   const hiddenDentists = dentistList.slice(4)
+
+  const firstHighlight: 'closest' | 'best' | null = hasCoords
+    ? (visibleDentists[0]?.distance_km != null ? 'closest' : null)
+    : (!sortBy ? 'best' : null)
+
+  const sortLabel = hasCoords ? SORT_LABELS.nearest : SORT_LABELS[sortBy] || SORT_LABELS.best
+  const subtext = `${totalOffering} dentist${totalOffering === 1 ? '' : 's'} offer this in ${area.name}${lowestFee !== null ? ` · from ₹${lowestFee.toLocaleString('en-IN')}` : ''}`
+
+  // Per-card treatment note: the dentist's starting fee for THIS treatment,
+  // falling back to a plain "offers this" confirmation.
+  const noteFor = (d: { _feeFrom: number | null }) =>
+    d._feeFrom !== null ? `${treatment.name} from ₹${d._feeFrom.toLocaleString('en-IN')}` : `Offers ${treatment.name}`
+
   // Mumbai groups "nearby" by suburban-rail line (zone); other cities fall
   // back to any other area within the same city.
   const nearbyAreas = (allAreas || [])
     .filter(a => a.slug !== slug && (isMumbai ? a.zone === area.zone : true))
     .slice(0, 6)
-  const topSidebarDentists = dentistList.filter(d => d.tier === 'featured' || d.tier === 'gold').slice(0, 4)
-  const faqs = getTreatmentFAQs(treatment.name, area.name, dentistList.length)
-  const seoContent = getSEOContent(treatment.name, area.name, city.cityName, city.domain, dentistList.length)
+
+  // Sidebar "Top Rated" — only dentists with real ratings, best first.
+  const topRated = [...list]
+    .filter(d => (d.avg_rating || 0) > 0)
+    .sort((a, b) => (b.avg_rating || 0) - (a.avg_rating || 0))
+    .slice(0, 4)
+
+  const faqs = getTreatmentFAQs(treatment.name, area.name, totalOffering)
+  const seoContent = getSEOContent(treatment.name, area.name, city.cityName, city.domain, totalOffering)
 
   // JSON-LD schemas
   const origin = `https://${city.domain}`
@@ -176,8 +269,8 @@ export default async function AreaTreatmentPage({ params, searchParams }: { para
       <header style={{ background: '#fff', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 100 }}>
         <nav className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 68 }}>
           <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 36, height: 36, background: 'var(--blue)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontFamily: 'var(--font-heading)', fontSize: 18 }}>D</div>
-            <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17 }}>{cityBrandName(city)}<span style={{ color: 'var(--blue)' }}>{cityBrandTld(city)}</span></span>
+            <div style={{ width: 36, height: 36, background: NAVY, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontFamily: 'var(--font-heading)', fontSize: 18 }}>D</div>
+            <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17 }}>{cityBrandName(city)}<span style={{ color: TEAL }}>{cityBrandTld(city)}</span></span>
           </Link>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Link href="/dentists" style={{ padding: '8px 16px', fontWeight: 500, fontSize: 14, color: 'var(--text-secondary)' }}>Find Dentists</Link>
@@ -187,64 +280,39 @@ export default async function AreaTreatmentPage({ params, searchParams }: { para
         </nav>
       </header>
 
-      {/* BREADCRUMB */}
-      <div style={{ background: '#fff', borderBottom: '1px solid var(--border)', padding: '10px 20px' }}>
+      {/* HERO — navy, patient-first */}
+      <section style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${NAVY_SOFT} 100%)`, padding: '28px 20px 36px' }}>
         <div className="container">
-          <nav aria-label="Breadcrumb" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--muted)', flexWrap: 'wrap' }}>
-            <Link href="/" style={{ color: 'var(--blue)' }}>Home</Link>
+          <nav aria-label="Breadcrumb" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'rgba(255,255,255,0.6)', marginBottom: 16, flexWrap: 'wrap' }}>
+            <Link href="/" style={{ color: 'rgba(255,255,255,0.85)' }}>{city.cityName}</Link>
             <span>›</span>
-            <Link href="/dentists" style={{ color: 'var(--blue)' }}>Dentists</Link>
+            <Link href="/dentists" style={{ color: 'rgba(255,255,255,0.85)' }}>Dentists</Link>
             <span>›</span>
-            <Link href={`/area/${slug}`} style={{ color: 'var(--blue)' }}>{area.name}</Link>
+            <Link href={`/area/${slug}`} style={{ color: 'rgba(255,255,255,0.85)' }}>{area.name}</Link>
             <span>›</span>
-            <span style={{ color: 'var(--text)', fontWeight: 500 }}>{treatment.name}</span>
+            <span style={{ color: '#fff', fontWeight: 600 }}>{treatment.name}</span>
           </nav>
-        </div>
-      </div>
 
-      {/* HERO */}
-      <section style={{ background: 'linear-gradient(135deg, #003F7A 0%, #0057A8 60%, #1A6FC4 100%)', padding: '48px 20px 52px', position: 'relative', overflow: 'hidden' }}>
-        {/* Watermark */}
-        <div aria-hidden="true" style={{
-          position: 'absolute', right: '-5%', top: '50%', transform: 'translateY(-50%)',
-          fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(80px, 15vw, 160px)',
-          color: 'rgba(255,255,255,0.04)', lineHeight: 1, userSelect: 'none', pointerEvents: 'none',
-          whiteSpace: 'nowrap',
-        }}>{area.name}</div>
-
-        <div className="container" style={{ position: 'relative' }}>
-          <div style={{ marginBottom: 16 }}>
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              padding: '4px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600,
-              background: 'rgba(255,255,255,0.12)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)',
-            }}>
-              {treatment.icon || '🦷'} {treatment.name} · {area.name}
-            </span>
-          </div>
-
-          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(1.8rem, 4vw, 2.8rem)', color: '#fff', marginBottom: 12, lineHeight: 1.2 }}>
-            Best {treatment.name} Dentists in {area.name}, {city.cityName}
+          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(1.6rem, 5vw, 2.4rem)', color: '#fff', marginBottom: 8, lineHeight: 1.2 }}>
+            {treatment.name} in {area.name}
           </h1>
-          <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 16, maxWidth: 560, marginBottom: 32, lineHeight: 1.7 }}>
-            Find top-rated, verified dentists for {treatment.name} in {area.name}. Compare fees, read reviews, book appointments instantly.
+          <p style={{ color: 'rgba(255,255,255,0.75)', fontSize: 15, marginBottom: 20 }}>
+            {subtext} · sorted by {sortLabel}
           </p>
 
-          {/* Stats chips */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
             {[
-              { label: `${treatment.name} Dentists`, value: dentistList.length || '5+' },
-              { label: 'Verified', value: dentistList.filter(d => d.is_verified).length || '3+' },
-              { label: 'Avg Consultation', value: '₹300' },
-              { label: 'Avg Rating', value: '4.5★' },
+              { value: String(totalOffering), label: totalOffering === 1 ? 'dentist' : 'dentists' },
+              { value: String(openNowCount), label: 'open now' },
+              ...(lowestFee !== null ? [{ value: `₹${lowestFee.toLocaleString('en-IN')}`, label: 'lowest fee' }] : []),
             ].map(stat => (
               <div key={stat.label} style={{
-                padding: '10px 20px', background: 'rgba(255,255,255,0.12)',
-                border: '1px solid rgba(255,255,255,0.2)', borderRadius: 12,
-                textAlign: 'center', minWidth: 120,
+                display: 'inline-flex', alignItems: 'baseline', gap: 6,
+                padding: '8px 14px', background: 'rgba(255,255,255,0.08)',
+                border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12,
               }}>
-                <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, color: '#fff' }}>{stat.value}</div>
-                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)' }}>{stat.label}</div>
+                <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 16, color: TEAL }}>{stat.value}</span>
+                <span style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.7)' }}>{stat.label}</span>
               </div>
             ))}
           </div>
@@ -254,37 +322,53 @@ export default async function AreaTreatmentPage({ params, searchParams }: { para
       {/* TREATMENT NAV TABS — active tab reflects the current treatment */}
       <TreatmentNavTabs areaSlug={slug} treatments={(treatments || []).map(t => ({ name: t.name, slug: t.slug, icon: t.icon || '🦷' }))} activeTab={treatmentSlug} />
 
-      <main style={{ background: 'var(--bg)', padding: '32px 20px' }}>
+      <main style={{ background: 'var(--bg)', padding: '24px 20px' }}>
         <div className="container">
-          <div style={{ display: 'flex', gap: 28, alignItems: 'flex-start' }}>
+          <div className="at-layout">
 
             {/* MAIN CONTENT */}
-            <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="at-main">
 
-              {/* Quick filters */}
-              <QuickFilters areaSlug={slug} totalCount={dentistList.length} areaName={area.name} />
+              {/* Filter / sort pills */}
+              <ResultFilters basePath={`/area/${slug}/${treatmentSlug}`} />
 
               {/* Dentist list */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 20 }}>
-                {visibleDentists.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '60px 20px', background: '#fff', borderRadius: 16, border: '1px solid var(--border)' }}>
-                    <div style={{ fontSize: 48, marginBottom: 12 }}>🔍</div>
-                    <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: 18, fontWeight: 700, marginBottom: 8 }}>No {treatment.name} dentists listed yet in {area.name}</h3>
-                    <p style={{ color: 'var(--muted)', marginBottom: 20 }}>
-                      Try <Link href={`/area/${slug}`} style={{ color: 'var(--blue)', fontWeight: 600 }}>all dentists in {area.name}</Link>, or be the first {treatment.name} clinic to list here.
+              <div style={{ marginTop: 20 }}>
+                {dentistList.length === 0 ? (
+                  <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 16, padding: '40px 24px', textAlign: 'center' }}>
+                    <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: 19, fontWeight: 800, color: NAVY, marginBottom: 8 }}>
+                      No dentists offer {treatment.name} in {area.name} yet
+                    </h2>
+                    <p style={{ color: 'var(--muted)', fontSize: 14, marginBottom: 22 }}>
+                      {openNowFilter || verifiedFilter || emiFilter || genderFilter || ratingFilter
+                        ? 'No matches for these filters right now. Try clearing some, or see all dentists in this area:'
+                        : <>Try <Link href={`/area/${slug}`} style={{ color: TEAL, fontWeight: 600 }}>all dentists in {area.name}</Link>, or explore nearby areas:</>}
                     </p>
-                    <Link href="/for-dentists/register" className="btn btn-primary">List Your Clinic Free</Link>
+                    {nearbyAreas.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginBottom: 22 }}>
+                        {nearbyAreas.map(a => (
+                          <Link key={a.slug} href={`/area/${a.slug}/${treatmentSlug}`} style={{
+                            padding: '8px 16px', background: '#F0FDFA', color: TEAL,
+                            border: '1px solid #99F6E4', borderRadius: 20, fontSize: 13, fontWeight: 600,
+                          }}>📍 {a.name}</Link>
+                        ))}
+                      </div>
+                    )}
+                    <Link href={`/area/${slug}`} className="btn btn-primary">View all dentists in {area.name}</Link>
                   </div>
                 ) : (
-                  visibleDentists.map(d => <DentistCard key={d.id} dentist={d as any} view="list" />)
+                  <>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                      {visibleDentists.map((d, i) => (
+                        <DentistResultCard key={d.id} dentist={d} highlight={i === 0 ? firstHighlight : null} treatmentNote={noteFor(d)} />
+                      ))}
+                    </div>
+                    <ShowMoreButton count={hiddenDentists.length} areaName={area.name}>
+                      {hiddenDentists.map(d => <DentistResultCard key={d.id} dentist={d} treatmentNote={noteFor(d)} />)}
+                    </ShowMoreButton>
+                  </>
                 )}
               </div>
-
-              {/* Show more — this route keeps the legacy DentistCard for now;
-                  its visual redesign lands with the treatment-page pass. */}
-              <ShowMoreButton count={hiddenDentists.length} areaName={area.name}>
-                {hiddenDentists.map((d: any) => <DentistCard key={d.id} dentist={d} view="list" />)}
-              </ShowMoreButton>
 
               {/* Cost Guide */}
               <div style={{ marginTop: 40 }}>
@@ -336,7 +420,7 @@ export default async function AreaTreatmentPage({ params, searchParams }: { para
 
                 {/* Quick Facts Table */}
                 <div style={{ background: 'var(--bg)', borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border)' }}>
-                  <div style={{ padding: '12px 20px', background: 'var(--blue-light)', fontWeight: 700, fontSize: 14, fontFamily: 'var(--font-heading)', color: 'var(--blue-dark)' }}>
+                  <div style={{ padding: '12px 20px', background: '#F0FDFA', fontWeight: 700, fontSize: 14, fontFamily: 'var(--font-heading)', color: NAVY }}>
                     Quick Facts: {treatment.name} in {area.name}
                   </div>
                   {[
@@ -344,8 +428,8 @@ export default async function AreaTreatmentPage({ params, searchParams }: { para
                     { label: 'Area', value: area.name },
                     // Zone is Mumbai-only context (Western/Central/Harbour…).
                     ...(isMumbai && area.zone ? [{ label: 'Zone', value: area.zone }] : []),
-                    { label: 'Dentists Listed', value: String(dentistList.length || '5+') },
-                    { label: 'Avg Consultation Fee', value: '₹200 – ₹500' },
+                    { label: 'Dentists Listed', value: String(totalOffering || '5+') },
+                    ...(lowestFee !== null ? [{ label: `${treatment.name} from`, value: `₹${lowestFee.toLocaleString('en-IN')}` }] : []),
                   ].map((row, i) => (
                     <div key={row.label} style={{
                       display: 'flex', padding: '11px 20px',
@@ -360,32 +444,32 @@ export default async function AreaTreatmentPage({ params, searchParams }: { para
               </div>
             </div>
 
-            {/* RIGHT SIDEBAR */}
-            <aside style={{ width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 20, position: 'sticky', top: 88 }} className="filter-sidebar-desktop">
-
-              {/* Quick Search */}
-              <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '20px' }}>
-                <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, marginBottom: 14 }}>All dentists in {area.name}</h3>
-                <Link href={`/area/${slug}`} className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }}>
-                  View All Dentists →
-                </Link>
+            {/* RIGHT SIDEBAR — lighter; stacks below on mobile */}
+            <aside className="at-sidebar">
+              {/* All dentists in area */}
+              <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 16, padding: '20px' }}>
+                <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, color: NAVY, marginBottom: 14 }}>All dentists in {area.name}</h3>
+                <Link href={`/area/${slug}`} style={{
+                  display: 'block', textAlign: 'center', padding: '11px 16px', background: TEAL, color: '#fff',
+                  borderRadius: 10, fontSize: 13, fontWeight: 700,
+                }}>View All Dentists →</Link>
               </div>
 
               {/* Top Rated */}
-              {topSidebarDentists.length > 0 && (
-                <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '20px' }}>
-                  <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, marginBottom: 14 }}>
+              {topRated.length > 0 && (
+                <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 16, padding: '20px' }}>
+                  <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, color: NAVY, marginBottom: 14 }}>
                     Top Rated for {treatment.name}
                   </h3>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {topSidebarDentists.map(d => (
+                    {topRated.map(d => (
                       <Link key={d.id} href={`/dentist/${d.slug}`} style={{ display: 'flex', gap: 10, alignItems: 'center', textDecoration: 'none' }}>
-                        <div style={{ width: 40, height: 40, borderRadius: 8, background: 'var(--blue-light)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>
-                          {d.profile_photo ? <img src={d.profile_photo} alt={d.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 6 }} /> : '🦷'}
+                        <div style={{ width: 40, height: 40, borderRadius: 8, background: '#F0FDFA', flexShrink: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: TEAL, fontWeight: 800 }}>
+                          {d.profile_photo ? <img src={d.profile_photo} alt={d.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : '🦷'}
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontWeight: 600, fontSize: 13, fontFamily: 'var(--font-heading)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.name}</div>
-                          <div style={{ fontSize: 11, color: 'var(--muted)' }}>{d.consultation_fee ? `₹${d.consultation_fee}` : 'Call for price'}</div>
+                          <div style={{ fontWeight: 600, fontSize: 13, color: NAVY, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.name}</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)' }}>★ {(d.avg_rating || 0).toFixed(1)}{d._feeFrom ? ` · from ₹${d._feeFrom.toLocaleString('en-IN')}` : ''}</div>
                         </div>
                       </Link>
                     ))}
@@ -394,8 +478,8 @@ export default async function AreaTreatmentPage({ params, searchParams }: { para
               )}
 
               {/* Other Treatments in Area */}
-              <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '20px' }}>
-                <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, marginBottom: 14 }}>
+              <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 16, padding: '20px' }}>
+                <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, color: NAVY, marginBottom: 14 }}>
                   Treatments in {area.name}
                 </h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -405,47 +489,28 @@ export default async function AreaTreatmentPage({ params, searchParams }: { para
                       <Link key={t.slug} href={`/area/${slug}/${t.slug}`} style={{
                         display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0',
                         borderBottom: '1px solid var(--border)', fontSize: 13,
-                        color: isCurrent ? 'var(--blue)' : 'var(--text)', fontWeight: isCurrent ? 700 : 400,
+                        color: isCurrent ? TEAL : 'var(--text)', fontWeight: isCurrent ? 700 : 400,
                       }}>
-                        <span>{t.icon}</span>
+                        <span>{t.icon || '🦷'}</span>
                         <span style={{ flex: 1 }}>{t.name} in {area.name}</span>
-                        <span style={{ color: 'var(--blue)', fontSize: 12 }}>→</span>
+                        <span style={{ color: TEAL, fontSize: 12 }}>→</span>
                       </Link>
                     )
                   })}
                 </div>
               </div>
 
-              {/* Nearby Areas */}
-              {nearbyAreas.length > 0 && (
-                <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '20px' }}>
-                  <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, marginBottom: 14 }}>Nearby Areas</h3>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                    {nearbyAreas.map(a => (
-                      <Link key={a.slug} href={`/area/${a.slug}/${treatmentSlug}`} style={{
-                        padding: '10px', background: 'var(--bg)', border: '1px solid var(--border)',
-                        borderRadius: 8, textAlign: 'center',
-                      }}>
-                        <div style={{ fontSize: 13, fontWeight: 600 }}>{a.name}</div>
-                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>{treatment.name}</div>
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               {/* CTA */}
-              <div style={{ background: 'var(--blue-dark)', borderRadius: 16, padding: '24px 20px', textAlign: 'center' }}>
-                <div style={{ fontSize: 28, marginBottom: 8 }}>🦷</div>
+              <div style={{ background: NAVY, borderRadius: 16, padding: '20px', textAlign: 'center' }}>
                 <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, color: '#fff', marginBottom: 8 }}>
-                  Do you offer {treatment.name} in {area.name}?
+                  Do you offer {treatment.name.toLowerCase()} in {area.name}?
                 </h3>
                 <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', marginBottom: 16, lineHeight: 1.6 }}>
                   Get discovered by patients in {area.name} for free.
                 </p>
                 <Link href="/for-dentists/register" style={{
-                  display: 'block', padding: '10px 20px', background: '#fff', color: 'var(--blue)',
-                  borderRadius: 8, fontSize: 13, fontWeight: 700,
+                  display: 'block', padding: '11px 20px', background: TEAL, color: '#fff',
+                  borderRadius: 10, fontSize: 13, fontWeight: 700,
                 }}>List Your Clinic Free →</Link>
               </div>
             </aside>
@@ -469,6 +534,20 @@ export default async function AreaTreatmentPage({ params, searchParams }: { para
           </div>
         </div>
       </footer>
+
+      <style>{`
+        .at-layout { display: flex; gap: 28px; align-items: flex-start; }
+        .at-main { flex: 1; min-width: 0; }
+        .at-sidebar {
+          width: 280px; flex-shrink: 0;
+          display: flex; flex-direction: column; gap: 20px;
+          position: sticky; top: 88px;
+        }
+        @media (max-width: 900px) {
+          .at-layout { flex-direction: column; }
+          .at-sidebar { width: 100%; position: static; margin-top: 32px; }
+        }
+      `}</style>
     </>
   )
 }
