@@ -24,7 +24,7 @@ interface Props {
 export default function PhotoLightbox({ photos, initialIndex, onClose }: Props) {
   const count = photos.length
   const [index, setIndex] = useState(() => Math.min(Math.max(initialIndex, 0), Math.max(count - 1, 0)))
-  const touchStartX = useRef<number | null>(null)
+  const touchStart = useRef<{ x: number; y: number } | null>(null)
   const multi = count > 1
 
   const prev = useCallback(() => setIndex(i => (i - 1 + count) % count), [count])
@@ -49,13 +49,22 @@ export default function PhotoLightbox({ photos, initialIndex, onClose }: Props) 
   }, [multi, prev, next, onClose])
 
   function onTouchStart(e: React.TouchEvent) {
-    touchStartX.current = e.touches[0]?.clientX ?? null
+    const t = e.touches[0]
+    touchStart.current = t ? { x: t.clientX, y: t.clientY } : null
   }
   function onTouchEnd(e: React.TouchEvent) {
-    if (touchStartX.current === null || !multi) return
-    const delta = (e.changedTouches[0]?.clientX ?? touchStartX.current) - touchStartX.current
-    if (Math.abs(delta) > 50) { if (delta < 0) next(); else prev() }
-    touchStartX.current = null
+    const start = touchStart.current
+    touchStart.current = null
+    if (!start) return
+    const t = e.changedTouches[0]
+    const dx = (t?.clientX ?? start.x) - start.x
+    const dy = (t?.clientY ?? start.y) - start.y
+    // Downward swipe closes (when the gesture is clearly vertical).
+    if (dy > 80 && Math.abs(dy) > Math.abs(dx)) { onClose(); return }
+    // Horizontal swipe navigates the gallery.
+    if (multi && Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
+      if (dx < 0) next(); else prev()
+    }
   }
 
   const photo = photos[index]
@@ -95,7 +104,7 @@ export default function PhotoLightbox({ photos, initialIndex, onClose }: Props) 
         aria-label="Close"
         onClick={(e) => { stop(e); onClose() }}
         style={{
-          position: 'fixed', top: 12, right: 12, zIndex: 2,
+          position: 'fixed', top: 12, right: 12, zIndex: 10,
           width: 44, height: 44, borderRadius: '50%',
           background: 'rgba(255,255,255,0.14)', border: 'none', cursor: 'pointer',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -104,28 +113,26 @@ export default function PhotoLightbox({ photos, initialIndex, onClose }: Props) 
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.4} strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
       </button>
 
-      {/* Prev/next large tap areas (left/right 40%) + arrow icons */}
+      {/* Prev/next arrow chips. Kept compact (not full-height tap areas) so a
+          tap on the dark background still falls through to the overlay's
+          onClick={onClose}; mobile users navigate by horizontal swipe. */}
       {multi && (
         <>
           <button
             type="button"
             aria-label="Previous photo"
             onClick={(e) => { stop(e); prev() }}
-            style={{ ...navAreaStyle, left: 0, justifyContent: 'flex-start', paddingLeft: 12 }}
+            style={{ ...navBtnStyle, left: 12 }}
           >
-            <span style={arrowBtnStyle}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round"><path d="M15 5l-7 7 7 7" /></svg>
-            </span>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round"><path d="M15 5l-7 7 7 7" /></svg>
           </button>
           <button
             type="button"
             aria-label="Next photo"
             onClick={(e) => { stop(e); next() }}
-            style={{ ...navAreaStyle, right: 0, justifyContent: 'flex-end', paddingRight: 12 }}
+            style={{ ...navBtnStyle, right: 12 }}
           >
-            <span style={arrowBtnStyle}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round"><path d="M9 5l7 7-7 7" /></svg>
-            </span>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round"><path d="M9 5l7 7-7 7" /></svg>
           </button>
         </>
       )}
@@ -160,17 +167,13 @@ export default function PhotoLightbox({ photos, initialIndex, onClose }: Props) 
   )
 }
 
-// Left/right navigation hit areas — 40% of the screen each, full height.
-// Transparent so they don't obscure the photo; the arrow chip sits inside.
-const navAreaStyle: React.CSSProperties = {
-  position: 'fixed', top: 0, bottom: 0, width: '40%', zIndex: 2,
-  background: 'transparent', border: 'none', cursor: 'pointer',
-  display: 'flex', alignItems: 'center',
-}
-
-const arrowBtnStyle: React.CSSProperties = {
+// Compact left/right arrow chips, vertically centered. Sized to the chip only
+// (not a full-height column) so the surrounding dark area remains background
+// that closes the lightbox on tap. zIndex below the close button (10) so the
+// X in the top-right corner always wins the hit test.
+const navBtnStyle: React.CSSProperties = {
+  position: 'fixed', top: '50%', transform: 'translateY(-50%)', zIndex: 3,
   width: 44, height: 44, borderRadius: '50%',
-  background: 'rgba(255,255,255,0.14)',
+  background: 'rgba(255,255,255,0.14)', border: 'none', cursor: 'pointer',
   display: 'flex', alignItems: 'center', justifyContent: 'center',
-  flexShrink: 0,
 }
