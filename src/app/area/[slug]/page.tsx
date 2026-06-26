@@ -5,12 +5,14 @@ import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { getCityBySlug, cityBrandName, cityBrandTld } from '@/config/cities'
 import TreatmentNavTabs from './TreatmentNavTabs'
-import QuickFilters from './QuickFilters'
+import AreaFilters from './AreaFilters'
 import ShowMoreButton from './ShowMoreButton'
 import CostGuide from './CostGuide'
 import AreaFAQAccordion from './AreaFAQAccordion'
-import DentistCard from '@/components/DentistCard'
+import DentistResultCard from '@/components/DentistResultCard'
 import { isOpenNowFromHours } from '@/lib/time'
+import { haversineKm } from '@/lib/distance'
+import { NAVY, NAVY_SOFT, TEAL } from '@/app/dentist/[slug]/profileTheme'
 
 // headers()-based city resolution forces dynamic rendering. Previous
 // generateStaticParams + ISR have been removed; per-city traffic is small
@@ -72,11 +74,35 @@ function getSEOContent(areaName: string, zone: string, dentistCount: number, cit
   }
 }
 
+// GPS coords are user-supplied query params; validate before trusting them.
+function parseCoord(v: string | undefined, range: number): number | null {
+  if (!v) return null
+  const n = Number(v)
+  if (!Number.isFinite(n)) return null
+  if (Math.abs(n) > range) return null
+  return n
+}
+
+const SORT_LABELS: Record<string, string> = {
+  nearest: 'nearest first',
+  rating: 'top rated',
+  fee: 'lowest fee first',
+  best: 'best match',
+}
+
 export default async function AreaPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<Record<string, string>> }) {
   const { slug } = await params
   const sp = await searchParams
   const ratingFilter = sp.rating || ''
   const openNowFilter = sp.open === 'true'
+  const genderFilter = sp.gender || ''
+  const verifiedFilter = sp.verified === 'true'
+  const emiFilter = sp.emi === 'true'
+  const sortBy = sp.sort || ''
+  const userLat = parseCoord(sp.lat, 90)
+  const userLng = parseCoord(sp.lng, 180)
+  const hasCoords = userLat !== null && userLng !== null
+
   const supabase = await createClient()
   const h = await headers()
   const city = getCityBySlug(h.get('x-city-slug'))
@@ -94,22 +120,28 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
 
   // Fetch dentists in this area (belt-and-suspenders city filter — area_id
   // already encodes city, but explicit filter guards against any cross-city
-  // FK quirk).
+  // FK quirk). lat/lng + review_count are pulled for distance sort and the
+  // honest "New / X reviews" badge on the result card.
   let dentistQuery = supabase
     .from('dentists')
     .select(`
       id, slug, name, clinic_name, qualifications, experience_years,
       gender, consultation_fee, emi_available, is_verified, tier,
-      profile_photo, whatsapp, phone, working_hours, avg_rating,
+      profile_photo, whatsapp, phone, working_hours, lat, lng,
+      avg_rating, review_count,
       areas(name, slug),
       dentist_treatments(treatments(name, slug))
     `)
     .eq('area_id', area.id)
     .eq('is_active', true)
     .eq('city', citySlug)
-    .order('rank_score', { ascending: false })
-    .limit(20)
 
+  // Attribute filters — these are honoured server-side (previously the
+  // gender/verified/emi quick-filter buttons set the params but the page
+  // ignored them).
+  if (genderFilter) dentistQuery = dentistQuery.eq('gender', genderFilter)
+  if (verifiedFilter) dentistQuery = dentistQuery.eq('is_verified', true)
+  if (emiFilter) dentistQuery = dentistQuery.eq('emi_available', true)
   // Minimum rating filter. Dentists with NULL avg_rating (no reviews) won't
   // match — "no reviews" is not the same as "at least 4 stars".
   if (ratingFilter) {
@@ -117,26 +149,85 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
     if (Number.isFinite(minRating)) dentistQuery = dentistQuery.gte('avg_rating', minRating)
   }
 
-  const { data: dentists } = await dentistQuery
+  // Sort. Distance (GPS) always wins when coords are present and is applied
+  // in JS below; otherwise the dropdown choice maps to a DB-side order.
+  if (!hasCoords) {
+    if (sortBy === 'rating') dentistQuery = dentistQuery.order('avg_rating', { ascending: false, nullsFirst: false })
+    else if (sortBy === 'fee') dentistQuery = dentistQuery.order('consultation_fee', { ascending: true, nullsFirst: false })
+    else dentistQuery = dentistQuery.order('rank_score', { ascending: false })
+  } else {
+    dentistQuery = dentistQuery.order('rank_score', { ascending: false })
+  }
+
+  // An area holds at most a few dozen clinics, so fetch the whole set and do
+  // distance/open-now passes in memory rather than paginating server-side.
+  dentistQuery = dentistQuery.limit(50)
+
+  const { data: dentistsRaw } = await dentistQuery
+  let list = (dentistsRaw || []) as any[]
+
+  // Distance enrichment + sort when coords are present. Dentists without
+  // coords sink to the bottom; among those with coords, closest first.
+  if (hasCoords) {
+    const lat = userLat as number
+    const lng = userLng as number
+    list = list
+      .map(d => {
+        const dl = typeof d.lat === 'number' ? d.lat : null
+        const dg = typeof d.lng === 'number' ? d.lng : null
+        const distance_km = dl !== null && dg !== null ? haversineKm(lat, lng, dl, dg) : null
+        return { ...d, distance_km }
+      })
+      .sort((a, b) => {
+        const ad = a.distance_km as number | null
+        const bd = b.distance_km as number | null
+        if (ad === null && bd === null) return 0
+        if (ad === null) return 1
+        if (bd === null) return -1
+        return ad - bd
+      })
+  }
+
+  const isMumbai = city.citySlug === 'mumbai'
+
+  // Honest stat-row inputs, computed on the full area set (pre open-now filter
+  // so "X open now" reflects the whole area, not the filtered view).
+  const totalInArea = list.length
+  const openNowCount = list.filter(d => isOpenNowFromHours(d.working_hours)).length
+  const verifiedCount = list.filter(d => d.is_verified).length
+  const fees = list.map(d => d.consultation_fee).filter((f): f is number => typeof f === 'number' && f > 0)
+  const lowestFee = fees.length ? Math.min(...fees) : null
 
   // openNow is a JS-side filter: working_hours is JSONB keyed by day-of-week
-  // and "open right now" depends on IST clock time. The .limit(20) above is
-  // a curation cap, not pagination — open-now narrows within those 20.
-  const isMumbai = city.citySlug === 'mumbai'
-  const dentistList = openNowFilter
-    ? (dentists || []).filter(d => isOpenNowFromHours((d as any).working_hours))
-    : (dentists || [])
+  // and "open right now" depends on IST clock time.
+  const dentistList = openNowFilter ? list.filter(d => isOpenNowFromHours(d.working_hours)) : list
   const visibleDentists = dentistList.slice(0, 4)
   const hiddenDentists = dentistList.slice(4)
+
+  // Highlight the first result: closest match under GPS, best match under the
+  // default sort. No badge once the user has explicitly chosen a sort.
+  const firstHighlight: 'closest' | 'best' | null = hasCoords
+    ? (visibleDentists[0]?.distance_km != null ? 'closest' : null)
+    : (!sortBy ? 'best' : null)
+
+  const sortLabel = hasCoords ? SORT_LABELS.nearest : SORT_LABELS[sortBy] || SORT_LABELS.best
+  const subtextCount = verifiedCount > 0 ? `${verifiedCount} verified dentist${verifiedCount === 1 ? '' : 's'}` : `${totalInArea} dentist${totalInArea === 1 ? '' : 's'}`
+
   // Mumbai groups "nearby" by suburban-rail line. Other cities don't carry
   // that semantics on their zone column, so fall back to any-other-area
   // within the same city.
   const nearbyAreas = (allAreas || [])
     .filter(a => a.slug !== slug && (isMumbai ? a.zone === area.zone : true))
     .slice(0, 6)
-  const topSidebarDentists = dentistList.filter(d => d.tier === 'featured' || d.tier === 'gold').slice(0, 4)
-  const faqs = getFAQs(area.name, area.dentist_count || dentistList.length)
-  const seoContent = getSEOContent(area.name, area.zone, area.dentist_count || dentistList.length, city.cityName, city.domain)
+
+  // Sidebar "Top Rated" — only dentists with real ratings, best first.
+  const topRated = [...list]
+    .filter(d => (d.avg_rating || 0) > 0)
+    .sort((a, b) => (b.avg_rating || 0) - (a.avg_rating || 0))
+    .slice(0, 4)
+
+  const faqs = getFAQs(area.name, area.dentist_count || totalInArea)
+  const seoContent = getSEOContent(area.name, area.zone, area.dentist_count || totalInArea, city.cityName, city.domain)
 
   // JSON-LD schemas
   const origin = `https://${city.domain}`
@@ -179,8 +270,8 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
       <header style={{ background: '#fff', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 100 }}>
         <nav className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 68 }}>
           <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 36, height: 36, background: 'var(--blue)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontFamily: 'var(--font-heading)', fontSize: 18 }}>D</div>
-            <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17 }}>{cityBrandName(city)}<span style={{ color: 'var(--blue)' }}>{cityBrandTld(city)}</span></span>
+            <div style={{ width: 36, height: 36, background: NAVY, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontFamily: 'var(--font-heading)', fontSize: 18 }}>D</div>
+            <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17 }}>{cityBrandName(city)}<span style={{ color: TEAL }}>{cityBrandTld(city)}</span></span>
           </Link>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Link href="/dentists" style={{ padding: '8px 16px', fontWeight: 500, fontSize: 14, color: 'var(--text-secondary)' }}>Find Dentists</Link>
@@ -190,62 +281,39 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
         </nav>
       </header>
 
-      {/* BREADCRUMB */}
-      <div style={{ background: '#fff', borderBottom: '1px solid var(--border)', padding: '10px 20px' }}>
+      {/* HERO — navy, patient-first */}
+      <section style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${NAVY_SOFT} 100%)`, padding: '28px 20px 36px' }}>
         <div className="container">
-          <nav aria-label="Breadcrumb" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--muted)' }}>
-            <Link href="/" style={{ color: 'var(--blue)' }}>Home</Link>
+          {/* Breadcrumb */}
+          <nav aria-label="Breadcrumb" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'rgba(255,255,255,0.6)', marginBottom: 16, flexWrap: 'wrap' }}>
+            <Link href="/" style={{ color: 'rgba(255,255,255,0.85)' }}>{city.cityName}</Link>
             <span>›</span>
-            <Link href="/dentists" style={{ color: 'var(--blue)' }}>Dentists</Link>
+            <Link href="/dentists" style={{ color: 'rgba(255,255,255,0.85)' }}>Dentists</Link>
             <span>›</span>
-            <span style={{ color: 'var(--text)', fontWeight: 500 }}>{area.name}</span>
+            <span style={{ color: '#fff', fontWeight: 600 }}>{area.name}</span>
           </nav>
-        </div>
-      </div>
 
-      {/* HERO */}
-      <section style={{ background: 'linear-gradient(135deg, #003F7A 0%, #0057A8 60%, #1A6FC4 100%)', padding: '48px 20px 52px', position: 'relative', overflow: 'hidden' }}>
-        {/* Watermark */}
-        <div aria-hidden="true" style={{
-          position: 'absolute', right: '-5%', top: '50%', transform: 'translateY(-50%)',
-          fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(80px, 15vw, 160px)',
-          color: 'rgba(255,255,255,0.04)', lineHeight: 1, userSelect: 'none', pointerEvents: 'none',
-          whiteSpace: 'nowrap',
-        }}>{area.name}</div>
-
-        <div className="container" style={{ position: 'relative' }}>
-          <div style={{ marginBottom: 16 }}>
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              padding: '4px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600,
-              background: 'rgba(255,255,255,0.12)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)',
-            }}>
-              📍 {isMumbai && area.zone ? `${area.zone} · ${city.cityName}` : area.name}
-            </span>
-          </div>
-
-          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(1.8rem, 4vw, 2.8rem)', color: '#fff', marginBottom: 12, lineHeight: 1.2 }}>
-            Best Dentists in {area.name}, {city.cityName}
+          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(1.6rem, 5vw, 2.4rem)', color: '#fff', marginBottom: 8, lineHeight: 1.2 }}>
+            Dentists in {area.name}
           </h1>
-          <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 16, maxWidth: 560, marginBottom: 32, lineHeight: 1.7 }}>
-            Find top-rated, verified dental clinics in {area.name}. Compare fees, read reviews, book appointments instantly.
+          <p style={{ color: 'rgba(255,255,255,0.75)', fontSize: 15, marginBottom: 20 }}>
+            {subtextCount} · sorted by {sortLabel}
           </p>
 
-          {/* Stats chips */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+          {/* Honest stat row */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
             {[
-              { label: 'Dentists Listed', value: area.dentist_count || dentistList.length || '10+' },
-              { label: 'Verified', value: dentistList.filter(d => d.is_verified).length || '5+' },
-              { label: 'Avg Consultation', value: '₹300' },
-              { label: 'Avg Rating', value: '4.5★' },
+              { value: String(totalInArea), label: totalInArea === 1 ? 'dentist' : 'dentists' },
+              { value: String(openNowCount), label: 'open now' },
+              ...(lowestFee !== null ? [{ value: `₹${lowestFee.toLocaleString('en-IN')}`, label: 'lowest fee' }] : []),
             ].map(stat => (
               <div key={stat.label} style={{
-                padding: '10px 20px', background: 'rgba(255,255,255,0.12)',
-                border: '1px solid rgba(255,255,255,0.2)', borderRadius: 12,
-                textAlign: 'center', minWidth: 120,
+                display: 'inline-flex', alignItems: 'baseline', gap: 6,
+                padding: '8px 14px', background: 'rgba(255,255,255,0.08)',
+                border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12,
               }}>
-                <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, color: '#fff' }}>{stat.value}</div>
-                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)' }}>{stat.label}</div>
+                <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 16, color: TEAL }}>{stat.value}</span>
+                <span style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.7)' }}>{stat.label}</span>
               </div>
             ))}
           </div>
@@ -255,32 +323,53 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
       {/* TREATMENT NAV TABS */}
       <TreatmentNavTabs areaSlug={slug} treatments={(treatments || []).map(t => ({ name: t.name, slug: t.slug, icon: t.icon || '🦷' }))} activeTab="" />
 
-      <main style={{ background: 'var(--bg)', padding: '32px 20px' }}>
+      <main style={{ background: 'var(--bg)', padding: '24px 20px' }}>
         <div className="container">
-          <div style={{ display: 'flex', gap: 28, alignItems: 'flex-start' }}>
+          <div className="area-layout">
 
             {/* MAIN CONTENT */}
-            <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="area-main">
 
-              {/* Quick filters */}
-              <QuickFilters areaSlug={slug} totalCount={dentistList.length} areaName={area.name} />
+              {/* Filter / sort pills */}
+              <AreaFilters areaSlug={slug} />
 
               {/* Dentist list */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 20 }}>
-                {visibleDentists.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '60px 20px', background: '#fff', borderRadius: 16, border: '1px solid var(--border)' }}>
-                    <div style={{ fontSize: 48, marginBottom: 12 }}>🔍</div>
-                    <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: 18, fontWeight: 700, marginBottom: 8 }}>No dentists listed yet in {area.name}</h3>
-                    <p style={{ color: 'var(--muted)', marginBottom: 20 }}>Be the first dental clinic to list in {area.name}</p>
-                    <Link href="/for-dentists/register" className="btn btn-primary">List Your Clinic Free</Link>
+              <div style={{ marginTop: 20 }}>
+                {dentistList.length === 0 ? (
+                  <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 16, padding: '40px 24px', textAlign: 'center' }}>
+                    <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: 19, fontWeight: 800, color: NAVY, marginBottom: 8 }}>
+                      We&apos;re adding dentists in {area.name} soon
+                    </h2>
+                    <p style={{ color: 'var(--muted)', fontSize: 14, marginBottom: 22 }}>
+                      {openNowFilter || verifiedFilter || emiFilter || genderFilter || ratingFilter
+                        ? 'No dentists match these filters right now. Try clearing some, or see nearby areas:'
+                        : 'Meanwhile, see dentists in nearby areas:'}
+                    </p>
+                    {nearbyAreas.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginBottom: 22 }}>
+                        {nearbyAreas.map(a => (
+                          <Link key={a.slug} href={`/area/${a.slug}`} style={{
+                            padding: '8px 16px', background: '#F0FDFA', color: TEAL,
+                            border: '1px solid #99F6E4', borderRadius: 20, fontSize: 13, fontWeight: 600,
+                          }}>📍 {a.name}</Link>
+                        ))}
+                      </div>
+                    )}
+                    <Link href="/dentists" className="btn btn-primary">Browse all {city.cityName} dentists</Link>
                   </div>
                 ) : (
-                  visibleDentists.map(d => <DentistCard key={d.id} dentist={d as any} view="list" />)
+                  <>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                      {visibleDentists.map((d, i) => (
+                        <DentistResultCard key={d.id} dentist={d} highlight={i === 0 ? firstHighlight : null} />
+                      ))}
+                    </div>
+                    <ShowMoreButton count={hiddenDentists.length} areaName={area.name}>
+                      {hiddenDentists.map(d => <DentistResultCard key={d.id} dentist={d} />)}
+                    </ShowMoreButton>
+                  </>
                 )}
               </div>
-
-              {/* Show more */}
-              <ShowMoreButton hiddenDentists={hiddenDentists as any} areaName={area.name} />
 
               {/* Cost Guide */}
               <div style={{ marginTop: 40 }}>
@@ -339,14 +428,14 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
 
                 {/* Quick Facts Table */}
                 <div style={{ background: 'var(--bg)', borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border)' }}>
-                  <div style={{ padding: '12px 20px', background: 'var(--blue-light)', fontWeight: 700, fontSize: 14, fontFamily: 'var(--font-heading)', color: 'var(--blue-dark)' }}>
+                  <div style={{ padding: '12px 20px', background: '#F0FDFA', fontWeight: 700, fontSize: 14, fontFamily: 'var(--font-heading)', color: NAVY }}>
                     Quick Facts: {area.name}
                   </div>
                   {[
                     { label: 'Area', value: area.name },
                     // Zone is Mumbai-only context (Western/Central/Harbour…).
                     ...(isMumbai && area.zone ? [{ label: 'Zone', value: area.zone }] : []),
-                    { label: 'Dentists Listed', value: String(area.dentist_count || dentistList.length || '10+') },
+                    { label: 'Dentists Listed', value: String(area.dentist_count || totalInArea || '10+') },
                     { label: 'Avg Consultation Fee', value: '₹200 – ₹500' },
                     { label: 'Best For', value: 'Implants, Cosmetic Dentistry, Orthodontics' },
                   ].map((row, i) => (
@@ -363,32 +452,23 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
               </div>
             </div>
 
-            {/* RIGHT SIDEBAR */}
-            <aside style={{ width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 20, position: 'sticky', top: 88 }} className="filter-sidebar-desktop">
-
-              {/* Quick Search */}
-              <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '20px' }}>
-                <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, marginBottom: 14 }}>Find in {area.name}</h3>
-                <Link href={`/dentists?area=${slug}`} className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }}>
-                  Search All Dentists →
-                </Link>
-              </div>
-
+            {/* RIGHT SIDEBAR — lighter: Top Rated + Nearby (stacks below on mobile) */}
+            <aside className="area-sidebar">
               {/* Top Rated */}
-              {topSidebarDentists.length > 0 && (
-                <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '20px' }}>
-                  <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, marginBottom: 14 }}>
+              {topRated.length > 0 && (
+                <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 16, padding: '20px' }}>
+                  <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, color: NAVY, marginBottom: 14 }}>
                     Top Rated in {area.name}
                   </h3>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {topSidebarDentists.map(d => (
+                    {topRated.map(d => (
                       <Link key={d.id} href={`/dentist/${d.slug}`} style={{ display: 'flex', gap: 10, alignItems: 'center', textDecoration: 'none' }}>
-                        <div style={{ width: 40, height: 40, borderRadius: 8, background: 'var(--blue-light)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>
-                          {d.profile_photo ? <img src={d.profile_photo} alt={d.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 6 }} /> : '🦷'}
+                        <div style={{ width: 40, height: 40, borderRadius: 8, background: '#F0FDFA', flexShrink: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: TEAL, fontWeight: 800 }}>
+                          {d.profile_photo ? <img src={d.profile_photo} alt={d.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : '🦷'}
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontWeight: 600, fontSize: 13, fontFamily: 'var(--font-heading)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.name}</div>
-                          <div style={{ fontSize: 11, color: 'var(--muted)' }}>{d.consultation_fee ? `₹${d.consultation_fee}` : 'Call for price'}</div>
+                          <div style={{ fontWeight: 600, fontSize: 13, color: NAVY, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.name}</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)' }}>★ {(d.avg_rating || 0).toFixed(1)}{d.consultation_fee ? ` · ₹${d.consultation_fee}` : ''}</div>
                         </div>
                       </Link>
                     ))}
@@ -396,36 +476,17 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
                 </div>
               )}
 
-              {/* Treatments in Area */}
-              <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '20px' }}>
-                <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, marginBottom: 14 }}>
-                  Treatments in {area.name}
-                </h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {(treatments || []).slice(0, 8).map(t => (
-                    <Link key={t.slug} href={`/area/${slug}/${t.slug}`} style={{
-                      display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0',
-                      borderBottom: '1px solid var(--border)', fontSize: 13, color: 'var(--text)',
-                    }}>
-                      <span>{t.icon}</span>
-                      <span style={{ flex: 1 }}>{t.name} in {area.name}</span>
-                      <span style={{ color: 'var(--blue)', fontSize: 12 }}>→</span>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-
               {/* Nearby Areas */}
               {nearbyAreas.length > 0 && (
-                <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '20px' }}>
-                  <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, marginBottom: 14 }}>Nearby Areas</h3>
+                <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 16, padding: '20px' }}>
+                  <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, color: NAVY, marginBottom: 14 }}>Nearby Areas</h3>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                     {nearbyAreas.map(a => (
                       <Link key={a.slug} href={`/area/${a.slug}`} style={{
                         padding: '10px', background: 'var(--bg)', border: '1px solid var(--border)',
                         borderRadius: 8, textAlign: 'center',
                       }}>
-                        <div style={{ fontSize: 13, fontWeight: 600 }}>{a.name}</div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: NAVY }}>{a.name}</div>
                         <div style={{ fontSize: 11, color: 'var(--muted)' }}>{a.dentist_count || 0} dentists</div>
                       </Link>
                     ))}
@@ -433,9 +494,8 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
                 </div>
               )}
 
-              {/* CTA */}
-              <div style={{ background: 'var(--blue-dark)', borderRadius: 16, padding: '24px 20px', textAlign: 'center' }}>
-                <div style={{ fontSize: 28, marginBottom: 8 }}>🦷</div>
+              {/* For-dentists CTA */}
+              <div style={{ background: NAVY, borderRadius: 16, padding: '20px', textAlign: 'center' }}>
                 <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, color: '#fff', marginBottom: 8 }}>
                   Are you a dentist in {area.name}?
                 </h3>
@@ -443,8 +503,8 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
                   Get discovered by patients in {area.name} for free.
                 </p>
                 <Link href="/for-dentists/register" style={{
-                  display: 'block', padding: '10px 20px', background: '#fff', color: 'var(--blue)',
-                  borderRadius: 8, fontSize: 13, fontWeight: 700,
+                  display: 'block', padding: '11px 20px', background: TEAL, color: '#fff',
+                  borderRadius: 10, fontSize: 13, fontWeight: 700,
                 }}>List Your Clinic Free →</Link>
               </div>
             </aside>
@@ -468,7 +528,20 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
           </div>
         </div>
       </footer>
+
+      <style>{`
+        .area-layout { display: flex; gap: 28px; align-items: flex-start; }
+        .area-main { flex: 1; min-width: 0; }
+        .area-sidebar {
+          width: 280px; flex-shrink: 0;
+          display: flex; flex-direction: column; gap: 20px;
+          position: sticky; top: 88px;
+        }
+        @media (max-width: 900px) {
+          .area-layout { flex-direction: column; }
+          .area-sidebar { width: 100%; position: static; margin-top: 32px; }
+        }
+      `}</style>
     </>
   )
 }
-

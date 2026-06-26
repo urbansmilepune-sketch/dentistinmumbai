@@ -280,8 +280,11 @@ export default async function AreaTreatmentPage({ params, searchParams }: { para
                 )}
               </div>
 
-              {/* Show more */}
-              <ShowMoreButton hiddenDentists={hiddenDentists as any} areaName={area.name} />
+              {/* Show more — this route keeps the legacy DentistCard for now;
+                  its visual redesign lands with the treatment-page pass. */}
+              <ShowMoreButton count={hiddenDentists.length} areaName={area.name}>
+                {hiddenDentists.map((d: any) => <DentistCard key={d.id} dentist={d} view="list" />)}
+              </ShowMoreButton>
 
               {/* Cost Guide */}
               <div style={{ marginTop: 40 }}>
