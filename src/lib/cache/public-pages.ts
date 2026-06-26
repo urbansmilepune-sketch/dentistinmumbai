@@ -223,6 +223,68 @@ export const getDentistProfileData = unstable_cache(
   { revalidate: 60, tags: ['dentist-profile'] },
 )
 
+// Live per-city aggregates the denormalized columns don't reliably carry:
+//   - treatmentDentistCount: how many active dentists in this city offer each
+//     treatment (keyed by treatment id). Drives the homepage intent tiles.
+//   - treatmentMinFee: lowest non-null fee_from per treatment (keyed by
+//     treatment id). Drives the "from ₹X" label — absent until dentists fill
+//     fees in, so most stay undefined.
+//   - areaDentistCount: active dentists per area (keyed by stringified area
+//     id). Computed live because areas.dentist_count is currently unmaintained
+//     (0 across the board). Drives the homepage "Browse by area" counts.
+export type CityHomeStats = {
+  treatmentDentistCount: Record<string, number>
+  treatmentMinFee: Record<string, number>
+  areaDentistCount: Record<string, number>
+}
+
+export function getCityHomeStats(citySlug: string): Promise<CityHomeStats> {
+  return unstable_cache(
+    async (): Promise<CityHomeStats> => {
+      const supabase = createAnonClient()
+      const [{ data: links }, { data: dents }] = await Promise.all([
+        // One row per (dentist, treatment) link, filtered to active dentists in
+        // this city via the embedded !inner join. Aggregated in JS — the link
+        // set per city is small (hundreds of rows).
+        supabase
+          .from('dentist_treatments')
+          .select('treatment_id, fee_from, dentists!inner(city, is_active)')
+          .eq('dentists.city', citySlug)
+          .eq('dentists.is_active', true),
+        supabase
+          .from('dentists')
+          .select('area_id')
+          .eq('is_active', true)
+          .eq('city', citySlug),
+      ])
+
+      const treatmentDentistCount: Record<string, number> = {}
+      const treatmentMinFee: Record<string, number> = {}
+      for (const row of (links ?? []) as any[]) {
+        const tid = row.treatment_id as string | null
+        if (!tid) continue
+        treatmentDentistCount[tid] = (treatmentDentistCount[tid] ?? 0) + 1
+        const fee = typeof row.fee_from === 'number' ? row.fee_from : null
+        if (fee !== null && fee > 0) {
+          treatmentMinFee[tid] = treatmentMinFee[tid] === undefined ? fee : Math.min(treatmentMinFee[tid], fee)
+        }
+      }
+
+      const areaDentistCount: Record<string, number> = {}
+      for (const row of (dents ?? []) as any[]) {
+        const aid = row.area_id
+        if (aid === null || aid === undefined) continue
+        const key = String(aid)
+        areaDentistCount[key] = (areaDentistCount[key] ?? 0) + 1
+      }
+
+      return { treatmentDentistCount, treatmentMinFee, areaDentistCount }
+    },
+    ['city-home-stats', citySlug],
+    { revalidate: 300, tags: ['city-home', 'dentists', 'areas', 'treatments'] },
+  )()
+}
+
 export type CityAreaLink = {
   id: number | string
   name: string

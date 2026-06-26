@@ -1,15 +1,16 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { headers } from 'next/headers'
-import { getCityHomeData, PREMIUM_FLOOR } from '@/lib/cache/public-pages'
-import SearchBar from '@/components/SearchBar'
+import { getCityHomeData, getCityHomeStats } from '@/lib/cache/public-pages'
 import SiteHeader from '@/components/SiteHeader'
+import HomeNearMe from '@/components/HomeNearMe'
 import FaqAccordion from '@/components/FaqAccordion'
-import { CITY_CONFIGS, NATIONAL_ORIGIN, cityOrigin, getCityBySlug, cityBrandName, cityBrandTld, isNationalHost } from '@/config/cities'
+import { CITY_CONFIGS, NATIONAL_ORIGIN, cityOrigin, getCityBySlug, cityBrandName, isNationalHost } from '@/config/cities'
 import NationalHome from '@/components/national/NationalHome'
 import CitiesFooterLinks from '@/components/CitiesFooterLinks'
 import PopularSearches from '@/components/PopularSearches'
 import DentistMobileStickyBar from '@/components/DentistMobileStickyBar'
+import { NAVY, NAVY_SOFT, TEAL, TEAL_DARK } from '@/app/dentist/[slug]/profileTheme'
 
 // Per-host metadata. dentistinindia.in gets network-framed copy; every
 // city domain gets a "Dentist in <City>" search title tuned for the
@@ -58,8 +59,12 @@ export async function generateMetadata(): Promise<Metadata> {
 function faqItemsFor(cityName: string, domain: string) {
   return [
     {
-      q: `How do I find the best dentist near me in ${cityName}?`,
-      a: `Use our search to filter by your area and the treatment you need. Every dentist on our platform is verified, with real patient reviews and transparent fees.`,
+      q: `How do I find a good dentist in ${cityName}?`,
+      a: `Start with what you need — tap an intent like "Tooth pain" or "Braces", or browse by your area. Every dentist on our platform is verified with their MCI registration, with real patient reviews and transparent fees so you can compare before you book.`,
+    },
+    {
+      q: `How much does a dental checkup cost in ${cityName}?`,
+      a: `A routine dental consultation in ${cityName} typically costs ₹200–₹500, and many clinics offer a free first consultation for new patients. Treatment fees (cleaning, fillings, root canal) vary by clinic — check each dentist's profile for their listed fees.`,
     },
     {
       q: 'Are the dentists on this platform verified?',
@@ -72,10 +77,6 @@ function faqItemsFor(cityName: string, domain: string) {
     {
       q: `What is the average cost of dental implants in ${cityName}?`,
       a: `Dental implants in ${cityName} typically range from ₹25,000 to ₹80,000 per implant depending on the brand, clinic, and area. Use our cost guide on any area page to compare.`,
-    },
-    {
-      q: 'Can I book an emergency dental appointment?',
-      a: 'Yes. Filter by "Emergency Dental" in our search to find dentists who offer same-day or emergency slots. Many clinics on our platform have WhatsApp direct connect for urgent cases.',
     },
     {
       q: `How do I list my dental clinic on ${domain}?`,
@@ -91,55 +92,59 @@ const ZONE_COLORS: Record<string, { bg: string; text: string; border: string }> 
   'Navi Mumbai': { bg: '#FFF7ED', text: '#C2410C', border: '#FED7AA' },
 }
 
+// Patient-intent tiles for the hero. Labels are how patients describe their
+// need ("Tooth pain"), each mapped to a real treatment slug (confirmed to
+// exist in the treatments table). The fallback emoji is used only if the
+// treatment row has no icon; normally we render the treatment's own icon.
+const INTENT_TILES: { label: string; slug: string; emoji: string }[] = [
+  { label: 'Tooth pain', slug: 'root-canal', emoji: '😣' },
+  { label: 'Teeth cleaning', slug: 'teeth-cleaning', emoji: '✨' },
+  { label: 'Tooth extraction', slug: 'tooth-extraction', emoji: '🦷' },
+  { label: 'Dental crowns', slug: 'dental-crowns', emoji: '👑' },
+  { label: 'Teeth whitening', slug: 'teeth-whitening', emoji: '😁' },
+  { label: 'Fillings', slug: 'tooth-fillings', emoji: '🪥' },
+]
+
 export default async function HomePage() {
   const h = await headers()
   // National parent (dentistinindia.in) gets a separate homepage that
   // surfaces the network of city sites rather than a single-city listing.
   // proxy.ts sets x-is-national:1 for that host; everything else falls
-  // through to the existing city homepage below.
+  // through to the city homepage below.
   if (h.get('x-is-national') === '1') {
     return <NationalHome />
   }
 
   const city = getCityBySlug(h.get('x-city-slug'))
   const brandName = cityBrandName(city)
-  const brandTld = cityBrandTld(city)
   const FAQ_ITEMS = faqItemsFor(city.cityName, city.domain)
 
-  // Heavy Supabase reads live behind unstable_cache (5-min TTL) — the
-  // city-scoped row set is identical for every visitor, so we serve it
-  // from the Data Cache and only re-hit Supabase after the TTL elapses.
-  // See src/lib/cache/public-pages.ts.
-  //
-  // Early-stage UX: until we cross PREMIUM_FLOOR active gold/featured
-  // listings, the homepage shows every active dentist so new approvals
-  // surface immediately (rather than waiting on an admin to flip
-  // Verified + raise tier). Once we cross the floor the section
-  // auto-switches back to the curated featured/gold/silver+verified view.
-  const { areas, treatments, premiumCount, dentistCount, allActiveDentists, curatedDentists } =
-    await getCityHomeData(city.citySlug)
-
-  const showAllDentists = premiumCount < PREMIUM_FLOOR
-  const featuredDentists = showAllDentists ? allActiveDentists : curatedDentists
-
-  const areaList = areas
-  const treatmentList = treatments
-  const dentists = featuredDentists
-  const totalDentists = dentistCount
+  // Heavy Supabase reads live behind unstable_cache (5-min TTL). getCityHomeData
+  // carries the area/treatment menus + the honest dentist count; getCityHomeStats
+  // carries the live per-treatment and per-area dentist counts the denormalized
+  // columns don't reliably hold. See src/lib/cache/public-pages.ts.
+  const [{ areas, treatments, dentistCount }, stats] = await Promise.all([
+    getCityHomeData(city.citySlug),
+    getCityHomeStats(city.citySlug),
+  ])
 
   const isMumbai = city.citySlug === 'mumbai'
-  // Mumbai-only grouping by suburban-rail line. Every other city is rendered
-  // as a single flat grid below; their `zone` column is either NULL or
-  // city-specific and doesn't carry the Western/Central/Harbour semantics.
-  const westernAreas = isMumbai ? areaList.filter(a => a.zone === 'Western').slice(0, 5) : []
-  const centralAreas = isMumbai ? areaList.filter(a => a.zone === 'Central').slice(0, 5) : []
-  const southAreas   = isMumbai ? areaList.filter(a => a.zone === 'South').slice(0, 3)   : []
-  const naviAreas    = isMumbai ? areaList.filter(a => a.zone === 'Navi Mumbai').slice(0, 3) : []
-  const flatAreas    = isMumbai ? [] : areaList.slice(0, 16)
-  const topTreatments = treatmentList.slice(0, 12)
+  const areaCount = (id: number | string) => stats.areaDentistCount[String(id)] ?? 0
+  const treatmentById = new Map(treatments.map(t => [t.slug, t]))
 
-  // MedicalOrganization JSON-LD for the city directory. Google uses this
-  // for local-business rich results and the "About this result" panel.
+  // Order areas by their LIVE dentist count so populated areas surface first
+  // (areas.dentist_count is unmaintained, so the cached order can't be trusted).
+  const areasByCount = [...areas].sort((a, b) => areaCount(b.id) - areaCount(a.id))
+
+  // Mumbai groups areas by suburban-rail line; every other city renders a flat
+  // grid (their `zone` column doesn't carry the Western/Central/Harbour split).
+  const westernAreas = isMumbai ? areasByCount.filter(a => a.zone === 'Western').slice(0, 6) : []
+  const centralAreas = isMumbai ? areasByCount.filter(a => a.zone === 'Central').slice(0, 6) : []
+  const southAreas   = isMumbai ? areasByCount.filter(a => a.zone === 'South').slice(0, 4)   : []
+  const naviAreas    = isMumbai ? areasByCount.filter(a => a.zone === 'Navi Mumbai').slice(0, 4) : []
+  const flatAreas    = isMumbai ? [] : areasByCount.slice(0, 16)
+
+  // MedicalOrganization JSON-LD for the city directory.
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'MedicalOrganization',
@@ -150,8 +155,8 @@ export default async function HomePage() {
     medicalSpecialty: 'Dentistry',
   }
 
-  // WebSite + SearchAction wires up Google's sitelinks search box so the
-  // SERP shows an in-result search field that submits to /search?q=…
+  // WebSite + SearchAction wires up Google's sitelinks search box, submitting
+  // to /search?q=… (the search page built alongside SiteHeader).
   const websiteJsonLd = {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
@@ -165,260 +170,74 @@ export default async function HomePage() {
     },
   }
 
+  // FAQPage JSON-LD — same treatment the area pages get, for FAQ rich results.
+  const faqJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: FAQ_ITEMS.map(f => ({
+      '@type': 'Question',
+      name: f.q,
+      acceptedAnswer: { '@type': 'Answer', text: f.a },
+    })),
+  }
+
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }} />
-      {/* NAV — shared across all public pages */}
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }} />
+
+      {/* NAV — shared across all public pages (carries the search bar) */}
       <SiteHeader city={city} />
 
       <main style={{ overflowX: 'hidden' }}>
-        {/* HERO */}
-        <section className="home-hero" style={{
-          background: 'linear-gradient(135deg, #003F7A 0%, #0057A8 50%, #1A6FC4 100%)',
-          padding: '80px 20px 100px',
-          position: 'relative',
-          overflow: 'hidden',
-        }}>
-          {/* Decorative circles */}
-          <div aria-hidden="true" style={{
-            position: 'absolute', top: -80, right: -80, width: 400, height: 400,
-            background: 'rgba(255,255,255,0.04)', borderRadius: '50%',
-          }} />
-          <div aria-hidden="true" style={{
-            position: 'absolute', bottom: -60, left: '10%', width: 250, height: 250,
-            background: 'rgba(255,255,255,0.03)', borderRadius: '50%',
-          }} />
-
-          <div className="container" style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-            <div className="badge badge-blue" style={{ background: 'rgba(255,255,255,0.15)', color: '#fff', border: '1px solid rgba(255,255,255,0.25)', marginBottom: 20 }}>
-              🏆 {city.cityName}&apos;s Most Trusted Dental Directory
-            </div>
-            <h1 style={{
-              fontFamily: 'var(--font-heading)',
-              fontSize: 'clamp(2rem, 5vw, 3.25rem)',
-              fontWeight: 800,
-              color: '#fff',
-              maxWidth: 760,
-              marginBottom: 20,
-              lineHeight: 1.15,
-            }}>
-              Find the Best Dentist <span style={{ color: '#7DD3FC' }}>Near You</span>
+        {/* HERO — navy intent router */}
+        <section style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${NAVY_SOFT} 100%)`, padding: '56px 20px 64px' }}>
+          <div className="container" style={{ maxWidth: 820, textAlign: 'center' }}>
+            <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(1.9rem, 5vw, 3rem)', color: '#fff', lineHeight: 1.15, marginBottom: 14 }}>
+              Find the right dentist in {city.cityName}
             </h1>
-            <p className="home-hero-sub" style={{ color: 'rgba(255,255,255,0.8)', fontSize: 18, maxWidth: 520, marginBottom: 40, lineHeight: 1.7 }}>
-              Verified dentists, real reviews, instant booking.
+            <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 'clamp(0.95rem, 2.2vw, 1.1rem)', lineHeight: 1.6, maxWidth: 560, margin: '0 auto 32px' }}>
+              {dentistCount} verified dentist{dentistCount === 1 ? '' : 's'} across {city.cityName}. Real reviews, transparent fees, book in 2 minutes.
             </p>
 
-            <SearchBar areas={areaList.map(a => ({ name: a.name, slug: a.slug }))} treatments={treatmentList.map(t => ({ name: t.name, slug: t.slug }))} cityName={city.cityName} />
-
-            {/* Patient-first primary CTA — surfaces /dentists directly so a
-                visitor who doesn't want to narrow by area/treatment still
-                has one obvious next step. White-on-blue contrasts the
-                hero gradient without competing with the search bar. */}
-            <Link href="/dentists" style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              marginTop: 24,
-              padding: '14px 28px',
-              background: '#fff',
-              color: 'var(--blue-dark)',
-              borderRadius: 12,
-              fontFamily: 'var(--font-body)',
-              fontWeight: 700,
-              fontSize: 16,
-              textDecoration: 'none',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
-            }}>
-              Find Dentists →
-            </Link>
-
-            {/* Quick area chips — top 6 areas by dentist_count (areaList is already city-filtered). */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 28, justifyContent: 'center' }}>
-              {areaList.slice(0, 6).map(a => (
-                <Link key={a.slug} href={`/area/${a.slug}`} style={{
-                  padding: '7px 16px',
-                  background: 'rgba(255,255,255,0.12)',
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  borderRadius: 20,
-                  color: '#fff',
-                  fontSize: 13,
-                  fontWeight: 500,
-                  transition: 'background 0.2s',
-                }}>
-                  {a.name}
-                </Link>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* DENTIST STRIP — second-audience CTA right under the hero. The
-            patient-first hero owns the top of the page, so dentists need
-            an obvious "this is for you" moment before they scroll past
-            the featured grid. Sits on --blue-dark for a hard contrast
-            with the white stats bar below. */}
-        <section className="home-dentist-strip" style={{
-          background: 'var(--blue-dark)',
-          padding: '40px 20px',
-          color: '#fff',
-        }}>
-          <div className="container home-dentist-strip-inner" style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 24,
-            flexWrap: 'wrap',
-          }}>
-            <div style={{ maxWidth: 560 }}>
-              <h2 style={{
-                fontFamily: 'var(--font-heading)',
-                fontSize: 'clamp(1.3rem, 2.8vw, 1.8rem)',
-                fontWeight: 800,
-                color: '#fff',
-                marginBottom: 6,
-              }}>
-                Are You a Dentist?
-              </h2>
-              <p style={{ fontSize: 15, color: 'rgba(255,255,255,0.8)', lineHeight: 1.6 }}>
-                List your clinic free and start receiving patients today. Takes 2 minutes.
-              </p>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
-              <Link href="/for-dentists/register" style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                padding: '13px 26px',
-                background: '#FF6135',
-                color: '#fff',
-                borderRadius: 12,
-                fontFamily: 'var(--font-body)',
-                fontWeight: 700,
-                fontSize: 15,
-                textDecoration: 'none',
-                whiteSpace: 'nowrap',
-              }}>
-                List Your Clinic Free →
-              </Link>
-              <Link href="/for-dentists/login" style={{
-                fontSize: 13,
-                color: 'rgba(255,255,255,0.75)',
-                fontWeight: 500,
-                textDecoration: 'underline',
-                textUnderlineOffset: 3,
-              }}>
-                Already registered? Login →
-              </Link>
-            </div>
-          </div>
-        </section>
-
-        {/* STATS BAR */}
-        <section className="home-stats" style={{ background: '#fff', borderBottom: '1px solid var(--border)', padding: '28px 20px' }}>
-          <div className="container">
-            <div className="home-stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 24, textAlign: 'center' }}>
-              {[
-                { value: `${totalDentists || '200'}+`, label: 'Verified Dentists' },
-                { value: `${areaList.length || 24}+`, label: `${city.cityName} Areas` },
-                { value: '15+', label: 'Treatments' },
-                { value: '4.8★', label: 'Average Rating' },
-              ].map(stat => (
-                <div key={stat.label}>
-                  <div className="home-stat-value" style={{ fontFamily: 'var(--font-heading)', fontSize: 28, fontWeight: 800, color: 'var(--blue)' }}>{stat.value}</div>
-                  <div style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 500, marginTop: 2 }}>{stat.label}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* FEATURED DENTISTS */}
-        {dentists.length > 0 && (
-          <section className="home-section" style={{ padding: '72px 20px', background: 'var(--bg)' }}>
-            <div className="container">
-              <div className="home-section-head" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 40, gap: 12, flexWrap: 'wrap' }}>
-                <div>
-                  <p style={{ color: 'var(--blue)', fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>{showAllDentists ? 'Browse' : 'Top Rated'}</p>
-                  <h2 style={{ fontSize: 'clamp(1.5rem, 3vw, 2rem)', fontWeight: 800 }}>{showAllDentists ? `Dentists on ${city.domain}` : `Featured Dentists in ${city.cityName}`}</h2>
-                </div>
-                <Link href="/dentists" style={{ color: 'var(--blue)', fontWeight: 600, fontSize: 14 }}>View all →</Link>
-              </div>
-              <div className="home-featured-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 20 }}>
-                {dentists.map(d => (
-                  <Link key={d.id} href={`/dentist/${d.slug}`} style={{ textDecoration: 'none' }}>
-                    <article className="card-hover" style={{
-                      background: '#fff',
-                      border: '1px solid var(--border)',
-                      borderRadius: 16,
-                      overflow: 'hidden',
-                      cursor: 'pointer',
-                    }}>
-                      <div style={{ padding: '20px 20px 16px', display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-                        <div style={{
-                          width: 64, height: 64, borderRadius: 12,
-                          background: 'var(--blue-light)',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontSize: 24, flexShrink: 0,
-                          border: '2px solid var(--border)',
-                        }}>
-                          {d.profile_photo ? (
-                            <img src={d.profile_photo} alt={d.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 10 }} />
-                          ) : '🦷'}
-                        </div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
-                            <h3 style={{ fontSize: 16, fontWeight: 700, fontFamily: 'var(--font-heading)' }}>{d.name}</h3>
-                            {d.is_verified && <span className="verified-icon" title="Verified">✓</span>}
-                          </div>
-                          <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 8 }}>
-                            {d.clinic_name} · {(d as any).areas?.name || city.cityName}
-                          </p>
-                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                            {/* Tier badges hidden during launch phase — see /lib/tier.ts. */}
-                            {d.experience_years > 0 && (
-                              <span className="badge badge-blue">{d.experience_years} yrs exp</span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      <div style={{ padding: '12px 20px 16px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                          <span style={{ fontSize: 13, color: 'var(--muted)' }}>Consultation from</span>
-                          <span style={{ marginLeft: 6, fontWeight: 700, color: 'var(--text)', fontSize: 16 }}>
-                            {d.consultation_fee ? `₹${d.consultation_fee}` : 'Call for price'}
-                          </span>
-                        </div>
-                        <span style={{ color: 'var(--blue)', fontSize: 13, fontWeight: 600 }}>View Profile →</span>
-                      </div>
-                    </article>
+            {/* INTENT TILES — the core of the hero. Real <Link>s for SEO. */}
+            <div className="intent-grid">
+              {INTENT_TILES.map(tile => {
+                const t = treatmentById.get(tile.slug)
+                const count = t ? (stats.treatmentDentistCount[String(t.id)] ?? 0) : 0
+                const icon = t?.icon || tile.emoji
+                return (
+                  <Link key={tile.slug} href={`/treatment/${tile.slug}`} className="intent-tile">
+                    <span className="intent-icon" aria-hidden="true">{icon}</span>
+                    <span className="intent-label">{tile.label}</span>
+                    <span className="intent-count">{count > 0 ? `${count} dentist${count === 1 ? '' : 's'}` : 'Browse'}</span>
                   </Link>
-                ))}
-              </div>
+                )
+              })}
             </div>
-          </section>
-        )}
 
-        {/* AREAS GRID */}
-        <section className="home-section" style={{ padding: '72px 20px', background: '#fff' }}>
+            <HomeNearMe />
+          </div>
+        </section>
+
+        {/* BROWSE BY AREA */}
+        <section style={{ background: '#fff', padding: '56px 20px' }}>
           <div className="container">
-            <div style={{ textAlign: 'center', marginBottom: 48 }}>
-              <p style={{ color: 'var(--blue)', fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Browse by Location</p>
-              <h2 style={{ fontSize: 'clamp(1.5rem, 3vw, 2rem)', fontWeight: 800, marginBottom: 12 }}>Find Dentists in Your Area</h2>
-              <p style={{ color: 'var(--muted)', fontSize: 16, maxWidth: 480, margin: '0 auto' }}>
-                Covering all major {city.cityName} areas.
-              </p>
+            <div style={{ marginBottom: 28 }}>
+              <p style={{ color: TEAL_DARK, fontWeight: 700, fontSize: 12.5, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Browse by location</p>
+              <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: 'clamp(1.4rem, 3vw, 1.9rem)', fontWeight: 800, color: NAVY }}>Browse dentists by area in {city.cityName}</h2>
             </div>
 
             {isMumbai ? (
-              /* Zone groups — Mumbai only, keyed off the suburban-rail line. */
               [
                 { zone: 'Western', areas: westernAreas },
                 { zone: 'Central', areas: centralAreas },
                 { zone: 'South', areas: southAreas },
                 { zone: 'Navi Mumbai', areas: naviAreas },
               ].map(({ zone, areas: zoneAreas }) => zoneAreas.length > 0 && (
-                <div key={zone} style={{ marginBottom: 36 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                <div key={zone} style={{ marginBottom: 28 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
                     <span style={{
                       padding: '3px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600,
                       background: ZONE_COLORS[zone]?.bg, color: ZONE_COLORS[zone]?.text,
@@ -426,172 +245,97 @@ export default async function HomePage() {
                     }}>{zone} Line</span>
                     <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
                   </div>
-                  <div className="home-area-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
-                    {zoneAreas.map(area => (
-                      <Link key={area.id} href={`/area/${area.slug}`}>
-                        <div className="area-card" style={{
-                          padding: '16px 20px',
-                          background: 'var(--bg)',
-                          border: '1px solid var(--border)',
-                          borderRadius: 12,
-                          cursor: 'pointer',
-                          transition: 'border-color 0.2s, background 0.2s',
-                        }}>
-                          <div style={{ fontWeight: 600, fontSize: 15, fontFamily: 'var(--font-heading)', marginBottom: 4 }}>{area.name}</div>
-                          <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                            {area.dentist_count > 0 ? `${area.dentist_count} dentists` : 'View dentists'}
-                          </div>
-                        </div>
-                      </Link>
-                    ))}
+                  <div className="home-area-grid">
+                    {zoneAreas.map(a => <AreaCard key={a.id} slug={a.slug} name={a.name} count={areaCount(a.id)} />)}
                   </div>
                 </div>
               ))
             ) : (
-              /* Flat grid — every other city. */
-              <div className="home-area-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12, marginBottom: 36 }}>
-                {flatAreas.map(area => (
-                  <Link key={area.id} href={`/area/${area.slug}`}>
-                    <div className="area-card" style={{
-                      padding: '16px 20px',
-                      background: 'var(--bg)',
-                      border: '1px solid var(--border)',
-                      borderRadius: 12,
-                      cursor: 'pointer',
-                      transition: 'border-color 0.2s, background 0.2s',
-                    }}>
-                      <div style={{ fontWeight: 600, fontSize: 15, fontFamily: 'var(--font-heading)', marginBottom: 4 }}>{area.name}</div>
-                      <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                        {area.dentist_count > 0 ? `${area.dentist_count} dentists` : 'View dentists'}
-                      </div>
-                    </div>
-                  </Link>
-                ))}
+              <div className="home-area-grid">
+                {flatAreas.map(a => <AreaCard key={a.id} slug={a.slug} name={a.name} count={areaCount(a.id)} />)}
               </div>
             )}
 
-            <div style={{ textAlign: 'center', marginTop: 12 }}>
-              <Link href="/dentists" className="btn btn-outline">View All Areas →</Link>
+            <div style={{ marginTop: 20 }}>
+              <Link href="/dentists" style={{ color: TEAL_DARK, fontWeight: 700, fontSize: 14 }}>View all dentists →</Link>
             </div>
           </div>
         </section>
 
-        {/* TREATMENTS GRID */}
-        <section className="home-section" style={{ padding: '72px 20px', background: 'var(--bg)' }}>
+        {/* BROWSE BY TREATMENT */}
+        <section style={{ background: 'var(--bg)', padding: '56px 20px' }}>
           <div className="container">
-            <div style={{ textAlign: 'center', marginBottom: 48 }}>
-              <p style={{ color: 'var(--blue)', fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Browse by Treatment</p>
-              <h2 style={{ fontSize: 'clamp(1.5rem, 3vw, 2rem)', fontWeight: 800, marginBottom: 12 }}>Every Dental Treatment Covered</h2>
-              <p style={{ color: 'var(--muted)', fontSize: 16, maxWidth: 460, margin: '0 auto' }}>
-                From routine cleanings to full smile makeovers — find specialists for any treatment.
-              </p>
+            <div style={{ marginBottom: 28 }}>
+              <p style={{ color: TEAL_DARK, fontWeight: 700, fontSize: 12.5, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Browse by treatment</p>
+              <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: 'clamp(1.4rem, 3vw, 1.9rem)', fontWeight: 800, color: NAVY }}>Browse by treatment</h2>
             </div>
-            <div className="home-treatment-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 16 }}>
-              {topTreatments.map(t => (
-                <Link key={t.id} href={`/treatment/${t.slug}`}>
-                  <div className="treatment-card" style={{
-                    padding: '24px 20px',
-                    background: '#fff',
-                    border: '1px solid var(--border)',
-                    borderRadius: 12,
-                    textAlign: 'center',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s',
-                  }}>
-                    <div style={{ fontSize: 32, marginBottom: 12 }}>{t.icon}</div>
-                    <div style={{ fontWeight: 600, fontSize: 14, fontFamily: 'var(--font-heading)', color: 'var(--text)', lineHeight: 1.3 }}>{t.name}</div>
-                  </div>
-                </Link>
-              ))}
+            <div className="home-treatment-grid">
+              {treatments.map(t => {
+                const minFee = stats.treatmentMinFee[String(t.id)]
+                return (
+                  <Link key={t.id} href={`/treatment/${t.slug}`} className="treatment-tile">
+                    <span style={{ fontSize: 28 }} aria-hidden="true">{t.icon || '🦷'}</span>
+                    <span style={{ fontWeight: 700, fontSize: 14, fontFamily: 'var(--font-heading)', color: NAVY, lineHeight: 1.3 }}>{t.name}</span>
+                    {typeof minFee === 'number' && minFee > 0 && (
+                      <span style={{ fontSize: 12.5, color: TEAL_DARK, fontWeight: 600 }}>from ₹{minFee.toLocaleString('en-IN')}</span>
+                    )}
+                  </Link>
+                )
+              })}
             </div>
           </div>
         </section>
 
-        {/* WHY US — DARK SECTION */}
-        <section className="home-section" style={{ padding: '80px 20px', background: 'var(--text)' }}>
+        {/* WHY DENTISTIN — brief + honest */}
+        <section style={{ background: '#fff', padding: '56px 20px' }}>
           <div className="container">
-            <div style={{ textAlign: 'center', marginBottom: 56 }}>
-              <p style={{ color: '#7DD3FC', fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>Why {city.domain}</p>
-              <h2 style={{ fontSize: 'clamp(1.5rem, 3vw, 2.25rem)', fontWeight: 800, color: '#fff', maxWidth: 560, margin: '0 auto' }}>
-                The smarter way to find your dentist in {city.cityName}
-              </h2>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 32 }}>
+            <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: 'clamp(1.4rem, 3vw, 1.9rem)', fontWeight: 800, color: NAVY, marginBottom: 28 }}>
+              Why {city.domain}
+            </h2>
+            <div className="home-why-grid">
               {[
-                { icon: '✅', title: 'Verified Dentists Only', desc: 'Every listing is manually verified with MCI registration and clinic visit before going live.' },
-                { icon: '💰', title: 'Transparent Fees', desc: 'See consultation fees and treatment price ranges upfront — no surprises, no hidden charges.' },
-                { icon: '⭐', title: 'Real Patient Reviews', desc: 'Only verified patient reviews. Our moderation team screens every submission.' },
-                { icon: '📅', title: 'Instant Booking', desc: 'Book appointments directly through the platform or connect via WhatsApp in one tap.' },
+                { icon: '🛡️', title: 'Verified dentists', desc: 'Every clinic is checked against its MCI registration before going live.' },
+                { icon: '⭐', title: 'Real reviews', desc: 'Only genuine patient reviews — screened, never bought.' },
+                { icon: '💰', title: 'Transparent fees', desc: 'See consultation fees upfront. No surprises at the clinic.' },
+                { icon: '🆓', title: 'Free to use', desc: 'No charge to search, enquire, or book. You only pay the dentist.' },
               ].map(item => (
-                <div key={item.title} style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 36, marginBottom: 16 }}>{item.icon}</div>
-                  <h3 style={{ fontSize: 17, fontWeight: 700, color: '#fff', fontFamily: 'var(--font-heading)', marginBottom: 10 }}>{item.title}</h3>
-                  <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.6)', lineHeight: 1.7 }}>{item.desc}</p>
+                <div key={item.title} style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 14, padding: '20px' }}>
+                  <div style={{ fontSize: 26, marginBottom: 10 }} aria-hidden="true">{item.icon}</div>
+                  <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15.5, color: NAVY, marginBottom: 6 }}>{item.title}</h3>
+                  <p style={{ fontSize: 13.5, color: 'var(--text-secondary)', lineHeight: 1.6 }}>{item.desc}</p>
                 </div>
               ))}
-            </div>
-          </div>
-        </section>
-
-        {/* FOR DENTISTS TEASER */}
-        <section className="home-section" style={{ padding: '72px 20px', background: '#fff' }}>
-          <div className="container">
-            <div className="home-cta-card" style={{
-              background: 'linear-gradient(135deg, var(--blue-light) 0%, #EFF6FF 100%)',
-              border: '1px solid #BFDBFE',
-              borderRadius: 24,
-              padding: '56px 48px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 40,
-              flexWrap: 'wrap',
-            }}>
-              <div style={{ maxWidth: 520 }}>
-                <div className="badge badge-blue" style={{ marginBottom: 16 }}>
-                  🏆 Founding Member Offer — Limited Spots
-                </div>
-                <h2 style={{ fontSize: 'clamp(1.4rem, 3vw, 2rem)', fontWeight: 800, marginBottom: 16 }}>
-                  List Your Dental Clinic — <span style={{ color: 'var(--blue)' }}>Free Forever</span>
-                </h2>
-                <p style={{ fontSize: 16, color: 'var(--text-secondary)', lineHeight: 1.7, marginBottom: 24 }}>
-                  The first 1000 dentists to join get a free listing permanently. No credit card, no monthly fees. Just more patients finding you on Google.
-                </p>
-                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <Link href="/for-dentists/register" className="btn btn-primary">Claim Your Free Listing</Link>
-                  <Link href="/for-dentists" style={{ color: 'var(--blue)', fontWeight: 600, fontSize: 14 }}>Learn more →</Link>
-                </div>
-              </div>
-              <div style={{ textAlign: 'center', flexShrink: 0 }}>
-                <div style={{
-                  width: 140, height: 140,
-                  borderRadius: '50%',
-                  background: '#fff',
-                  border: '4px solid var(--blue)',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                  boxShadow: 'var(--shadow-md)',
-                }}>
-                  <div style={{ fontFamily: 'var(--font-heading)', fontSize: 36, fontWeight: 800, color: 'var(--blue)', lineHeight: 1 }}>47</div>
-                  <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>of 1000 claimed</div>
-                </div>
-                <div style={{ marginTop: 16, width: 140, height: 8, background: 'var(--border)', borderRadius: 4, overflow: 'hidden' }}>
-                  <div style={{ width: '5%', height: '100%', background: 'var(--blue)', borderRadius: 4 }} />
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>953 spots remaining</div>
-              </div>
             </div>
           </div>
         </section>
 
         {/* FAQ */}
-        <section className="home-section" style={{ padding: '72px 20px', background: 'var(--bg)' }}>
+        <section style={{ background: 'var(--bg)', padding: '56px 20px' }}>
+          <div className="container" style={{ maxWidth: 720 }}>
+            <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: 'clamp(1.4rem, 3vw, 1.9rem)', fontWeight: 800, color: NAVY, marginBottom: 24, textAlign: 'center' }}>
+              Frequently Asked Questions
+            </h2>
+            <FaqAccordion items={FAQ_ITEMS} />
+          </div>
+        </section>
+
+        {/* FOR DENTISTS — small, bottom */}
+        <section style={{ background: '#fff', padding: '24px 20px 56px' }}>
           <div className="container">
-            <div style={{ maxWidth: 720, margin: '0 auto' }}>
-              <div style={{ textAlign: 'center', marginBottom: 48 }}>
-                <p style={{ color: 'var(--blue)', fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Common Questions</p>
-                <h2 style={{ fontSize: 'clamp(1.5rem, 3vw, 2rem)', fontWeight: 800 }}>Frequently Asked Questions</h2>
+            <div className="home-dentist-cta" style={{ background: NAVY, borderRadius: 20, padding: '32px 28px' }}>
+              <div>
+                <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(1.2rem, 2.6vw, 1.6rem)', color: '#fff', marginBottom: 6 }}>
+                  Are you a dentist in {city.cityName}?
+                </h2>
+                <p style={{ fontSize: 14.5, color: 'rgba(255,255,255,0.75)', lineHeight: 1.6 }}>
+                  List your clinic free and start receiving patients. Takes 2 minutes.
+                </p>
               </div>
-              <FaqAccordion items={FAQ_ITEMS} />
+              <Link href="/for-dentists/register" style={{
+                display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap',
+                padding: '13px 26px', background: TEAL, color: '#fff', borderRadius: 12,
+                fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: 15, textDecoration: 'none',
+              }}>List your clinic free →</Link>
             </div>
           </div>
         </section>
@@ -624,7 +368,7 @@ export default async function HomePage() {
             </div>
             <div>
               <h4 style={{ color: '#fff', fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 14, marginBottom: 16, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Top Areas</h4>
-              {areaList.slice(0, 6).map(area => (
+              {areasByCount.slice(0, 6).map(area => (
                 <div key={area.id} style={{ marginBottom: 10 }}>
                   <Link href={`/area/${area.slug}`} style={{ fontSize: 14, color: 'rgba(255,255,255,0.6)' }}>Dentist in {area.name}</Link>
                 </div>
@@ -656,46 +400,56 @@ export default async function HomePage() {
       </footer>
 
       <style>{`
-        @media (max-width: 768px) {
-          .home-hero { padding: 40px 16px 56px !important; }
-          .home-hero-sub { font-size: 15px !important; margin-bottom: 24px !important; }
-          .home-dentist-strip { padding: 28px 16px !important; }
-          .home-dentist-strip-inner { flex-direction: column !important; align-items: flex-start !important; gap: 18px !important; }
-          .home-dentist-strip-inner > div:last-child { width: 100%; flex-direction: column !important; align-items: stretch !important; gap: 12px !important; }
-          .home-dentist-strip-inner a[href="/for-dentists/register"] { width: 100%; justify-content: center !important; }
-          /* The mobile sticky bar lives on top of the page bottom; give the
-             footer some breathing room so the © line isn't hidden under
-             the bar. ~64px bar + safe-area inset. */
-          footer { padding-bottom: 88px !important; }
-          .home-stats { padding: 20px 16px !important; }
-          .home-stats-grid { gap: 12px !important; grid-template-columns: repeat(2, 1fr) !important; }
-          .home-stat-value { font-size: 22px !important; }
-          .home-section { padding: 48px 16px !important; }
-          .home-section-head { flex-direction: column !important; align-items: flex-start !important; margin-bottom: 24px !important; }
-          .home-featured-grid { grid-template-columns: 1fr !important; gap: 14px !important; }
-          .home-area-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 10px !important; }
-          .home-area-grid .area-card { padding: 14px 12px !important; }
-          .home-treatment-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 12px !important; }
-          .home-cta-card { padding: 28px 20px !important; flex-direction: column !important; align-items: stretch !important; gap: 24px !important; text-align: left !important; }
-          .home-cta-card .btn { width: 100% !important; }
-          .home-footer-grid { gap: 28px !important; }
+        .intent-grid {
+          display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+          max-width: 640px; margin: 0 auto;
         }
-        @media (max-width: 390px) {
-          /* iPhone SE / 360-390 viewports — tighter padding, single-column
-             stat tiles, full-width hero CTAs. */
-          .home-hero { padding: 32px 14px 44px !important; }
-          .home-hero h1 { font-size: 1.7rem !important; line-height: 1.18 !important; }
-          .home-hero-sub { font-size: 14px !important; margin-bottom: 20px !important; }
-          .home-stats-grid { grid-template-columns: repeat(2, 1fr) !important; }
-          .home-section { padding: 36px 14px !important; }
-          .home-section h2 { font-size: 1.35rem !important; }
-          .home-cta-card .btn { width: 100% !important; }
-          /* Hide quick area chips on the narrowest screens so the hero
-             stays compact — patients can still pick an area from the
-             search bar's first select. */
-          .home-hero a[href^="/area/"] { font-size: 12px !important; padding: 6px 12px !important; }
+        .intent-tile {
+          display: flex; flex-direction: column; align-items: center; gap: 6px;
+          padding: 18px 12px; min-height: 110px; justify-content: center;
+          background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
+          border-radius: 16px; text-decoration: none; transition: background .15s, border-color .15s, transform .15s;
+        }
+        .intent-tile:hover { background: rgba(255,255,255,0.14); border-color: ${TEAL}; transform: translateY(-2px); }
+        .intent-icon { font-size: 28px; line-height: 1; }
+        .intent-label { font-family: var(--font-heading); font-weight: 700; font-size: 14.5px; color: #fff; text-align: center; }
+        .intent-count { font-size: 12px; color: ${TEAL}; font-weight: 600; }
+        .home-area-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+        .home-treatment-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; }
+        .treatment-tile {
+          display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center;
+          padding: 22px 16px; background: #fff; border: 1px solid var(--border); border-radius: 14px;
+          text-decoration: none; transition: border-color .15s, transform .15s, box-shadow .15s;
+        }
+        .treatment-tile:hover { border-color: ${TEAL}; transform: translateY(-2px); box-shadow: 0 6px 20px rgba(15,23,42,0.06); }
+        .home-why-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+        .home-dentist-cta { display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+        @media (max-width: 768px) {
+          .intent-grid { grid-template-columns: repeat(2, 1fr); }
+          .home-area-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 10px; }
+          .home-treatment-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+          .home-why-grid { grid-template-columns: repeat(2, 1fr); }
+          .home-footer-grid { gap: 28px !important; }
+          footer { padding-bottom: 88px !important; }
+        }
+        @media (max-width: 380px) {
+          .home-why-grid { grid-template-columns: 1fr; }
         }
       `}</style>
     </>
+  )
+}
+
+// Area link card — name + live dentist count (or a neutral hint at 0, since
+// areas.dentist_count is unmaintained and we never show a fake number).
+function AreaCard({ slug, name, count }: { slug: string; name: string; count: number }) {
+  return (
+    <Link href={`/area/${slug}`} className="area-card" style={{
+      display: 'block', padding: '16px 18px', background: 'var(--bg)',
+      border: '1px solid var(--border)', borderRadius: 12, textDecoration: 'none',
+    }}>
+      <div style={{ fontWeight: 700, fontSize: 15, fontFamily: 'var(--font-heading)', color: NAVY, marginBottom: 4 }}>{name}</div>
+      <div style={{ fontSize: 12, color: 'var(--muted)' }}>{count > 0 ? `${count} dentist${count === 1 ? '' : 's'}` : 'View dentists'}</div>
+    </Link>
   )
 }
