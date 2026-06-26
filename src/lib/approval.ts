@@ -14,7 +14,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import * as Sentry from '@sentry/nextjs'
 import { CITY_CONFIGS, DEFAULT_CITY, type CitySlug } from '@/config/cities'
 import { sendApprovalEmail } from '@/lib/email'
-import { UNIVERSAL_TREATMENT_SLUGS } from '@/config/universalTreatments'
+import { seedUniversalTreatments } from '@/lib/seedTreatments'
 
 export type Plan = 'monthly' | 'annual'
 
@@ -35,40 +35,6 @@ function slugify(input: string): string {
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')
     .slice(0, 60)
-}
-
-/** Best-effort: attach the universal treatments (cleaning, root canal, etc.)
- * to a freshly approved dentist so their profile and the city treatment pages
- * have content from day one. Idempotent — inserts only the universals the
- * dentist doesn't already have, so re-approval / re-runs never duplicate (this
- * holds with or without the optional unique index). Never throws: the dentist
- * row is already live, so a seeding hiccup just logs rather than failing the
- * approval. Specialist treatments (implants, braces…) stay manual on purpose. */
-async function seedUniversalTreatments(admin_db: SupabaseClient, dentistId: string, tag: string): Promise<void> {
-  try {
-    const { data: txRows, error: txErr } = await admin_db
-      .from('treatments')
-      .select('id')
-      .in('slug', [...UNIVERSAL_TREATMENT_SLUGS])
-    if (txErr || !txRows || txRows.length === 0) {
-      console.error(`${tag} universal-treatment lookup failed`, txErr)
-      return
-    }
-    const { data: existingLinks } = await admin_db
-      .from('dentist_treatments')
-      .select('treatment_id')
-      .eq('dentist_id', dentistId)
-    const have = new Set((existingLinks ?? []).map(r => r.treatment_id))
-    const toInsert = txRows
-      .filter(t => !have.has(t.id))
-      .map(t => ({ dentist_id: dentistId, treatment_id: t.id, fee_from: null, fee_to: null }))
-    if (toInsert.length === 0) return
-    const { error: insErr } = await admin_db.from('dentist_treatments').insert(toInsert)
-    if (insErr) console.error(`${tag} universal-treatment seed failed`, insErr)
-    else console.log(`${tag} seeded ${toInsert.length} universal treatment(s)`, { dentistId })
-  } catch (err) {
-    console.error(`${tag} universal-treatment seed threw`, err)
-  }
 }
 
 export type ApprovalSuccess = { ok: true; slug: string }

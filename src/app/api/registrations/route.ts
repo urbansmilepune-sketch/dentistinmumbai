@@ -24,6 +24,7 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { createClient as createCookieClient } from '@/lib/supabase/server'
 import * as Sentry from '@sentry/nextjs'
 import { CITY_CONFIGS, DEFAULT_CITY, type CitySlug } from '@/config/cities'
+import { seedUniversalTreatments } from '@/lib/seedTreatments'
 
 const ADMIN_WHATSAPP = '917719013232'
 
@@ -186,7 +187,7 @@ export async function POST(request: NextRequest) {
     // directory immediately; is_verified=false because credential review
     // (MCI / DCI) is still gated by the admin. Qualifications and MCI
     // number stay empty — the dentist fills them in on the profile editor.
-    const { error: dentErr } = await admin
+    const { data: dentRow, error: dentErr } = await admin
       .from('dentists')
       .insert({
         email,
@@ -208,16 +209,23 @@ export async function POST(request: NextRequest) {
         selected_plan: planValue,
         city: cityValue,
       })
-    if (dentErr) {
+      .select('id')
+      .single()
+    if (dentErr || !dentRow) {
       console.error('[registrations] dentist insert failed', dentErr)
-      Sentry.captureException(dentErr, {
+      Sentry.captureException(dentErr || new Error('dentist insert returned no row'), {
         tags: { area: 'registration-dentist-insert' },
         extra: { email, city: cityValue, slug },
       })
       // Roll back the auth user so a retry can succeed.
       admin.auth.admin.deleteUser(created.user.id).catch(() => {})
-      return NextResponse.json({ error: 'Could not create profile', detail: dentErr.message }, { status: 500 })
+      return NextResponse.json({ error: 'Could not create profile', detail: dentErr?.message }, { status: 500 })
     }
+
+    // Auto-seed the universal treatments so the profile and city treatment
+    // pages aren't empty on day one. Instant-on signup skips the admin
+    // approval path, so we seed here. Best-effort + idempotent; never throws.
+    await seedUniversalTreatments(admin, dentRow.id, '[registrations]')
 
     // dentist_registrations row — audit trail only. We pre-stamp it
     // approved + auto_approved so the admin panel surfaces every signup

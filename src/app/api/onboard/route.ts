@@ -12,6 +12,7 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { createClient as createCookieClient } from '@/lib/supabase/server'
 import * as Sentry from '@sentry/nextjs'
 import { CITY_CONFIGS, DEFAULT_CITY, type CitySlug } from '@/config/cities'
+import { seedUniversalTreatments } from '@/lib/seedTreatments'
 
 const ADMIN_WHATSAPP = '917719013232'
 
@@ -136,7 +137,7 @@ export async function POST(request: NextRequest) {
       slug = `${baseSlug}-${i}`
     }
 
-    const { error: dentErr } = await admin
+    const { data: dentRow, error: dentErr } = await admin
       .from('dentists')
       .insert({
         email,
@@ -157,14 +158,21 @@ export async function POST(request: NextRequest) {
         trial_started_at: new Date().toISOString(),
         city: cityValue,
       })
-    if (dentErr) {
+      .select('id')
+      .single()
+    if (dentErr || !dentRow) {
       console.error('[onboard] dentist insert failed', dentErr)
-      Sentry.captureException(dentErr, {
+      Sentry.captureException(dentErr || new Error('dentist insert returned no row'), {
         tags: { area: 'onboard-dentist-insert' },
         extra: { email, city: cityValue, slug },
       })
-      return NextResponse.json({ error: 'Could not create profile', detail: dentErr.message }, { status: 500 })
+      return NextResponse.json({ error: 'Could not create profile', detail: dentErr?.message }, { status: 500 })
     }
+
+    // Auto-seed the universal treatments so the profile and city treatment
+    // pages aren't empty on day one. Instant-on onboard skips the admin
+    // approval path, so we seed here. Best-effort + idempotent; never throws.
+    await seedUniversalTreatments(admin, dentRow.id, '[onboard]')
 
     // Audit row in dentist_registrations so the admin panel surfaces
     // every onboarded dentist. Pre-stamped approved + auto_approved
