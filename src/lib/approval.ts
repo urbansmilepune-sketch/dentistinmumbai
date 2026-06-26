@@ -14,6 +14,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import * as Sentry from '@sentry/nextjs'
 import { CITY_CONFIGS, DEFAULT_CITY, type CitySlug } from '@/config/cities'
 import { sendApprovalEmail } from '@/lib/email'
+import { UNIVERSAL_TREATMENT_SLUGS } from '@/config/universalTreatments'
 
 export type Plan = 'monthly' | 'annual'
 
@@ -34,6 +35,40 @@ function slugify(input: string): string {
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')
     .slice(0, 60)
+}
+
+/** Best-effort: attach the universal treatments (cleaning, root canal, etc.)
+ * to a freshly approved dentist so their profile and the city treatment pages
+ * have content from day one. Idempotent — inserts only the universals the
+ * dentist doesn't already have, so re-approval / re-runs never duplicate (this
+ * holds with or without the optional unique index). Never throws: the dentist
+ * row is already live, so a seeding hiccup just logs rather than failing the
+ * approval. Specialist treatments (implants, braces…) stay manual on purpose. */
+async function seedUniversalTreatments(admin_db: SupabaseClient, dentistId: string, tag: string): Promise<void> {
+  try {
+    const { data: txRows, error: txErr } = await admin_db
+      .from('treatments')
+      .select('id')
+      .in('slug', [...UNIVERSAL_TREATMENT_SLUGS])
+    if (txErr || !txRows || txRows.length === 0) {
+      console.error(`${tag} universal-treatment lookup failed`, txErr)
+      return
+    }
+    const { data: existingLinks } = await admin_db
+      .from('dentist_treatments')
+      .select('treatment_id')
+      .eq('dentist_id', dentistId)
+    const have = new Set((existingLinks ?? []).map(r => r.treatment_id))
+    const toInsert = txRows
+      .filter(t => !have.has(t.id))
+      .map(t => ({ dentist_id: dentistId, treatment_id: t.id, fee_from: null, fee_to: null }))
+    if (toInsert.length === 0) return
+    const { error: insErr } = await admin_db.from('dentist_treatments').insert(toInsert)
+    if (insErr) console.error(`${tag} universal-treatment seed failed`, insErr)
+    else console.log(`${tag} seeded ${toInsert.length} universal treatment(s)`, { dentistId })
+  } catch (err) {
+    console.error(`${tag} universal-treatment seed threw`, err)
+  }
 }
 
 export type ApprovalSuccess = { ok: true; slug: string }
@@ -149,6 +184,9 @@ export async function approveDentistRegistration(
     .maybeSingle()
 
   let slug: string
+  // Captured so we can seed universal treatments once the row is live (both
+  // the re-approval/update branch and the fresh-insert branch set this).
+  let dentistId: string | null = existing?.id ?? null
   if (existing) {
     slug = existing.slug
     // Re-approval: don't reset trial_started_at — that would hand a second
@@ -186,7 +224,7 @@ export async function approveDentistRegistration(
       slug = `${base}-${i}`
     }
 
-    const { error: insertErr } = await admin_db
+    const { data: insertedDentist, error: insertErr } = await admin_db
       .from('dentists')
       .insert({
         email: reg.email,
@@ -212,6 +250,8 @@ export async function approveDentistRegistration(
         selected_plan: plan,
         city,
       })
+      .select('id')
+      .single()
     if (insertErr) {
       console.error(`${tag} dentist insert failed`, {
         message: insertErr.message, code: insertErr.code, details: insertErr.details, hint: insertErr.hint,
@@ -222,6 +262,7 @@ export async function approveDentistRegistration(
         detail: insertErr.message, code: insertErr.code, hint: insertErr.hint,
       }
     }
+    dentistId = insertedDentist?.id ?? null
   }
 
   const { error: statusErr } = await admin_db
@@ -231,6 +272,14 @@ export async function approveDentistRegistration(
   if (statusErr) {
     // The dentist row is live; don't fail the whole call. Admin can re-run.
     console.error(`${tag} status update failed`, statusErr)
+  }
+
+  // Auto-seed the universal treatments so the dentist's profile and the city's
+  // treatment pages aren't empty on day one. Best-effort and idempotent — see
+  // seedUniversalTreatments. Awaited (not fire-and-forget) so it completes
+  // before the serverless function returns, but it never throws.
+  if (dentistId) {
+    await seedUniversalTreatments(admin_db, dentistId, tag)
   }
 
   // Mint a magic link so the dentist can hop straight into their dashboard
