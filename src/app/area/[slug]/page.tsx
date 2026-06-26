@@ -5,7 +5,7 @@ import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { getCityBySlug, cityBrandName, cityBrandTld } from '@/config/cities'
 import TreatmentNavTabs from './TreatmentNavTabs'
-import AreaFilters from './AreaFilters'
+import ResultFilters from '@/components/ResultFilters'
 import ShowMoreButton from './ShowMoreButton'
 import CostGuide from './CostGuide'
 import AreaFAQAccordion from './AreaFAQAccordion'
@@ -331,7 +331,7 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
             <div className="area-main">
 
               {/* Filter / sort pills */}
-              <AreaFilters areaSlug={slug} />
+              <ResultFilters basePath={`/area/${slug}`} />
 
               {/* Dentist list */}
               <div style={{ marginTop: 20 }}>
