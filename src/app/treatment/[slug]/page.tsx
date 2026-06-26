@@ -3,7 +3,8 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
-import { getCityBySlug, cityBrandName, cityBrandTld, cityOrigin } from '@/config/cities'
+import { getCityBySlug, cityOrigin } from '@/config/cities'
+import SiteHeader from '@/components/SiteHeader'
 import ResultFilters from '@/components/ResultFilters'
 import ShowMoreButton from '@/app/area/[slug]/ShowMoreButton'
 import AreaFAQAccordion from '@/app/area/[slug]/AreaFAQAccordion'
@@ -239,20 +240,8 @@ export default async function TreatmentPage({ params, searchParams }: Props) {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }} />
 
-      {/* NAV */}
-      <header style={{ background: '#fff', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 100 }}>
-        <nav className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 68 }}>
-          <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 36, height: 36, background: NAVY, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontFamily: 'var(--font-heading)', fontSize: 18 }}>D</div>
-            <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17 }}>{cityBrandName(city)}<span style={{ color: TEAL }}>{cityBrandTld(city)}</span></span>
-          </Link>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Link href="/dentists" style={{ padding: '8px 16px', fontWeight: 500, fontSize: 14, color: 'var(--text-secondary)' }}>Find Dentists</Link>
-            <Link href="/for-dentists" style={{ padding: '8px 16px', fontWeight: 500, fontSize: 14, color: 'var(--text-secondary)' }}>For Dentists</Link>
-            <Link href="/for-dentists/register" className="btn btn-primary btn-sm">List Your Clinic</Link>
-          </div>
-        </nav>
-      </header>
+      {/* NAV — shared across all public pages */}
+      <SiteHeader city={city} />
 
       {/* HERO — navy, patient-first */}
       <section style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${NAVY_SOFT} 100%)`, padding: '28px 20px 36px' }}>

@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { headers } from 'next/headers'
 import { getCityHomeData, PREMIUM_FLOOR } from '@/lib/cache/public-pages'
 import SearchBar from '@/components/SearchBar'
+import SiteHeader from '@/components/SiteHeader'
 import FaqAccordion from '@/components/FaqAccordion'
 import { CITY_CONFIGS, NATIONAL_ORIGIN, cityOrigin, getCityBySlug, cityBrandName, cityBrandTld, isNationalHost } from '@/config/cities'
 import NationalHome from '@/components/national/NationalHome'
@@ -168,19 +169,8 @@ export default async function HomePage() {
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }} />
-      {/* NAV */}
-      <header style={{ background: '#fff', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 100, backdropFilter: 'blur(8px)' }}>
-        <nav className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 68 }}>
-          <Link href="/" style={{ display: 'flex', alignItems: 'center' }}>
-            <img src={city.logoPath} alt={city.domain} style={{ height: 56, width: 'auto', display: 'block' }} />
-          </Link>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Link href="/dentists" className="nav-secondary-link" style={{ padding: '8px 16px', fontWeight: 500, fontSize: 14, color: 'var(--text-secondary)' }}>Find Dentists</Link>
-            <Link href="/for-dentists/register" className="nav-list-clinic btn btn-primary btn-sm">List Your Clinic</Link>
-            <Link href="/dentists" className="nav-mobile-cta btn btn-primary btn-sm">Find Dentists</Link>
-          </div>
-        </nav>
-      </header>
+      {/* NAV — shared across all public pages */}
+      <SiteHeader city={city} />
 
       <main style={{ overflowX: 'hidden' }}>
         {/* HERO */}
@@ -666,11 +656,7 @@ export default async function HomePage() {
       </footer>
 
       <style>{`
-        .nav-mobile-cta { display: none; }
         @media (max-width: 768px) {
-          .nav-secondary-link { display: none !important; }
-          .nav-list-clinic { display: none !important; }
-          .nav-mobile-cta { display: inline-flex !important; }
           .home-hero { padding: 40px 16px 56px !important; }
           .home-hero-sub { font-size: 15px !important; margin-bottom: 24px !important; }
           .home-dentist-strip { padding: 28px 16px !important; }

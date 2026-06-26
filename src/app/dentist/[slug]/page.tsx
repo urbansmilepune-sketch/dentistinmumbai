@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { headers } from 'next/headers'
 import { getDentistProfileData, getCityAreas } from '@/lib/cache/public-pages'
 import { getCityBySlug, cityOrigin } from '@/config/cities'
+import SiteHeader from '@/components/SiteHeader'
 import { whatsappLink } from '@/lib/phone'
 import { buildMapsIframe } from '@/lib/maps'
 import { getOpenStatus } from '@/lib/openStatus'
@@ -365,14 +366,8 @@ export default async function DentistProfilePage({ params }: Props) {
       {/* ─── OWNER VIEW (owner-only; never reaches patients) ─────────────── */}
       {isOwner && <OwnerBanner completionPct={ownerCompletion} checklist={checklist} />}
 
-      <header style={{ background: '#fff', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 100 }}>
-        <nav className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 64 }}>
-          <Link href="/" style={{ display: 'flex', alignItems: 'center' }}>
-            <img src={city.logoPath} alt={city.domain} style={{ height: 56, width: 'auto', display: 'block' }} />
-          </Link>
-          <Link href="/dentists" style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 500 }}>← All Dentists</Link>
-        </nav>
-      </header>
+      {/* NAV — shared across all public pages */}
+      <SiteHeader city={city} />
 
       <main className="profile-main" style={{ background: 'var(--bg)', minHeight: '100vh' }}>
         {/* ─── SECTION 1: COVER + PHOTOS ───────────────────────────────── */}
