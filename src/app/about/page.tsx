@@ -79,7 +79,7 @@ export default async function AboutPage() {
 
               <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 16 }}>What We Do</h2>
               <p style={{ fontSize: 16, color: 'var(--text-secondary)', lineHeight: 1.8, marginBottom: 24 }}>
-                We verify every dentist before listing them. Every profile includes MCI registration, real patient reviews, transparent fees, and direct booking — so patients can make informed decisions without calling 10 clinics.
+                We verify every dentist before listing them. Every profile includes State Dental Council registration, real patient reviews, transparent fees, and direct booking — so patients can make informed decisions without calling 10 clinics.
               </p>
               <p style={{ fontSize: 16, color: 'var(--text-secondary)', lineHeight: 1.8, marginBottom: 32 }}>
                 For dentists, we provide a complete digital presence — a full clinic profile indexed on Google, appointment booking, WhatsApp connect, patient reviews, and a dashboard to manage their practice.

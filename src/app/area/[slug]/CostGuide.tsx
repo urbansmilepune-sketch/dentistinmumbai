@@ -14,7 +14,7 @@ export default function CostGuide({ areaName }: { areaName: string }) {
     <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
       <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', background: 'var(--bg)' }}>
         <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18 }}>
-          💰 Dental Treatment Cost in {areaName} (2025)
+          💰 Dental Treatment Cost in {areaName} ({new Date().getFullYear()})
         </h2>
       </div>
       <div style={{ overflowX: 'auto' }}>

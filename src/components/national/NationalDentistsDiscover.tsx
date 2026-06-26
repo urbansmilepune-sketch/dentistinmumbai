@@ -166,7 +166,7 @@ export default async function NationalDentistsDiscover({ searchParams }: Props) 
             Discover dentists
           </h1>
           <p style={{ fontSize: 15, color: '#475569', lineHeight: 1.55 }}>
-            Verified MCI-registered professionals from {Object.keys(CITY_CONFIGS).length} cities across India. Browse by specialty, city, experience.
+            Verified State Dental Council-registered professionals from {Object.keys(CITY_CONFIGS).length} cities across India. Browse by specialty, city, experience.
           </p>
         </div>
       </section>

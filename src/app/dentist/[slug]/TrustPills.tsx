@@ -30,7 +30,7 @@ export default function TrustPills({ isVerified, emiAvailable, languages, gender
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
       {isVerified && (
         <span style={{ ...pill, background: '#ECFDF5', borderColor: '#A7F3D0', color: '#047857' }}>
-          <ShieldCheckIcon size={15} color="#059669" /> MCI Verified
+          <ShieldCheckIcon size={15} color="#059669" /> State Dental Council Verified
         </span>
       )}
       {emiAvailable && (

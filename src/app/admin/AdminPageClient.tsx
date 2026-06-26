@@ -1647,11 +1647,11 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
         {/* REGISTRATIONS */}
         {section === 'registrations' && (
           <div>
-            <PageHeader title="Dentist Registrations" subtitle="Review incoming sign-ups, verify their MCI numbers, and approve or decline with a reason." />
+            <PageHeader title="Dentist Registrations" subtitle="Review incoming sign-ups, verify their State Dental Council numbers, and approve or decline with a reason." />
             <CityFilterBar cityFilter={cityFilter} />
             <div style={{ background: '#fff', border: `1px solid ${CARD_BORDER}`, borderRadius: 16, boxShadow: CARD_SHADOW, overflow: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
-                <thead><tr>{['Ref', 'Name', 'Clinic', 'City', 'Area', 'Phone', 'Qualification', 'MCI No.', 'Spot #', 'Status', 'Actions'].map(h => <th key={h} style={tableHeaderStyle}>{h}</th>)}</tr></thead>
+                <thead><tr>{['Ref', 'Name', 'Clinic', 'City', 'Area', 'Phone', 'Qualification', 'State Dental Council No.', 'Spot #', 'Status', 'Actions'].map(h => <th key={h} style={tableHeaderStyle}>{h}</th>)}</tr></thead>
                 <tbody>
                   {regList.map(r => (
                     <tr key={r.id}>
@@ -2053,7 +2053,7 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
           confirmVariant="danger"
           requireReason
           reasonLabel="Reason for declining"
-          reasonPlaceholder="e.g. MCI number could not be verified. Please re-register with a clear photo of your council registration certificate."
+          reasonPlaceholder="e.g. State Dental Council number could not be verified. Please re-register with a clear photo of your council registration certificate."
           onCancel={() => setDeclineTarget(null)}
           onConfirm={(reason) => performDecline(declineTarget.regId, reason)}
         />

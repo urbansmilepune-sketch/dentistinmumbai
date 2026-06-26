@@ -160,7 +160,7 @@ export default function RegistrationModal({ isOpen, onClose, foundingNumber, are
               </div>
 
               <div>
-                <label style={labelStyle}>MCI / DCI Registration No. *</label>
+                <label style={labelStyle}>State Dental Council Registration No. *</label>
                 <input value={form.mci_registration} onChange={e => update('mci_registration', e.target.value)} placeholder="Your registration number" style={inputStyle} />
               </div>
 

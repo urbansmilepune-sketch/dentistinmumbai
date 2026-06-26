@@ -140,7 +140,7 @@ export default function JoinForm() {
           <input id="j-exp" type="number" min="0" max="80" required value={form.experience_years} onChange={e => set('experience_years', e.target.value.replace(/\D/g, ''))} placeholder="e.g. 8" style={inputStyle} />
         </div>
         <div>
-          <label style={labelStyle} htmlFor="j-mci">MCI registration number</label>
+          <label style={labelStyle} htmlFor="j-mci">State Dental Council registration number</label>
           <input id="j-mci" required value={form.mci_registration} onChange={e => set('mci_registration', e.target.value)} placeholder="As issued by DCI / state council" style={inputStyle} />
         </div>
         <div style={{ gridColumn: '1 / -1' }}>

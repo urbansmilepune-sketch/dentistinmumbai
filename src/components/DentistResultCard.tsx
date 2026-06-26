@@ -64,7 +64,7 @@ export default function DentistResultCard({ dentist: d, highlight = null, treatm
   const highlighted = !!badgeLabel
 
   return (
-    <article className="drc-card" style={{ borderColor: highlighted ? TEAL : '#E2E8F0', borderWidth: highlighted ? 2 : 1 }}>
+    <article className={`drc-card${highlighted ? ' drc-card-hl' : ''}`} style={{ borderColor: highlighted ? TEAL : '#E2E8F0', borderWidth: highlighted ? 2 : 1 }}>
       {badgeLabel && <span className="drc-badge">{badgeLabel}</span>}
 
       {/* Stretched overlay — the whole card navigates to the profile. The CTA
@@ -183,6 +183,12 @@ export default function DentistResultCard({ dentist: d, highlight = null, treatm
           .drc-footer { flex-direction: column; align-items: stretch; }
           .drc-cta-row { width: 100%; }
           .drc-cta { flex: 1 1 0; min-height: 48px; }
+          /* Mobile: html,body{overflow-x:hidden} forces overflow-y to clip, which
+             cuts the badge's desktop top:-10px poke past the rounded corner. Tuck
+             the badge fully inside the card and reserve top padding so it never
+             overlaps the corner or the avatar. Desktop layout is unchanged. */
+          .drc-card-hl { padding-top: 28px; }
+          .drc-badge { top: 6px; left: 12px; }
         }
       `}</style>
     </article>

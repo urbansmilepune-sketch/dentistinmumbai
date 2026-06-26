@@ -15,7 +15,7 @@ import CitySelector from './CitySelector'
 const WHY_LIST = [
   { icon: '🦷', title: 'Patients searching by city, area, treatment', body: 'Local SEO that ranks. The dentistin[city].in domain matches exactly what patients type into Google.' },
   { icon: '💰', title: 'Zero commission, ever', body: 'Every rupee of patient revenue stays with you. Free for founding members — no credit card.' },
-  { icon: '⚡', title: 'Live in 24 hours',  body: 'Submit your registration, we verify your MCI number, and your profile is publicly indexed within a business day.' },
+  { icon: '⚡', title: 'Live in 24 hours',  body: 'Submit your registration, we verify your State Dental Council number, and your profile is publicly indexed within a business day.' },
   { icon: '📊', title: 'Real analytics',    body: 'See profile views, WhatsApp leads, call-clicks and appointments — not vanity metrics.' },
 ]
 
@@ -105,7 +105,7 @@ export default async function NationalForDentists() {
             Five minutes. Live in 24 hours.
           </h2>
           <p style={{ fontSize: 15, color: '#94A3B8', lineHeight: 1.6, marginBottom: 24 }}>
-            Pick your city, register your clinic, upload your MCI registration, and we'll get you indexed and ready for patients within one business day.
+            Pick your city, register your clinic, upload your State Dental Council registration, and we'll get you indexed and ready for patients within one business day.
           </p>
           <div style={{ background: '#fff', borderRadius: 14, padding: '20px', maxWidth: 520, margin: '0 auto' }}>
             <CitySelector />

@@ -109,7 +109,7 @@ create policy if not exists "case_comments public select via approved case"
             where c.id = case_comments.case_id and c.status = 'approved')
   );
 
--- Comment insertion requires an MCI-verified dentist (is_verified=true).
+-- Comment insertion requires an State Dental Council-verified dentist (is_verified=true).
 -- This is the moderation-light version of "only verified dentists can
 -- post". The case must also still be approved and have
 -- discussion_enabled — both columns checked server-side in the API too,

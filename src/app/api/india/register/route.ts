@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
   if (!specialization || !SPECIALIZATIONS.has(specialization)) return NextResponse.json({ error: 'Pick a specialization' }, { status: 400 })
   if (!clinicName)                                      return NextResponse.json({ error: 'Clinic name required' }, { status: 400 })
   if (experience === null)                              return NextResponse.json({ error: 'Years of experience required' }, { status: 400 })
-  if (!mci)                                             return NextResponse.json({ error: 'MCI registration number required' }, { status: 400 })
+  if (!mci)                                             return NextResponse.json({ error: 'State Dental Council registration number required' }, { status: 400 })
 
   // City: must be one of the 13 live slugs, or the sentinel "other".
   // "other" routes to dentist_registrations with city=null and the

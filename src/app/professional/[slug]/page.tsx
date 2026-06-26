@@ -165,7 +165,7 @@ export default async function ProfessionalProfilePage({ params }: { params: Prom
               )}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
                 {dentist.is_verified && (
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', background: '#DCFCE7', color: '#166534', borderRadius: 999 }}>✓ MCI-verified</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', background: '#DCFCE7', color: '#166534', borderRadius: 999 }}>✓ State Dental Council-verified</span>
                 )}
                 {cityCfg && (
                   <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', background: '#EFF6FF', color: '#1D4ED8', borderRadius: 999, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{cityCfg.cityName}</span>

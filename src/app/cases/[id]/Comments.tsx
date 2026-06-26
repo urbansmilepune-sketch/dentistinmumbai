@@ -120,7 +120,7 @@ export default function Comments({ caseId, initialComments, currentDentist, disc
         </div>
       ) : !currentDentist.is_verified ? (
         <div style={{ background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: 10, padding: '14px 16px', fontSize: 13, color: '#92400E' }}>
-          Only MCI-verified dentists can comment. Get verified on your city dashboard to join the discussion.
+          Only State Dental Council-verified dentists can comment. Get verified on your city dashboard to join the discussion.
         </div>
       ) : (
         <form onSubmit={submit}>

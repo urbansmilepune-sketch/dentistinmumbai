@@ -147,7 +147,7 @@ export default function CaseForm({ dentistName, isVerified }: { dentistName: str
     <form onSubmit={submit}>
       {!isVerified && (
         <div style={{ background: '#FEF3C7', border: '1px solid #FDE68A', color: '#92400E', borderRadius: 12, padding: '14px 18px', marginBottom: 18, fontSize: 13 }}>
-          You can submit cases now, but they'll wait in moderation until your dentist profile is MCI-verified. Posting as <strong>{dentistName}</strong>.
+          You can submit cases now, but they'll wait in moderation until your dentist profile is State Dental Council-verified. Posting as <strong>{dentistName}</strong>.
         </div>
       )}
 

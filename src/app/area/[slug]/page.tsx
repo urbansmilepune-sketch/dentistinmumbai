@@ -3,7 +3,9 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
+import { getCityAreaDentistCounts } from '@/lib/cache/public-pages'
 import { getCityBySlug } from '@/config/cities'
+import { dentistCountLabel } from '@/lib/dentistCount'
 import SiteHeader from '@/components/SiteHeader'
 import TreatmentNavTabs from './TreatmentNavTabs'
 import ResultFilters from '@/components/ResultFilters'
@@ -63,7 +65,7 @@ function getFAQs(areaName: string, dentistCount: number) {
     },
     {
       q: `How do I choose the best dentist in ${areaName}?`,
-      a: `Look for a dentist who is MCI registered, has at least 4-star ratings, and specialises in the treatment you need. Our verified listings in ${areaName} include transparent fees, qualification details, and real patient reviews to help you decide.`,
+      a: `Look for a dentist who is State Dental Council registered, has at least 4-star ratings, and specialises in the treatment you need. Our verified listings in ${areaName} include transparent fees, qualification details, and real patient reviews to help you decide.`,
     },
   ]
 }
@@ -109,13 +111,16 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
   const city = getCityBySlug(h.get('x-city-slug'))
   const citySlug = city.citySlug
 
-  const [{ data: area }, { data: allAreas }, { data: treatments }] = await Promise.all([
+  const [{ data: area }, { data: allAreas }, { data: treatments }, areaCounts] = await Promise.all([
     // Area slug + city pair — necessary because the same slug may exist in
     // multiple cities (e.g. "central" in Mumbai and Pune).
     supabase.from('areas').select('*').eq('slug', slug).eq('city', citySlug).single(),
     supabase.from('areas').select('id, name, slug, zone, dentist_count').eq('city', citySlug).order('dentist_count', { ascending: false }),
     supabase.from('treatments').select('id, name, slug, icon').order('sort_order'),
+    // Live per-area dentist counts — areas.dentist_count is unmaintained (0s).
+    getCityAreaDentistCounts(citySlug),
   ])
+  const areaCountOf = (id: number | string) => areaCounts[String(id)] ?? 0
 
   if (!area) notFound()
 
@@ -214,12 +219,22 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
   const sortLabel = hasCoords ? SORT_LABELS.nearest : SORT_LABELS[sortBy] || SORT_LABELS.best
   const subtextCount = verifiedCount > 0 ? `${verifiedCount} verified dentist${verifiedCount === 1 ? '' : 's'}` : `${totalInArea} dentist${totalInArea === 1 ? '' : 's'}`
 
-  // Mumbai groups "nearby" by suburban-rail line. Other cities don't carry
-  // that semantics on their zone column, so fall back to any-other-area
-  // within the same city.
-  const nearbyAreas = (allAreas || [])
-    .filter(a => a.slug !== slug && (isMumbai ? a.zone === area.zone : true))
-    .slice(0, 6)
+  // Patient-facing "nearby areas": only areas that actually have dentists (the
+  // denormalized areas.dentist_count is unmaintained, so we use live counts).
+  // Prefer same-zone (Mumbai) / any-other (other cities); if fewer than the slot
+  // count qualify, pad with the city's most-populated remaining areas. A patient
+  // must never see a "0 dentists" area. SEO crawl links in the footer/sitemap are
+  // untouched — this only governs the human-facing widget.
+  const NEARBY_SLOTS = 6
+  const hasDentists = (a: any) => areaCountOf(a.id) >= 1
+  const primaryNearby = (allAreas || [])
+    .filter(a => a.slug !== slug && hasDentists(a) && (isMumbai ? a.zone === area.zone : true))
+    .sort((a, b) => areaCountOf(b.id) - areaCountOf(a.id))
+  const nearbySlugs = new Set(primaryNearby.map(a => a.slug))
+  const padNearby = (allAreas || [])
+    .filter(a => a.slug !== slug && hasDentists(a) && !nearbySlugs.has(a.slug))
+    .sort((a, b) => areaCountOf(b.id) - areaCountOf(a.id))
+  const nearbyAreas = [...primaryNearby, ...padNearby].slice(0, NEARBY_SLOTS)
 
   // Sidebar "Top Rated" — only dentists with real ratings, best first.
   const topRated = [...list]
@@ -386,7 +401,7 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
                         borderRadius: 12, cursor: 'pointer', transition: 'all 0.2s', display: 'block',
                       }}>
                         <div style={{ fontWeight: 600, fontSize: 15, fontFamily: 'var(--font-heading)', marginBottom: 4 }}>{a.name}</div>
-                        <div style={{ fontSize: 12, color: 'var(--muted)' }}>{a.dentist_count || 0} dentists</div>
+                        <div style={{ fontSize: 12, color: 'var(--muted)' }}>{dentistCountLabel(areaCountOf(a.id))}</div>
                       </Link>
                     ))}
                   </div>
@@ -412,7 +427,7 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
                   How to Choose a Dentist in {area.name}
                 </h3>
                 <p style={{ fontSize: 15, color: 'var(--text-secondary)', lineHeight: 1.8, marginBottom: 28 }}>
-                  When choosing a dentist in {area.name}, verify their MCI registration number, check their specialisation relative to your treatment need, and read at least 10 patient reviews. Fee transparency is also important — a trustworthy clinic will give you a written treatment plan with costs before starting any procedure. All dentists on {city.domain} have been manually verified before listing.
+                  When choosing a dentist in {area.name}, verify their State Dental Council registration number, check their specialisation relative to your treatment need, and read at least 10 patient reviews. Fee transparency is also important — a trustworthy clinic will give you a written treatment plan with costs before starting any procedure. All dentists on {city.domain} have been manually verified before listing.
                 </p>
 
                 {/* Quick Facts Table */}
@@ -476,7 +491,7 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
                         borderRadius: 8, textAlign: 'center',
                       }}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: NAVY }}>{a.name}</div>
-                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>{a.dentist_count || 0} dentists</div>
+                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>{dentistCountLabel(areaCountOf(a.id))}</div>
                       </Link>
                     ))}
                   </div>

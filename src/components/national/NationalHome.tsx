@@ -18,7 +18,7 @@ import BrandLogo from './BrandLogo'
 export const dynamic = 'force-dynamic'
 
 const DENTIST_STEPS = [
-  { n: 1, title: 'Join in 5 minutes',         body: 'Create your verified profile. MCI registration + city + clinic name — that\'s it.' },
+  { n: 1, title: 'Join in 5 minutes',         body: 'Create your verified profile. State Dental Council registration + city + clinic name — that\'s it.' },
   { n: 2, title: 'Share your clinical cases', body: 'Post before/after photos, x-rays, treatment write-ups. Auto-approved after your first three.' },
   { n: 3, title: 'Build your network',        body: 'Follow peers, get followed, take part in case discussions. Featured on dentistin[city].in too.' },
 ]

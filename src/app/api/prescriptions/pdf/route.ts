@@ -139,7 +139,7 @@ function generatePrescriptionHTML(rx: any, opts: { autoPrint?: boolean } = {}) {
     ${degree ? `<div class="degree">${escapeHtml(degree)}</div>` : ''}
     ${clinicName ? `<div class="clinic">${escapeHtml(clinicName)}</div>` : ''}
     <div class="addr">${escapeHtml(clinicAddress)}${clinicPhone ? ' · ' + escapeHtml(clinicPhone) : ''}</div>
-    ${mci ? `<div class="reg">MCI / DCI Reg. No: ${escapeHtml(mci)}</div>` : ''}
+    ${mci ? `<div class="reg">State Dental Council Reg. No: ${escapeHtml(mci)}</div>` : ''}
   </div>
   <div class="header-right">
     ${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="Clinic logo" style="max-height:60px;max-width:120px;width:auto;height:auto;background:#fff;border-radius:6px;padding:4px;margin-bottom:8px;display:inline-block" />` : ''}

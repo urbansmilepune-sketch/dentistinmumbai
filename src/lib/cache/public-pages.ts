@@ -248,7 +248,7 @@ export function getCityHomeStats(citySlug: string): Promise<CityHomeStats> {
         // set per city is small (hundreds of rows).
         supabase
           .from('dentist_treatments')
-          .select('treatment_id, fee_from, dentists!inner(city, is_active)')
+          .select('treatment_id, dentist_id, fee_from, dentists!inner(city, is_active)')
           .eq('dentists.city', citySlug)
           .eq('dentists.is_active', true),
         supabase
@@ -258,17 +258,24 @@ export function getCityHomeStats(citySlug: string): Promise<CityHomeStats> {
           .eq('city', citySlug),
       ])
 
-      const treatmentDentistCount: Record<string, number> = {}
+      // Count DISTINCT dentists per treatment (not raw link rows) so this number
+      // is identical to what the /treatment/[slug] page shows ("N dentists offer
+      // this" = distinct active dentists with the link). Dedup also makes it
+      // immune to any duplicate dentist_treatments rows.
+      const treatmentDentists: Record<string, Set<string>> = {}
       const treatmentMinFee: Record<string, number> = {}
       for (const row of (links ?? []) as any[]) {
         const tid = row.treatment_id as string | null
-        if (!tid) continue
-        treatmentDentistCount[tid] = (treatmentDentistCount[tid] ?? 0) + 1
+        const did = row.dentist_id as string | null
+        if (!tid || !did) continue
+        ;(treatmentDentists[tid] ??= new Set<string>()).add(did)
         const fee = typeof row.fee_from === 'number' ? row.fee_from : null
         if (fee !== null && fee > 0) {
           treatmentMinFee[tid] = treatmentMinFee[tid] === undefined ? fee : Math.min(treatmentMinFee[tid], fee)
         }
       }
+      const treatmentDentistCount: Record<string, number> = {}
+      for (const [tid, set] of Object.entries(treatmentDentists)) treatmentDentistCount[tid] = set.size
 
       const areaDentistCount: Record<string, number> = {}
       for (const row of (dents ?? []) as any[]) {
@@ -282,6 +289,33 @@ export function getCityHomeStats(citySlug: string): Promise<CityHomeStats> {
     },
     ['city-home-stats', citySlug],
     { revalidate: 300, tags: ['city-home', 'dentists', 'areas', 'treatments'] },
+  )()
+}
+
+// Live active-dentist count per area (keyed by stringified area id) for one
+// city. Computed from the dentists table because areas.dentist_count is
+// unmaintained (0 across the board). Used by the area page's "Nearby Areas"
+// widget and the search page to avoid ever showing "0 dentists" to patients.
+export function getCityAreaDentistCounts(citySlug: string): Promise<Record<string, number>> {
+  return unstable_cache(
+    async (): Promise<Record<string, number>> => {
+      const supabase = createAnonClient()
+      const { data } = await supabase
+        .from('dentists')
+        .select('area_id')
+        .eq('is_active', true)
+        .eq('city', citySlug)
+      const counts: Record<string, number> = {}
+      for (const row of (data ?? []) as any[]) {
+        const aid = row.area_id
+        if (aid === null || aid === undefined) continue
+        const key = String(aid)
+        counts[key] = (counts[key] ?? 0) + 1
+      }
+      return counts
+    },
+    ['city-area-dentist-counts', citySlug],
+    { revalidate: 300, tags: ['city-home', 'dentists', 'areas'] },
   )()
 }
 

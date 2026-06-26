@@ -87,7 +87,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
     return { title: 'Case | Dentist In India', robots: { index: false, follow: false } }
   }
   const spec = getSpecialty(data.row.specialty)
-  const dentistName = data.row.dentists?.name ?? 'an MCI-verified dentist'
+  const dentistName = data.row.dentists?.name ?? 'an State Dental Council-verified dentist'
   const ogTitle = `${data.row.title} by Dr. ${dentistName}`
   const ogDescription = data.row.description?.slice(0, 160)
     || `${spec?.label || 'Clinical case'} · ${'★'.repeat(data.row.complexity)} complexity · Shared on DentistIn India`

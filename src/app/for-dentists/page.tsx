@@ -16,7 +16,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const h = await headers()
   if (h.get('x-is-national') === '1') {
     const title = 'List Your Clinic on India\'s Dental Network | Dentist In India'
-    const description = 'MCI-verified directory across 13 live cities with zero commission. Pick your city, register in 5 minutes, go live in 24 hours.'
+    const description = 'State Dental Council-verified directory across 13 live cities with zero commission. Pick your city, register in 5 minutes, go live in 24 hours.'
     const url = `${NATIONAL_ORIGIN}/for-dentists`
     return {
       title, description,
@@ -92,8 +92,8 @@ export default async function ForDentistsPage() {
   ]
 
   const STEPS = [
-    { num: '01', title: 'Fill the Registration Form', desc: 'Share your name, clinic details, area, MCI registration. Takes 3 minutes.', tag: 'Takes 3 minutes' },
-    { num: '02', title: 'Our Team Reviews & Verifies', desc: 'We verify your MCI/DCI registration. Takes up to 24 hours.', tag: 'Within 24 hours' },
+    { num: '01', title: 'Fill the Registration Form', desc: 'Share your name, clinic details, area, State Dental Council registration. Takes 3 minutes.', tag: 'Takes 3 minutes' },
+    { num: '02', title: 'Our Team Reviews & Verifies', desc: 'We verify your State Dental Council registration. Takes up to 24 hours.', tag: 'Within 24 hours' },
     { num: '03', title: 'We Build Your Profile', desc: 'We create your complete profile — hours, treatments, photos, map pin, booking.', tag: 'We do this for you' },
     { num: '04', title: 'Go Live & Start Getting Patients', desc: 'Profile goes live, indexed by Google, visible to thousands of patients.', tag: 'Immediate' },
   ]

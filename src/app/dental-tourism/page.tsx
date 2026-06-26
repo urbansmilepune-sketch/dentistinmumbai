@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
   title: 'Dental Tourism in India | Save 70-80% on World-Class Treatment',
-  description: 'NRI and international patients save up to 80% on dental implants, veneers, crowns and full-mouth restorations in India. MCI-registered dentists, transparent pricing, English-speaking clinics.',
+  description: 'NRI and international patients save up to 80% on dental implants, veneers, crowns and full-mouth restorations in India. State Dental Council-registered dentists, transparent pricing, English-speaking clinics.',
 }
 
 // /dental-tourism is national-flavoured and accessible from every domain;
@@ -53,7 +53,7 @@ const CITY_RECS: { treatment: string; cities: string[]; reason: string }[] = [
 ]
 
 const CREDENTIALS_STEPS = [
-  { n: 1, title: 'Check MCI / state dental council registration',  body: 'Every dentist on our network displays their MCI / state dental council number on their profile. You can verify it directly at the Dental Council of India (dciindia.gov.in) or the relevant state council site.' },
+  { n: 1, title: 'Check State Dental Council registration',  body: 'Every dentist on our network displays their State Dental Council number on their profile. You can verify it directly at the Dental Council of India (dciindia.gov.in) or the relevant state council site.' },
   { n: 2, title: 'Look at real patient reviews',                   body: 'We publish reviews verified against confirmed appointments — not anonymous Google blurbs. Look for 30+ reviews with consistent themes.' },
   { n: 3, title: 'Insist on full treatment plans + warranty',      body: 'A reputable clinic gives you a written treatment plan, itemised costs, and a written warranty on implants and prosthetics (typically 5-10 years).' },
   { n: 4, title: 'Ask for X-rays + photos before you fly',         body: 'Send your existing X-rays and intra-oral photos by WhatsApp. The clinic should give you a preliminary plan and quote before you book travel.' },
@@ -69,7 +69,7 @@ export default function DentalTourismPage() {
             India: the world's smartest <span style={{ color: '#1D4ED8' }}>dental tourism</span> destination
           </h1>
           <p style={{ fontSize: 17, color: '#475569', lineHeight: 1.55, maxWidth: 700, margin: '0 auto' }}>
-            Save 70-85% on world-class dental care — MCI-registered specialists, identical materials and lab brands used in London or New York, and a verified clinic network across India's most travel-friendly cities.
+            Save 70-85% on world-class dental care — State Dental Council-registered specialists, identical materials and lab brands used in London or New York, and a verified clinic network across India's most travel-friendly cities.
           </p>
         </div>
       </section>

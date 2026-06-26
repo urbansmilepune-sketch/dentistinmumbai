@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
   title: 'Clinical Cases by Verified Indian Dentists | Dentist In India',
-  description: 'Browse clinical cases shared by MCI-verified dentists across India — implants, orthodontics, cosmetic, full-mouth rehabilitation and more.',
+  description: 'Browse clinical cases shared by State Dental Council-verified dentists across India — implants, orthodontics, cosmetic, full-mouth rehabilitation and more.',
 }
 
 // /cases — the public browse surface.
@@ -188,7 +188,7 @@ export default async function CasesBrowsePage({ searchParams }: { searchParams: 
             Clinical cases by verified Indian dentists
           </h1>
           <p style={{ fontSize: 15, color: '#475569', lineHeight: 1.55 }}>
-            Treatment write-ups from MCI-registered practitioners across the country. Every case is reviewed before going live.
+            Treatment write-ups from State Dental Council-registered practitioners across the country. Every case is reviewed before going live.
           </p>
           {viewerDentistId && (
             <div style={{ marginTop: 14 }}>

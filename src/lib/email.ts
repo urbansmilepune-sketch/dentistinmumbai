@@ -161,7 +161,7 @@ export async function sendAutoApprovedAdminAlert(data: {
       <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
         <div style="background: #DCFCE7; border: 1px solid #BBF7D0; border-radius: 10px; padding: 16px 20px; margin-bottom: 18px;">
           <p style="margin: 0; color: #166534; font-size: 14px; font-weight: 700;">✅ Auto-approved at signup — no admin action needed</p>
-          <p style="margin: 6px 0 0; color: #166534; font-size: 13px;">All gating checks passed (phone, MCI, name, clinic, area).</p>
+          <p style="margin: 6px 0 0; color: #166534; font-size: 13px;">All gating checks passed (phone, State Dental Council, name, clinic, area).</p>
         </div>
         <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
           <tr><td style="padding: 8px 0; color: #64748b; width: 40%;">Reference</td><td style="padding: 8px 0; font-weight: bold; color: #0057A8;">${data.ref_no}</td></tr>

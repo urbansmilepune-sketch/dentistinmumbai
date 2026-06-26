@@ -260,7 +260,7 @@ export default async function DentistProfilePage({ params }: Props) {
   if (dentist.qualifications && String(dentist.qualifications).trim()) {
     faqItems.push({
       q: `What are ${drName}'s qualifications?`,
-      a: `${drName} holds ${dentist.qualifications}.${dentist.mci_number ? ` MCI Registration: ${dentist.mci_number}.` : ''}`,
+      a: `${drName} holds ${dentist.qualifications}.${dentist.mci_number ? ` State Dental Council Registration: ${dentist.mci_number}.` : ''}`,
     })
   }
   if (dentist.address && String(dentist.address).trim()) {
@@ -382,7 +382,7 @@ export default async function DentistProfilePage({ params }: Props) {
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
                 <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, color: NAVY, lineHeight: 1.2 }}>{drName}</h1>
                 {dentist.is_verified && (
-                  <span title="MCI Verified" style={{ display: 'inline-flex', alignItems: 'center' }}>
+                  <span title="State Dental Council Verified" style={{ display: 'inline-flex', alignItems: 'center' }}>
                     <ShieldCheckIcon size={20} color={TEAL} />
                   </span>
                 )}

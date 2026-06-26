@@ -2,12 +2,15 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
+import { getCityAreaDentistCounts } from '@/lib/cache/public-pages'
 import { getCityBySlug } from '@/config/cities'
 import SiteHeader from '@/components/SiteHeader'
 import ResultFilters from '@/components/ResultFilters'
 import DentistResultCard from '@/components/DentistResultCard'
 import { isOpenNowFromHours } from '@/lib/time'
 import { haversineKm } from '@/lib/distance'
+import { normalizeSearchQuery, nameMatchesQuery } from '@/lib/searchNormalize'
+import { dentistCountLabel } from '@/lib/dentistCount'
 import { NAVY, NAVY_SOFT, TEAL } from '@/app/dentist/[slug]/profileTheme'
 
 // headers()-based city resolution forces dynamic rendering, same as the area
@@ -46,9 +49,6 @@ const SORT_LABELS: Record<string, string> = {
 export default async function SearchPage({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   const sp = await searchParams
   const q = (sp.q || '').trim()
-  // Strip PostgREST filter metacharacters before interpolating into ilike /
-  // .or() — same guard NationalDentistsDiscover uses.
-  const safe = q.replace(/[%,()]/g, ' ').trim()
 
   const ratingFilter = sp.rating || ''
   const openNowFilter = sp.open === 'true'
@@ -65,29 +65,47 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
   const city = getCityBySlug(h.get('x-city-slug'))
   const citySlug = city.citySlug
 
-  // Browse fallbacks for the empty state — top areas (by dentist_count) and the
-  // treatment menu. Cheap, and always handy when a query misses.
-  const [{ data: browseAreas }, { data: browseTreatments }] = await Promise.all([
-    supabase.from('areas').select('id, name, slug, dentist_count').eq('city', citySlug).order('dentist_count', { ascending: false }).limit(8),
-    supabase.from('treatments').select('id, name, slug, icon').order('sort_order').limit(8),
-  ])
+  // Normalize the raw query: lowercase, strip filler words + "in <city>", expand
+  // synonyms (rct→root canal, scaling→teeth cleaning, caps→crowns…). This is what
+  // makes "root canal treatment", "rct", "teeth cleaning near me", "implant cost"
+  // resolve to the right treatment instead of failing literal matching.
+  const nq = q ? normalizeSearchQuery(q, city.cityName) : ''
+  // Re-strip PostgREST metacharacters after normalization for the dentist .or().
+  const safeNq = nq.replace(/[%,()]/g, ' ').trim()
 
-  // Match areas (city-scoped) and treatments (global) by name, and dentists by
-  // name OR clinic_name. Only run when there's a usable query.
+  // Pull the full area + treatment menus once (small sets) for both name
+  // matching and the browse fallback, plus live per-area dentist counts so we
+  // never show "0 dentists" on the matched-area cards.
+  const [{ data: allAreasRaw }, { data: allTreatmentsRaw }, areaCounts] = await Promise.all([
+    supabase.from('areas').select('id, name, slug, dentist_count').eq('city', citySlug).order('dentist_count', { ascending: false }),
+    supabase.from('treatments').select('id, name, slug, icon').order('sort_order'),
+    getCityAreaDentistCounts(citySlug),
+  ])
+  const allAreas = (allAreasRaw || []) as any[]
+  const allTreatments = (allTreatmentsRaw || []) as any[]
+  const areaCountOf = (id: number | string) => areaCounts[String(id)] ?? 0
+
+  // Browse fallbacks for the empty state — areas with the most dentists first,
+  // and the treatment menu.
+  const browseAreas = [...allAreas].sort((a, b) => areaCountOf(b.id) - areaCountOf(a.id)).slice(0, 8)
+  const browseTreatments = allTreatments.slice(0, 8)
+
+  // Match areas + treatments by normalized name (JS contains, both directions),
+  // and dentists by name OR clinic_name. Only run when the query is usable.
   let matchedAreas: any[] = []
   let matchedTreatments: any[] = []
   let list: any[] = []
 
-  if (safe) {
-    const [{ data: areaRows }, { data: treatmentRows }] = await Promise.all([
-      supabase.from('areas').select('id, name, slug, dentist_count').eq('city', citySlug).ilike('name', `%${safe}%`).order('dentist_count', { ascending: false }).limit(6),
-      supabase.from('treatments').select('id, name, slug, icon').ilike('name', `%${safe}%`).order('sort_order').limit(6),
-    ])
-    matchedAreas = areaRows || []
-    matchedTreatments = treatmentRows || []
+  if (nq) {
+    matchedTreatments = allTreatments.filter(t => nameMatchesQuery(t.name, nq)).slice(0, 6)
+    matchedAreas = allAreas
+      .filter(a => nameMatchesQuery(a.name, nq))
+      .sort((a, b) => areaCountOf(b.id) - areaCountOf(a.id))
+      .slice(0, 6)
 
     // Dentist query mirrors the area page: same select, same server-side
     // attribute filters, same sort, so the shared ResultFilters bar drives it.
+    // Uses the normalized query so "doctor mehta" → "mehta", etc.
     let dentistQuery = supabase
       .from('dentists')
       .select(`
@@ -100,7 +118,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
       `)
       .eq('is_active', true)
       .eq('city', citySlug)
-      .or(`name.ilike.%${safe}%,clinic_name.ilike.%${safe}%`)
+      .or(`name.ilike.%${safeNq}%,clinic_name.ilike.%${safeNq}%`)
 
     if (genderFilter) dentistQuery = dentistQuery.eq('gender', genderFilter)
     if (verifiedFilter) dentistQuery = dentistQuery.eq('is_verified', true)
@@ -193,7 +211,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
                   <span style={{ fontSize: 22 }}>📍</span>
                   <span style={{ flex: 1 }}>
                     <span style={{ display: 'block', fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 16, color: NAVY }}>Dentists in {a.name}</span>
-                    <span style={{ fontSize: 13, color: 'var(--muted)' }}>{a.dentist_count || 0} dentists in this area</span>
+                    <span style={{ fontSize: 13, color: 'var(--muted)' }}>{dentistCountLabel(areaCountOf(a.id))} in this area</span>
                   </span>
                   <span style={{ color: TEAL, fontWeight: 700, fontSize: 14, whiteSpace: 'nowrap' }}>See all →</span>
                 </Link>

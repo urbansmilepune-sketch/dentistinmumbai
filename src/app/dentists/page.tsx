@@ -19,7 +19,7 @@ export async function generateMetadata({ searchParams }: { searchParams: Promise
   if (h.get('x-is-national') === '1') {
     return {
       title: 'Discover Dentists | Dentist In India',
-      description: 'Browse verified MCI-registered dentists across 13 Indian cities. Filter by specialty, city, experience.',
+      description: 'Browse verified State Dental Council-registered dentists across 13 Indian cities. Filter by specialty, city, experience.',
       alternates: { canonical: `${NATIONAL_ORIGIN}/dentists` },
     }
   }

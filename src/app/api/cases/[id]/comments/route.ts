@@ -61,7 +61,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   const { data: dentist } = await supabase
     .from('dentists').select('id, is_verified').eq('email', user.email).single()
   if (!dentist) return NextResponse.json({ error: 'Dentist profile not found' }, { status: 404 })
-  if (!dentist.is_verified) return NextResponse.json({ error: 'Only MCI-verified dentists can comment' }, { status: 403 })
+  if (!dentist.is_verified) return NextResponse.json({ error: 'Only State Dental Council-verified dentists can comment' }, { status: 403 })
 
   // Confirm the parent case accepts comments. The RLS WITH CHECK clause
   // enforces the same thing, but we want a clean 403 rather than a

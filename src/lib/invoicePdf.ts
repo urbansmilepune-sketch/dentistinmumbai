@@ -241,7 +241,7 @@ async function renderInvoicePdf(inv: Invoice, dentist: InvoiceDentist) {
 
   // Phone — 9pt grey at y=111 (pushed down to make room for 2-line address)
   if (phone) doc.text(`Phone: ${phone}`, textX, 111)
-  // MCI — 9pt grey at y=122
+  // State Dental Council — 9pt grey at y=122
   if (mci) doc.text(`Reg No: ${mci}`, textX, 122)
 
   // ============================================================

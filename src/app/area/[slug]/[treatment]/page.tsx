@@ -46,7 +46,7 @@ function getTreatmentFAQs(treatmentName: string, areaName: string, dentistCount:
     },
     {
       q: `Which is the best dentist for ${treatmentName} in ${areaName}?`,
-      a: `The best dentist for ${treatmentName} in ${areaName} is one who is MCI registered, specialises in this treatment, and has strong patient reviews. We list ${dentistCount || 'several'} verified dentists in ${areaName} offering ${treatmentName}, sorted by rating and relevance, so you can compare qualifications, fees, and reviews side by side.`,
+      a: `The best dentist for ${treatmentName} in ${areaName} is one who is State Dental Council registered, specialises in this treatment, and has strong patient reviews. We list ${dentistCount || 'several'} verified dentists in ${areaName} offering ${treatmentName}, sorted by rating and relevance, so you can compare qualifications, fees, and reviews side by side.`,
     },
     {
       q: `How long does ${treatmentName} take?`,
@@ -404,7 +404,7 @@ export default async function AreaTreatmentPage({ params, searchParams }: { para
                   How to Choose a {treatment.name} Dentist in {area.name}
                 </h3>
                 <p style={{ fontSize: 15, color: 'var(--text-secondary)', lineHeight: 1.8, marginBottom: 28 }}>
-                  When choosing a dentist for {treatment.name} in {area.name}, verify their MCI registration, confirm they specialise in this treatment, and read at least 10 patient reviews. A trustworthy clinic will give you a written treatment plan with costs before starting. All dentists on {city.domain} are manually verified before listing.
+                  When choosing a dentist for {treatment.name} in {area.name}, verify their State Dental Council registration, confirm they specialise in this treatment, and read at least 10 patient reviews. A trustworthy clinic will give you a written treatment plan with costs before starting. All dentists on {city.domain} are manually verified before listing.
                 </p>
 
                 {/* Quick Facts Table */}

@@ -11,6 +11,7 @@ import CitiesFooterLinks from '@/components/CitiesFooterLinks'
 import PopularSearches from '@/components/PopularSearches'
 import DentistMobileStickyBar from '@/components/DentistMobileStickyBar'
 import { NAVY, NAVY_SOFT, TEAL, TEAL_DARK } from '@/app/dentist/[slug]/profileTheme'
+import { dentistCountLabel } from '@/lib/dentistCount'
 
 // Per-host metadata. dentistinindia.in gets network-framed copy; every
 // city domain gets a "Dentist in <City>" search title tuned for the
@@ -60,7 +61,7 @@ function faqItemsFor(cityName: string, domain: string) {
   return [
     {
       q: `How do I find a good dentist in ${cityName}?`,
-      a: `Start with what you need — tap an intent like "Tooth pain" or "Braces", or browse by your area. Every dentist on our platform is verified with their MCI registration, with real patient reviews and transparent fees so you can compare before you book.`,
+      a: `Start with what you need — tap an intent like "Tooth pain" or "Braces", or browse by your area. Every dentist on our platform is verified with their State Dental Council registration, with real patient reviews and transparent fees so you can compare before you book.`,
     },
     {
       q: `How much does a dental checkup cost in ${cityName}?`,
@@ -68,7 +69,7 @@ function faqItemsFor(cityName: string, domain: string) {
     },
     {
       q: 'Are the dentists on this platform verified?',
-      a: 'Yes. Every dentist listed is verified with their MCI registration number, clinic address, and contact details before going live on our platform.',
+      a: 'Yes. Every dentist listed is verified with their State Dental Council registration number, clinic address, and contact details before going live on our platform.',
     },
     {
       q: 'Is it free to book an appointment through your platform?',
@@ -211,7 +212,7 @@ export default async function HomePage() {
                   <Link key={tile.slug} href={`/treatment/${tile.slug}`} className="intent-tile">
                     <span className="intent-icon" aria-hidden="true">{icon}</span>
                     <span className="intent-label">{tile.label}</span>
-                    <span className="intent-count">{count > 0 ? `${count} dentist${count === 1 ? '' : 's'}` : 'Browse'}</span>
+                    <span className="intent-count">{dentistCountLabel(count)}</span>
                   </Link>
                 )
               })}
@@ -294,7 +295,7 @@ export default async function HomePage() {
             </h2>
             <div className="home-why-grid">
               {[
-                { icon: '🛡️', title: 'Verified dentists', desc: 'Every clinic is checked against its MCI registration before going live.' },
+                { icon: '🛡️', title: 'Verified dentists', desc: 'Every clinic is checked against its State Dental Council registration before going live.' },
                 { icon: '⭐', title: 'Real reviews', desc: 'Only genuine patient reviews — screened, never bought.' },
                 { icon: '💰', title: 'Transparent fees', desc: 'See consultation fees upfront. No surprises at the clinic.' },
                 { icon: '🆓', title: 'Free to use', desc: 'No charge to search, enquire, or book. You only pay the dentist.' },
@@ -449,7 +450,7 @@ function AreaCard({ slug, name, count }: { slug: string; name: string; count: nu
       border: '1px solid var(--border)', borderRadius: 12, textDecoration: 'none',
     }}>
       <div style={{ fontWeight: 700, fontSize: 15, fontFamily: 'var(--font-heading)', color: NAVY, marginBottom: 4 }}>{name}</div>
-      <div style={{ fontSize: 12, color: 'var(--muted)' }}>{count > 0 ? `${count} dentist${count === 1 ? '' : 's'}` : 'View dentists'}</div>
+      <div style={{ fontSize: 12, color: 'var(--muted)' }}>{dentistCountLabel(count)}</div>
     </Link>
   )
 }

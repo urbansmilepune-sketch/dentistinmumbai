@@ -50,7 +50,7 @@ function getTreatmentFAQs(treatmentName: string, cityName: string, domain: strin
     },
     {
       q: `Which is the best dentist for ${treatmentName} in ${cityName}?`,
-      a: `The best dentist for ${t} in ${cityName} is one who is MCI registered, specialises in this treatment, and has strong patient reviews. We list ${dentistCount || 'several'} verified dentists offering ${t} across ${cityName}, sorted by relevance, rating, fee, or distance from you.`,
+      a: `The best dentist for ${t} in ${cityName} is one who is State Dental Council registered, specialises in this treatment, and has strong patient reviews. We list ${dentistCount || 'several'} verified dentists offering ${t} across ${cityName}, sorted by relevance, rating, fee, or distance from you.`,
     },
     {
       q: `Are dentists offering ${treatmentName} open on Sunday in ${cityName}?`,
@@ -348,7 +348,7 @@ export default async function TreatmentPage({ params, searchParams }: Props) {
                   Fees for {treatment.name.toLowerCase()} depend on materials, clinic tier, and case complexity. A trustworthy clinic will give you a written treatment plan with costs before starting any procedure, and many offer EMI on higher-value treatments. Always confirm the inclusions — consultation, imaging, and follow-ups are sometimes priced separately.
                 </p>
                 <p style={{ fontSize: 15, color: 'var(--text-secondary)', lineHeight: 1.8 }}>
-                  All dentists listed on {city.domain} for {treatment.name.toLowerCase()} are MCI-verified and manually reviewed by our team before listing.
+                  All dentists listed on {city.domain} for {treatment.name.toLowerCase()} are State Dental Council-verified and manually reviewed by our team before listing.
                 </p>
               </div>
             </div>

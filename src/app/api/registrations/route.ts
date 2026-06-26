@@ -15,7 +15,7 @@
 //   4. Writes a dentist_registrations row (status='approved',
 //      auto_approved=true) purely for the admin audit trail.
 //
-// MCI / qualification fields are NOT collected here — the dentist fills
+// State Dental Council / qualification fields are NOT collected here — the dentist fills
 // them in on the profile editor later, and an admin grants the verified
 // badge after credential review.
 
@@ -185,7 +185,7 @@ export async function POST(request: NextRequest) {
 
     // Insert the dentists row. is_active=true so they appear on the city
     // directory immediately; is_verified=false because credential review
-    // (MCI / DCI) is still gated by the admin. Qualifications and MCI
+    // (State Dental Council) is still gated by the admin. Qualifications and State Dental Council
     // number stay empty — the dentist fills them in on the profile editor.
     const { data: dentRow, error: dentErr } = await admin
       .from('dentists')

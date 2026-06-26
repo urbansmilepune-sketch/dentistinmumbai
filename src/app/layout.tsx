@@ -49,13 +49,13 @@ export async function generateMetadata(): Promise<Metadata> {
     const liveCount = 13
     const totalCount = liveCount + COMING_SOON_CITIES.length
     const nationalTitle = `Find Verified Dentists in ${totalCount} Indian Cities | Dentist In India`
-    const nationalDesc = `India's dental network across ${liveCount} live cities and ${COMING_SOON_CITIES.length} more launching soon. MCI-registered dentists, zero commission, 30-second booking.`
+    const nationalDesc = `India's dental network across ${liveCount} live cities and ${COMING_SOON_CITIES.length} more launching soon. State Dental Council-registered dentists, zero commission, 30-second booking.`
     return {
       title: { default: nationalTitle, template: `%s | ${NATIONAL_HOST}` },
       description: nationalDesc,
       icons: { icon: '/favicon.svg', shortcut: '/favicon.svg', apple: '/favicon.svg' },
       verification: { google: '1T1WaA-nRtq8w-GycybOoricYbjTqql3D-au0VzFm98' },
-      keywords: ['dentist in india', 'verified dentists india', 'dental clinic india', 'dental tourism india', 'mci registered dentist'],
+      keywords: ['dentist in india', 'verified dentists india', 'dental clinic india', 'dental tourism india', 'state dental council registered dentist'],
       metadataBase: new URL(NATIONAL_ORIGIN),
       alternates: { canonical: NATIONAL_ORIGIN },
       openGraph: {
