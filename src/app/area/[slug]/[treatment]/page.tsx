@@ -533,7 +533,7 @@ export default async function AreaTreatmentPage({ params, searchParams }: { para
           position: sticky; top: 88px;
         }
         @media (max-width: 900px) {
-          .at-layout { flex-direction: column; }
+          .at-layout { flex-direction: column; align-items: stretch; }
           .at-sidebar { width: 100%; position: static; margin-top: 32px; }
         }
       `}</style>

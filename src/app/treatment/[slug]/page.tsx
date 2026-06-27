@@ -439,7 +439,7 @@ export default async function TreatmentPage({ params, searchParams }: Props) {
           position: sticky; top: 88px;
         }
         @media (max-width: 900px) {
-          .tr-layout { flex-direction: column; }
+          .tr-layout { flex-direction: column; align-items: stretch; }
           .tr-sidebar { width: 100%; position: static; margin-top: 32px; }
         }
       `}</style>

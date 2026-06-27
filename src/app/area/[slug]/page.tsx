@@ -542,7 +542,7 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
           position: sticky; top: 88px;
         }
         @media (max-width: 900px) {
-          .area-layout { flex-direction: column; }
+          .area-layout { flex-direction: column; align-items: stretch; }
           .area-sidebar { width: 100%; position: static; margin-top: 32px; }
         }
       `}</style>
