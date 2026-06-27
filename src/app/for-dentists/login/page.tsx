@@ -95,7 +95,10 @@ export default function DentistLoginPage() {
     setError(''); setLoading(true)
     const { error: authError } = await supabase.auth.signInWithPassword({ email, password })
     if (authError) {
-      setError('Incorrect email or password. Please try again.')
+      // Google-only and invite-only dentists have no password set, so this
+      // fails for them with no obvious next step. Steer them to OTP (works for
+      // every account) rather than implying their credentials are simply wrong.
+      setError('Incorrect email or password. If you signed in with Google before, or never set a password, use a one-time email code instead.')
       setLoading(false); return
     }
     // Same origin only — each domain (each city + national) is a separate
@@ -287,6 +290,20 @@ async function handleGoogle() {
           {error && (
             <div style={{ padding: '12px 16px', background: '#FEE2E2', border: '1px solid #FECACA', borderRadius: 10, fontSize: 13, color: '#991B1B', marginBottom: 20 }}>
               {error}
+            </div>
+          )}
+
+          {/* When a password attempt fails, offer the OTP path inline — it's the
+              one method that works for Google-only / invite-only accounts. */}
+          {method === 'password' && error && (
+            <div style={{ marginTop: -8, marginBottom: 20, fontSize: 13 }}>
+              <button
+                type="button" onClick={() => switchMethod('otp')}
+                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--blue)', fontWeight: 700 }}
+              >Try email code instead →</button>
+              <span style={{ color: 'var(--muted)' }}> · or use </span>
+              <Link href="/for-dentists/forgot-password" style={{ color: 'var(--blue)', fontWeight: 600 }}>Forgot password</Link>
+              <span style={{ color: 'var(--muted)' }}> to set one.</span>
             </div>
           )}
 

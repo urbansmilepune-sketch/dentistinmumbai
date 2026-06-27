@@ -33,6 +33,9 @@ export default function SiteHeader({ city, initialQuery }: Props) {
 
         <div className="sh-actions">
           <Link href="/dentists" className="sh-find">Find dentists</Link>
+          <Link href="/for-dentists/login" className="sh-login">
+            <span className="sh-login-pre">Dentist </span>Login
+          </Link>
           <Link href="/for-dentists/register" className="sh-list btn btn-primary btn-sm">List your clinic</Link>
         </div>
       </div>
@@ -55,6 +58,10 @@ export default function SiteHeader({ city, initialQuery }: Props) {
         .sh-search { flex: 1; min-width: 0; max-width: 560px; }
         .sh-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
         .sh-find { padding: 8px 16px; font-weight: 500; font-size: 14px; color: var(--text-secondary); white-space: nowrap; }
+        /* Returning-dentist door sign. Quiet blue text link — deliberately
+           subordinate to the filled "List your clinic" acquisition button. */
+        .sh-login { padding: 8px 12px; font-weight: 600; font-size: 14px; color: var(--blue); white-space: nowrap; }
+        .sh-login:hover { text-decoration: underline; }
 
         /* Tablet/mobile: logo + actions on row 1, full-width search on row 2.
            The search bar stays visible — it's the whole point of the header. */
@@ -69,6 +76,10 @@ export default function SiteHeader({ city, initialQuery }: Props) {
           .sh-actions { order: 2; margin-left: auto; }
           .sh-search { order: 3; flex-basis: 100%; max-width: none; }
           .sh-find { display: none; }
+          /* Keep Login visible on mobile (discoverability), but drop the
+             "Dentist " prefix so it stays compact next to the button. */
+          .sh-login-pre { display: none; }
+          .sh-login { padding: 8px 6px; }
         }
         /* Narrowest phones: shrink the logo a touch so the List button fits. */
         @media (max-width: 400px) {
