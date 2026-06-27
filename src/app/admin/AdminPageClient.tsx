@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import AdminShell from './AdminShell'
 import CommunicationsTab from './CommunicationsTab'
 import OutreachTab from './OutreachTab'
+import VisitLogsTab from './VisitLogsTab'
 import AutoRefresh from '@/components/AutoRefresh'
 import { CITY_CONFIGS, cityOrigin, getCityBySlug } from '@/config/cities'
 
@@ -1915,6 +1916,12 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
         {/* OUTREACH — cold-email funnel against CSV-imported prospect lists. */}
         {section === 'outreach' && (
           <OutreachTab />
+        )}
+
+        {/* VISIT LOGS — read-only admin view of field visits logged by
+            employees in the dentauraprime.com platform. */}
+        {section === 'visit-logs' && (
+          <VisitLogsTab />
         )}
 
         {/* AREAS */}
