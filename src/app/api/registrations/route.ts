@@ -32,6 +32,18 @@ function normalizeCity(v: unknown): CitySlug {
   return typeof v === 'string' && Object.prototype.hasOwnProperty.call(CITY_CONFIGS, v) ? (v as CitySlug) : DEFAULT_CITY
 }
 
+// Detects a PostgREST "unknown column" error (PGRST204) so the insert can
+// be retried without the referral column on databases where the migration
+// (supabase/migrations/..._referral_ref_code.sql) hasn't been applied yet.
+// Schema is managed out-of-band here, so the code must degrade gracefully
+// rather than 500 the whole signup.
+function isMissingColumn(err: { code?: string; message?: string } | null, column: string): boolean {
+  if (!err) return false
+  if (err.code === 'PGRST204') return true
+  const msg = (err.message || '').toLowerCase()
+  return msg.includes(column.toLowerCase()) && msg.includes('column')
+}
+
 function generateRef(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
   let ref = 'DIM-DR-'
@@ -81,6 +93,10 @@ export async function POST(request: NextRequest) {
     emailForAlert = email || undefined
     const rawAreaName = typeof body.area_name_raw === 'string' ? body.area_name_raw.trim() : null
     const area_name_raw = rawAreaName && rawAreaName.length > 0 ? rawAreaName : null
+    // Referral code from the ?ref=<code> link on the registration page.
+    // Normalised to uppercase (codes are case-insensitive) and length-capped.
+    const rawRef = typeof body.ref === 'string' ? body.ref.trim().toUpperCase().slice(0, 64) : ''
+    const refCode: string | null = rawRef.length > 0 ? rawRef : null
     const founding_number = Math.min(1000, Math.max(1, Math.floor(Number(body.founding_number)) || 1))
     const chosenPassword = typeof body.password === 'string' ? body.password : ''
     if (chosenPassword.length < 8) {
@@ -187,30 +203,44 @@ export async function POST(request: NextRequest) {
     // directory immediately; is_verified=false because credential review
     // (State Dental Council) is still gated by the admin. Qualifications and State Dental Council
     // number stay empty — the dentist fills them in on the profile editor.
-    const { data: dentRow, error: dentErr } = await admin
+    const dentistRow = {
+      email,
+      name,
+      clinic_name,
+      phone,
+      qualifications: '',
+      mci_number: '',
+      area_id,
+      slug,
+      address: '',
+      sub_area: '',
+      bio: '',
+      website: '',
+      is_active: true,
+      is_verified: false,
+      tier: 'free',
+      trial_started_at: new Date().toISOString(),
+      selected_plan: planValue,
+      city: cityValue,
+    }
+    // Attach the referrer when present. If the `ref` column hasn't been added
+    // to this database yet, retry without it so signups never break.
+    // Cast past the generated types: `ref` lives in the live DB once the
+    // referral migration is applied, but the out-of-band type definitions
+    // don't know about it yet.
+    let { data: dentRow, error: dentErr } = await admin
       .from('dentists')
-      .insert({
-        email,
-        name,
-        clinic_name,
-        phone,
-        qualifications: '',
-        mci_number: '',
-        area_id,
-        slug,
-        address: '',
-        sub_area: '',
-        bio: '',
-        website: '',
-        is_active: true,
-        is_verified: false,
-        tier: 'free',
-        trial_started_at: new Date().toISOString(),
-        selected_plan: planValue,
-        city: cityValue,
-      })
+      .insert((refCode ? { ...dentistRow, ref: refCode } : dentistRow) as typeof dentistRow)
       .select('id')
       .single()
+    if (dentErr && refCode && isMissingColumn(dentErr, 'ref')) {
+      console.warn('[registrations] dentists.ref column missing — run the referral migration; inserting without it')
+      ;({ data: dentRow, error: dentErr } = await admin
+        .from('dentists')
+        .insert(dentistRow)
+        .select('id')
+        .single())
+    }
     if (dentErr || !dentRow) {
       console.error('[registrations] dentist insert failed', dentErr)
       Sentry.captureException(dentErr || new Error('dentist insert returned no row'), {
@@ -230,24 +260,34 @@ export async function POST(request: NextRequest) {
     // dentist_registrations row — audit trail only. We pre-stamp it
     // approved + auto_approved so the admin panel surfaces every signup
     // without prompting for review.
-    const { error: regErr } = await admin
+    const registrationRow = {
+      ref_no,
+      name,
+      phone,
+      email,
+      clinic_name,
+      area,
+      area_name_raw,
+      qualification: '',
+      mci_registration: '',
+      founding_number,
+      selected_plan: planValue,
+      city: cityValue,
+      status: 'approved',
+      auto_approved: true,
+    }
+    // ref_code = who referred this dentist (distinct from ref_no, the
+    // dentist's own generated code). Retry without it if the column is
+    // missing so the audit row is still written.
+    let { error: regErr } = await admin
       .from('dentist_registrations')
-      .insert({
-        ref_no,
-        name,
-        phone,
-        email,
-        clinic_name,
-        area,
-        area_name_raw,
-        qualification: '',
-        mci_registration: '',
-        founding_number,
-        selected_plan: planValue,
-        city: cityValue,
-        status: 'approved',
-        auto_approved: true,
-      })
+      .insert((refCode ? { ...registrationRow, ref_code: refCode } : registrationRow) as typeof registrationRow)
+    if (regErr && refCode && isMissingColumn(regErr, 'ref_code')) {
+      console.warn('[registrations] dentist_registrations.ref_code column missing — run the referral migration; inserting without it')
+      ;({ error: regErr } = await admin
+        .from('dentist_registrations')
+        .insert(registrationRow))
+    }
     if (regErr) {
       // Audit row failed but the dentist + auth user are live — don't
       // 500 the signup. Surface to Sentry so we can backfill the row.

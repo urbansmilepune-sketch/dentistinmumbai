@@ -31,6 +31,9 @@ export default function RegisterPage() {
   const [error, setError] = useState('')
   const [prefilledFromLogin, setPrefilledFromLogin] = useState(false)
   const [planFromUrl, setPlanFromUrl] = useState<Plan | null>(null)
+  // Referral code from ?ref=<code> — captured on mount and passed through to
+  // the API so we can attribute the signup to whoever shared the link.
+  const [refCode, setRefCode] = useState<string | null>(null)
   const [cityConfig, setCityConfig] = useState<CityConfig>(CITY_CONFIGS[DEFAULT_CITY])
   const city: CitySlug = cityConfig.citySlug
 
@@ -49,6 +52,9 @@ export default function RegisterPage() {
     }
     const planParam = parsePlan(params.get('plan'))
     if (planParam) setPlanFromUrl(planParam)
+
+    const refParam = params.get('ref')
+    if (refParam && refParam.trim()) setRefCode(refParam.trim())
 
     // City is inferred from the current hostname so a dentist registering on
     // dentistinpune.in lands a row tagged city='pune'.
@@ -109,6 +115,7 @@ export default function RegisterPage() {
           area: submittingArea,
           area_name_raw: submittingAreaRaw,
           city,
+          ref: refCode,
           selected_plan: planFromUrl,
           founding_number: Math.floor(Math.random() * 1000) + 1,
           password: form.password,
@@ -295,6 +302,11 @@ export default function RegisterPage() {
                   {/* Hidden city field — set on mount from window.location.hostname so the
                       backend can tag the row with the correct city. */}
                   <input type="hidden" name="city" value={city} readOnly />
+
+                  {/* Hidden referral field — populated from ?ref=<code> on mount
+                      so the referrer is attributed even though it's not a
+                      user-editable field. */}
+                  {refCode && <input type="hidden" name="ref" value={refCode} readOnly />}
 
                   {error && (
                     <div style={{ padding: '12px 16px', background: '#FEE2E2', border: '1px solid #FECACA', borderRadius: 10, fontSize: 13, color: '#991B1B' }}>

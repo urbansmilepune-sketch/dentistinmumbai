@@ -1651,11 +1651,12 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
             <CityFilterBar cityFilter={cityFilter} />
             <div style={{ background: '#fff', border: `1px solid ${CARD_BORDER}`, borderRadius: 16, boxShadow: CARD_SHADOW, overflow: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
-                <thead><tr>{['Ref', 'Name', 'Clinic', 'City', 'Area', 'Phone', 'Qualification', 'State Dental Council No.', 'Spot #', 'Status', 'Actions'].map(h => <th key={h} style={tableHeaderStyle}>{h}</th>)}</tr></thead>
+                <thead><tr>{['Ref', 'Referred By', 'Name', 'Clinic', 'City', 'Area', 'Phone', 'Qualification', 'State Dental Council No.', 'Spot #', 'Status', 'Actions'].map(h => <th key={h} style={tableHeaderStyle}>{h}</th>)}</tr></thead>
                 <tbody>
                   {regList.map(r => (
                     <tr key={r.id}>
                       <td style={tableCellStyle}><span style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--muted)' }}>{r.ref_no}</span></td>
+                      <td style={tableCellStyle}>{r.ref_code ? <span style={{ display: 'inline-block', padding: '2px 8px', background: '#EDE9FE', color: '#5B21B6', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>{r.ref_code}</span> : <span style={{ color: 'var(--muted)' }}>—</span>}</td>
                       <td style={tableCellStyle}><div style={{ fontWeight: 600 }}>{r.name}</div><div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.email}</div></td>
                       <td style={tableCellStyle}>{r.clinic_name}</td>
                       <td style={tableCellStyle}><CityBadge slug={r.city} /></td>
@@ -1680,7 +1681,7 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
                       </td>
                     </tr>
                   ))}
-                  {regList.length === 0 && <tr><td colSpan={11} style={{ ...tableCellStyle, textAlign: 'center', color: 'var(--muted)', padding: '40px' }}>No registrations yet</td></tr>}
+                  {regList.length === 0 && <tr><td colSpan={12} style={{ ...tableCellStyle, textAlign: 'center', color: 'var(--muted)', padding: '40px' }}>No registrations yet</td></tr>}
                 </tbody>
               </table>
             </div>
