@@ -196,7 +196,7 @@ export default async function HomePage() {
         <section style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${NAVY_SOFT} 100%)`, padding: '56px 20px 64px' }}>
           <div className="container" style={{ maxWidth: 820, textAlign: 'center' }}>
             <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(1.9rem, 5vw, 3rem)', color: '#fff', lineHeight: 1.15, marginBottom: 14 }}>
-              Find the right dentist in {city.cityName}
+              Find the Right Dentist in {city.cityName}
             </h1>
             <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 'clamp(0.95rem, 2.2vw, 1.1rem)', lineHeight: 1.6, maxWidth: 560, margin: '0 auto 32px' }}>
               {dentistCount} verified dentist{dentistCount === 1 ? '' : 's'} across {city.cityName}. Real reviews, transparent fees, book in 2 minutes.

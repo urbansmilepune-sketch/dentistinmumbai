@@ -32,7 +32,6 @@ export default function SiteHeader({ city, initialQuery }: Props) {
         </div>
 
         <div className="sh-actions">
-          <Link href="/dentists" className="sh-find">Find dentists</Link>
           <Link href="/for-dentists/login" className="sh-login">
             <span className="sh-login-pre">Dentist </span>Login
           </Link>
@@ -47,17 +46,16 @@ export default function SiteHeader({ city, initialQuery }: Props) {
           position: sticky; top: 0; z-index: 100;
         }
         .sh-inner {
-          display: flex; align-items: center; gap: 16px;
-          height: 68px;
+          display: flex; align-items: center; gap: 20px;
+          height: 72px;
         }
         .sh-brand {
           display: flex; align-items: center;
           flex-shrink: 0; text-decoration: none;
         }
-        .sh-logo { height: 44px; width: auto; display: block; }
-        .sh-search { flex: 1; min-width: 0; max-width: 560px; }
-        .sh-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-        .sh-find { padding: 8px 16px; font-weight: 500; font-size: 14px; color: var(--text-secondary); white-space: nowrap; }
+        .sh-logo { height: 52px; width: auto; display: block; }
+        .sh-search { flex: 1; min-width: 0; max-width: 620px; }
+        .sh-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; margin-left: auto; }
         /* Returning-dentist door sign. Quiet blue text link — deliberately
            subordinate to the filled "List your clinic" acquisition button. */
         .sh-login { padding: 8px 12px; font-weight: 600; font-size: 14px; color: var(--blue); white-space: nowrap; }
@@ -75,7 +73,6 @@ export default function SiteHeader({ city, initialQuery }: Props) {
           .sh-brand { order: 1; }
           .sh-actions { order: 2; margin-left: auto; }
           .sh-search { order: 3; flex-basis: 100%; max-width: none; }
-          .sh-find { display: none; }
           /* Keep Login visible on mobile (discoverability), but drop the
              "Dentist " prefix so it stays compact next to the button. */
           .sh-login-pre { display: none; }
