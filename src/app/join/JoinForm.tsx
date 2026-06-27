@@ -141,7 +141,7 @@ export default function JoinForm() {
         </div>
         <div>
           <label style={labelStyle} htmlFor="j-mci">State Dental Council registration number</label>
-          <input id="j-mci" required value={form.mci_registration} onChange={e => set('mci_registration', e.target.value)} placeholder="As issued by DCI / state council" style={inputStyle} />
+          <input id="j-mci" required value={form.mci_registration} onChange={e => set('mci_registration', e.target.value)} placeholder="As issued by your State Dental Council" style={inputStyle} />
         </div>
         <div style={{ gridColumn: '1 / -1' }}>
           <label style={labelStyle} htmlFor="j-li">LinkedIn URL <span style={{ color: '#94A3B8', textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>(optional)</span></label>

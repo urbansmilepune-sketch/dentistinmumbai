@@ -26,7 +26,7 @@ export const CITY_POPULAR_SEARCHES: Partial<Record<CitySlug, PopularSearch[]>> =
     { text: 'Dentist in Powai',       href: '/area/powai' },
     { text: 'Dentist in Juhu',        href: '/area/juhu' },
     { text: 'Dental implants Mumbai', href: '/treatment/dental-implants' },
-    { text: 'Orthodontist Mumbai',    href: '/treatment/braces' },
+    { text: 'Orthodontist Mumbai',    href: '/treatment/braces-aligners' },
     { text: 'Root canal Mumbai',      href: '/treatment/root-canal' },
   ],
   pune: [
@@ -35,6 +35,6 @@ export const CITY_POPULAR_SEARCHES: Partial<Record<CitySlug, PopularSearch[]>> =
     { text: 'Dentist in Kothrud',     href: '/area/kothrud' },
     { text: 'Dentist in Hinjewadi',   href: '/area/hinjewadi' },
     { text: 'Dental implants Pune',   href: '/treatment/dental-implants' },
-    { text: 'Orthodontist Pune',      href: '/treatment/braces' },
+    { text: 'Orthodontist Pune',      href: '/treatment/braces-aligners' },
   ],
 }

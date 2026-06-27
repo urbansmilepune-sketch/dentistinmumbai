@@ -457,7 +457,7 @@ export default async function DentistProfilePage({ params }: Props) {
             <section id="about" className="profile-section">
               <h2 className="profile-section-title">About</h2>
               <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '20px 24px' }}>
-                <p style={{ fontSize: 15, lineHeight: 1.8, color: 'var(--text-secondary)', whiteSpace: 'pre-wrap' }}>{dentist.bio}</p>
+                <p style={{ fontSize: 15, lineHeight: 1.8, color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{dentist.bio}</p>
               </div>
             </section>
           )}

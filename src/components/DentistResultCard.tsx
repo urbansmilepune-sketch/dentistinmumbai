@@ -124,6 +124,10 @@ export default function DentistResultCard({ dentist: d, highlight = null, treatm
         .drc-card {
           position: relative;
           display: flex; flex-direction: column; gap: 12px;
+          /* box-sizing:border-box is global (globals.css). width/max-width:100%
+             keep the card from ever exceeding its column on mobile, so the
+             clinic ellipsis and the CTA row stay inside the viewport. */
+          width: 100%; max-width: 100%;
           background: #fff; border-style: solid; border-radius: 16px;
           padding: 16px;
           transition: border-color .15s, box-shadow .15s, transform .15s;
@@ -145,7 +149,7 @@ export default function DentistResultCard({ dentist: d, highlight = null, treatm
         .drc-avatar img { width: 100%; height: 100%; object-fit: cover; object-position: center top; }
         .drc-info { flex: 1; min-width: 0; }
         .drc-name-row { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
-        .drc-name { font-family: var(--font-heading); font-weight: 800; font-size: 16px; color: ${NAVY}; line-height: 1.25; }
+        .drc-name { font-family: var(--font-heading); font-weight: 800; font-size: 16px; color: ${NAVY}; line-height: 1.25; overflow-wrap: anywhere; }
         .drc-verified {
           display: inline-flex; align-items: center; justify-content: center;
           width: 17px; height: 17px; border-radius: 50%; background: ${TEAL}; flex-shrink: 0;
@@ -182,7 +186,10 @@ export default function DentistResultCard({ dentist: d, highlight = null, treatm
         @media (max-width: 600px) {
           .drc-footer { flex-direction: column; align-items: stretch; }
           .drc-cta-row { width: 100%; }
-          .drc-cta { flex: 1 1 0; min-height: 48px; }
+          /* min-width:0 lets each button shrink below its content width so two
+             CTAs always split the row evenly and stay fully tappable at 360px —
+             without it, default min-width:auto pushes "Book" off-screen. */
+          .drc-cta { flex: 1 1 0; min-width: 0; min-height: 48px; }
           /* Mobile: html,body{overflow-x:hidden} forces overflow-y to clip, which
              cuts the badge's desktop top:-10px poke past the rounded corner. Tuck
              the badge fully inside the card and reserve top padding so it never

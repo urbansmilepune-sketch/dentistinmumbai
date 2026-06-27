@@ -53,7 +53,7 @@ const CITY_RECS: { treatment: string; cities: string[]; reason: string }[] = [
 ]
 
 const CREDENTIALS_STEPS = [
-  { n: 1, title: 'Check State Dental Council registration',  body: 'Every dentist on our network displays their State Dental Council number on their profile. You can verify it directly at the Dental Council of India (dciindia.gov.in) or the relevant state council site.' },
+  { n: 1, title: 'Check State Dental Council registration',  body: 'Every dentist on our network displays their State Dental Council number on their profile. You can verify it directly with their State Dental Council, or with the National Dental Commission (NDC), the national dental regulator.' },
   { n: 2, title: 'Look at real patient reviews',                   body: 'We publish reviews verified against confirmed appointments — not anonymous Google blurbs. Look for 30+ reviews with consistent themes.' },
   { n: 3, title: 'Insist on full treatment plans + warranty',      body: 'A reputable clinic gives you a written treatment plan, itemised costs, and a written warranty on implants and prosthetics (typically 5-10 years).' },
   { n: 4, title: 'Ask for X-rays + photos before you fly',         body: 'Send your existing X-rays and intra-oral photos by WhatsApp. The clinic should give you a preliminary plan and quote before you book travel.' },

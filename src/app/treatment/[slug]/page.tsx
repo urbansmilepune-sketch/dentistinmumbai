@@ -321,7 +321,7 @@ export default async function TreatmentPage({ params, searchParams }: Props) {
                         <DentistResultCard key={d.id} dentist={d} highlight={i === 0 ? firstHighlight : null} treatmentNote={noteFor(d)} />
                       ))}
                     </div>
-                    <ShowMoreButton count={hiddenDentists.length} areaName={city.cityName}>
+                    <ShowMoreButton key={slug} count={hiddenDentists.length} areaName={city.cityName}>
                       {hiddenDentists.map(d => <DentistResultCard key={d.id} dentist={d} treatmentNote={noteFor(d)} />)}
                     </ShowMoreButton>
                   </>

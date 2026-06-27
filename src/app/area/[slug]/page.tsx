@@ -368,7 +368,7 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
                         <DentistResultCard key={d.id} dentist={d} highlight={i === 0 ? firstHighlight : null} />
                       ))}
                     </div>
-                    <ShowMoreButton count={hiddenDentists.length} areaName={area.name}>
+                    <ShowMoreButton key={slug} count={hiddenDentists.length} areaName={area.name}>
                       {hiddenDentists.map(d => <DentistResultCard key={d.id} dentist={d} />)}
                     </ShowMoreButton>
                   </>

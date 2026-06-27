@@ -35,7 +35,7 @@ export default function LocationSection({ mapsHtml, address, directionsUrl, work
       {(address || directionsUrl) && (
         <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '16px 18px', marginBottom: 14, display: 'flex', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
           {address && (
-            <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6, flex: 1, minWidth: 200, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+            <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6, flex: 1, minWidth: 0, display: 'flex', gap: 8, alignItems: 'flex-start', overflowWrap: 'anywhere' }}>
               <MapPinIcon size={16} color={TEAL_DARK} style={{ flexShrink: 0, marginTop: 2 }} />
               <span>{address}</span>
             </p>

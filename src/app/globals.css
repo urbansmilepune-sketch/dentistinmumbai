@@ -229,6 +229,12 @@ input, select, textarea {
 
 /* Mobile base rules — apply across the site */
 @media (max-width: 768px) {
+  /* Backstop, NOT a patient-page crutch: the public pages (home / search /
+     area / treatment / profile) are overflow-free at 360px after the card
+     width + overflow-wrap:anywhere fixes, so this no longer masks anything
+     there. It is retained ONLY because the admin/dashboard tools still use
+     fixed-px grid columns wider than a phone (e.g. AdminPageClient.tsx tables
+     ~690px wide). Drop this line once those internal grids go fluid. */
   html, body { overflow-x: hidden; }
   body { font-size: 15px; }
   .container { padding: 0 16px; }

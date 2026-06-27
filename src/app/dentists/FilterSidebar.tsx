@@ -168,7 +168,7 @@ export default function FilterSidebar({ areas, treatments, hasCoords, groupAreas
                           style={{ accentColor: 'var(--blue)', width: 16, height: 16 }}
                         />
                         <span style={{ flex: 1, fontSize: 14 }}>{area.name}</span>
-                        <span style={{ fontSize: 12, color: 'var(--muted)' }}>({area.dentist_count})</span>
+                        {area.dentist_count > 0 && <span style={{ fontSize: 12, color: 'var(--muted)' }}>({area.dentist_count})</span>}
                       </label>
                     ))}
                   </div>
@@ -183,7 +183,9 @@ export default function FilterSidebar({ areas, treatments, hasCoords, groupAreas
                     style={{ accentColor: 'var(--blue)', width: 16, height: 16 }}
                   />
                   <span style={{ flex: 1, fontSize: 14 }}>{area.name}</span>
-                  <span style={{ fontSize: 12, color: 'var(--muted)' }}>({area.dentist_count})</span>
+                  {/* Compact "(N)" filter idiom — but never show "(0)" to a
+                      patient (a zero-supply area renders with no count). */}
+                  {area.dentist_count > 0 && <span style={{ fontSize: 12, color: 'var(--muted)' }}>({area.dentist_count})</span>}
                 </label>
               ))}
         </div>

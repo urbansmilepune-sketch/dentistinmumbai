@@ -352,7 +352,7 @@ export default async function AreaTreatmentPage({ params, searchParams }: { para
                         <DentistResultCard key={d.id} dentist={d} highlight={i === 0 ? firstHighlight : null} treatmentNote={noteFor(d)} />
                       ))}
                     </div>
-                    <ShowMoreButton count={hiddenDentists.length} areaName={area.name}>
+                    <ShowMoreButton key={`${slug}-${treatmentSlug}`} count={hiddenDentists.length} areaName={area.name}>
                       {hiddenDentists.map(d => <DentistResultCard key={d.id} dentist={d} treatmentNote={noteFor(d)} />)}
                     </ShowMoreButton>
                   </>

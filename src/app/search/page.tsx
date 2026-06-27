@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { headers } from 'next/headers'
+import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getCityAreaDentistCounts } from '@/lib/cache/public-pages'
 import { getCityBySlug } from '@/config/cities'
@@ -9,7 +10,7 @@ import ResultFilters from '@/components/ResultFilters'
 import DentistResultCard from '@/components/DentistResultCard'
 import { isOpenNowFromHours } from '@/lib/time'
 import { haversineKm } from '@/lib/distance'
-import { normalizeSearchQuery, nameMatchesQuery } from '@/lib/searchNormalize'
+import { normalizeSearchQuery, nameMatchesQuery, aliasedTreatmentSlugs } from '@/lib/searchNormalize'
 import { dentistCountLabel } from '@/lib/dentistCount'
 import { NAVY, NAVY_SOFT, TEAL } from '@/app/dentist/[slug]/profileTheme'
 
@@ -97,11 +98,27 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
   let list: any[] = []
 
   if (nq) {
-    matchedTreatments = allTreatments.filter(t => nameMatchesQuery(t.name, nq)).slice(0, 6)
+    // Name-contains matches, unioned with explicit slug aliases (e.g.
+    // braces/aligners → braces-aligners) so those terms always route to the
+    // right treatment page even if the display name wouldn't contains-match.
+    const aliasSlugs = new Set(aliasedTreatmentSlugs(nq))
+    matchedTreatments = allTreatments
+      .filter(t => nameMatchesQuery(t.name, nq) || aliasSlugs.has(t.slug))
+      .slice(0, 6)
     matchedAreas = allAreas
       .filter(a => nameMatchesQuery(a.name, nq))
       .sort((a, b) => areaCountOf(b.id) - areaCountOf(a.id))
       .slice(0, 6)
+
+    // DEFECT B — skip the interstitial when the query UNAMBIGUOUSLY resolves to
+    // one treatment ("root" / "rct" / "root canal treatment" → Root Canal): send
+    // the patient straight to that treatment's dentist list (which carries its
+    // own correct count + fresh list). The suggestion-card layout below is kept
+    // only for ambiguous queries that match 2+ treatments/areas. redirect()
+    // throws, so it must run before the dentist query — nothing after executes.
+    if (matchedTreatments.length === 1 && matchedAreas.length === 0) {
+      redirect(`/treatment/${matchedTreatments[0].slug}`)
+    }
 
     // Dentist query mirrors the area page: same select, same server-side
     // attribute filters, same sort, so the shared ResultFilters bar drives it.
@@ -193,7 +210,11 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
           <p style={{ color: 'rgba(255,255,255,0.75)', fontSize: 15 }}>
             {q
               ? (hasAnything
-                  ? `${dentistList.length} dentist${dentistList.length === 1 ? '' : 's'} · sorted by ${sortLabel}`
+                  ? (dentistList.length > 0
+                      ? `${dentistList.length} dentist${dentistList.length === 1 ? '' : 's'} · sorted by ${sortLabel}`
+                      // DEFECT A — matches exist (treatment/area cards) but no direct
+                      // dentist-name hits: never claim "0 dentists" next to live matches.
+                      : `Showing matches for “${q}”`)
                   : `No matches in ${city.cityName}`)
               : `Find dentists, treatments, and areas in ${city.cityName}`}
           </p>
@@ -233,7 +254,9 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
           {dentistList.length > 0 && (
             <>
               <ResultFilters basePath="/search" />
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 20 }}>
+              {/* DEFECT C — key the list to the normalized query so React mounts a
+                  fresh subtree on every new search (no carryover from a prior query). */}
+              <div key={`results-${nq}`} style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 20 }}>
                 {dentistList.map((d, i) => (
                   <DentistResultCard key={d.id} dentist={d} highlight={i === 0 ? firstHighlight : null} />
                 ))}
