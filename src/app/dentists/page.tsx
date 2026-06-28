@@ -448,7 +448,14 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
           .nav-secondary-link { display: none !important; }
           .nav-list-clinic { display: none !important; }
           .listing-main { padding: 16px 0 96px !important; }
-          .listing-layout { gap: 0 !important; flex-direction: column !important; }
+          /* align-items:stretch is the fix: the inline alignItems:'flex-start'
+             (correct for the desktop sidebar+results row) survives into this
+             mobile column layout, where flex-start sizes each child to its
+             own content width instead of the container's — so the results
+             column grew to its widest card (~469px) and pushed the cards,
+             topbar and CTAs off the right edge. Same family as the
+             tr-layout/area-layout fix. */
+          .listing-layout { gap: 0 !important; flex-direction: column !important; align-items: stretch !important; }
           .listing-topbar { flex-direction: column !important; align-items: stretch !important; gap: 10px !important; }
           .listing-topbar > div:last-child { justify-content: space-between !important; flex-wrap: nowrap !important; overflow-x: auto !important; }
           .listing-topbar h1 { font-size: 16px !important; }

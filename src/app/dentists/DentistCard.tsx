@@ -95,6 +95,11 @@ export default function DentistCard({ dentist: d, view }: DentistCardProps) {
       <div style={{
         background: '#fff', border: '1px solid var(--border)', borderRadius: 16,
         overflow: 'hidden', transition: 'box-shadow 0.2s, transform 0.2s',
+        // Defensive: cap the card to its column so a future layout regression
+        // can never let it push past the 360px viewport again (box-sizing is
+        // global). The real fix for the recent overflow was the listing-layout
+        // align-items:stretch — this just makes the card itself fail-safe.
+        width: '100%', maxWidth: '100%',
       }} className="card-hover">
         {/* Photo banner */}
         <div style={{ height: 130, background: 'var(--blue-light)', position: 'relative', overflow: 'hidden' }}>
@@ -173,6 +178,8 @@ export default function DentistCard({ dentist: d, view }: DentistCardProps) {
     <div style={{
       background: '#fff', border: '1px solid var(--border)', borderRadius: 16,
       padding: '20px', display: 'flex', gap: 16, transition: 'box-shadow 0.2s',
+      // Defensive width cap — see grid-view note above.
+      width: '100%', maxWidth: '100%',
     }} className="card-hover dentist-card-list">
       {/* Photo */}
       <div style={{

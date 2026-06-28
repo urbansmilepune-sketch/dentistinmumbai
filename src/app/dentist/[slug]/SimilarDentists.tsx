@@ -52,7 +52,12 @@ export default function SimilarDentists({ dentists }: { dentists: SimilarDentist
       <style>{`
         .profile-similar-grid {
           display: grid;
-          grid-template-columns: repeat(2, 1fr);
+          /* minmax(0, 1fr), NOT 1fr: a bare 1fr track is minmax(auto, 1fr),
+             whose auto floor refuses to shrink below the column's min-content.
+             The card's nowrap specialty line set that floor at ~195px, so two
+             columns (~404px) overran the 328px mobile content box. minmax(0,…)
+             lets the tracks shrink and the ellipsis do its job. */
+          grid-template-columns: repeat(2, minmax(0, 1fr));
           gap: 14px;
         }
         .profile-similar-card {
