@@ -29,14 +29,25 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const city = getCityBySlug(h.get('x-city-slug'))
   const { data: area } = await supabase
     .from('areas')
-    .select('name, dentist_count')
+    .select('id, name, dentist_count')
     .eq('slug', slug)
     .eq('city', city.citySlug)
     .single()
   if (!area) return { title: 'Area Not Found' }
+  // Live active-dentist count for this area, from the same 300s-cached source
+  // the page body uses (getCityAreaDentistCounts keyed by stringified area id)
+  // — no extra round-trip. When the count is 0 we drop the number and lead
+  // with a count-free line rather than advertise "0 verified dentists". City
+  // name stays dynamic so non-Pune area pages aren't mislabelled. lowestFee is
+  // intentionally not added here — it would require a separate fee query.
+  const areaCounts = await getCityAreaDentistCounts(city.citySlug)
+  const liveCount = areaCounts[String(area.id)] ?? 0
+  const lead = liveCount > 0
+    ? `${liveCount} verified dentists in ${area.name}, ${city.cityName}.`
+    : `Verified dentists in ${area.name}, ${city.cityName}.`
   return {
     title: `Best Dentists in ${area.name}, ${city.cityName}`,
-    description: `Find top-rated, verified dentists in ${area.name}, ${city.cityName}. Compare fees, read reviews, book appointments. ${area.dentist_count || 0}+ dentists listed.`,
+    description: `${lead} See real fees, photos and book instantly.`,
     alternates: { canonical: `https://${city.domain}/area/${slug}` },
   }
 }
@@ -515,6 +526,50 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
           </div>
         </div>
       </main>
+
+      {area.slug === 'hinjewadi' && (
+        <div style={{
+          maxWidth: '680px',
+          margin: '1rem auto 0',
+          padding: '0 1rem'
+        }}>
+          <a href="/area/hinjewadi-phase-1" style={{
+            fontSize: '14px',
+            color: '#185FA5',
+            textDecoration: 'none'
+          }}>
+            Looking for a dentist near Hinjewadi Phase 1? →
+          </a>
+        </div>
+      )}
+
+      {area.description && (
+        <div style={{
+          maxWidth: '680px',
+          margin: '0 auto',
+          padding: '2rem 1rem',
+          borderTop: '1px solid #E5E7EB'
+        }}>
+          <p style={{
+            fontSize: '14px',
+            color: '#52514E',
+            lineHeight: '1.7',
+            margin: '0 0 1rem 0'
+          }}>
+            {area.description}
+          </p>
+          {area.seo_content && (
+            <p style={{
+              fontSize: '13px',
+              color: '#898781',
+              lineHeight: '1.7',
+              margin: '0'
+            }}>
+              {area.seo_content}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* FOOTER */}
       <footer style={{ background: '#0A1628', padding: '40px 20px 24px', color: 'rgba(255,255,255,0.6)', marginTop: 0 }}>
