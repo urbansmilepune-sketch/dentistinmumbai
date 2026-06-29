@@ -135,7 +135,7 @@ export default function DentistCard({ dentist: d, view }: DentistCardProps) {
           {rating > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
               <Stars rating={rating} />
-              <span style={{ fontSize: 12, color: 'var(--muted)' }}>{rating.toFixed(1)} ({d.review_count || 0})</span>
+              <span style={{ fontSize: 12, color: 'var(--muted)' }}>{rating.toFixed(1)}{(d.review_count || 0) > 0 ? ` (${d.review_count})` : ''}</span>
             </div>
           )}
 
@@ -215,7 +215,7 @@ export default function DentistCard({ dentist: d, view }: DentistCardProps) {
             {rating > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end', marginTop: 4 }}>
                 <Stars rating={rating} />
-                <span style={{ fontSize: 12, color: 'var(--muted)' }}>{rating.toFixed(1)} ({d.review_count || 0})</span>
+                <span style={{ fontSize: 12, color: 'var(--muted)' }}>{rating.toFixed(1)}{(d.review_count || 0) > 0 ? ` (${d.review_count})` : ''}</span>
               </div>
             )}
           </div>
