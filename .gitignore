@@ -54,3 +54,7 @@ scrape_*.py
 /test.txt
 /wwww.txt
 src/lib/*.txt
+
+# generated outreach reports — contain PII, regenerate with scripts/segment_dentists.py
+dentist-outreach-segments.csv
+dentist-blank-fees.csv
