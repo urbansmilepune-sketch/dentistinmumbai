@@ -17,8 +17,7 @@ const TABS = [
   { id: 'visits', label: 'Visit Notes', icon: '📋' },
   { id: 'prescriptions', label: 'Prescriptions', icon: '💊' },
   { id: 'invoices', label: 'Invoices', icon: '🧾' },
-  { id: 'plans', label: 'Treatment Plans', icon: '🦷' },
-  { id: 'treatment-plan', label: 'Treatment Plan', icon: '📋' },
+  { id: 'treatment-plan', label: 'Treatment Plan', icon: '🦷' },
   { id: 'dental-chart', label: 'Dental Chart', icon: '🦷' },
   { id: 'emr', label: 'EMR', icon: '🏥' },
   { id: 'consent', label: 'Consent', icon: '📝' },
@@ -74,6 +73,11 @@ const TAB_ALIASES: Record<string, string> = {
   history: 'timeline',
   treatments: 'visits',
   treatment: 'visits',
+  // The old inline "Treatment Plans" tab (id `plans`) was removed — its basic
+  // create form was superseded by the richer /treatment-plan workflow route,
+  // which the surviving `treatment-plan` tab launches. Land lingering
+  // `?tab=plans` bookmarks on that single remaining tab.
+  plans: 'treatment-plan',
   // Legacy aliases — the old `xrays` and `photos` tabs were merged into
   // the unified `images` vault. Existing bookmarks keep landing correctly.
   xrays: 'images',
@@ -115,7 +119,6 @@ export default function PatientDetailPage() {
   const [chartSubTab, setChartSubTab] = useState<'tooth' | 'perio'>('tooth')
   const [showAddVisit, setShowAddVisit] = useState(false)
   const [showAddRx, setShowAddRx] = useState(false)
-  const [showAddPlan, setShowAddPlan] = useState(false)
   const [saving, setSaving] = useState(false)
 
   const [visitForm, setVisitForm] = useState({
@@ -129,10 +132,6 @@ export default function PatientDetailPage() {
   })
   // Instruction language for the prescription form (persisted per dentist).
   const [rxLang, setRxLang] = useState<RxLang>('en')
-
-  const [planForm, setPlanForm] = useState({
-    title: '', steps: [{ treatment_name: '', tooth_number: '', estimated_cost: '', notes: '' }],
-  })
 
   // Patient portal access toggle (Overview tab).
   const [portalSaving, setPortalSaving] = useState(false)
@@ -247,32 +246,6 @@ export default function PatientDetailPage() {
     setShowAddRx(false)
     setRxForm({ template: '', medicines: [], instructions: '' })
     resetAiSuggestions()
-    setSaving(false)
-  }
-
-  async function savePlan() {
-    setSaving(true)
-    const supabase = createClient()
-    const totalCost = planForm.steps.reduce((sum, s) => sum + (parseInt(s.estimated_cost) || 0), 0)
-    const { data: plan } = await supabase.from('treatment_plans').insert({
-      patient_id: patientId, dentist_id: dentistId,
-      title: planForm.title, total_cost: totalCost,
-    }).select('id').single()
-
-    if (plan) {
-      const steps = planForm.steps.map((s, i) => ({
-        plan_id: plan.id, step_number: i + 1,
-        treatment_name: s.treatment_name,
-        tooth_number: s.tooth_number || null,
-        estimated_cost: parseInt(s.estimated_cost) || 0,
-        notes: s.notes || null,
-      }))
-      await supabase.from('treatment_plan_steps').insert(steps)
-      const { data: fullPlan } = await supabase.from('treatment_plans').select('*, treatment_plan_steps(*)').eq('id', plan.id).single()
-      if (fullPlan) setPlans(prev => [fullPlan, ...prev])
-    }
-    setShowAddPlan(false)
-    setPlanForm({ title: '', steps: [{ treatment_name: '', tooth_number: '', estimated_cost: '', notes: '' }] })
     setSaving(false)
   }
 
@@ -904,88 +877,23 @@ export default function PatientDetailPage() {
         )
       })()}
 
-      {/* TREATMENT PLANS */}
-      {activeTab === 'plans' && (
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
-            <button onClick={() => setShowAddPlan(true)} style={{ padding: '10px 20px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>+ Create Plan</button>
-          </div>
-          {showAddPlan && (
-            <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '24px', marginBottom: 20 }}>
-              <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, marginBottom: 16 }}>New Treatment Plan</h3>
-              <div style={{ marginBottom: 14 }}>
-                <label style={labelStyle}>Plan Title</label>
-                <input value={planForm.title} onChange={e => setPlanForm(f => ({ ...f, title: e.target.value }))} placeholder="e.g. Full Mouth Rehabilitation, Orthodontic Treatment" style={inputStyle} />
-              </div>
-              <label style={labelStyle}>Steps</label>
-              {planForm.steps.map((step, i) => (
-                <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 2fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-                  <input value={step.treatment_name} onChange={e => { const s = [...planForm.steps]; s[i].treatment_name = e.target.value; setPlanForm(f => ({ ...f, steps: s })) }} placeholder="Treatment" style={inputStyle} />
-                  <input value={step.tooth_number} onChange={e => { const s = [...planForm.steps]; s[i].tooth_number = e.target.value; setPlanForm(f => ({ ...f, steps: s })) }} placeholder="Tooth #" style={inputStyle} />
-                  <input type="number" value={step.estimated_cost} onChange={e => { const s = [...planForm.steps]; s[i].estimated_cost = e.target.value; setPlanForm(f => ({ ...f, steps: s })) }} placeholder="₹ Cost" style={inputStyle} />
-                  <input value={step.notes} onChange={e => { const s = [...planForm.steps]; s[i].notes = e.target.value; setPlanForm(f => ({ ...f, steps: s })) }} placeholder="Notes" style={inputStyle} />
-                  {planForm.steps.length > 1 && <button onClick={() => setPlanForm(f => ({ ...f, steps: f.steps.filter((_, idx) => idx !== i) }))} style={{ background: '#FEE2E2', color: '#991B1B', border: 'none', borderRadius: 6, padding: '6px 10px', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: 12 }}>✕</button>}
-                </div>
-              ))}
-              <button onClick={() => setPlanForm(f => ({ ...f, steps: [...f.steps, { treatment_name: '', tooth_number: '', estimated_cost: '', notes: '' }] }))}
-                style={{ fontSize: 12, color: 'var(--blue)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-body)', marginBottom: 16 }}>+ Add step</button>
-              <div style={{ background: 'var(--bg)', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 14 }}>
-                Total Estimate: <strong>₹{planForm.steps.reduce((sum, s) => sum + (parseInt(s.estimated_cost) || 0), 0).toLocaleString('en-IN')}</strong>
-              </div>
-              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                <button onClick={() => setShowAddPlan(false)} style={{ padding: '9px 18px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>Cancel</button>
-                <button onClick={savePlan} disabled={saving} style={{ padding: '9px 20px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>{saving ? 'Saving...' : 'Save Plan'}</button>
-              </div>
-            </div>
-          )}
-          {plans.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '40px', background: '#fff', borderRadius: 14, border: '1px solid var(--border)', color: 'var(--muted)' }}>No treatment plans yet.</div>
-          ) : plans.map(plan => (
-            <div key={plan.id} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '20px', marginBottom: 12 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-                <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16 }}>🦷 {plan.title}</span>
-                <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, color: 'var(--blue)' }}>₹{plan.total_cost?.toLocaleString('en-IN')}</span>
-              </div>
-              {plan.treatment_plan_steps?.length > 0 && (
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead><tr style={{ background: 'var(--bg)' }}>
-                    {['#', 'Treatment', 'Tooth', 'Cost', 'Status'].map(h => <th key={h} style={{ padding: '7px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: 'var(--muted)' }}>{h}</th>)}
-                  </tr></thead>
-                  <tbody>{plan.treatment_plan_steps.sort((a: any, b: any) => a.step_number - b.step_number).map((step: any) => (
-                    <tr key={step.id} style={{ borderTop: '1px solid var(--border)' }}>
-                      <td style={{ padding: '8px 12px', fontSize: 13, color: 'var(--muted)' }}>{step.step_number}</td>
-                      <td style={{ padding: '8px 12px', fontSize: 13, fontWeight: 500 }}>{step.treatment_name}</td>
-                      <td style={{ padding: '8px 12px', fontSize: 13 }}>{step.tooth_number || '—'}</td>
-                      <td style={{ padding: '8px 12px', fontSize: 13 }}>₹{step.estimated_cost?.toLocaleString('en-IN')}</td>
-                      <td style={{ padding: '8px 12px' }}>
-                        <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: step.status === 'completed' ? '#DCFCE7' : step.status === 'in_progress' ? '#DBEAFE' : '#F3F4F6', color: step.status === 'completed' ? '#166534' : step.status === 'in_progress' ? '#1D4ED8' : '#374151' }}>
-                          {step.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}</tbody>
-                </table>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* DEDICATED TREATMENT-PLAN PAGE — the older "plans" tab is a quick
-          summary; this richer workflow (draft/presented/accepted lifecycle,
-          drag-reorder, per-step completion, convert to invoice, WhatsApp PDF,
-          patient acceptance tracking) lives on its own route so the form
-          state and step manager don't bloat this already-busy file. */}
+      {/* TREATMENT PLAN — the single treatment-plan surface. This launcher
+          opens the dedicated /treatment-plan workflow route (draft/presented/
+          accepted lifecycle, drag-reorder, per-step completion, convert to
+          invoice, WhatsApp PDF, patient acceptance tracking), kept on its own
+          route so its form state and step manager don't bloat this already-busy
+          file. The older inline "plans" tab — a basic create form with no
+          lifecycle — was removed in favour of this richer page. */}
       {activeTab === 'treatment-plan' && (
         <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '28px', textAlign: 'center' }}>
-          <div style={{ fontSize: 40, marginBottom: 10 }}>📋</div>
+          <div style={{ fontSize: 40, marginBottom: 10 }}>🦷</div>
           <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18, marginBottom: 6 }}>Treatment Plan Workflow</h3>
           <p style={{ fontSize: 14, color: 'var(--muted)', maxWidth: 520, margin: '0 auto 20px' }}>
             Build a multi-step plan, track patient acceptance, mark steps completed one-by-one, share a PDF on WhatsApp, and convert the whole plan into an invoice in one click.
           </p>
           <Link href={`/for-dentists/dashboard/patients/${patientId}/treatment-plan`}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '11px 22px', minHeight: 44, background: 'var(--blue)', color: '#fff', borderRadius: 10, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
-            Open Treatment Plans →
+            Open Treatment Plan →
           </Link>
         </div>
       )}
