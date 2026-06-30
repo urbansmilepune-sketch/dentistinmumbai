@@ -1,5 +1,17 @@
 'use client'
 
+// TODO(dead-code, low priority): DELETION CANDIDATE — superseded by
+// /for-dentists/dashboard/patients/[id]. This is the pre-`/dashboard`
+// generation of the patient detail page: it's still a routable page.tsx
+// (reachable by typing the URL) but NOTHING in the codebase links to it —
+// the sidebar, patient listing, and all deep-links point at the dashboard
+// route. It also lags the live page (old 5-tab shape with a standalone
+// `xrays` tab that the unified `images` vault replaced; no EMR/Consent/
+// Timeline/Lab/rich Treatment Plan). Safe to remove (along with its sibling
+// listing page src/app/for-dentists/patients/page.tsx) ONCE we confirm no
+// external bookmarks/marketing links hit /for-dentists/patients/[id]
+// directly — otherwise add a redirect to the dashboard equivalent instead.
+
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useParams } from 'next/navigation'
