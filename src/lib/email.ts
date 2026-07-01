@@ -209,7 +209,7 @@ export async function sendStaffInviteEmail(data: {
             <strong>${data.owner_name}</strong> has invited you to join <strong>${data.clinic_name}</strong> as <strong>${roleLabel}</strong>.
           </p>
           <p style="color: #374151; font-size: 14px; line-height: 1.6;">
-            Click the button below to accept the invite and sign in. The link is single-use and expires in 24 hours.
+            Click the button below to accept the invite and sign in. The link is single-use and expires in 30 days.
           </p>
           <div style="text-align: center; margin: 28px 0;">
             <a href="${data.invite_url}" style="background: #0057A8; color: white; padding: 14px 30px; border-radius: 10px; text-decoration: none; font-weight: 700; font-size: 15px; display: inline-block;">Accept Invite →</a>

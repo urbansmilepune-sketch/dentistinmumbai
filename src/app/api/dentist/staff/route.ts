@@ -142,14 +142,39 @@ export async function POST(request: NextRequest) {
   const origin = resolveOrigin(request, owner.city)
   const inviteUrl = `${origin}/staff-accept?token=${invite_token}`
 
-  sendStaffInviteEmail({
-    to_email: email,
-    invite_url: inviteUrl,
-    clinic_name: owner.clinic_name || 'your clinic',
-    owner_name: owner.name || 'The clinic owner',
-    role,
-    city: owner.city ?? undefined,
-  }).catch(err => console.error('[staff/invite] email send failed', err))
+  // Send the invite synchronously so a delivery failure reaches the owner
+  // instead of being swallowed. The clinic_staff row is already persisted
+  // above; on failure we return an error and the owner can just click
+  // "Invite" again — the existing-row branch reuses this row and mints a
+  // fresh token, so no orphan/duplicate is created.
+  //
+  // Resend resolves with { data, error } for API-level failures (unverified
+  // domain, missing/invalid key, rate limit) rather than throwing, so we
+  // must check the returned `error` — and still catch a thrown exception
+  // for network-level failures.
+  try {
+    const { error: emailErr } = await sendStaffInviteEmail({
+      to_email: email,
+      invite_url: inviteUrl,
+      clinic_name: owner.clinic_name || 'your clinic',
+      owner_name: owner.name || 'The clinic owner',
+      role,
+      city: owner.city ?? undefined,
+    })
+    if (emailErr) {
+      console.error('[staff/invite] email send failed', emailErr)
+      return NextResponse.json(
+        { error: 'Failed to send invite email — please try again.', id: staffId },
+        { status: 502 },
+      )
+    }
+  } catch (err) {
+    console.error('[staff/invite] email send threw', err)
+    return NextResponse.json(
+      { error: 'Failed to send invite email — please try again.', id: staffId },
+      { status: 502 },
+    )
+  }
 
   return NextResponse.json({ success: true, id: staffId })
 }
