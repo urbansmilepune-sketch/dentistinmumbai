@@ -103,6 +103,27 @@ const labelStyle: React.CSSProperties = {
   fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4,
 }
 
+// tooth_numbers is a Postgres text[] column, but dentists type free text like
+// "25, 26 and 27". Normalise to a string array: strip the word "and", split on
+// commas / whitespace, trim, drop empties. "25, 26 and 27" → ["25","26","27"].
+function parseToothNumbers(raw: string | null | undefined): string[] {
+  if (!raw) return []
+  return raw
+    .replace(/\band\b/gi, ' ')
+    .split(/[\s,]+/)
+    .map(t => t.trim())
+    .filter(Boolean)
+}
+
+// Reverse direction: text[] rows come back from PostgREST as JS arrays, but the
+// UI/PDF/invoice code renders tooth_numbers as a plain string. Collapse arrays
+// (and the legacy text column) to a readable "25, 26, 27" for display state.
+function toothNumbersToText(v: unknown): string | null {
+  if (Array.isArray(v)) return v.length ? v.join(', ') : null
+  if (typeof v === 'string') return v.trim() || null
+  return null
+}
+
 export default function TreatmentPlanPage() {
   const router = useRouter()
   const params = useParams()
@@ -161,7 +182,7 @@ export default function TreatmentPlanPage() {
         .map(s => ({
           ...s,
           status: (s.status || 'pending') as StepStatus,
-          tooth_numbers: s.tooth_numbers ?? s.tooth_number ?? null,
+          tooth_numbers: toothNumbersToText(s.tooth_numbers) ?? s.tooth_number ?? null,
         }))
         .sort((a, b) => a.step_number - b.step_number),
     }
@@ -233,12 +254,14 @@ export default function TreatmentPlanPage() {
   async function addStep(plan: Plan, stepDraft: Omit<Step, 'id' | 'plan_id' | 'step_number' | 'completed_at'>) {
     const supabase = createClient()
     const nextNumber = (plan.treatment_plan_steps[plan.treatment_plan_steps.length - 1]?.step_number || 0) + 1
+    // tooth_numbers is text[] (needs an array); the legacy tooth_number is text.
+    const teeth = parseToothNumbers(stepDraft.tooth_numbers)
     const { data, error: insErr } = await supabase.from('treatment_plan_steps').insert({
       plan_id: plan.id,
       step_number: nextNumber,
       treatment_name: stepDraft.treatment_name,
-      tooth_numbers: stepDraft.tooth_numbers,
-      tooth_number: stepDraft.tooth_numbers,
+      tooth_numbers: teeth,
+      tooth_number: teeth.join(', ') || null,
       estimated_cost: stepDraft.estimated_cost,
       status: stepDraft.status,
       notes: stepDraft.notes,
@@ -255,11 +278,18 @@ export default function TreatmentPlanPage() {
 
   async function patchStep(plan: Plan, stepId: string, patch: Partial<Step>) {
     const supabase = createClient()
-    if (patch.tooth_numbers !== undefined) patch.tooth_number = patch.tooth_numbers
-    if (patch.status === 'completed' && !patch.completed_at) patch.completed_at = new Date().toISOString()
-    if (patch.status && patch.status !== 'completed') patch.completed_at = null
+    // Build the DB payload from the patch. tooth_numbers is text[], so convert
+    // the free-text field to a string array; the legacy tooth_number stays text.
+    const payload: Record<string, unknown> = { ...patch }
+    if (patch.tooth_numbers !== undefined) {
+      const teeth = parseToothNumbers(patch.tooth_numbers)
+      payload.tooth_numbers = teeth
+      payload.tooth_number = teeth.join(', ') || null
+    }
+    if (patch.status === 'completed' && !patch.completed_at) payload.completed_at = new Date().toISOString()
+    if (patch.status && patch.status !== 'completed') payload.completed_at = null
     const { data, error: upErr } = await supabase
-      .from('treatment_plan_steps').update(patch).eq('id', stepId)
+      .from('treatment_plan_steps').update(payload).eq('id', stepId)
       .select('*').single()
     if (upErr || !data) { setError(upErr?.message || 'Step update failed.'); return }
     const next = data as unknown as Step
@@ -781,7 +811,7 @@ function PlanCard({
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 2fr', gap: 8, marginBottom: 8 }}>
             <input autoFocus placeholder="Treatment (e.g. RCT 36)" value={stepDraft.treatment_name}
               onChange={e => setStepDraft(d => ({ ...d, treatment_name: e.target.value }))} style={inputStyle} />
-            <input placeholder="Tooth # (e.g. 36, 37)" value={stepDraft.tooth_numbers}
+            <input placeholder="e.g. 25, 26, 27" value={stepDraft.tooth_numbers}
               onChange={e => setStepDraft(d => ({ ...d, tooth_numbers: e.target.value }))} style={inputStyle} />
             <input type="number" placeholder="₹ Cost" value={stepDraft.estimated_cost}
               onChange={e => setStepDraft(d => ({ ...d, estimated_cost: e.target.value }))} style={inputStyle} />
