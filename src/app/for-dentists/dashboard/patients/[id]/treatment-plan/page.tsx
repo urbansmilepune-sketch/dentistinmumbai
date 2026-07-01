@@ -26,6 +26,13 @@ import { getCityBySlug } from '@/config/cities'
 type StepStatus = 'pending' | 'scheduled' | 'completed' | 'skipped'
 type PlanStatus = 'draft' | 'presented' | 'accepted' | 'in_progress' | 'completed' | 'declined'
 
+// TODO(type-boundary): the DB stores tooth_numbers as text[] but in-app state
+// uses a display string (normalisePlan collapses the array). Make the boundary
+// explicit: add `type StepRow = Omit<Step,'tooth_numbers'> & { tooth_numbers:
+// string[] | null }` + a `PlanRow` wrapper + a `normaliseStep(StepRow): Step`
+// helper, then replace the `as unknown as Step/Plan` casts (in normalisePlan,
+// addStep, patchStep). Deferred: ~16-line refactor, not a bug — current casts
+// are harmless. Verify supabase-js result types still need `as unknown`.
 type Step = {
   id: string
   plan_id: string
