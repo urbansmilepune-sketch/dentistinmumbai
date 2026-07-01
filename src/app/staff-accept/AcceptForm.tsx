@@ -2,8 +2,13 @@
 
 // Client form rendered by /staff-accept once the server component has
 // validated the token. Submits to /api/staff/accept which creates the
-// auth.users row and activates the clinic_staff row, then signs the
-// staff member into the same browser session.
+// auth.users row and activates the clinic_staff row, then redirects to the
+// login page with a success message so the staff member signs in with the
+// password they just set. We deliberately do NOT auto-sign-in from the
+// browser here: signInWithPassword can fail with a Supabase timing/session
+// error immediately after the admin createUser, which used to bounce the
+// user to /login with no context. Sending them to /login explicitly is
+// simpler and always works — the dashboard gate already admits active staff.
 //
 // autoComplete="off" + autoComplete="new-password" mirrors the login
 // page hardening: this domain may have the clinic owner's saved
@@ -12,7 +17,6 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 
 export default function AcceptForm({ token, email }: { token: string; email: string }) {
   const router = useRouter()
@@ -42,21 +46,13 @@ export default function AcceptForm({ token, email }: { token: string; email: str
         return
       }
 
-      // Auto-sign-in so the staff member lands in the dashboard
-      // instead of having to re-type the password on /for-dentists/login.
-      // The dashboard layout now resolves staff via clinic_staff and loads
-      // the owner's dentist row as the working context, with the sidebar
-      // filtered to the role's allowed sections.
-      const supabase = createClient()
-      const { error: signinErr } = await supabase.auth.signInWithPassword({ email, password })
-      if (signinErr) {
-        // Account is set up, just couldn't sign in client-side — send
-        // them to the login page with their email pre-filled.
-        router.push(`/for-dentists/login?email=${encodeURIComponent(email)}`)
-        return
-      }
-      router.push('/for-dentists/dashboard')
-      router.refresh()
+      // Account created and the clinic_staff row is now active. Send the
+      // staff member to the login page with their email pre-filled and a
+      // success banner; they sign in with the password they just set and
+      // the dashboard admits them (the gate resolves staff via clinic_staff
+      // and loads the owner's dentist row, filtered to the role's sections).
+      const message = 'Account created! Sign in with your new password.'
+      router.push(`/for-dentists/login?email=${encodeURIComponent(email)}&message=${encodeURIComponent(message)}`)
     } catch {
       setError('Network error — please retry.')
       setSubmitting(false)

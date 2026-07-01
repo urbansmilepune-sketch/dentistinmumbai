@@ -24,6 +24,9 @@ export default function DentistLoginPage() {
   const [, setMagicLoading] = useState(false)
   const [, setMagicSent] = useState(false)
   const [error, setError] = useState('')
+  // Success banner shown when arriving with a ?message= param — e.g. staff
+  // redirected here after accepting an invite and setting their password.
+  const [successMsg, setSuccessMsg] = useState('')
 
   // ── Email-OTP flow state ──────────────────────────────────────────────
   // otpStep 'email' = collecting the address + "Send OTP"; 'code' = the
@@ -43,10 +46,18 @@ export default function DentistLoginPage() {
     const host = window.location.hostname
     setNational(isNationalHost(host))
     setCityConfig(getCityByDomain(host))
-    // Read ?next= directly from the URL instead of useSearchParams() — the
-    // latter requires a Suspense boundary at build time and adds zero
+    // Read query params directly from the URL instead of useSearchParams() —
+    // the latter requires a Suspense boundary at build time and adds zero
     // value here since this is a 'use client' component.
-    setNextParam(new URLSearchParams(window.location.search).get('next') ?? '')
+    const params = new URLSearchParams(window.location.search)
+    setNextParam(params.get('next') ?? '')
+    // Staff arriving from the invite-accept flow land here with their email
+    // pre-filled and a success message. They just set a password, so default
+    // to the Password tab.
+    const emailParam = params.get('email')
+    if (emailParam) setEmail(emailParam)
+    const msg = params.get('message')
+    if (msg) { setSuccessMsg(msg); setMethod('password') }
   }, [])
 
   // Resend cooldown: tick down to 0 once a code has been sent.
@@ -286,6 +297,12 @@ async function handleGoogle() {
 
           <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 4 }}>Welcome back, Doctor</h1>
           <p style={{ color: 'var(--muted)', fontSize: 14, marginBottom: 20 }}>{rightSubLine}</p>
+
+          {successMsg && (
+            <div style={{ padding: '12px 16px', background: '#DCFCE7', border: '1px solid #BBF7D0', borderRadius: 10, fontSize: 13, color: '#166534', marginBottom: 20 }}>
+              {successMsg}
+            </div>
+          )}
 
           {error && (
             <div style={{ padding: '12px 16px', background: '#FEE2E2', border: '1px solid #FECACA', borderRadius: 10, fontSize: 13, color: '#991B1B', marginBottom: 20 }}>
