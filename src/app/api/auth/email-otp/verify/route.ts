@@ -10,6 +10,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase/server'
 import bcrypt from 'bcryptjs'
 
 export async function POST(request: NextRequest) {
@@ -52,24 +53,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Incorrect code. Check your email and try again.' }, { status: 400 })
   }
 
-  // Burn the code first so a successful match can't be replayed even if link
-  // minting below fails.
+  // Burn the code first so a successful match can't be replayed even if the
+  // session-minting below fails.
   await admin.from('email_otps').update({ used_at: new Date().toISOString() }).eq('id', row.id)
 
-  // Same-origin callback so the host-scoped auth cookie sticks (each city +
-  // the national host are separate apexes — see lib/approval.ts / auth/callback).
-  const origin = request.headers.get('origin') || new URL(request.url).origin
-  const redirectTo = `${origin}/auth/callback`
-
-  // magiclink only resolves for an existing auth user, so this doubles as the
-  // "is this a real account?" gate — we never create accounts from a login code.
+  // We've verified our own 6-digit code — now establish a Supabase session.
+  // We can't hand our code to supabase.auth.verifyOtp directly: it's our own
+  // bcrypt-hashed code, not a token GoTrue issued, so GoTrue wouldn't know it.
+  // Instead mint a magic-link token server-side and consume its hashed_token
+  // in the same request. generateLink(type:'magiclink') only resolves for an
+  // existing auth user, so this also doubles as the "is this a real account?"
+  // gate — we never create accounts from a login code.
   const { data: link, error: linkErr } = await admin.auth.admin.generateLink({
     type: 'magiclink',
     email,
-    options: { redirectTo },
   })
-  const actionLink = link?.properties?.action_link ?? null
-  if (linkErr || !actionLink) {
+  const hashedToken = link?.properties?.hashed_token ?? null
+  if (linkErr || !hashedToken) {
     console.error('[auth/email-otp/verify] generateLink failed', { message: linkErr?.message })
     return NextResponse.json(
       { error: 'No account found for this email. Register first, or sign in with Google.' },
@@ -77,5 +77,27 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  return NextResponse.json({ success: true, redirect_url: actionLink })
+  // Consume the token with the SSR server client so the session cookies land
+  // on THIS response. Unlike a Server Component, a Route Handler is allowed to
+  // write cookies (next/headers cookies() supports write here), so the
+  // dashboard's SSR auth gate sees the session on the client's very next
+  // (hard) navigation — no browser round-trip through a magic link, and no
+  // implicit-flow #fragment that never reaches the server.
+  const supabase = await createClient()
+  const { error: sessionErr } = await supabase.auth.verifyOtp({
+    token_hash: hashedToken,
+    type: 'magiclink',
+  })
+  if (sessionErr) {
+    console.error('[auth/email-otp/verify] verifyOtp failed', { message: sessionErr.message })
+    return NextResponse.json(
+      { error: 'Could not complete sign-in. Please request a new code and try again.' },
+      { status: 500 },
+    )
+  }
+
+  // Session cookies are now queued on this response. The client hard-navigates
+  // to its own computed landing (nextPath handles national /feed vs city
+  // dashboard and any ?next=), which carries the fresh cookie.
+  return NextResponse.json({ success: true })
 }

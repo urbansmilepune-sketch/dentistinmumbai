@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { getCityByDomain, isNationalHost, CITY_CONFIGS, DEFAULT_CITY, type CityConfig } from '@/config/cities'
@@ -8,6 +9,7 @@ import { getCityByDomain, isNationalHost, CITY_CONFIGS, DEFAULT_CITY, type CityC
 type LoginMethod = 'otp' | 'password' | 'magic'
 
 export default function DentistLoginPage() {
+  const router = useRouter()
   // Default to Email OTP — the simplest path for dentists who never set a
   // password. Password is the only other surfaced method; magic link was
   // removed from the UI (handleMagicLink is kept for internal use only).
@@ -110,16 +112,13 @@ export default function DentistLoginPage() {
       setError('Incorrect email or password. If you signed in with Google before, or never set a password, use a one-time email code instead.')
       setLoading(false); return
     }
-    // Hard navigation (window.location, NOT router.push) so the session
-    // cookie the browser client just wrote is carried on a full top-level
-    // request to the dashboard. A soft RSC navigation doesn't reliably
-    // deliver the just-set cookie to the first server render, so the SSR
-    // auth gate in the dashboard layout would see no session and bounce back
-    // to /login — this is exactly the loop the OTP path avoids by using a
-    // full-page redirect. Same origin only: each city/national apex is a
-    // separate host and the supabase cookie is host-scoped, so cross-domain
-    // redirects drop the session; nextPath() always stays on this origin.
-    window.location.href = nextPath()
+    // Same origin only — each domain (each city + national) is a separate
+    // apex so the supabase auth cookie is host-scoped; cross-domain
+    // redirects drop the session and loop. The dashboard reads the dentist
+    // row by email, so data renders correctly here even if this domain
+    // doesn't match the dentist's registered city.
+    router.push(nextPath())
+    router.refresh()
   }
 
 // Passwordless fallback: dentists who never set (or forgot) a password can
@@ -182,9 +181,11 @@ async function handleGoogle() {
     }
   }
 
-  // Step 2: verify the code. The server returns a one-time magic link; we
-  // navigate to it (full-page, since it's a Supabase URL) so /auth/callback
-  // sets the session cookie and routes to the dashboard.
+  // Step 2: verify the code. The server checks the code AND sets the session
+  // cookie itself (see /api/auth/email-otp/verify), then returns { success }.
+  // We hard-navigate to the landing page — a full top-level request so the
+  // dashboard's SSR auth gate sees the just-set cookie (a soft RSC navigation
+  // doesn't reliably deliver it to the first server render).
   async function handleVerifyOtp() {
     if (otpCode.length !== 6) { setError('Enter the full 6-digit code.'); return }
     setError(''); setOtpVerifying(true)
@@ -195,13 +196,14 @@ async function handleGoogle() {
         body: JSON.stringify({ email, otp: otpCode }),
       })
       const data = await res.json()
-      if (!res.ok || !data?.redirect_url) {
+      if (!res.ok || !data?.success) {
         setError(data?.error || 'Could not verify the code. Please try again.')
         setOtpDigits(['', '', '', '', '', ''])
+        setOtpVerifying(false)
         setTimeout(() => otpBoxRefs.current[0]?.focus(), 50)
         return
       }
-      window.location.href = data.redirect_url
+      window.location.href = nextPath()
     } catch {
       setError('Network error. Please try again.')
       setOtpVerifying(false)
