@@ -49,6 +49,16 @@ export default async function DashboardPage() {
     'id, name, clinic_name, slug, city, tier, is_verified, profile_photo, cover_photo, bio, phone, whatsapp, working_hours, maps_embed, created_at',
   )
 
+  // TEMP DEBUG (staff login P0): this page resolves the dentist via the
+  // RLS-gated USER-BOUND client (unlike the layout's service-role gate). If a
+  // staff member reaches the gate but null here, RLS is blocking the staff
+  // lookup. Remove once diagnosed.
+  console.log('[dashboard-page] resolveCurrentDentist:', {
+    userEmail: user.email,
+    hasDentist: !!dentist,
+    staffRole: dentist?.__staffRole ?? null,
+  })
+
   if (!dentist) redirect('/for-dentists/login')
 
   const todayIso = istTodayIso()

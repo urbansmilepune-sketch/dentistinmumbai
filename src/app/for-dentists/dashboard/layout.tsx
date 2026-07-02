@@ -82,6 +82,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
     .eq('status', 'active')
     .maybeSingle()
 
+  // TEMP DEBUG (staff login P0): remove once diagnosed.
+  console.log('[dashboard-gate] staff lookup:', {
+    staffRow: staffRow ? { role: staffRow.role, status: staffRow.status, dentist_id: staffRow.dentist_id } : null,
+  })
+
   if (!staffRow) {
     const email = user.email ?? ''
     redirect(`/for-dentists/register?email=${encodeURIComponent(email)}`)
@@ -92,6 +97,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
     .select(DENTIST_FIELDS)
     .eq('id', staffRow.dentist_id)
     .single()
+
+  // TEMP DEBUG (staff login P0): remove once diagnosed.
+  console.log('[dashboard-gate] owner:', {
+    ownerDentist: ownerDentist ? { id: ownerDentist.id, is_active: ownerDentist.is_active } : null,
+  })
 
   if (!ownerDentist) {
     // Staff row points at a missing dentist — stale invite from a deleted
