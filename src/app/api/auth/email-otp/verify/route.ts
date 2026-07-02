@@ -92,16 +92,9 @@ export async function POST(request: NextRequest) {
   // token, so a magiclink-generated hashed_token verifies under 'email'. The
   // generateLink type and the verifyOtp type do not have to match.
   const supabase = await createClient()
-  const { data, error: sessionErr } = await supabase.auth.verifyOtp({
+  const { error: sessionErr } = await supabase.auth.verifyOtp({
     token_hash: hashedToken,
     type: 'email',
-  })
-  // TEMP DEBUG (staff login P0): does verifyOtp return an actual session, or a
-  // user with no session? Remove once the staff /login loop is diagnosed.
-  console.log('[otp-verify] session result:', {
-    hasSession: !!data.session,
-    userId: data.user?.id,
-    email: data.user?.email,
   })
   if (sessionErr) {
     console.error('[auth/email-otp/verify] verifyOtp failed', {

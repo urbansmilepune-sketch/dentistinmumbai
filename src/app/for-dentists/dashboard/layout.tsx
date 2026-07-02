@@ -11,15 +11,7 @@ const DENTIST_FIELDS = 'id, slug, name, clinic_name, tier, trial_started_at, is_
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
-  const { data: { user }, error } = await supabase.auth.getUser()
-
-  // TEMP DEBUG (staff login P0): what does the SSR gate see? Remove once the
-  // staff /login loop is diagnosed.
-  console.log('[dashboard-gate] user:', {
-    id: user?.id,
-    email: user?.email,
-    error: error?.message,
-  })
+  const { data: { user } } = await supabase.auth.getUser()
 
   if (!user) redirect('/for-dentists/login')
 
@@ -82,11 +74,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
     .eq('status', 'active')
     .maybeSingle()
 
-  // TEMP DEBUG (staff login P0): remove once diagnosed.
-  console.log('[dashboard-gate] staff lookup:', {
-    staffRow: staffRow ? { role: staffRow.role, status: staffRow.status, dentist_id: staffRow.dentist_id } : null,
-  })
-
   if (!staffRow) {
     const email = user.email ?? ''
     redirect(`/for-dentists/register?email=${encodeURIComponent(email)}`)
@@ -97,11 +84,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
     .select(DENTIST_FIELDS)
     .eq('id', staffRow.dentist_id)
     .single()
-
-  // TEMP DEBUG (staff login P0): remove once diagnosed.
-  console.log('[dashboard-gate] owner:', {
-    ownerDentist: ownerDentist ? { id: ownerDentist.id, is_active: ownerDentist.is_active } : null,
-  })
 
   if (!ownerDentist) {
     // Staff row points at a missing dentist — stale invite from a deleted
