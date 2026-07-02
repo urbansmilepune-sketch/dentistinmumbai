@@ -11,9 +11,29 @@ const DENTIST_FIELDS = 'id, slug, name, clinic_name, tier, trial_started_at, is_
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
 
-  if (!user) redirect('/for-dentists/login')
+  // TEMP DEBUG (P0 auth loop): confirm which sb- cookies the gate sees and what
+  // getUser() actually returns. Remove once the null-user cause is identified.
+  const { cookies: nextCookies } = await import('next/headers')
+  const cookieStore = await nextCookies()
+  const sbCookieNames = cookieStore.getAll().map((c) => c.name).filter((n) => n.startsWith('sb-'))
+  const { data: { user }, error: getUserError } = await supabase.auth.getUser()
+  console.log('[dashboard/layout] auth gate', {
+    sbCookieNames,
+    userEmail: user?.email ?? null,
+    getUserError: getUserError?.message ?? null,
+    getUserErrorStatus: (getUserError as { status?: number } | null)?.status ?? null,
+  })
+
+  if (!user) {
+    // TEMP DEBUG: surface gate state in the redirect URL so it's visible in the
+    // browser Network tab (Location header) without server log access.
+    const dbg = new URLSearchParams({
+      dbg_cookies: sbCookieNames.join(',') || 'none',
+      dbg_err: getUserError?.message ?? 'null',
+    })
+    redirect(`/for-dentists/login?${dbg.toString()}`)
+  }
 
   // Service role for ALL row lookups in this layout (dentists + staff +
   // owner dentist). The user-bound client is RLS-gated, and the public
