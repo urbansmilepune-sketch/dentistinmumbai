@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { getCityByDomain, isNationalHost, CITY_CONFIGS, DEFAULT_CITY, type CityConfig } from '@/config/cities'
@@ -9,7 +8,6 @@ import { getCityByDomain, isNationalHost, CITY_CONFIGS, DEFAULT_CITY, type CityC
 type LoginMethod = 'otp' | 'password' | 'magic'
 
 export default function DentistLoginPage() {
-  const router = useRouter()
   // Default to Email OTP — the simplest path for dentists who never set a
   // password. Password is the only other surfaced method; magic link was
   // removed from the UI (handleMagicLink is kept for internal use only).
@@ -104,21 +102,34 @@ export default function DentistLoginPage() {
   async function handleEmail(e: React.FormEvent) {
     e.preventDefault()
     setError(''); setLoading(true)
-    const { error: authError } = await supabase.auth.signInWithPassword({ email, password })
-    if (authError) {
-      // Google-only and invite-only dentists have no password set, so this
-      // fails for them with no obvious next step. Steer them to OTP (works for
-      // every account) rather than implying their credentials are simply wrong.
-      setError('Incorrect email or password. If you signed in with Google before, or never set a password, use a one-time email code instead.')
-      setLoading(false); return
+    try {
+      // Sign in server-side so the session cookie is set on the response and
+      // the dashboard's SSR gate sees it on the first render — same fix as the
+      // Email-OTP flow. The old browser-SDK sign-in + soft router.push() didn't
+      // reliably deliver the cookie to the first server render and looped back
+      // here. See /api/auth/password-login.
+      const res = await fetch('/api/auth/password-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data?.success) {
+        // Google-only and invite-only dentists have no password set, so this
+        // fails for them with no obvious next step. The server returns copy
+        // steering them to OTP (works for every account).
+        setError(data?.error || 'Incorrect email or password. If you signed in with Google before, or never set a password, use a one-time email code instead.')
+        setLoading(false); return
+      }
+      // Hard navigation (same origin only — each domain is a separate apex so
+      // the supabase auth cookie is host-scoped; cross-domain redirects drop
+      // the session and loop). A full top-level request carries the just-set
+      // cookie to the SSR gate; a soft RSC navigation doesn't reliably.
+      window.location.href = nextPath()
+    } catch {
+      setError('Network error. Please try again.')
+      setLoading(false)
     }
-    // Same origin only — each domain (each city + national) is a separate
-    // apex so the supabase auth cookie is host-scoped; cross-domain
-    // redirects drop the session and loop. The dashboard reads the dentist
-    // row by email, so data renders correctly here even if this domain
-    // doesn't match the dentist's registered city.
-    router.push(nextPath())
-    router.refresh()
   }
 
 // Passwordless fallback: dentists who never set (or forgot) a password can
