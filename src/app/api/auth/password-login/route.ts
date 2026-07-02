@@ -29,7 +29,14 @@ export async function POST(request: NextRequest) {
   // SSR server client — in a Route Handler its setAll can write cookies onto
   // the response, so a successful sign-in lands the session cookie here.
   const supabase = await createClient()
-  const { error } = await supabase.auth.signInWithPassword({ email, password })
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+  // TEMP DEBUG (staff login P0): does sign-in return an actual session? Remove
+  // once the staff /login loop is diagnosed.
+  console.log('[password-login] session result:', {
+    hasSession: !!data.session,
+    userId: data.user?.id,
+    email: data.user?.email,
+  })
   if (error) {
     // Google-only / invite-only / never-set-a-password accounts fail here.
     // Mirror the client's existing copy that steers them toward Email OTP.

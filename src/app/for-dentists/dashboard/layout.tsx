@@ -11,7 +11,15 @@ const DENTIST_FIELDS = 'id, slug, name, clinic_name, tier, trial_started_at, is_
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const { data: { user }, error } = await supabase.auth.getUser()
+
+  // TEMP DEBUG (staff login P0): what does the SSR gate see? Remove once the
+  // staff /login loop is diagnosed.
+  console.log('[dashboard-gate] user:', {
+    id: user?.id,
+    email: user?.email,
+    error: error?.message,
+  })
 
   if (!user) redirect('/for-dentists/login')
 
