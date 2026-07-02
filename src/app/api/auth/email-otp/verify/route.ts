@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
       name: sessionErr.name,
     })
     return NextResponse.json(
-      { error: 'Could not complete sign-in. Please request a new code and try again.', debug_error: sessionErr.message },
+      { error: 'Could not complete sign-in. Please request a new code and try again.' },
       { status: 500 },
     )
   }
