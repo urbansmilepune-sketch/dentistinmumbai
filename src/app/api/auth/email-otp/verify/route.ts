@@ -70,7 +70,12 @@ export async function POST(request: NextRequest) {
   })
   const hashedToken = link?.properties?.hashed_token ?? null
   if (linkErr || !hashedToken) {
-    console.error('[auth/email-otp/verify] generateLink failed', { message: linkErr?.message })
+    console.error('[auth/email-otp/verify] generateLink failed', {
+      message: linkErr?.message,
+      status: (linkErr as { status?: number } | null)?.status,
+      code: (linkErr as { code?: string } | null)?.code,
+      hasHashedToken: !!hashedToken,
+    })
     return NextResponse.json(
       { error: 'No account found for this email. Register first, or sign in with Google.' },
       { status: 404 },
@@ -83,15 +88,23 @@ export async function POST(request: NextRequest) {
   // dashboard's SSR auth gate sees the session on the client's very next
   // (hard) navigation — no browser round-trip through a magic link, and no
   // implicit-flow #fragment that never reaches the server.
+  // type:'email' — recent GoTrue unifies magic-link and email-OTP into one
+  // token, so a magiclink-generated hashed_token verifies under 'email'. The
+  // generateLink type and the verifyOtp type do not have to match.
   const supabase = await createClient()
   const { error: sessionErr } = await supabase.auth.verifyOtp({
     token_hash: hashedToken,
-    type: 'magiclink',
+    type: 'email',
   })
   if (sessionErr) {
-    console.error('[auth/email-otp/verify] verifyOtp failed', { message: sessionErr.message })
+    console.error('[auth/email-otp/verify] verifyOtp failed', {
+      message: sessionErr.message,
+      status: (sessionErr as { status?: number }).status,
+      code: (sessionErr as { code?: string }).code,
+      name: sessionErr.name,
+    })
     return NextResponse.json(
-      { error: 'Could not complete sign-in. Please request a new code and try again.' },
+      { error: 'Could not complete sign-in. Please request a new code and try again.', debug_error: sessionErr.message },
       { status: 500 },
     )
   }
