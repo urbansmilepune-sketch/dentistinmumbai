@@ -1,3 +1,4 @@
+// Redeploy marker: 2026-07-03 — force Vercel to publish the fail() error-surfacing fix (d3995af).
 // List + create for clinic_expenses, scoped to the session dentist.
 // dentist_id is taken from the session, never accepted from the client.
 // Service role bypasses RLS so we re-verify ownership on mutations and
