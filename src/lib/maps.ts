@@ -32,6 +32,14 @@ const IFRAME_WRAPPER_RE = /^<iframe[\s\S]*<\/iframe>\s*$/i
 // some browsers and fail in others.
 const TRUSTED_EMBED_RE = /^https:\/\/(?:www\.)?google\.com\/maps\/embed\?/i
 
+// Every embed src we actually render: the canonical /maps/embed?pb= form, the
+// Embed API /maps/embed/v1/… form, and the keyless maps.google.com/maps?…
+// (output=embed) form that buildMapsIframe and the maps-embed route generate.
+// An iframe carrying any of these is one of ours, so classify it as 'iframe',
+// not 'invalid'. (Public-profile rendering already trusts any google.com/maps
+// iframe; this regex only governs the dashboard's preview/warning UI.)
+const RENDERABLE_EMBED_SRC_RE = /^https:\/\/(?:(?:www\.)?google\.com\/maps\/embed(?:\/v1\/[a-z]+)?\?|maps\.google\.com\/maps\?)/i
+
 export type MapsInputKind = 'iframe' | 'searchEmbed' | 'shortLink' | 'empty' | 'invalid'
 
 /** Classifies the raw input so the dashboard can pick the right UI:
@@ -42,10 +50,10 @@ export function classifyMapsInput(value: string | null | undefined): MapsInputKi
   if (!raw) return 'empty'
   if (IFRAME_WRAPPER_RE.test(raw)) {
     const src = pullIframeSrcFromHtml(raw)
-    if (src && TRUSTED_EMBED_RE.test(src)) return 'iframe'
-    // An iframe whose src isn't the canonical embed form — could be a
-    // legacy ?output=embed iframe or something the dentist hand-rolled.
-    // Treat as invalid so we don't blindly trust unknown HTML.
+    if (src && RENDERABLE_EMBED_SRC_RE.test(src)) return 'iframe'
+    // An iframe whose src isn't a Google Maps embed we recognise — something
+    // the dentist hand-rolled or a non-Maps host. Treat as invalid so we
+    // don't blindly trust unknown HTML.
     return 'invalid'
   }
   if (SHORT_MAPS_URL_RE.test(raw)) return 'shortLink'
