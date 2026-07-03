@@ -17,20 +17,16 @@ function admin() {
 }
 
 function fail(scope: string, err: unknown, status = 500) {
-  // TEMP: Supabase PostgrestError is a plain object, not an Error instance, so
-  // the old `instanceof Error` check swallowed the real message as "Unknown error".
-  // Surface message + code/details/hint so failures are visible in the Network tab.
-  const e = err as { message?: unknown; code?: unknown; details?: unknown; hint?: unknown } | null
+  // Supabase PostgrestError is a plain object, not an Error instance, so also
+  // read `.message` off object errors — otherwise it collapses to "Unknown error".
+  const e = err as { message?: unknown } | null
   const message =
     err instanceof Error ? err.message
       : typeof err === 'string' ? err
       : e && typeof e.message === 'string' && e.message ? e.message
       : 'Unknown error'
   console.error(`[inventory:${scope}]`, err)
-  return NextResponse.json(
-    { error: message, scope, code: e?.code ?? null, details: e?.details ?? null, hint: e?.hint ?? null },
-    { status },
-  )
+  return NextResponse.json({ error: message, scope }, { status })
 }
 
 function normaliseCategory(raw: unknown): Category | null {
