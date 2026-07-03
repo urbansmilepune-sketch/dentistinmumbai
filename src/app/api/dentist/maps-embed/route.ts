@@ -17,7 +17,7 @@ import { classifyMapsInput, buildMapsIframe, extractSearchQuery } from '@/lib/ma
 
 // SSRF guard: we only ever server-fetch these hosts. A pasted URL on any other
 // host is never followed.
-const FETCHABLE_HOST_RE = /^(?:maps\.app\.goo\.gl|(?:www\.)?google\.com|maps\.google\.com)$/i
+const FETCHABLE_HOST_RE = /^(?:share\.google|maps\.app\.goo\.gl|(?:www\.)?google\.com|maps\.google\.com)$/i
 // Modern maps.app.goo.gl links resolve to the `data=` format, which has NO
 // @lat,lng — so we extract, in order: coordinates, the CID (feature id) out of
 // the `data=…!1s0x…:0x<cid>` blob, then the place name from /maps/place/<NAME>/.
