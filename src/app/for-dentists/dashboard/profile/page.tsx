@@ -419,22 +419,28 @@ export default function EditProfilePage() {
   async function handleSave() {
     if (!form.name || !form.clinic_name) { setError('Name and Clinic Name are required'); return }
     if (!dentistId) { setError('No dentist profile is linked to your account. Contact support.'); return }
-    // If the dentist typed anything into the maps field, insist on the full
-    // <iframe> embed — a bare URL or short link silently fails to render on
-    // the public profile, so reject it here rather than save something blank.
-    if (form.maps_embed.trim() && !form.maps_embed.includes('<iframe')) {
-      setError('Please paste the full <iframe> embed code from Google Maps.')
-      return
-    }
     setSaving(true); setError(''); setSaved(false)
 
-    // Normalise the maps field on save: a pasted Google Maps URL becomes a
-    // search-embed iframe pointed at the clinic name; an iframe stays as-is.
-    // Reflect the normalised value back into the form so the dentist sees
-    // what actually landed in the DB.
-    const normalisedMapsEmbed = buildMapsIframe(form.maps_embed, form.clinic_name)
-    if (normalisedMapsEmbed !== form.maps_embed) {
-      setForm(f => ({ ...f, maps_embed: normalisedMapsEmbed }))
+    // Normalise the maps field server-side: a pasted share link (maps.app.goo.gl)
+    // can only be expanded on the server — the browser can't follow its redirect
+    // and Google blocks framing the target. A full <iframe> is trusted as-is.
+    // Reflect the normalised value back into the form so the dentist sees what
+    // actually landed in the DB.
+    let normalisedMapsEmbed = ''
+    if (form.maps_embed.trim()) {
+      try {
+        const res = await fetch('/api/dentist/maps-embed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ input: form.maps_embed, clinic_name: form.clinic_name }),
+        })
+        const data = await res.json().catch(() => ({} as { maps_embed?: string; error?: string }))
+        if (!res.ok) { setSaving(false); setError(data.error || 'Could not process the map link.'); return }
+        normalisedMapsEmbed = data.maps_embed || ''
+        if (normalisedMapsEmbed !== form.maps_embed) setForm(f => ({ ...f, maps_embed: normalisedMapsEmbed }))
+      } catch {
+        setSaving(false); setError('Could not reach the map service. Please try again.'); return
+      }
     }
 
     const supabase = createClient()
@@ -679,42 +685,36 @@ export default function EditProfilePage() {
             <textarea value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} placeholder="Full clinic address including area, city, PIN" rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
           </div>
           <div>
-            <label style={labelStyle}>Google Maps Embed</label>
+            <label style={labelStyle}>Google Maps Link</label>
             <textarea
               value={form.maps_embed}
               onChange={e => setForm(f => ({ ...f, maps_embed: e.target.value }))}
-              placeholder='Paste the full <iframe> from Google Maps → Share → Embed a map'
+              placeholder='Paste your Google Maps link (e.g. https://maps.app.goo.gl/...)'
               rows={3}
               style={{ ...inputStyle, resize: 'vertical', fontFamily: 'monospace', fontSize: 12 }}
             />
 
-            {/* How-to instructions — always visible so the dentist knows
-                what shape of paste actually works. Google blocks
-                X-Frame-Options on every Maps URL except the canonical
-                /maps/embed?pb= one served by the Embed flow. */}
+            {/* How-to — the mobile share-link flow is now the primary path;
+                the share link is expanded to an embed server-side on save.
+                A full <iframe> embed is still accepted for desktop users. */}
             <div style={{ marginTop: 10, padding: '12px 14px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>
-                How to get your Google Maps embed code
+                How to get your Google Maps link
               </div>
-              <ol style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
-                <li>Open <strong>google.com/maps</strong> on a <strong>desktop</strong> (not mobile).</li>
-                <li>Search for your clinic.</li>
-                <li>Click <strong>Share</strong> → <strong>Embed a map</strong>.</li>
-                <li>Copy the full <code>&lt;iframe&gt;</code> code.</li>
-                <li>Paste it in the box above.</li>
-              </ol>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                Open Google Maps on your phone → search your clinic → tap <strong>Share</strong> →
+                <strong> Copy link</strong> → paste here. You can also paste a full <code>&lt;iframe&gt;</code>{' '}
+                embed code if you prefer.
+              </div>
             </div>
 
-            {/* Short link warning — share.google / maps.app.goo.gl / goo.gl
-                can't be expanded in the browser and the redirect target
-                blocks framing, so the iframe simply won't render. Tell the
-                dentist before they hit Save expecting a working map. */}
+            {/* Short link (maps.app.goo.gl / share.google / goo.gl) is now the
+                recommended input — it's expanded to a real embed server-side
+                on save, so we show a neutral confirmation rather than a warning. */}
             {mapsKind === 'shortLink' && (
-              <div style={{ marginTop: 10, padding: '12px 14px', background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: 10, fontSize: 13, color: '#92400E', lineHeight: 1.6 }}>
-                <strong>⚠ Short links can't be embedded.</strong> Google Maps share links
-                (<code>maps.app.goo.gl</code>, <code>share.google</code>, <code>goo.gl/maps</code>) redirect
-                in a way browsers block inside an iframe. Please use the <strong>Embed a map</strong> option
-                on desktop Google Maps and paste the full <code>&lt;iframe&gt;</code> code instead.
+              <div style={{ marginTop: 10, padding: '12px 14px', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 10, fontSize: 13, color: '#1E40AF', lineHeight: 1.6 }}>
+                <strong>ℹ Looks good.</strong> We'll turn this share link into a map on your public
+                profile when you hit <strong>Save</strong>.
               </div>
             )}
 
