@@ -50,12 +50,29 @@ export function classifyMapsInput(value: string | null | undefined): MapsInputKi
   }
   if (SHORT_MAPS_URL_RE.test(raw)) return 'shortLink'
   if (FULL_MAPS_URL_RE.test(raw)) return 'searchEmbed'
+  // A Google Search results URL (google.com/search?q=…) — dentists commonly
+  // copy this instead of a Maps link. We can turn its q= into a place search.
+  if (extractSearchQuery(raw)) return 'searchEmbed'
   return 'invalid'
 }
 
 function pullIframeSrcFromHtml(html: string): string | null {
   const m = html.match(/<iframe[^>]+src=["']([^"']+)["']/i)
   return m ? m[1] : null
+}
+
+/** Pulls the q= term out of a google.com/search?q=… URL. Returns null for any
+ *  other host/path, so it never fires on a Maps URL that happens to have q=. */
+export function extractSearchQuery(url: string): string | null {
+  try {
+    const u = new URL(url)
+    if (!/(?:^|\.)google\.com$/i.test(u.host)) return null
+    if (!u.pathname.startsWith('/search')) return null
+    const q = u.searchParams.get('q')?.trim()
+    return q || null
+  } catch {
+    return null
+  }
 }
 
 /** Tries to read the place name out of a `/maps/place/<NAME>/@…` URL. */
@@ -79,7 +96,7 @@ export function buildMapsIframe(value: string | null | undefined, clinicName: st
     // otherwise the clinic name the dentist has typed. This URL may itself
     // 302 → blocked in some browsers, which is why the dashboard hints at
     // the iframe-embed flow.
-    const placeFromUrl = extractPlaceFromUrl(raw)
+    const placeFromUrl = extractPlaceFromUrl(raw) ?? extractSearchQuery(raw)
     const term = (placeFromUrl ?? clinicName ?? '').trim() || 'Dental Clinic'
     const q = encodeURIComponent(term)
     return `<iframe src="https://maps.google.com/maps?q=${q}&output=embed&hl=en" width="100%" height="300" style="border:0;" allowfullscreen="" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>`

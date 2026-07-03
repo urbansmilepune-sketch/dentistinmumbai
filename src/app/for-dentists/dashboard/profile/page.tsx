@@ -66,6 +66,10 @@ export default function EditProfilePage() {
     consultation_fee: '', mci_number: '', emi_available: false,
     languages: [] as string[], specialties: [] as string[],
     maps_embed: '',
+    // Convenience-only field (not a DB column): if filled on save, the server
+    // turns it into a place-name search embed and writes it into maps_embed.
+    // Starts empty each load — we persist the resulting iframe, not the name.
+    google_maps_name: '',
     why_choose_us: [] as string[],
   })
   // Cap matches the brief ("add up to 5 points"). Enforced in the UI and
@@ -122,6 +126,7 @@ export default function EditProfilePage() {
           languages: dentist.languages || [],
           specialties: dentist.specialties || [],
           maps_embed: dentist.maps_embed || '',
+          google_maps_name: '',
           why_choose_us: (dentist as any).why_choose_us || [],
         })
       } else {
@@ -427,12 +432,13 @@ export default function EditProfilePage() {
     // Reflect the normalised value back into the form so the dentist sees what
     // actually landed in the DB.
     let normalisedMapsEmbed = ''
-    if (form.maps_embed.trim()) {
+    if (form.maps_embed.trim() || form.google_maps_name.trim()) {
       try {
+        // A pasted link (input) wins; otherwise the typed clinic name is used.
         const res = await fetch('/api/dentist/maps-embed', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ input: form.maps_embed, clinic_name: form.clinic_name }),
+          body: JSON.stringify({ input: form.maps_embed, name: form.google_maps_name, clinic_name: form.clinic_name }),
         })
         const data = await res.json().catch(() => ({} as { maps_embed?: string; error?: string }))
         if (!res.ok) { setSaving(false); setError(data.error || 'Could not process the map link.'); return }
@@ -684,6 +690,25 @@ export default function EditProfilePage() {
             <label style={labelStyle}>Clinic Address</label>
             <textarea value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} placeholder="Full clinic address including area, city, PIN" rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
           </div>
+          {/* Zero-friction path: type the clinic name and we build the map
+              server-side. Hidden once a full <iframe> is already saved — then
+              the existing map/preview below is authoritative and this would
+              only confuse. */}
+          {mapsKind !== 'iframe' && (
+            <div>
+              <label style={labelStyle}>Clinic name on Google Maps</label>
+              <input
+                value={form.google_maps_name}
+                onChange={e => setForm(f => ({ ...f, google_maps_name: e.target.value }))}
+                placeholder="e.g. Dr. Sweety's Urban Smile Dental Clinic"
+                style={inputStyle}
+              />
+              <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                Type your clinic name exactly as it appears on Google Maps. We'll show patients a
+                map automatically.
+              </div>
+            </div>
+          )}
           <div>
             <label style={labelStyle}>Google Maps Link</label>
             <textarea

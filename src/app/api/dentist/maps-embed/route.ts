@@ -13,7 +13,7 @@
 // paste is trusted as-is for backwards compatibility.
 import { NextRequest, NextResponse } from 'next/server'
 import { getDentistOwner } from '@/lib/dentistSession'
-import { classifyMapsInput, buildMapsIframe } from '@/lib/maps'
+import { classifyMapsInput, buildMapsIframe, extractSearchQuery } from '@/lib/maps'
 
 // SSRF guard: we only ever server-fetch these hosts. A pasted URL on any other
 // host is never followed.
@@ -77,8 +77,20 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json().catch(() => ({} as Record<string, unknown>))
     const input = typeof body.input === 'string' ? body.input.trim() : ''
+    const name = typeof body.name === 'string' ? body.name.trim() : ''
     const clinicName = typeof body.clinic_name === 'string' ? body.clinic_name : ''
-    if (!input) return NextResponse.json({ maps_embed: '' })
+
+    // Zero-friction path: no pasted link, just a typed clinic name → build a
+    // place-name search embed straight from it.
+    if (!input) {
+      if (name) return NextResponse.json({ maps_embed: embedFromPlaceName(name) })
+      return NextResponse.json({ maps_embed: '' })
+    }
+
+    // A Google Search results URL (google.com/search?q=…) — the shape dentists
+    // most often copy. Use its q= as a place-name search; no fetch needed.
+    const searchQ = extractSearchQuery(input)
+    if (searchQ) return NextResponse.json({ maps_embed: embedFromPlaceName(searchQ) })
 
     const kind = classifyMapsInput(input)
 
@@ -110,14 +122,14 @@ export async function POST(request: NextRequest) {
       // name search embed; a short link we couldn't resolve gets a helpful error.
       if (kind === 'searchEmbed') return NextResponse.json({ maps_embed: buildMapsIframe(input, clinicName) })
       return NextResponse.json(
-        { error: "Couldn't read a location from that link. Open it in Google Maps, then tap Share → Copy link and paste the link that shows your clinic." },
+        { error: "We couldn't read that link. Try typing your clinic name in the 'Clinic name on Google Maps' field above instead." },
         { status: 422 },
       )
     }
 
     // invalid / empty
     return NextResponse.json(
-      { error: "That doesn't look like a Google Maps link. In the Maps app, tap Share → Copy link, then paste it here." },
+      { error: "We couldn't read that link. Try typing your clinic name in the 'Clinic name on Google Maps' field above instead." },
       { status: 422 },
     )
   } catch {
