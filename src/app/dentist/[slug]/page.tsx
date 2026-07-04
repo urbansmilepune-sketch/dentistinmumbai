@@ -441,7 +441,19 @@ export default async function DentistProfilePage({ params }: Props) {
         </div>
 
         <div className="container profile-sections">
-          {/* ─── SECTION 6: WHY CHOOSE ─────────────────────────────────── */}
+          {/* ─── SECTION 6: LOCATION ───────────────────────────────────── */}
+          <section id="location" className="profile-section">
+            <h2 className="profile-section-title">Find the clinic</h2>
+            <LocationSection
+              mapsHtml={mapsHtml}
+              address={dentist.address || null}
+              directionsUrl={directionsUrl}
+              workingHours={dentist.working_hours}
+              locations={locations as any}
+            />
+          </section>
+
+          {/* ─── SECTION 7: WHY CHOOSE ─────────────────────────────────── */}
           {whyChoose.length > 0 && (
             <section id="why-choose" className="profile-section">
               <h2 className="profile-section-title">Why choose {drName}?</h2>
@@ -462,7 +474,7 @@ export default async function DentistProfilePage({ params }: Props) {
             </section>
           )}
 
-          {/* ─── SECTION 7: TREATMENTS & FEES ──────────────────────────── */}
+          {/* ─── SECTION 8: TREATMENTS & FEES ──────────────────────────── */}
           {treatments.length > 0 && (
             <section id="treatments" className="profile-section">
               <h2 className="profile-section-title">Treatments &amp; fees</h2>
@@ -470,7 +482,7 @@ export default async function DentistProfilePage({ params }: Props) {
             </section>
           )}
 
-          {/* ─── SECTION 8: REVIEWS ────────────────────────────────────── */}
+          {/* ─── SECTION 9: REVIEWS ────────────────────────────────────── */}
           <section id="reviews" className="profile-section">
             <h2 className="profile-section-title">Patient reviews</h2>
             <ReviewsSection
@@ -489,18 +501,6 @@ export default async function DentistProfilePage({ params }: Props) {
               <FaqAccordion items={faqItems} />
             </section>
           )}
-
-          {/* ─── SECTION 9: LOCATION ───────────────────────────────────── */}
-          <section id="location" className="profile-section">
-            <h2 className="profile-section-title">Find the clinic</h2>
-            <LocationSection
-              mapsHtml={mapsHtml}
-              address={dentist.address || null}
-              directionsUrl={directionsUrl}
-              workingHours={dentist.working_hours}
-              locations={locations as any}
-            />
-          </section>
 
           {/* ─── SECTION 10: MORE DENTISTS IN {AREA} ───────────────────── */}
           {similarDentists.length > 0 && (
