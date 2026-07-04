@@ -14,6 +14,9 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
         disallow: [
           '/admin/',
           '/for-dentists/dashboard/',
+          '/for-dentists/login',
+          '/for-dentists/register',
+          '/book/',
           '/api/',
         ],
       },
