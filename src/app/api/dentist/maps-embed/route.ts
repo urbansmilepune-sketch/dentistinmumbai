@@ -11,6 +11,7 @@
 // (the one form with permissive X-Frame-Options); otherwise we fall back to the
 // keyless maps.google.com/maps?q=lat,lng&output=embed form. A full <iframe>
 // paste is trusted as-is for backwards compatibility.
+// Deploy trigger 2026-07-04: ship the maps iframe classifier fix (da9662c).
 import { NextRequest, NextResponse } from 'next/server'
 import { getDentistOwner } from '@/lib/dentistSession'
 import { classifyMapsInput, buildMapsIframe, extractSearchQuery } from '@/lib/maps'
