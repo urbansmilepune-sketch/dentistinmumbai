@@ -16,6 +16,9 @@ export default function CostGuide({ areaName }: { areaName: string }) {
         <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18 }}>
           💰 Dental Treatment Cost in {areaName} ({new Date().getFullYear()})
         </h2>
+        <p style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 4 }}>
+          National average ranges — actual fees vary by clinic.
+        </p>
       </div>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
