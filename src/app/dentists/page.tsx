@@ -58,6 +58,24 @@ function realFee(v: unknown): number | null {
   return Number.isFinite(n) && n > 0 ? n : null
 }
 
+// Orders two rows by real fee ascending, sinking 0/NULL (unset) fees last.
+// Shared by the pure lowest-fee sort and the fee tiebreaker inside the
+// distance sort, so both stay consistent.
+function compareByFee(a: Record<string, unknown>, b: Record<string, unknown>): number {
+  const fa = realFee(a.consultation_fee)
+  const fb = realFee(b.consultation_fee)
+  if (fa === null && fb === null) return 0
+  if (fa === null) return 1
+  if (fb === null) return -1
+  return fa - fb
+}
+
+// Distance bucket (km) for the combined "nearest, then lowest fee" sort: two
+// dentists whose distances round to the same band are ordered by fee, so a
+// slightly-farther cheaper clinic can outrank a nearer pricier one within the
+// same locality. Tunable — 1 km ≈ "same neighbourhood" in an Indian city.
+const DISTANCE_BAND_KM = 1
+
 export default async function DentistsPage({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   const h = await headers()
   // National parent gets the "Discover Dentists" professional grid; city
@@ -191,7 +209,13 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
   // query builder can't express (no ORDER BY NULLIF(fee,0)). So we route it
   // through the same in-memory pass used for distance/openNow: fetch the full
   // filtered set, then sort and paginate below.
-  const feeAsc = !hasCoords && sortBy === 'fee_asc'
+  const wantFeeSort = sortBy === 'fee_asc'
+  // `feeAsc` gates the *pure* fee sort, which only applies with no coords. When
+  // location is ALSO active the patient wants "nearest, then cheapest", so fee
+  // becomes a tiebreaker inside the distance sort instead (see distance block).
+  // Gating on `!hasCoords` here was the bug: it silently dropped fee ordering
+  // whenever "Near Me" was on, leaving results in raw DB order.
+  const feeAsc = !hasCoords && wantFeeSort
 
   // Sort — distance always wins when coords are present; the user's intent
   // ("show me closest") trumps any sticky sort dropdown choice.
@@ -248,29 +272,33 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
         return { ...d, distance_km } as DentistRow
       })
       processed.sort((a, b) => {
-        // Dentists without coords sink to the bottom; among those with coords,
-        // closest first.
         const ad = (a as any).distance_km as number | null
         const bd = (b as any).distance_km as number | null
-        if (ad === null && bd === null) return 0
+        // Dentists without coords sink to the bottom. Within that (currently
+        // large) group, honour a lowest-fee request so they aren't left in raw
+        // DB order — this is the ordering that was silently lost before.
+        if (ad === null && bd === null) return wantFeeSort ? compareByFee(a, b) : 0
         if (ad === null) return 1
         if (bd === null) return -1
+        // "Nearest, then lowest fee": when both are active, group by distance
+        // band so the cheaper clinic wins within the same locality; then fall
+        // back to exact distance. Without a fee sort, pure nearest-first.
+        if (wantFeeSort) {
+          const bandDelta = Math.round(ad / DISTANCE_BAND_KM) - Math.round(bd / DISTANCE_BAND_KM)
+          if (bandDelta !== 0) return bandDelta
+          const feeDelta = compareByFee(a, b)
+          if (feeDelta !== 0) return feeDelta
+        }
         return ad - bd
       })
       locationUsable = processed.some(d => (d as any).distance_km !== null)
     }
 
-    // Lowest-fee sort — real fees ascending, 0/NULL (unset) last. Mutually
-    // exclusive with distance sort (feeAsc is false whenever hasCoords).
+    // Pure lowest-fee sort — real fees ascending, 0/NULL (unset) last. Only the
+    // no-coords path reaches here; with coords, fee is folded into the distance
+    // sort above as a tiebreaker.
     if (feeAsc) {
-      processed = [...processed].sort((a, b) => {
-        const fa = realFee((a as any).consultation_fee)
-        const fb = realFee((b as any).consultation_fee)
-        if (fa === null && fb === null) return 0
-        if (fa === null) return 1
-        if (fb === null) return -1
-        return fa - fb
-      })
+      processed = [...processed].sort(compareByFee)
     }
 
     totalCount = processed.length
