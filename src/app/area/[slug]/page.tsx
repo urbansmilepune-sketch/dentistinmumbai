@@ -11,6 +11,8 @@ import TreatmentNavTabs from './TreatmentNavTabs'
 import ResultFilters from '@/components/ResultFilters'
 import ShowMoreButton from './ShowMoreButton'
 import CostGuide from './CostGuide'
+import LocalFeeGuide from './LocalFeeGuide'
+import TransitLineGuide from './TransitLineGuide'
 import AreaFAQAccordion from './AreaFAQAccordion'
 import DentistResultCard from '@/components/DentistResultCard'
 import { isOpenNowFromHours } from '@/lib/time'
@@ -52,7 +54,12 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   }
 }
 
-function getFAQs(areaName: string, dentistCount: number) {
+function getFAQs(areaName: string, dentistCount: number, feeStats?: { avgFee: number | null; minFee: number | null; maxFee: number | null; pricedCount: number }) {
+  // Prefer a live, data-backed fee answer when clinics in this area publish
+  // fees; fall back to the generic range only when we have nothing real to say.
+  const feeAnswer = feeStats?.avgFee != null && feeStats.minFee != null && feeStats.maxFee != null
+    ? `Verified clinics in ${areaName} list an average consultation fee of ₹${feeStats.avgFee.toLocaleString('en-IN')}${feeStats.minFee !== feeStats.maxFee ? ` (ranging ₹${feeStats.minFee.toLocaleString('en-IN')}–₹${feeStats.maxFee.toLocaleString('en-IN')})` : ''}, based on ${feeStats.pricedCount} clinic${feeStats.pricedCount === 1 ? '' : 's'} that publish their pricing. Many also offer free or discounted first consultations for new patients.`
+    : `Consultation fees in ${areaName} typically range from ₹200 to ₹500 depending on the clinic and doctor's experience. Many clinics in ${areaName} offer free initial consultations for new patients.`
   return [
     {
       q: `How many dentists are there in ${areaName}?`,
@@ -60,7 +67,7 @@ function getFAQs(areaName: string, dentistCount: number) {
     },
     {
       q: `What is the consultation fee in ${areaName}?`,
-      a: `Consultation fees in ${areaName} typically range from ₹200 to ₹500 depending on the clinic and doctor's experience. Many clinics in ${areaName} offer free initial consultations for new patients.`,
+      a: feeAnswer,
     },
     {
       q: `Are there dentists open on Sunday in ${areaName}?`,
@@ -214,6 +221,12 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
   const verifiedCount = list.filter(d => d.is_verified).length
   const fees = list.map(d => d.consultation_fee).filter((f): f is number => typeof f === 'number' && f > 0)
   const lowestFee = fees.length ? Math.min(...fees) : null
+  // Live per-area fee stats for the computed fee guide (0/NULL fees are the
+  // "unset" sentinel, already excluded above). These replace the hardcoded
+  // "₹200–₹500" that used to render identically on every area page.
+  const pricedCount = fees.length
+  const avgFee = pricedCount ? Math.round(fees.reduce((sum, f) => sum + f, 0) / pricedCount) : null
+  const highestFee = pricedCount ? Math.max(...fees) : null
 
   // openNow is a JS-side filter: working_hours is JSONB keyed by day-of-week
   // and "open right now" depends on IST clock time.
@@ -247,13 +260,25 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
     .sort((a, b) => areaCountOf(b.id) - areaCountOf(a.id))
   const nearbyAreas = [...primaryNearby, ...padNearby].slice(0, NEARBY_SLOTS)
 
+  // Transit line (Mumbai only): `zone` is the suburban railway line. Same-line
+  // areas that actually have dentists feed the "Getting to {area}" block. Empty
+  // for non-Mumbai cities or areas with no line, so the block is omitted.
+  const showTransit = isMumbai && !!area.zone && area.zone !== 'Other'
+  const sameLineAreas = showTransit
+    ? (allAreas || [])
+        .filter(a => a.slug !== slug && a.zone === area.zone && hasDentists(a))
+        .sort((a, b) => areaCountOf(b.id) - areaCountOf(a.id))
+        .slice(0, 8)
+        .map(a => ({ name: a.name, slug: a.slug, count: areaCountOf(a.id) }))
+    : []
+
   // Sidebar "Top Rated" — only dentists with real ratings, best first.
   const topRated = [...list]
     .filter(d => (d.avg_rating || 0) > 0)
     .sort((a, b) => (b.avg_rating || 0) - (a.avg_rating || 0))
     .slice(0, 4)
 
-  const faqs = getFAQs(area.name, area.dentist_count || totalInArea)
+  const faqs = getFAQs(area.name, area.dentist_count || totalInArea, { avgFee, minFee: lowestFee, maxFee: highestFee, pricedCount })
   const seoContent = getSEOContent(area.name, area.zone, area.dentist_count || totalInArea, city.cityName, city.domain)
 
   // JSON-LD schemas
@@ -386,8 +411,29 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
                 )}
               </div>
 
-              {/* Cost Guide */}
+              {/* Local consultation-fee guide — computed live from this area's
+                  dentists (unique per area). */}
               <div style={{ marginTop: 40 }}>
+                <LocalFeeGuide
+                  areaName={area.name}
+                  totalCount={totalInArea}
+                  pricedCount={pricedCount}
+                  avgFee={avgFee}
+                  minFee={lowestFee}
+                  maxFee={highestFee}
+                />
+              </div>
+
+              {/* Transit line — Mumbai only, when the area sits on a line with
+                  other dentist-bearing areas. */}
+              {showTransit && sameLineAreas.length > 0 && (
+                <div style={{ marginTop: 24 }}>
+                  <TransitLineGuide areaName={area.name} zone={area.zone} lineAreas={sameLineAreas} />
+                </div>
+              )}
+
+              {/* Cost Guide — generic treatment price ranges (indicative). */}
+              <div style={{ marginTop: 24 }}>
                 <CostGuide areaName={area.name} />
               </div>
 
@@ -451,7 +497,8 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
                     // Zone is Mumbai-only context (Western/Central/Harbour…).
                     ...(isMumbai && area.zone ? [{ label: 'Zone', value: area.zone }] : []),
                     { label: 'Dentists Listed', value: String(area.dentist_count || totalInArea || '10+') },
-                    { label: 'Avg Consultation Fee', value: '₹200 – ₹500' },
+                    // Computed from this area's priced clinics; generic range only when none publish a fee.
+                    { label: 'Avg Consultation Fee', value: avgFee !== null ? `₹${avgFee.toLocaleString('en-IN')}` : '₹200 – ₹500' },
                     { label: 'Best For', value: 'Implants, Cosmetic Dentistry, Orthodontics' },
                   ].map((row, i) => (
                     <div key={row.label} style={{
