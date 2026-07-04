@@ -49,6 +49,7 @@ const NAV: NavItem[] = [
   { href: '/for-dentists/dashboard/consent-forms', icon: '📝', label: 'Consent Forms', staffRoles: ['owner', 'associate_dentist', 'reception'] },
   { href: '/for-dentists/dashboard/emr-templates', icon: '📋', label: 'EMR Templates', staffRoles: ['owner', 'associate_dentist'] },
   { href: '/for-dentists/dashboard/analytics',    icon: '📈', label: 'Analytics',    staffRoles: ['owner'] },
+  { href: '/for-dentists/dashboard/badge',        icon: '🏅', label: 'Get Badge',    staffRoles: ['owner'] },
 ]
 
 const MOBILE_NAV: NavItem[] = [
