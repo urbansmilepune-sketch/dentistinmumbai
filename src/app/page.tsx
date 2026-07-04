@@ -257,8 +257,12 @@ export default async function HomePage() {
               </div>
             )}
 
-            <div style={{ marginTop: 20 }}>
+            <div style={{ marginTop: 20, display: 'flex', gap: 20, flexWrap: 'wrap' }}>
               <Link href="/dentists" style={{ color: TEAL_DARK, fontWeight: 700, fontSize: 14 }}>View all dentists →</Link>
+              {/* PCMC umbrella cluster — Pune only (the /pcmc route 404s elsewhere). */}
+              {city.citySlug === 'pune' && (
+                <Link href="/pcmc" style={{ color: TEAL_DARK, fontWeight: 700, fontSize: 14 }}>Dentists in Pimpri-Chinchwad (PCMC) →</Link>
+              )}
             </div>
           </div>
         </section>

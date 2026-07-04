@@ -100,11 +100,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.8,
   }))
 
+  // Cluster landing pages — currently just Pune's Pimpri-Chinchwad (PCMC)
+  // umbrella at /pcmc, which only exists on the Pune domain.
+  const clusterPages: MetadataRoute.Sitemap = city.citySlug === 'pune'
+    ? [{ url: `${BASE}/pcmc`, lastModified: new Date(), changeFrequency: 'daily' as const, priority: 0.85 }]
+    : []
+
   // Booking pages (/book/[slug]) are intentionally excluded: they're
   // transactional forms with no unique SEO content, and listing them just
   // wastes crawl budget. They're also Disallowed in robots.ts.
   return [
     ...staticPages,
+    ...clusterPages,
     ...areaPages,
     ...treatmentPages,
     ...areaTreatmentPages,

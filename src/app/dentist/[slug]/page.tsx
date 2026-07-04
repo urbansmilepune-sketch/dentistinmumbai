@@ -104,6 +104,10 @@ const DAY_LABELS: Record<string, string> = {
   mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday',
   fri: 'Friday', sat: 'Saturday', sun: 'Sunday',
 }
+// Schema.org openingHours uses two-letter day codes.
+const DAY_SCHEMA: Record<string, string> = {
+  mon: 'Mo', tue: 'Tu', wed: 'We', thu: 'Th', fri: 'Fr', sat: 'Sa', sun: 'Su',
+}
 
 export default async function DentistProfilePage({ params }: Props) {
   const { slug } = await params
@@ -193,6 +197,19 @@ export default async function DentistProfilePage({ params }: Props) {
   // another. Strips a baked-in "Dr"/"Dr." honorific first.
   const drName = normalizeDrName(dentist.name)
 
+  // openingHours derived from the dentist's actual working_hours (JSONB keyed
+  // by day → { is_open, open_time, close_time }). One schema string per open
+  // day, e.g. "Mo 09:00-20:00". Omitted entirely when no hours are set — we
+  // don't fabricate a generic "Mo-Sa 09:00-20:00" the clinic never confirmed.
+  const openingHoursSchema = DAY_KEYS
+    .map(d => {
+      const dh = dentist.working_hours?.[d]
+      return dh?.is_open && dh.open_time && dh.close_time
+        ? `${DAY_SCHEMA[d]} ${dh.open_time}-${dh.close_time}`
+        : null
+    })
+    .filter((s): s is string => s !== null)
+
   // Dentist is a Schema.org subtype of MedicalBusiness → LocalBusiness, so
   // this satisfies both rich-snippet eligibility and Google's local pack
   // requirements. image enables the dentist's photo to surface in the
@@ -219,10 +236,25 @@ export default async function DentistProfilePage({ params }: Props) {
     ...(dentist.latitude && dentist.longitude
       ? { geo: { '@type': 'GeoCoordinates', latitude: dentist.latitude, longitude: dentist.longitude } }
       : {}),
-    openingHours: 'Mo-Sa 09:00-20:00',
-    priceRange: dentist.consultation_fee ? `₹${dentist.consultation_fee}` : '₹500-₹2000',
+    ...(openingHoursSchema.length > 0 ? { openingHours: openingHoursSchema } : {}),
+    // priceRange only when a real fee is set (0/NULL is the "unset" sentinel);
+    // no fabricated "₹500-₹2000" for clinics that haven't published a fee.
+    ...(dentist.consultation_fee ? { priceRange: `₹${dentist.consultation_fee}` } : {}),
     ...(dentist.maps_embed ? { hasMap: dentist.maps_embed } : {}),
-    ...(avgRating && { aggregateRating: { '@type': 'AggregateRating', ratingValue: avgRating, reviewCount: approvedReviews.length } }),
+    // aggregateRating must reflect the reviews actually visible on the page
+    // (Google policy), so it's bound to approvedReviews — not the denormalised
+    // dentist.avg_rating / review_count columns, which can drift.
+    ...(avgRating && approvedReviews.length > 0
+      ? {
+          aggregateRating: {
+            '@type': 'AggregateRating',
+            ratingValue: Number(avgRating),
+            reviewCount: approvedReviews.length,
+            bestRating: 5,
+            worstRating: 1,
+          },
+        }
+      : {}),
   }
 
   // Auto-generated FAQ. Built from whatever profile fields the dentist has
