@@ -14,10 +14,10 @@ export default function CostGuide({ areaName }: { areaName: string }) {
     <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
       <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', background: 'var(--bg)' }}>
         <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18 }}>
-          💰 Dental Treatment Cost in {areaName} ({new Date().getFullYear()})
+          💰 Standard Dental Treatment Costs (National Benchmarks)
         </h2>
         <p style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 4 }}>
-          National average ranges — actual fees vary by clinic.
+          Indicative ranges — actual fees vary by clinic and doctor experience
         </p>
       </div>
       <div style={{ overflowX: 'auto' }}>
