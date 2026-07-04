@@ -13,8 +13,16 @@
 // paste is trusted as-is for backwards compatibility.
 // Deploy trigger 2026-07-04: ship the maps iframe classifier fix (da9662c).
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { getDentistOwner } from '@/lib/dentistSession'
 import { classifyMapsInput, buildMapsIframe, extractSearchQuery } from '@/lib/maps'
+
+// Service-role client — used only to write back resolved lat/lng to the
+// dentist's own row (see coord persistence in POST). RLS-exempt, server-only.
+const admin = createServiceClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+)
 
 // SSRF guard: we only ever server-fetch these hosts. A pasted URL on any other
 // host is never followed.
@@ -44,24 +52,28 @@ function embedFromPlaceName(name: string): string {
 }
 
 // Best embed we can build from a resolved google.com/maps URL, preferring the
-// most precise signal available. Returns null if none is present.
-function embedFromResolvedUrl(url: string): string | null {
+// most precise signal available. Returns null if none is present. When the URL
+// carries @lat,lng we also surface the parsed coordinates so the caller can
+// persist them for the /dentists proximity sort.
+type ResolvedEmbed = { embed: string; lat?: number; lng?: number }
+
+function embedFromResolvedUrl(url: string): ResolvedEmbed | null {
   const ll = url.match(LATLNG_RE)
-  if (ll) return embedFromLatLng(ll[1], ll[2])
+  if (ll) return { embed: embedFromLatLng(ll[1], ll[2]), lat: parseFloat(ll[1]), lng: parseFloat(ll[2]) }
 
   // A CID pins the exact business, but the Embed API can't consume a raw CID —
   // only the keyless ?cid=…&output=embed form supports it. So use CID only when
   // there's no API key; with a key we fall through to the place-name embed.
   if (!process.env.GOOGLE_MAPS_EMBED_API_KEY) {
     const cid = url.match(CID_RE)
-    if (cid) return iframe(`https://maps.google.com/maps?cid=${BigInt('0x' + cid[1]).toString()}&output=embed&hl=en`)
+    if (cid) return { embed: iframe(`https://maps.google.com/maps?cid=${BigInt('0x' + cid[1]).toString()}&output=embed&hl=en`) }
   }
 
   const pm = url.match(PLACE_RE)
   if (pm) {
     try {
       const name = decodeURIComponent(pm[1].replace(/\+/g, ' ')).trim()
-      if (name) return embedFromPlaceName(name)
+      if (name) return { embed: embedFromPlaceName(name) }
     } catch { /* undecodable place segment — fall through */ }
   }
   return null
@@ -100,11 +112,11 @@ export async function POST(request: NextRequest) {
 
     if (kind === 'shortLink' || kind === 'searchEmbed') {
       // A full google.com/maps URL may already carry coords/CID/place inline.
-      let embed = embedFromResolvedUrl(input)
+      let resolved = embedFromResolvedUrl(input)
 
       // Otherwise follow the link server-side — ONLY for allowlisted hosts —
       // and extract from the resolved URL (short links resolve to /maps/place).
-      if (!embed) {
+      if (!resolved) {
         const host = hostOf(input)
         if (host && FETCHABLE_HOST_RE.test(host)) {
           try {
@@ -112,12 +124,24 @@ export async function POST(request: NextRequest) {
               redirect: 'follow',
               headers: { 'User-Agent': 'Mozilla/5.0 (compatible; DentistInMumbaiBot/1.0)' },
             })
-            embed = embedFromResolvedUrl(res.url || '')
+            resolved = embedFromResolvedUrl(res.url || '')
           } catch { /* fall through to the fallbacks below */ }
         }
       }
 
-      if (embed) return NextResponse.json({ maps_embed: embed })
+      if (resolved) {
+        // Persist resolved coordinates so the /dentists "Near Me" proximity
+        // sort has data to work with — every dentist who saves a geocodable
+        // link gets their lat/lng stored as a side effect. Best-effort: a
+        // failed write must never block returning the embed.
+        if (typeof resolved.lat === 'number' && Number.isFinite(resolved.lat)
+          && typeof resolved.lng === 'number' && Number.isFinite(resolved.lng)) {
+          try {
+            await admin.from('dentists').update({ lat: resolved.lat, lng: resolved.lng }).eq('id', owner.id)
+          } catch { /* coord persistence is best-effort */ }
+        }
+        return NextResponse.json({ maps_embed: resolved.embed })
+      }
 
       // Nothing extractable: a full Maps URL can still fall back to the clinic
       // name search embed; a short link we couldn't resolve gets a helpful error.

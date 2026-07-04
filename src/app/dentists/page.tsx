@@ -49,6 +49,15 @@ function parseCoord(v: string | undefined, range: number): number | null {
   return n
 }
 
+// A consultation_fee of 0 is the dataset's "unset" sentinel (most rows) and is
+// indistinguishable to a patient from "not listed" — the card renders both as
+// "Call for price". Treat 0 and NULL alike so lowest-fee sort ranks real prices
+// first and sinks unpriced dentists to the bottom.
+function realFee(v: unknown): number | null {
+  const n = typeof v === 'number' ? v : Number(v)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
 export default async function DentistsPage({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   const h = await headers()
   // National parent gets the "Discover Dentists" professional grid; city
@@ -150,8 +159,10 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
     query = query.overlaps('languages', languageFilter)
   }
 
-  // Gender filter
-  if (genderFilter) query = query.eq('gender', genderFilter)
+  // Gender filter — case-insensitive so 'Female'/'female'/'FEMALE' all match,
+  // regardless of how the dentist's stored value was cased. The filter values
+  // ('male'/'female') contain no % or _ so ilike is an exact, case-fold match.
+  if (genderFilter) query = query.ilike('gender', genderFilter)
 
   // Verified filter
   if (verifiedFilter) query = query.eq('is_verified', true)
@@ -167,11 +178,20 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
   }
 
   // Fee filter — Indian dental consultation prices typically range ₹100–₹2000.
+  // "under500" is > 0 (not >= 0): fee=0 is the unset sentinel, so an unpriced
+  // dentist must not surface as a "cheap" one. NULL fees are excluded by every
+  // bucket anyway (a NULL comparison is never true).
   if (feeFilter) {
-    if (feeFilter === 'under500') query = query.lt('consultation_fee', 500)
+    if (feeFilter === 'under500') query = query.gt('consultation_fee', 0).lt('consultation_fee', 500)
     else if (feeFilter === '500-2000') query = query.gte('consultation_fee', 500).lte('consultation_fee', 2000)
     else if (feeFilter === 'above2000') query = query.gt('consultation_fee', 2000)
   }
+
+  // Lowest-fee sort must push 0/NULL (unset) fees to the bottom, which the
+  // query builder can't express (no ORDER BY NULLIF(fee,0)). So we route it
+  // through the same in-memory pass used for distance/openNow: fetch the full
+  // filtered set, then sort and paginate below.
+  const feeAsc = !hasCoords && sortBy === 'fee_asc'
 
   // Sort — distance always wins when coords are present; the user's intent
   // ("show me closest") trumps any sticky sort dropdown choice.
@@ -190,7 +210,7 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
   // DB-side pagination only when nothing forces an in-memory pass. Distance
   // sort and openNow (working_hours JSONB × IST time) both need the full
   // filter result set before we can slice into pages.
-  if (!hasCoords && !openNowFilter) {
+  if (!hasCoords && !openNowFilter && !feeAsc) {
     const from = (page - 1) * PER_PAGE
     query = query.range(from, from + PER_PAGE - 1)
   }
@@ -202,8 +222,13 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
   let dentists = (rawDentists ?? []) as unknown as DentistRow[]
   let totalCount = count || 0
   let totalPages = Math.ceil(totalCount / PER_PAGE)
+  // True only when coords were requested AND at least one result actually has
+  // stored lat/lng to sort by. Drives the honest banner: with zero geocoded
+  // dentists, distance sort is a no-op and we say so instead of claiming
+  // "sorted by distance".
+  let locationUsable = false
 
-  if (hasCoords || openNowFilter) {
+  if (hasCoords || openNowFilter || feeAsc) {
     let processed: DentistRow[] = dentists
 
     // Open-now is a JS-side filter: working_hours is JSONB keyed by
@@ -231,6 +256,20 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
         if (ad === null) return 1
         if (bd === null) return -1
         return ad - bd
+      })
+      locationUsable = processed.some(d => (d as any).distance_km !== null)
+    }
+
+    // Lowest-fee sort — real fees ascending, 0/NULL (unset) last. Mutually
+    // exclusive with distance sort (feeAsc is false whenever hasCoords).
+    if (feeAsc) {
+      processed = [...processed].sort((a, b) => {
+        const fa = realFee((a as any).consultation_fee)
+        const fb = realFee((b as any).consultation_fee)
+        if (fa === null && fb === null) return 0
+        if (fa === null) return 1
+        if (fb === null) return -1
+        return fa - fb
       })
     }
 
@@ -319,13 +358,25 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
       <main className="listing-main" style={{ background: 'var(--bg)', minHeight: '100vh', padding: '32px 20px' }}>
         <div className="container">
 
-          {hasCoords && (
+          {hasCoords && locationUsable && (
             <div style={{ background: '#DCFCE7', border: '1px solid #BBF7D0', borderRadius: 12, padding: '12px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 14, color: '#166534', fontWeight: 600 }}>
                 📍 Sorted by distance from your location
               </span>
               <Link href={clearLocationUrl()}
                 style={{ fontSize: 13, color: '#166534', fontWeight: 600, textDecoration: 'underline' }}>
+                Clear location
+              </Link>
+            </div>
+          )}
+
+          {hasCoords && !locationUsable && (
+            <div style={{ background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: 12, padding: '12px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 14, color: '#92400E', fontWeight: 600 }}>
+                📍 Location data unavailable for most dentists — showing all dentists instead.
+              </span>
+              <Link href={clearLocationUrl()}
+                style={{ fontSize: 13, color: '#92400E', fontWeight: 600, textDecoration: 'underline' }}>
                 Clear location
               </Link>
             </div>

@@ -62,6 +62,7 @@ export default function EditProfilePage() {
 
   const [form, setForm] = useState({
     name: '', clinic_name: '', qualifications: '', degree: '', experience_years: '',
+    gender: '',
     bio: '', phone: '', whatsapp: '', website: '', address: '',
     consultation_fee: '', mci_number: '', emi_available: false,
     languages: [] as string[], specialties: [] as string[],
@@ -96,7 +97,7 @@ export default function EditProfilePage() {
 
       const { data: dentist } = await supabase
         .from('dentists')
-        .select('id, slug, name, clinic_name, qualifications, degree, experience_years, bio, phone, whatsapp, website, address, consultation_fee, mci_number, emi_available, languages, specialties, maps_embed, why_choose_us, city, working_hours, phone_verified, profile_photo, clinic_logo_url, signature_url')
+        .select('id, slug, name, clinic_name, qualifications, degree, experience_years, gender, bio, phone, whatsapp, website, address, consultation_fee, mci_number, emi_available, languages, specialties, maps_embed, why_choose_us, city, working_hours, phone_verified, profile_photo, clinic_logo_url, signature_url')
         .eq('email', user.email)
         .single()
 
@@ -115,6 +116,7 @@ export default function EditProfilePage() {
           qualifications: dentist.qualifications || '',
           degree: (dentist as any).degree || '',
           experience_years: dentist.experience_years?.toString() || '',
+          gender: (dentist as any).gender || '',
           bio: dentist.bio || '',
           phone: dentist.phone || '',
           whatsapp: dentist.whatsapp || '',
@@ -462,6 +464,7 @@ export default function EditProfilePage() {
         qualifications: form.qualifications,
         degree: form.degree || null,
         experience_years: form.experience_years ? parseInt(form.experience_years) : null,
+        gender: form.gender || null,
         bio: form.bio,
         phone: form.phone,
         whatsapp: form.whatsapp,
@@ -626,6 +629,19 @@ export default function EditProfilePage() {
             <select value={form.qualifications} onChange={e => setForm(f => ({ ...f, qualifications: e.target.value }))} style={{ ...inputStyle, cursor: 'pointer' }}>
               <option value="">Select qualification</option>
               {QUALIFICATIONS.map(q => <option key={q} value={q}>{q}</option>)}
+            </select>
+          </div>
+          <div>
+            {/* Stored lowercase so the patient-facing /dentists gender filter
+                (case-insensitive ilike) matches, and DentistCard's capitalise-
+                first-letter render shows "Male"/"Female"/etc. cleanly. */}
+            <label style={labelStyle}>Gender</label>
+            <select value={form.gender} onChange={e => setForm(f => ({ ...f, gender: e.target.value }))} style={{ ...inputStyle, cursor: 'pointer' }}>
+              <option value="">Select gender</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="other">Other</option>
+              <option value="prefer not to say">Prefer not to say</option>
             </select>
           </div>
           <div>
