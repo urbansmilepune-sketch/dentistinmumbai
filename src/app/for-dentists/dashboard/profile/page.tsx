@@ -672,7 +672,10 @@ export default function EditProfilePage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 16, padding: '12px 16px', background: 'var(--bg)', borderRadius: 10 }}>
           <label style={{ position: 'relative', display: 'inline-block', width: 44, height: 24, flexShrink: 0 }}>
             <input type="checkbox" checked={form.emi_available} onChange={e => setForm(f => ({ ...f, emi_available: e.target.checked }))} style={{ opacity: 0, width: 0, height: 0 }} />
-            <span onClick={() => setForm(f => ({ ...f, emi_available: !f.emi_available }))} style={{ position: 'absolute', inset: 0, background: form.emi_available ? 'var(--blue)' : '#CBD5E1', borderRadius: 24, cursor: 'pointer', transition: '0.3s' }}>
+            {/* No onClick — the wrapping <label> forwards the click to the
+                checkbox (onChange). A second handler here would double-fire
+                setForm in the same batch and cancel the toggle under React 19. */}
+            <span style={{ position: 'absolute', inset: 0, background: form.emi_available ? 'var(--blue)' : '#CBD5E1', borderRadius: 24, cursor: 'pointer', transition: '0.3s' }}>
               <span style={{ position: 'absolute', height: 18, width: 18, left: form.emi_available ? 22 : 3, bottom: 3, background: '#fff', borderRadius: '50%', transition: '0.3s' }} />
             </span>
           </label>
