@@ -31,6 +31,10 @@ interface Dentist {
   distance_km?: number | null
 }
 
+// Reviews UI is globally disabled for now. Flip to true to restore star
+// ratings / review counts on this card.
+const REVIEWS_ENABLED = false
+
 function DistanceBadge({ distance_km }: { distance_km: number }) {
   return (
     <span style={{
@@ -132,7 +136,7 @@ export default function DentistCard({ dentist: d, view }: DentistCardProps) {
             </div>
           )}
 
-          {rating > 0 && (
+          {REVIEWS_ENABLED && rating > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
               <Stars rating={rating} />
               <span style={{ fontSize: 12, color: 'var(--muted)' }}>{rating.toFixed(1)}{(d.review_count || 0) > 0 ? ` (${d.review_count})` : ''}</span>
@@ -212,7 +216,7 @@ export default function DentistCard({ dentist: d, view }: DentistCardProps) {
             <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 20, color: 'var(--text)' }}>
               {d.consultation_fee ? `₹${d.consultation_fee}` : 'Call for price'}
             </div>
-            {rating > 0 && (
+            {REVIEWS_ENABLED && rating > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end', marginTop: 4 }}>
                 <Stars rating={rating} />
                 <span style={{ fontSize: 12, color: 'var(--muted)' }}>{rating.toFixed(1)}{(d.review_count || 0) > 0 ? ` (${d.review_count})` : ''}</span>

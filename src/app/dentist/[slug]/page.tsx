@@ -32,6 +32,10 @@ import OwnerBanner, { type ChecklistItem } from './OwnerBanner'
 import { NAVY, TEAL, TEAL_DARK, WHATSAPP, normalizeDrName } from './profileTheme'
 import { ShieldCheckIcon, MapPinIcon, PhoneIcon, WhatsAppIcon, CalendarIcon } from './profileIcons'
 
+// Reviews UI is globally disabled for now. Flip to true to restore the
+// Reviews section and the aggregateRating in JSON-LD.
+const REVIEWS_ENABLED = false
+
 interface Props { params: Promise<{ slug: string }> }
 
 // Cloudinary URLs are stored as the raw upload secure_url. Injecting
@@ -244,7 +248,7 @@ export default async function DentistProfilePage({ params }: Props) {
     // aggregateRating must reflect the reviews actually visible on the page
     // (Google policy), so it's bound to approvedReviews — not the denormalised
     // dentist.avg_rating / review_count columns, which can drift.
-    ...(avgRating && approvedReviews.length > 0
+    ...(REVIEWS_ENABLED && avgRating && approvedReviews.length > 0
       ? {
           aggregateRating: {
             '@type': 'AggregateRating',
@@ -515,16 +519,18 @@ export default async function DentistProfilePage({ params }: Props) {
           )}
 
           {/* ─── SECTION 9: REVIEWS ────────────────────────────────────── */}
-          <section id="reviews" className="profile-section">
-            <h2 className="profile-section-title">Patient reviews</h2>
-            <ReviewsSection
-              reviews={approvedReviews as any}
-              avgRating={avgRating}
-              drName={drName}
-              dentistId={dentist.id}
-              dentistName={dentist.name}
-            />
-          </section>
+          {REVIEWS_ENABLED && (
+            <section id="reviews" className="profile-section">
+              <h2 className="profile-section-title">Patient reviews</h2>
+              <ReviewsSection
+                reviews={approvedReviews as any}
+                avgRating={avgRating}
+                drName={drName}
+                dentistId={dentist.id}
+                dentistName={dentist.name}
+              />
+            </section>
+          )}
 
           {/* ─── FAQ (preserved; feeds FAQPage JSON-LD above) ──────────── */}
           {faqItems.length > 0 && (

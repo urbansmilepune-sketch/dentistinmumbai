@@ -6,6 +6,10 @@ interface SortSelectProps {
   currentSort: string
 }
 
+// Reviews UI is globally disabled for now. Flip to true to restore the
+// "Rating High–Low" sort option (there's no rating data to sort by yet).
+const REVIEWS_ENABLED = false
+
 export default function SortSelect({ currentSort }: SortSelectProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -28,7 +32,7 @@ export default function SortSelect({ currentSort }: SortSelectProps) {
       }}
     >
       <option value="relevance">Relevance</option>
-      <option value="rating">Rating High–Low</option>
+      {REVIEWS_ENABLED && <option value="rating">Rating High–Low</option>}
       <option value="fee_asc">Fee Low–High</option>
       <option value="fee_desc">Fee High–Low</option>
       <option value="experience">Experience</option>
