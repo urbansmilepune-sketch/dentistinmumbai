@@ -490,7 +490,11 @@ function BillingPageInner() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 8, border: '1.5px solid var(--border)', background: '#fff' }}>
                   <label style={{ position: 'relative', display: 'inline-block', width: 36, height: 20, flexShrink: 0 }}>
                     <input type="checkbox" checked={form.gst_enabled} onChange={e => setForm(f => ({ ...f, gst_enabled: e.target.checked }))} style={{ opacity: 0, width: 0, height: 0 }} />
-                    <span onClick={() => setForm(f => ({ ...f, gst_enabled: !f.gst_enabled }))} style={{ position: 'absolute', inset: 0, background: form.gst_enabled ? 'var(--blue)' : '#CBD5E1', borderRadius: 20, cursor: 'pointer', transition: '0.2s' }}>
+                    {/* No onClick — the wrapping <label> forwards the click to
+                        the checkbox (onChange). A second handler here would
+                        double-fire setForm in the same batch and cancel the
+                        toggle under React 19. */}
+                    <span style={{ position: 'absolute', inset: 0, background: form.gst_enabled ? 'var(--blue)' : '#CBD5E1', borderRadius: 20, cursor: 'pointer', transition: '0.2s' }}>
                       <span style={{ position: 'absolute', height: 14, width: 14, left: form.gst_enabled ? 19 : 3, top: 3, background: '#fff', borderRadius: '50%', transition: '0.2s' }} />
                     </span>
                   </label>
