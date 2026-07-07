@@ -244,12 +244,18 @@ input, select, textarea {
   /* iOS Safari zooms into any input/select/textarea whose font-size is
      under 16px when it receives focus. Force 16px here even though body
      drops to 15px above — the inputs themselves must stay 16px. */
-  input, select, textarea { font-size: 16px; }
-  /* Universal touch-target floor for form controls. */
+  /* !important is load-bearing: dashboard form controls set an inline
+     style={{ fontSize: 14 }} which otherwise wins over this rule (inline beats
+     stylesheet) and re-triggers iOS focus-zoom. This one line fixes every
+     inline-styled input site-wide — no per-page className needed. */
+  input, select, textarea { font-size: 16px !important; }
+  /* Universal touch-target floor for form controls. Checkbox/radio excluded so
+     visually-hidden toggle inputs (opacity:0;width:0;height:0) aren't forced to
+     48px, which would break the toggle switches. */
   input:not([type='checkbox']):not([type='radio']),
   select,
   textarea,
-  button { min-height: 44px; }
+  button { min-height: 48px; }
   textarea { min-height: 88px; }
 
   /* Mobile utility classes — opt-in helpers callers can sprinkle on
