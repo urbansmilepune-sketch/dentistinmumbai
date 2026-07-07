@@ -357,18 +357,31 @@ export default function EditProfilePage() {
   // The upload route resizes to 400×400 and writes dentists.profile_photo,
   // so we just reflect the returned URL back into local state on success.
   async function onCropSave(blob: Blob) {
+    // The cropped blob is exported at the source crop's pixel resolution, so a
+    // 1:1 crop of a high-res phone photo can exceed Vercel's ~4.5MB request-body
+    // limit — which rejects the upload with a plain-text 413 BEFORE our route
+    // runs. Catch it here with an actionable message instead of a JSON error.
+    if (blob.size > 4 * 1024 * 1024) {
+      setPhotoError('Photo too large. Please use a photo under 4MB. Tip: use WhatsApp to send the photo to yourself first — it compresses it automatically.')
+      return
+    }
     setPhotoSaving(true); setPhotoError('')
     try {
       const formData = new FormData()
       formData.append('file', new File([blob], 'profile.jpg', { type: 'image/jpeg' }))
       formData.append('type', 'profile')
       const res = await fetch('/api/cloudinary/upload', { method: 'POST', body: formData })
-      const data = await res.json()
+      // Read as text first: an over-limit upload returns plain text ("Request
+      // Entity Too Large"), so res.json() would throw an opaque parse error.
+      const text = await res.text()
+      let data: { success?: boolean; url?: string; error?: string }
+      try { data = JSON.parse(text) }
+      catch { throw new Error('Upload failed — photo may be too large') }
       if (!data.success) { setPhotoError(data.error || 'Upload failed.'); setPhotoSaving(false); return }
-      setProfilePhoto(data.url)
+      setProfilePhoto(data.url || null)
       closeCropModal()
-    } catch {
-      setPhotoError('Upload failed. Please try again.')
+    } catch (e) {
+      setPhotoError(e instanceof Error ? e.message : 'Upload failed. Please try again.')
     }
     setPhotoSaving(false)
   }
