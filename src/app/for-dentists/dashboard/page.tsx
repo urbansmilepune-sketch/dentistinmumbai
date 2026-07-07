@@ -12,6 +12,10 @@ import { getCityBySlug } from '@/config/cities'
 
 export const dynamic = 'force-dynamic'
 
+// Reviews UI is globally disabled for now. Flip to true to restore the
+// "Approved Reviews" stat card and the "Get Your First Review" card.
+const REVIEWS_ENABLED = false
+
 const IST_TZ = 'Asia/Kolkata'
 
 function istTodayIso(): string {
@@ -197,7 +201,7 @@ export default async function DashboardPage() {
     { icon: '💚', label: 'WhatsApp Clicks · MTD', value: monthEngagement.whatsapp_clicks, href: '/for-dentists/dashboard/analytics' },
     { icon: '📅', label: 'Total Appointments', value: appointmentCount || 0, href: '/for-dentists/dashboard/appointments' },
     { icon: '💬', label: 'Enquiries', value: enquiryCount || 0, href: '/for-dentists/dashboard/enquiries' },
-    { icon: '⭐', label: 'Approved Reviews', value: reviewCount || 0, href: '/for-dentists/dashboard/profile' },
+    ...(REVIEWS_ENABLED ? [{ icon: '⭐', label: 'Approved Reviews', value: reviewCount || 0, href: '/for-dentists/dashboard/profile' }] : []),
   ]
 
   const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
@@ -376,8 +380,13 @@ export default async function DashboardPage() {
       {/* Share Your Profile — always-visible QR to the public listing. */}
       {profileUrl && <ProfileQRCard profileUrl={profileUrl} clinicName={clinicName} />}
 
-      {/* Get Your First Review — WhatsApp a review request to an existing patient. */}
-      {profileUrl && <RequestReviewCard profileUrl={profileUrl} clinicName={clinicName} dentistName={dentist.name || ''} />}
+      {/* Get Your First Review — WhatsApp a review request to an existing
+          patient. Shown ONLY while the dentist has 0 approved reviews (it's a
+          "first review" prompt); `reviewCount` is the live approved-review
+          count. Not behind REVIEWS_ENABLED: review *solicitation* stays on even
+          though review *display* is hidden, so new dentists can start
+          collecting. `!reviewCount` also covers a null count (query error). */}
+      {!reviewCount && profileUrl && <RequestReviewCard profileUrl={profileUrl} clinicName={clinicName} dentistName={dentist.name || ''} />}
 
       {/* Recent appointments */}
       <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden', marginBottom: 24 }}>

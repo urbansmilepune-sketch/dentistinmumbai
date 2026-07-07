@@ -47,6 +47,10 @@ interface Props {
   treatmentNote?: string | null
 }
 
+// Reviews UI is globally disabled for now. Flip to true to restore star
+// ratings / review counts on this card.
+const REVIEWS_ENABLED = false
+
 export default function DentistResultCard({ dentist: d, highlight = null, treatmentNote = null }: Props) {
   const name = normalizeDrName(d.name)
   const open = getOpenStatus(d.working_hours)
@@ -102,11 +106,11 @@ export default function DentistResultCard({ dentist: d, highlight = null, treatm
         {distance !== null && (
           <span className="drc-distance"><MapPinIcon size={13} color={TEAL_DARK} /> {distance.toFixed(1)} km</span>
         )}
-        {hasReviews ? (
+        {REVIEWS_ENABLED && (hasReviews ? (
           <span className="drc-rating"><StarIcon size={13} /> {rating.toFixed(1)} <span className="drc-rating-count">({reviewCount})</span></span>
         ) : (
           <span className="drc-new">New</span>
-        )}
+        ))}
       </div>
 
       <div className="drc-footer">
