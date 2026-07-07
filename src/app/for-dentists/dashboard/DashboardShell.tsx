@@ -232,8 +232,24 @@ export default function DashboardShell({ dentist, completionPct, staffRole = nul
           absolute-positioned over the page so it slides over the main
           content instead of taking a fixed column. */}
       {mobileOpen && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 200 }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1000 }}>
           <div onClick={() => setMobileOpen(false)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)' }} />
+          {/* Close button — sits on the dimmed backdrop to the right of the
+              256px drawer (i.e. top-right of the screen), a 44×44 tap target. */}
+          <button
+            type="button"
+            onClick={() => setMobileOpen(false)}
+            aria-label="Close navigation menu"
+            style={{
+              position: 'absolute', top: 12, right: 12, zIndex: 1,
+              width: 44, height: 44,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 8,
+              color: '#fff', fontSize: 22, cursor: 'pointer',
+              fontFamily: 'var(--font-body)', padding: 0,
+            }}>
+            ✕
+          </button>
           <div style={{ ...sidebarShellStyle, position: 'absolute', left: 0, top: 0, bottom: 0, borderRight: '1px solid var(--border)' }}>
             {sidebarContents}
           </div>
