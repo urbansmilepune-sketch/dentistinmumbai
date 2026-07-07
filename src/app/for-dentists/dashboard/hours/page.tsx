@@ -56,7 +56,11 @@ export default function WorkingHoursPage() {
 
       if (dentist) {
         setDentistId(dentist.id)
-        if (dentist.working_hours) setHours(dentist.working_hours)
+        // Merge saved hours over DEFAULT_HOURS so every day key is always a
+        // proper object. Legacy rows saved before Sunday existed omit the
+        // `sun` key; without this merge hours['sun'] is undefined and the
+        // Sunday toggle has no object to flip, so clicking it appears dead.
+        if (dentist.working_hours) setHours({ ...DEFAULT_HOURS, ...dentist.working_hours })
       }
       setLoading(false)
     }
