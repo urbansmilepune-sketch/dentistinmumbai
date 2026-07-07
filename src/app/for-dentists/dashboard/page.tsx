@@ -363,12 +363,12 @@ export default async function DashboardPage() {
       </div>
 
       {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 16, marginBottom: 24 }}>
+      <div className="dash-stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 16, marginBottom: 24 }}>
         {STATS.map(stat => (
           <Link key={stat.label} href={stat.href} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '20px', display: 'block', textDecoration: 'none', transition: 'box-shadow 0.2s' }}>
             <div style={{ fontSize: 28, marginBottom: 8 }}>{stat.icon}</div>
-            <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 28, color: 'var(--text)', marginBottom: 4 }}>{stat.value}</div>
-            <div style={{ fontSize: 13, color: 'var(--muted)' }}>{stat.label}</div>
+            <div className="dash-stat-num" style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 28, color: 'var(--text)', marginBottom: 4 }}>{stat.value}</div>
+            <div className="dash-stat-label" style={{ fontSize: 13, color: 'var(--muted)' }}>{stat.label}</div>
           </Link>
         ))}
       </div>
@@ -425,13 +425,21 @@ export default async function DashboardPage() {
       </div>
 
       <style>{`
-        @media (max-width: 640px) {
+        @media (max-width: 768px) {
+          /* Action cards stack full-width (minHeight already 96px ≥ 72px). */
           .dash-primary-ctas { grid-template-columns: 1fr !important; gap: 12px !important; }
+          /* Stat cards: 2-column grid, 80px floor, 24px number, 12px label. */
+          .dash-stats-grid { grid-template-columns: 1fr 1fr !important; gap: 12px !important; }
+          .dash-stats-grid > a { min-height: 80px; padding: 16px !important; }
+          .dash-stat-num { font-size: 24px !important; }
+          .dash-stat-label { font-size: 12px !important; }
+          /* Quick-action tiles: 2-column instead of 4. */
+          .dash-quick-actions { grid-template-columns: 1fr 1fr !important; gap: 12px !important; }
         }
       `}</style>
 
       {/* Quick actions */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
+      <div className="dash-quick-actions" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
         {[
           { icon: '✏️', label: 'Edit Profile', href: '/for-dentists/dashboard/profile', desc: 'Update your clinic details' },
           { icon: '📸', label: 'Upload Photos', href: '/for-dentists/dashboard/photos', desc: 'Add clinic & gallery photos' },
