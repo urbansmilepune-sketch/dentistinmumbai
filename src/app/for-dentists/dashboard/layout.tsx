@@ -51,6 +51,26 @@ export default async function DashboardLayout({ children }: { children: React.Re
     // the row write-locked so the demo can't accrue real patient data.
     if (!dentist.is_active && !isDemoEmail(user.email)) redirect('/for-dentists/pending')
     const pct = completionPct(dentist)
+
+    // First-run onboarding gate. New owners with a bare profile (<40% complete)
+    // are routed to the /onboard wizard until they finish it or explicitly skip
+    // (both set onboarding_completed). This layout does NOT wrap /onboard (it's a
+    // sibling route), so the redirect can't loop.
+    //
+    // Defensive read: onboarding_completed is added out-of-band and may not
+    // exist yet. A missing column makes this select error → `ob` is null → we
+    // treat the dentist as done and DON'T redirect. So this is safe to ship
+    // ahead of the migration; it activates automatically once the column lands.
+    if (pct < 40 && !isDemoEmail(user.email)) {
+      const { data: ob } = await admin
+        .from('dentists')
+        .select('onboarding_completed')
+        .eq('email', user.email)
+        .maybeSingle()
+      if (ob && ob.onboarding_completed === false) {
+        redirect('/for-dentists/onboard')
+      }
+    }
     return (
       <>
         <DashboardShell dentist={dentist} completionPct={pct} staffRole={null}>

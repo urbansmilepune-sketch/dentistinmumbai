@@ -1,214 +1,304 @@
 'use client'
 
+// First-run onboarding wizard. Mobile-first, full-screen, 5 steps, NO sidebar
+// or dashboard chrome (this route lives OUTSIDE dashboard/layout.tsx, so it
+// renders standalone). The dashboard layout redirects owners with a bare
+// profile here until they finish or skip — both set dentists.onboarding_completed.
+//
+// Each step persists to the dentists row BEFORE advancing, via the RLS-scoped
+// client (email = jwt email), the same write path the profile/hours editors
+// use. Photo reuses /api/cloudinary/upload (writes profile_photo server-side);
+// the map step reuses /api/dentist/maps-embed (clinic name → embed).
+
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { getCityByDomain, CITY_CONFIGS, DEFAULT_CITY, type CitySlug, type CityConfig } from '@/config/cities'
+import { createClient } from '@/lib/supabase/client'
+import { getCityBySlug, CITY_CONFIGS, type CitySlug } from '@/config/cities'
 
-type AreaStatus = 'idle' | 'loading' | 'ready' | 'error'
+const NAVY = '#0F172A'
+const TEAL = '#14B8A6'
+const TOTAL = 5
 
-export default function OnboardPage() {
+export default function OnboardWizard() {
   const router = useRouter()
-  const [form, setForm] = useState({ clinic_name: '', phone: '', area: '', area_name_raw: '' })
-  const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState('')
-  const [cityConfig, setCityConfig] = useState<CityConfig>(CITY_CONFIGS[DEFAULT_CITY])
-  const city: CitySlug = cityConfig.citySlug
+  const supabase = createClient()
 
-  // Same hydration pattern as /register: pull the curated area list for the
-  // current city, fall back to a free-text input if the fetch fails so the
-  // dentist isn't blocked by an /api/areas outage.
-  const [areas, setAreas] = useState<{ name: string }[]>([])
-  const [areaStatus, setAreaStatus] = useState<AreaStatus>('idle')
+  const [step, setStep] = useState(1)
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
 
-  useEffect(() => {
-    setCityConfig(getCityByDomain(window.location.hostname))
-  }, [])
+  const [dentistId, setDentistId] = useState('')
+  const [slug, setSlug] = useState('')
+  const [siteBase, setSiteBase] = useState('https://dentistinmumbai.in')
+  const [form, setForm] = useState({
+    name: '',
+    clinic_name: '',
+    city: 'mumbai' as CitySlug,
+    consultation_fee: '',
+    mapsName: '',
+    profile_photo: '' as string | null,
+  })
 
   useEffect(() => {
     let cancelled = false
-    setAreaStatus('loading')
-    setAreas([])
-    setForm(f => ({ ...f, area: '', area_name_raw: '' }))
-    fetch(`/api/areas?city=${encodeURIComponent(city)}`)
-      .then(async res => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const data = await res.json()
-        if (cancelled) return
-        const list: { name: string }[] = Array.isArray(data?.areas) ? data.areas : []
-        setAreas(list)
-        setAreaStatus('ready')
-      })
-      .catch(err => {
-        if (cancelled) return
-        console.error('[onboard] /api/areas fetch failed', err)
-        setAreaStatus('error')
-      })
+    async function load() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { router.push('/for-dentists/login'); return }
+      // Deliberately NOT selecting onboarding_completed here — that column is
+      // added out-of-band and may not exist yet; selecting it would 400.
+      const { data: d } = await supabase
+        .from('dentists')
+        .select('id, slug, name, clinic_name, city, consultation_fee, profile_photo')
+        .eq('email', user.email)
+        .single()
+      if (cancelled) return
+      if (!d) { router.push('/for-dentists/register'); return }
+      setDentistId(d.id)
+      setSlug(d.slug || '')
+      setSiteBase(`https://${getCityBySlug(d.city).domain}`)
+      setForm(f => ({
+        ...f,
+        name: d.name || '',
+        clinic_name: d.clinic_name || '',
+        city: (d.city || 'mumbai') as CitySlug,
+        consultation_fee: d.consultation_fee ? String(d.consultation_fee) : '',
+        profile_photo: d.profile_photo || '',
+      }))
+      setLoading(false)
+    }
+    load()
     return () => { cancelled = true }
-  }, [city])
+  }, [])
 
-  function update(key: keyof typeof form, value: string) {
-    setForm(f => ({ ...f, [key]: value }))
-    setError('')
+  // Persist a patch to the dentists row; throws on RLS denial / zero rows so
+  // callers can surface it. Same observability trick as the hours editor.
+  async function save(patch: Record<string, unknown>) {
+    const { data, error } = await supabase
+      .from('dentists')
+      .update(patch)
+      .eq('id', dentistId)
+      .select('id')
+    if (error || !data || data.length === 0) {
+      throw new Error(error?.message || 'Save failed — please try again.')
+    }
   }
 
-  async function handleSubmit() {
-    if (!form.clinic_name.trim() || !form.phone.trim()) {
-      setError('Please fill all required fields.'); return
-    }
-    if (!/^\d{10}$/.test(form.phone.replace(/\s/g, ''))) {
-      setError('Please enter a valid 10-digit phone number.'); return
-    }
-    if (form.area === '__other__' && !form.area_name_raw.trim()) {
-      setError('Please type your area name.'); return
-    }
-    if (!form.area && !form.area_name_raw.trim()) {
-      setError('Please pick or type your area.'); return
-    }
-
-    const submittingArea = form.area === '__other__' ? '' : form.area
-    const submittingAreaRaw = form.area === '__other__' ? form.area_name_raw.trim() : null
-
-    setSubmitting(true)
+  // Advance after persisting an optional patch.
+  async function next(patch: Record<string, unknown>) {
+    setBusy(true); setErr('')
     try {
-      const res = await fetch('/api/onboard', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          clinic_name: form.clinic_name,
-          phone: form.phone,
-          area: submittingArea,
-          area_name_raw: submittingAreaRaw,
-          city,
-        }),
-      })
-      const data = await res.json()
-      if (data.success && data.redirect) {
-        router.refresh()
-        router.push(data.redirect)
-        return
-      }
-      setError(data.error || 'Something went wrong. Please try again.')
-    } catch {
-      setError('Network error. Please try again.')
+      if (Object.keys(patch).length) await save(patch)
+      setStep(s => s + 1)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Something went wrong.')
     }
-    setSubmitting(false)
+    setBusy(false)
   }
 
-  const inputStyle = {
-    width: '100%', padding: '12px 14px', borderRadius: 10,
-    border: '1.5px solid var(--border)', fontSize: 14,
-    fontFamily: 'var(--font-body)', outline: 'none',
-    background: '#fff', boxSizing: 'border-box' as const,
+  // Step 5 "Go to dashboard" + every "Skip setup" link. Hits the dedicated
+  // API route (service role) to persist onboarding_completed = true so the
+  // dashboard gate stops routing them here. Best-effort: if the flag write
+  // fails (e.g. column not live yet) we still navigate — the gate defensively
+  // treats an unreadable flag as "done", so there's no redirect loop.
+  async function finish() {
+    try { await fetch('/api/onboard/complete', { method: 'POST' }) } catch { /* best-effort */ }
+    router.refresh()
+    router.push('/for-dentists/dashboard')
   }
-  const labelStyle = { fontSize: 13, fontWeight: 600 as const, display: 'block' as const, marginBottom: 6 }
+
+  async function uploadPhoto(file: File) {
+    setBusy(true); setErr('')
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('type', 'profile')
+      const res = await fetch('/api/cloudinary/upload', { method: 'POST', body: fd })
+      const data = await res.json()
+      if (!data.success) throw new Error(data.error || 'Upload failed.')
+      // The upload route writes dentists.profile_photo server-side.
+      setForm(f => ({ ...f, profile_photo: data.url }))
+      setStep(s => s + 1)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Upload failed. Please try again.')
+    }
+    setBusy(false)
+  }
+
+  async function saveMaps() {
+    setBusy(true); setErr('')
+    try {
+      if (form.mapsName.trim()) {
+        const res = await fetch('/api/dentist/maps-embed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ input: '', name: form.mapsName, clinic_name: form.clinic_name }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(data.error || 'Could not process the map.')
+        await save({ maps_embed: data.maps_embed || '' })
+      }
+      setStep(5)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not save your location.')
+    }
+    setBusy(false)
+  }
+
+  // ---- styles (inline only, navy/teal brand) ----
+  const btn: React.CSSProperties = {
+    minHeight: 56, width: '100%', border: 'none', borderRadius: 14,
+    background: TEAL, color: '#fff', fontWeight: 700, fontSize: 16,
+    cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1,
+    fontFamily: 'var(--font-body)',
+  }
+  const btnNavy: React.CSSProperties = {
+    ...btn, background: NAVY, display: 'flex', alignItems: 'center',
+    justifyContent: 'center', textDecoration: 'none', marginBottom: 12,
+  }
+  const skipLink: React.CSSProperties = {
+    display: 'block', width: '100%', textAlign: 'center', marginTop: 16,
+    color: '#64748B', background: 'none', border: 'none', fontSize: 14,
+    cursor: 'pointer', fontFamily: 'var(--font-body)',
+  }
+  const input: React.CSSProperties = {
+    width: '100%', minHeight: 52, padding: '0 16px', borderRadius: 12,
+    border: '1.5px solid #CBD5E1', fontSize: 16, outline: 'none',
+    boxSizing: 'border-box', fontFamily: 'var(--font-body)', background: '#fff',
+  }
+  const fieldLabel: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: NAVY }
+  const h1: React.CSSProperties = { fontSize: 26, fontWeight: 800, color: NAVY, lineHeight: 1.2 }
+  const sub: React.CSSProperties = { color: '#64748B', fontSize: 15, lineHeight: 1.5 }
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
-      <header style={{ background: '#fff', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, zIndex: 100 }}>
-        <nav className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 64 }}>
-          <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}>
-            <div style={{ width: 34, height: 34, background: 'var(--blue)', borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontFamily: 'var(--font-heading)', fontSize: 17 }}>D</div>
-            <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16, color: 'var(--text)' }}>DentistIn{cityConfig.cityName.replace(/\s+/g, '')}<span style={{ color: 'var(--blue)' }}>{'.' + cityConfig.domain.split('.').slice(1).join('.')}</span></span>
-          </Link>
-        </nav>
-      </header>
-
-      <main style={{ padding: '48px 20px' }}>
-        <div style={{ maxWidth: 520, margin: '0 auto' }}>
-          <div style={{ textAlign: 'center', marginBottom: 28 }}>
-            <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(1.6rem, 4vw, 2.2rem)', marginBottom: 10, lineHeight: 1.2 }}>
-              Finish setting up your listing
-            </h1>
-            <p style={{ fontSize: 15, color: 'var(--muted)', lineHeight: 1.6, maxWidth: 440, margin: '0 auto' }}>
-              We just need three details to put your clinic live on {cityConfig.cityName}&apos;s directory.
-            </p>
-          </div>
-
-          <div style={{ background: '#fff', borderRadius: 20, border: '1px solid var(--border)', padding: '28px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-              <div>
-                <label style={labelStyle}>Clinic Name *</label>
-                <input value={form.clinic_name} onChange={e => update('clinic_name', e.target.value)} placeholder="Your Dental Clinic" style={inputStyle} />
-              </div>
-
-              <div>
-                <label style={labelStyle}>Phone Number *</label>
-                <input value={form.phone} onChange={e => update('phone', e.target.value)} placeholder="10-digit number" type="tel" style={inputStyle} />
-              </div>
-
-              <div>
-                <label style={labelStyle}>Area in {cityConfig.cityName} *</label>
-                {areaStatus === 'error' ? (
-                  <>
-                    <input
-                      value={form.area}
-                      onChange={e => update('area', e.target.value)}
-                      placeholder={`Type your area in ${cityConfig.cityName}`}
-                      style={inputStyle}
-                    />
-                    <div style={{ fontSize: 11, color: '#92400E', marginTop: 6 }}>
-                      ⚠️ Couldn&apos;t load the area list — please type your area instead.
-                    </div>
-                  </>
-                ) : areaStatus !== 'ready' ? (
-                  <select disabled value="" style={{ ...inputStyle, cursor: 'wait', opacity: 0.7 }}>
-                    <option value="">Loading areas in {cityConfig.cityName}…</option>
-                  </select>
-                ) : areas.length === 0 ? (
-                  <>
-                    <input
-                      value={form.area}
-                      onChange={e => update('area', e.target.value)}
-                      placeholder={`Type your area in ${cityConfig.cityName}`}
-                      style={inputStyle}
-                    />
-                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
-                      We don&apos;t have a curated list for {cityConfig.cityName} yet — type your area and we&apos;ll add it.
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <select value={form.area} onChange={e => update('area', e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-                      <option value="">Select your area</option>
-                      {areas.map(a => <option key={a.name} value={a.name}>{a.name}</option>)}
-                      <option value="__other__">Other (not in this list)</option>
-                    </select>
-                    {form.area === '__other__' && (
-                      <div style={{ marginTop: 10 }}>
-                        <input
-                          value={form.area_name_raw}
-                          onChange={e => update('area_name_raw', e.target.value)}
-                          placeholder={`Type your area in ${cityConfig.cityName}`}
-                          style={inputStyle}
-                        />
-                        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
-                          We&apos;ll add this area to {cityConfig.cityName} once your listing is live.
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-
-              {error && (
-                <div style={{ padding: '12px 16px', background: '#FEE2E2', border: '1px solid #FECACA', borderRadius: 10, fontSize: 13, color: '#991B1B' }}>
-                  ⚠️ {error}
-                </div>
-              )}
-
-              <button
-                onClick={handleSubmit} disabled={submitting}
-                style={{ width: '100%', padding: '14px', background: '#FF6135', color: '#fff', border: 'none', borderRadius: 12, fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: 16, cursor: submitting ? 'not-allowed' : 'pointer', opacity: submitting ? 0.7 : 1 }}
-              >{submitting ? 'Setting up…' : 'Take me to my dashboard →'}</button>
-
-              <p style={{ textAlign: 'center', fontSize: 12, color: 'var(--muted)' }}>
-                You can edit everything else from your dashboard once you&apos;re in.
-              </p>
-            </div>
-          </div>
+    <div style={{ minHeight: '100svh', background: '#fff', display: 'flex', justifyContent: 'center' }}>
+      <div style={{ width: '100%', maxWidth: 480, padding: '20px 20px 40px', display: 'flex', flexDirection: 'column' }}>
+        {/* Logo */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+          <div style={{ width: 32, height: 32, background: NAVY, borderRadius: 8, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontFamily: 'var(--font-heading)' }}>D</div>
+          <span style={{ fontWeight: 700, color: NAVY, fontFamily: 'var(--font-heading)' }}>DentistIn</span>
         </div>
-      </main>
+
+        {/* Progress */}
+        <div style={{ fontSize: 12, fontWeight: 600, color: TEAL, marginBottom: 6 }}>Step {step} of {TOTAL}</div>
+        <div style={{ height: 6, background: '#E2E8F0', borderRadius: 99, marginBottom: 28, overflow: 'hidden' }}>
+          <div style={{ height: '100%', width: `${(step / TOTAL) * 100}%`, background: TEAL, borderRadius: 99, transition: 'width 0.3s' }} />
+        </div>
+
+        {loading ? (
+          <p style={{ color: '#64748B' }}>Loading…</p>
+        ) : (
+          <>
+            {err && (
+              <div style={{ background: '#FEE2E2', color: '#991B1B', padding: '10px 14px', borderRadius: 10, marginBottom: 16, fontSize: 13 }}>⚠️ {err}</div>
+            )}
+
+            {/* STEP 1 — Confirm basics */}
+            {step === 1 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <h1 style={h1}>Confirm your basics</h1>
+                <div>
+                  <label style={fieldLabel}>Your name</label>
+                  <input style={{ ...input, marginTop: 6 }} value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+                </div>
+                <div>
+                  <label style={fieldLabel}>Clinic name</label>
+                  <input style={{ ...input, marginTop: 6 }} value={form.clinic_name} onChange={e => setForm(f => ({ ...f, clinic_name: e.target.value }))} />
+                </div>
+                <div>
+                  <label style={fieldLabel}>City</label>
+                  <select style={{ ...input, marginTop: 6, cursor: 'pointer' }} value={form.city} onChange={e => setForm(f => ({ ...f, city: e.target.value as CitySlug }))}>
+                    {Object.values(CITY_CONFIGS).map(c => <option key={c.citySlug} value={c.citySlug}>{c.cityName}</option>)}
+                  </select>
+                </div>
+                <button style={{ ...btn, marginTop: 12 }} disabled={busy}
+                  onClick={() => next({ name: form.name.trim(), clinic_name: form.clinic_name.trim(), city: form.city })}>
+                  {busy ? 'Saving…' : 'Confirm & Continue →'}
+                </button>
+              </div>
+            )}
+
+            {/* STEP 2 — Photo */}
+            {step === 2 && (
+              <div>
+                <h1 style={{ ...h1, marginBottom: 8 }}>Add your photo</h1>
+                <p style={{ ...sub, marginBottom: 24 }}>Dentists with photos get 3x more bookings</p>
+                <label style={{
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                  minHeight: 220, border: `2px dashed ${TEAL}`, borderRadius: 16, cursor: 'pointer', marginBottom: 8,
+                  background: form.profile_photo ? `center/cover no-repeat url(${form.profile_photo})` : '#F0FDFA',
+                }}>
+                  {!form.profile_photo && <span style={{ color: TEAL, fontWeight: 600 }}>{busy ? 'Uploading…' : '📷 Tap to upload'}</span>}
+                  <input type="file" accept="image/*" style={{ display: 'none' }}
+                    onChange={e => { const file = e.target.files?.[0]; if (file) uploadPhoto(file) }} />
+                </label>
+                {form.profile_photo && (
+                  <button style={{ ...btn, marginTop: 8 }} disabled={busy} onClick={() => setStep(3)}>Looks good, Continue →</button>
+                )}
+                <button style={skipLink} onClick={() => setStep(3)}>Skip for now →</button>
+              </div>
+            )}
+
+            {/* STEP 3 — Fee */}
+            {step === 3 && (
+              <div>
+                <h1 style={{ ...h1, marginBottom: 8 }}>What&apos;s your consultation fee?</h1>
+                <p style={{ ...sub, marginBottom: 24 }}>You can change this anytime</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 28 }}>
+                  <span style={{ fontSize: 24, fontWeight: 700, color: NAVY }}>₹</span>
+                  <input style={input} inputMode="numeric" placeholder="500" value={form.consultation_fee}
+                    onChange={e => setForm(f => ({ ...f, consultation_fee: e.target.value.replace(/\D/g, '') }))} />
+                </div>
+                <button style={btn} disabled={busy}
+                  onClick={() => next(form.consultation_fee ? { consultation_fee: Number(form.consultation_fee) } : {})}>
+                  {busy ? 'Saving…' : 'Continue →'}
+                </button>
+                <button style={skipLink} onClick={() => setStep(4)}>Skip for now →</button>
+              </div>
+            )}
+
+            {/* STEP 4 — Location */}
+            {step === 4 && (
+              <div>
+                <h1 style={{ ...h1, marginBottom: 8 }}>Help patients find you</h1>
+                <p style={{ ...sub, marginBottom: 24 }}>Your clinic name on Google Maps</p>
+                <input style={{ ...input, marginBottom: 28 }} placeholder="e.g. Sambhav Dental Clinic, Wakad"
+                  value={form.mapsName} onChange={e => setForm(f => ({ ...f, mapsName: e.target.value }))} />
+                <button style={btn} disabled={busy} onClick={saveMaps}>{busy ? 'Saving…' : 'Continue →'}</button>
+                <button style={skipLink} onClick={() => setStep(5)}>Skip for now →</button>
+              </div>
+            )}
+
+            {/* STEP 5 — Done */}
+            {step === 5 && (
+              <div>
+                <div style={{ textAlign: 'center', marginTop: 12, marginBottom: 28 }}>
+                  <div style={{ fontSize: 64, marginBottom: 16 }}>🎉</div>
+                  <h1 style={{ ...h1, marginBottom: 12 }}>Your profile is live on DentistIn!</h1>
+                  {slug && (
+                    <a href={`${siteBase}/professional/${slug}`} target="_blank" rel="noopener noreferrer"
+                      style={{ display: 'inline-block', color: TEAL, fontWeight: 600, wordBreak: 'break-all', fontSize: 14 }}>
+                      {`${siteBase}/professional/${slug}`}
+                    </a>
+                  )}
+                </div>
+                {slug && (
+                  <a href={`${siteBase}/professional/${slug}`} target="_blank" rel="noopener noreferrer" style={btnNavy}>View my profile</a>
+                )}
+                <button style={btn} onClick={finish}>Go to dashboard →</button>
+              </div>
+            )}
+
+            {/* Global "skip setup" — steps 1–4 only; sets the flag so the gate
+                won't route them back here. */}
+            {step < 5 && (
+              <button style={{ ...skipLink, marginTop: 24, fontSize: 13 }} onClick={finish}>
+                Skip setup, take me to the dashboard
+              </button>
+            )}
+          </>
+        )}
+      </div>
     </div>
   )
 }
