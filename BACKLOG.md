@@ -31,3 +31,11 @@ opaque runtime errors.
 - Output should be a plain list of missing items with the `ALTER TABLE` SQL to
   run manually in the Supabase SQL editor (we apply schema changes out-of-band).
 - Keep it read-only against live — never mutate.
+
+## TODO: Email typo detection on registration
+
+Warn before saving if the email domain matches a common typo — `gmai.com`,
+`gamil.com`, `gnail.com`, `yaho.com`, `hotmial.com`, `outlok.com` — and show a
+"Did you mean gmail.com?" prompt. Prevents the `@gmai.com` class of support
+tickets (dentist registers under a typo'd domain, then can't be matched to her
+confirmed `auth.users` login and appears locked out of the dashboard).
