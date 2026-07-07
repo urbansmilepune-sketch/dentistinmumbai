@@ -108,16 +108,29 @@ export default function OnboardWizard() {
   }
 
   async function uploadPhoto(file: File) {
+    // Guard Vercel's ~4.5MB request-body limit: a larger file is rejected with a
+    // plain-text 413 before our route runs, so res.json() below would throw an
+    // opaque parse error. Block it up front with an actionable tip — most
+    // dentists' phone photos are 4-8MB, and WhatsApp compresses to ~200KB.
+    if (file.size > 4 * 1024 * 1024) {
+      setErr('Photo too large. Please use a photo under 4MB. Tip: use WhatsApp to send the photo to yourself first — it compresses it automatically.')
+      return
+    }
     setBusy(true); setErr('')
     try {
       const fd = new FormData()
       fd.append('file', file)
       fd.append('type', 'profile')
       const res = await fetch('/api/cloudinary/upload', { method: 'POST', body: fd })
-      const data = await res.json()
+      // Read as text first: an over-limit upload returns plain text, so
+      // res.json() would throw "Unexpected token 'R'..." instead of surfacing it.
+      const text = await res.text()
+      let data: { success?: boolean; url?: string; error?: string }
+      try { data = JSON.parse(text) }
+      catch { throw new Error('Upload failed — photo may be too large') }
       if (!data.success) throw new Error(data.error || 'Upload failed.')
       // The upload route writes dentists.profile_photo server-side.
-      setForm(f => ({ ...f, profile_photo: data.url }))
+      setForm(f => ({ ...f, profile_photo: data.url || '' }))
       setStep(s => s + 1)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Upload failed. Please try again.')
