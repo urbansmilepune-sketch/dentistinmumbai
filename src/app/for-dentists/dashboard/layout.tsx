@@ -7,7 +7,7 @@ import SupportButton from '@/components/SupportButton'
 import { completionPct } from '@/lib/profileCompletion'
 import { isDemoEmail } from '@/lib/demo'
 
-const DENTIST_FIELDS = 'id, slug, name, clinic_name, tier, trial_started_at, is_active, profile_photo, cover_photo, bio, whatsapp, maps_embed, city'
+const DENTIST_FIELDS = 'id, slug, name, clinic_name, tier, trial_started_at, is_active, profile_photo, cover_photo, bio, whatsapp, maps_embed, city, consultation_fee, onboarding_completed'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -52,24 +52,19 @@ export default async function DashboardLayout({ children }: { children: React.Re
     if (!dentist.is_active && !isDemoEmail(user.email)) redirect('/for-dentists/pending')
     const pct = completionPct(dentist)
 
-    // First-run onboarding gate. New owners with a bare profile (<40% complete)
-    // are routed to the /onboard wizard until they finish it or explicitly skip
-    // (both set onboarding_completed). This layout does NOT wrap /onboard (it's a
-    // sibling route), so the redirect can't loop.
+    // First-run onboarding gate. A dentist who hasn't finished the wizard AND
+    // is missing any key patient-facing field (photo / fee / map) is routed to
+    // /onboard. Finishing or skipping the wizard sets onboarding_completed, so
+    // this stops firing. This layout does NOT wrap /onboard (sibling route), so
+    // the redirect can't loop — no pathname guard needed.
     //
-    // Defensive read: onboarding_completed is added out-of-band and may not
-    // exist yet. A missing column makes this select error → `ob` is null → we
-    // treat the dentist as done and DON'T redirect. So this is safe to ship
-    // ahead of the migration; it activates automatically once the column lands.
-    if (pct < 40 && !isDemoEmail(user.email)) {
-      const { data: ob } = await admin
-        .from('dentists')
-        .select('onboarding_completed')
-        .eq('email', user.email)
-        .maybeSingle()
-      if (ob && ob.onboarding_completed === false) {
-        redirect('/for-dentists/onboard')
-      }
+    // NOTE: uses profile_photo (the column the app actually writes), NOT
+    // profile_photo_url (exists but is never populated).
+    const needsOnboarding =
+      !dentist.onboarding_completed &&
+      (!dentist.profile_photo || !dentist.consultation_fee || !dentist.maps_embed)
+    if (needsOnboarding && !isDemoEmail(user.email)) {
+      redirect('/for-dentists/onboard')
     }
     return (
       <>
