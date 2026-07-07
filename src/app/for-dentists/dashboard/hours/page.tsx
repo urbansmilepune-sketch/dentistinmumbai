@@ -148,7 +148,11 @@ export default function WorkingHoursPage() {
               <div style={{ width: 110, display: 'flex', alignItems: 'center', gap: 10 }}>
                 <label style={{ position: 'relative', display: 'inline-block', width: 40, height: 22, flexShrink: 0 }}>
                   <input type="checkbox" checked={hours[key]?.is_open || false} onChange={e => updateDay(key, 'is_open', e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
-                  <span onClick={() => updateDay(key, 'is_open', !hours[key]?.is_open)} style={{ position: 'absolute', inset: 0, background: hours[key]?.is_open ? 'var(--blue)' : '#CBD5E1', borderRadius: 22, cursor: 'pointer', transition: '0.3s' }}>
+                  {/* No onClick here — the wrapping <label> forwards the click
+                      to the checkbox, firing its onChange. A second handler on
+                      this span would fire updateDay a second time in the same
+                      batch and cancel the toggle out under React 19. */}
+                  <span style={{ position: 'absolute', inset: 0, background: hours[key]?.is_open ? 'var(--blue)' : '#CBD5E1', borderRadius: 22, cursor: 'pointer', transition: '0.3s' }}>
                     <span style={{ position: 'absolute', height: 16, width: 16, left: hours[key]?.is_open ? 20 : 3, bottom: 3, background: '#fff', borderRadius: '50%', transition: '0.3s' }} />
                   </span>
                 </label>
