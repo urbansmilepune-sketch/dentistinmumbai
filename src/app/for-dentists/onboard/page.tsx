@@ -31,6 +31,7 @@ export default function OnboardWizard() {
   const [dentistId, setDentistId] = useState('')
   const [slug, setSlug] = useState('')
   const [siteBase, setSiteBase] = useState('https://dentistinmumbai.in')
+  const [area, setArea] = useState('')
   const [form, setForm] = useState({
     name: '',
     clinic_name: '',
@@ -38,6 +39,7 @@ export default function OnboardWizard() {
     consultation_fee: '',
     mapsName: '',
     profile_photo: '' as string | null,
+    maps_embed: '',
   })
 
   useEffect(() => {
@@ -49,7 +51,7 @@ export default function OnboardWizard() {
       // added out-of-band and may not exist yet; selecting it would 400.
       const { data: d } = await supabase
         .from('dentists')
-        .select('id, slug, name, clinic_name, city, consultation_fee, profile_photo')
+        .select('id, slug, name, clinic_name, city, consultation_fee, profile_photo, maps_embed, sub_area')
         .eq('email', user.email)
         .single()
       if (cancelled) return
@@ -57,6 +59,10 @@ export default function OnboardWizard() {
       setDentistId(d.id)
       setSlug(d.slug || '')
       setSiteBase(`https://${getCityBySlug(d.city).domain}`)
+      // Area label for the "patients searching in <area>" copy. sub_area is
+      // free-text on the dentist row; fall back to the city name when it's
+      // blank (common) so the sentence always reads naturally.
+      setArea((d as any).sub_area || getCityBySlug(d.city).cityName)
       setForm(f => ({
         ...f,
         name: d.name || '',
@@ -64,6 +70,7 @@ export default function OnboardWizard() {
         city: (d.city || 'mumbai') as CitySlug,
         consultation_fee: d.consultation_fee ? String(d.consultation_fee) : '',
         profile_photo: d.profile_photo || '',
+        maps_embed: (d as any).maps_embed || '',
       }))
       setLoading(false)
     }
@@ -150,6 +157,7 @@ export default function OnboardWizard() {
         const data = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(data.error || 'Could not process the map.')
         await save({ maps_embed: data.maps_embed || '' })
+        setForm(f => ({ ...f, maps_embed: data.maps_embed || '' }))
       }
       setStep(5)
     } catch (e) {
@@ -182,6 +190,22 @@ export default function OnboardWizard() {
   const fieldLabel: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: NAVY }
   const h1: React.CSSProperties = { fontSize: 26, fontWeight: 800, color: NAVY, lineHeight: 1.2 }
   const sub: React.CSSProperties = { color: '#64748B', fontSize: 15, lineHeight: 1.5 }
+
+  // Step-5 completion mirrors the wizard's three key fields (photo, fee, map).
+  const doneChecks = [
+    !!form.profile_photo,
+    !!form.consultation_fee && Number(form.consultation_fee) > 0,
+    !!form.maps_embed,
+  ]
+  const donePct = Math.round((doneChecks.filter(Boolean).length / doneChecks.length) * 100)
+  const missingLabel = !form.profile_photo
+    ? 'a profile photo'
+    : (!form.consultation_fee || Number(form.consultation_fee) <= 0)
+    ? 'your consultation fee'
+    : !form.maps_embed
+    ? 'your clinic location'
+    : ''
+  const areaLabel = area || getCityBySlug(form.city).cityName
 
   return (
     <div style={{ minHeight: '100svh', background: '#fff', display: 'flex', justifyContent: 'center' }}>
@@ -282,21 +306,48 @@ export default function OnboardWizard() {
               </div>
             )}
 
-            {/* STEP 5 — Done */}
+            {/* STEP 5 — Done: value-revelation moment */}
             {step === 5 && (
               <div>
-                <div style={{ textAlign: 'center', marginTop: 12, marginBottom: 28 }}>
-                  <div style={{ fontSize: 64, marginBottom: 16 }}>🎉</div>
-                  <h1 style={{ ...h1, marginBottom: 12 }}>Your profile is live on DentistIn!</h1>
-                  {slug && (
-                    <a href={`${siteBase}/professional/${slug}`} target="_blank" rel="noopener noreferrer"
-                      style={{ display: 'inline-block', color: TEAL, fontWeight: 600, wordBreak: 'break-all', fontSize: 14 }}>
-                      {`${siteBase}/professional/${slug}`}
-                    </a>
+                <div style={{ textAlign: 'center', marginBottom: 20 }}>
+                  <h1 style={{ ...h1, marginBottom: 8 }}>You&apos;re live on DentistIn! 🎉</h1>
+                  <p style={sub}>Here&apos;s what you get — completely free, for life:</p>
+                </div>
+
+                {/* Value cards — teal left border on navy */}
+                {[
+                  { icon: '🦷', title: 'Complete Practice Management', body: 'Appointments, patient records, prescriptions, treatment plans, billing and invoicing — everything to run your clinic digitally.' },
+                  { icon: '👥', title: 'Patient Referrals', body: `Patients searching for dentists in ${areaLabel} will find your profile. Complete profiles get 3x more bookings. Yours is now complete.` },
+                  { icon: '🆓', title: 'Free Forever', body: 'No subscription. No commission on bookings. No credit card ever. Founding member pricing — locked in for life.' },
+                ].map(card => (
+                  <div key={card.title} style={{ background: NAVY, borderLeft: `4px solid ${TEAL}`, borderRadius: 12, padding: '16px 18px', marginBottom: 12, color: '#fff' }}>
+                    <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 6 }}>{card.icon} {card.title}</div>
+                    <div style={{ fontSize: 13, lineHeight: 1.55, color: 'rgba(255,255,255,0.85)' }}>{card.body}</div>
+                  </div>
+                ))}
+
+                {/* Actual profile completion (photo / fee / map) */}
+                <div style={{ marginTop: 20, marginBottom: 24 }}>
+                  <div style={{ height: 8, background: '#E2E8F0', borderRadius: 99, overflow: 'hidden', marginBottom: 8 }}>
+                    <div style={{ height: '100%', width: `${donePct}%`, background: TEAL, borderRadius: 99, transition: 'width 0.4s' }} />
+                  </div>
+                  {donePct === 100 ? (
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#0F766E' }}>✅ Profile 100% complete — you&apos;re getting maximum visibility</div>
+                  ) : (
+                    <div style={{ fontSize: 13, color: '#64748B' }}>
+                      Your profile is {donePct}% complete.{' '}
+                      <a href="/for-dentists/dashboard/profile" style={{ color: TEAL, fontWeight: 600, textDecoration: 'none' }}>
+                        Add {missingLabel} to get more bookings →
+                      </a>
+                    </div>
                   )}
                 </div>
+
+                {/* Actions */}
                 {slug && (
-                  <a href={`${siteBase}/professional/${slug}`} target="_blank" rel="noopener noreferrer" style={btnNavy}>View my profile</a>
+                  <a href={`${siteBase}/professional/${slug}`} target="_blank" rel="noopener noreferrer" style={btnNavy}>
+                    View my live profile →
+                  </a>
                 )}
                 <button style={btn} onClick={finish}>Go to dashboard →</button>
               </div>
