@@ -22,22 +22,22 @@ const TOTAL = 7
 // Qualification options for the credentials step.
 const QUALIFICATIONS = ['BDS', 'MDS', 'BDS + MDS', 'BDS + Fellowship', 'BDS + PG Diploma', 'Other']
 
-// The treatments offered in the wizard's quick-pick grid. `slug` maps each
-// tile to a row in the global `treatments` lookup (verified live via
-// PostgREST); `label` is the wizard-facing display name (a few differ from the
-// catalogue name, e.g. "Scaling & Cleaning" → teeth-cleaning). Insert order is
-// left→right, top→bottom in the 2-column grid.
-const WIZARD_TREATMENTS: { slug: string; label: string }[] = [
-  { slug: 'root-canal', label: 'Root Canal' },
-  { slug: 'dental-implants', label: 'Dental Implants' },
-  { slug: 'braces-aligners', label: 'Braces & Aligners' },
-  { slug: 'teeth-whitening', label: 'Teeth Whitening' },
-  { slug: 'tooth-extraction', label: 'Tooth Extraction' },
-  { slug: 'dental-crowns', label: 'Dental Crown' },
-  { slug: 'teeth-cleaning', label: 'Scaling & Cleaning' },
-  { slug: 'veneers', label: 'Veneers' },
-  { slug: 'smile-makeover', label: 'Smile Makeover' },
-  { slug: 'kids-dentistry', label: 'Pediatric Dentistry' },
+// The treatments offered in the wizard's quick-pick grid, keyed by their
+// `treatments` table UUID (verified live via PostgREST). dentist_treatments
+// links to treatments by treatment_id, so the id is inserted directly — no
+// catalogue lookup needed. Insert order is left→right, top→bottom in the
+// 2-column grid.
+const TREATMENTS: { id: string; name: string }[] = [
+  { id: '3e5cba66-a58e-468d-8525-3a59677ce879', name: 'Root Canal' },
+  { id: '83d2b3b3-9d9f-46a7-b741-fb77336ddbf8', name: 'Dental Implants' },
+  { id: '2a098ef9-da42-419e-8228-57ffd1770098', name: 'Braces & Aligners' },
+  { id: '0650a275-7c18-4ad7-95fc-35a3162c5007', name: 'Teeth Whitening' },
+  { id: '8a339148-50ad-4ac8-983d-0827a1afa23f', name: 'Tooth Extraction' },
+  { id: '02c840e3-bbcd-4878-8bda-ed3f2f1dc48f', name: 'Dental Crowns' },
+  { id: 'e8bdce57-d23f-4eb2-b64d-75f7929b5bf3', name: 'Teeth Cleaning' },
+  { id: '02c6ff54-7acd-4cd1-9438-93738bf69589', name: 'Veneers' },
+  { id: '08030963-8975-487a-9002-27599a6c1467', name: 'Smile Makeover' },
+  { id: 'be059965-88d5-4f62-b0dd-15709aa23f44', name: 'Kids Dentistry' },
 ]
 
 export default function OnboardWizard() {
@@ -66,12 +66,11 @@ export default function OnboardWizard() {
     gender: '',
   })
 
-  // Treatments step: the global lookup (slug → id), the set of treatment_ids
-  // the dentist already has (so we don't re-insert on a return visit), and the
-  // currently-ticked slugs. Pre-selected from existing links in load().
-  const [treatmentIdBySlug, setTreatmentIdBySlug] = useState<Record<string, string>>({})
+  // Treatments step: the set of treatment_ids the dentist already has (so we
+  // don't re-insert on a return visit) and the currently-ticked treatment_ids.
+  // Pre-selected from existing links in load().
   const [existingTreatmentIds, setExistingTreatmentIds] = useState<Set<string>>(new Set())
-  const [selectedSlugs, setSelectedSlugs] = useState<Set<string>>(new Set())
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     let cancelled = false
@@ -89,22 +88,16 @@ export default function OnboardWizard() {
       if (!d) { router.push('/for-dentists/register'); return }
       setDentistId(d.id)
 
-      // Treatments step data: the global lookup (to resolve slug → id on save)
-      // and this dentist's existing links (to pre-tick + avoid re-inserting).
-      const [{ data: txCatalogue }, { data: myLinks }] = await Promise.all([
-        supabase.from('treatments').select('id, slug'),
-        supabase.from('dentist_treatments').select('treatment_id').eq('dentist_id', d.id),
-      ])
+      // Treatments step: this dentist's existing links, to pre-tick the grid
+      // and to avoid re-inserting on a return visit. Treatment UUIDs are
+      // hardcoded in TREATMENTS, so no catalogue lookup is needed.
+      const { data: myLinks } = await supabase
+        .from('dentist_treatments').select('treatment_id').eq('dentist_id', d.id)
       if (cancelled) return
-      const idBySlug: Record<string, string> = {}
-      for (const t of txCatalogue ?? []) idBySlug[(t as any).slug] = (t as any).id
       const have = new Set((myLinks ?? []).map(r => (r as any).treatment_id as string))
-      setTreatmentIdBySlug(idBySlug)
       setExistingTreatmentIds(have)
       // Pre-select any wizard treatments the dentist already offers.
-      setSelectedSlugs(new Set(
-        WIZARD_TREATMENTS.filter(w => idBySlug[w.slug] && have.has(idBySlug[w.slug])).map(w => w.slug),
-      ))
+      setSelectedIds(new Set(TREATMENTS.filter(t => have.has(t.id)).map(t => t.id)))
       setSlug(d.slug || '')
       setSiteBase(`https://${getCityBySlug(d.city).domain}`)
       // Area label for the "patients searching in <area>" copy. sub_area is
@@ -224,7 +217,7 @@ export default function OnboardWizard() {
     const patch: Record<string, unknown> = {}
     if (form.qualification) patch.qualifications = form.qualification
     if (form.experience_years !== '') patch.experience_years = Number(form.experience_years)
-    if (form.gender) patch.gender = form.gender
+    if (form.gender) patch.gender = form.gender.toLowerCase()
     next(patch) // next() no-ops the save when patch is empty, then advances 2→3
   }
 
@@ -234,9 +227,8 @@ export default function OnboardWizard() {
   async function saveTreatments() {
     setBusy(true); setErr('')
     try {
-      const toInsert = [...selectedSlugs]
-        .map(slug => treatmentIdBySlug[slug])
-        .filter((id): id is string => !!id && !existingTreatmentIds.has(id))
+      const toInsert = [...selectedIds]
+        .filter(id => !existingTreatmentIds.has(id))
         .map(treatment_id => ({ dentist_id: dentistId, treatment_id, fee_from: null, fee_to: null }))
       if (toInsert.length) {
         const { data, error } = await supabase
@@ -255,10 +247,10 @@ export default function OnboardWizard() {
     setBusy(false)
   }
 
-  function toggleSlug(slug: string) {
-    setSelectedSlugs(prev => {
+  function toggleTreatment(id: string) {
+    setSelectedIds(prev => {
       const n = new Set(prev)
-      if (n.has(slug)) n.delete(slug); else n.add(slug)
+      if (n.has(id)) n.delete(id); else n.add(id)
       return n
     })
   }
@@ -380,7 +372,7 @@ export default function OnboardWizard() {
                   <label style={fieldLabel}>Gender</label>
                   <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
                     {['Male', 'Female', 'Other'].map(g => {
-                      const active = form.gender === g
+                      const active = form.gender.toLowerCase() === g.toLowerCase()
                       return (
                         <button key={g} type="button" onClick={() => setForm(f => ({ ...f, gender: g }))}
                           style={{
@@ -448,10 +440,10 @@ export default function OnboardWizard() {
                 <h1 style={{ ...h1, marginBottom: 8 }}>Treatments you offer</h1>
                 <p style={{ ...sub, marginBottom: 24 }}>Patients search by treatment — select all that apply</p>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 24 }}>
-                  {WIZARD_TREATMENTS.map(t => {
-                    const selected = selectedSlugs.has(t.slug)
+                  {TREATMENTS.map(t => {
+                    const selected = selectedIds.has(t.id)
                     return (
-                      <button key={t.slug} type="button" onClick={() => toggleSlug(t.slug)}
+                      <button key={t.id} type="button" onClick={() => toggleTreatment(t.id)}
                         style={{
                           display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left',
                           minHeight: 52, padding: '10px 12px', borderRadius: 12, cursor: 'pointer',
@@ -467,7 +459,7 @@ export default function OnboardWizard() {
                           border: `1.5px solid ${selected ? TEAL : '#CBD5E1'}`,
                           color: '#fff', fontSize: 13, fontWeight: 800,
                         }}>{selected ? '✓' : ''}</span>
-                        {t.label}
+                        {t.name}
                       </button>
                     )
                   })}

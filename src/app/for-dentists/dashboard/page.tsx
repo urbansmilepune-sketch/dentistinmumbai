@@ -12,10 +12,6 @@ import { getCityBySlug } from '@/config/cities'
 
 export const dynamic = 'force-dynamic'
 
-// Reviews UI is globally disabled for now. Flip to true to restore the
-// "Approved Reviews" stat card and the "Get Your First Review" card.
-const REVIEWS_ENABLED = false
-
 const IST_TZ = 'Asia/Kolkata'
 
 function istTodayIso(): string {
@@ -201,7 +197,10 @@ export default async function DashboardPage() {
     { icon: '💚', label: 'WhatsApp Clicks · MTD', value: monthEngagement.whatsapp_clicks, href: '/for-dentists/dashboard/analytics' },
     { icon: '📅', label: 'Total Appointments', value: appointmentCount || 0, href: '/for-dentists/dashboard/appointments' },
     { icon: '💬', label: 'Enquiries', value: enquiryCount || 0, href: '/for-dentists/dashboard/enquiries' },
-    ...(REVIEWS_ENABLED ? [{ icon: '⭐', label: 'Approved Reviews', value: reviewCount || 0, href: '/for-dentists/dashboard/profile' }] : []),
+    // Count-driven, NOT flag-gated: show the stat only once real reviews exist
+    // (a "0 Approved Reviews" tile is pointless/discouraging). Public-page
+    // review display stays behind REVIEWS_ENABLED.
+    ...((reviewCount ?? 0) > 0 ? [{ icon: '⭐', label: 'Approved Reviews', value: reviewCount || 0, href: '/for-dentists/dashboard/profile' }] : []),
   ]
 
   const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
