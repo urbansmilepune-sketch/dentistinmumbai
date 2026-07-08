@@ -37,5 +37,21 @@
       "path": "/api/cron/inventory-alerts",
       "schedule": "0 4 * * *"
     }
+  ],
+  "redirects": [
+    { "source": "/:path*", "has": [{ "type": "host", "value": "www.dentistinpune.in" }], "destination": "https://dentistinpune.in/:path*", "permanent": true },
+    { "source": "/:path*", "has": [{ "type": "host", "value": "www.dentistinmumbai.in" }], "destination": "https://dentistinmumbai.in/:path*", "permanent": true },
+    { "source": "/:path*", "has": [{ "type": "host", "value": "www.dentistinnagpur.in" }], "destination": "https://dentistinnagpur.in/:path*", "permanent": true },
+    { "source": "/:path*", "has": [{ "type": "host", "value": "www.dentistinkolhapur.in" }], "destination": "https://dentistinkolhapur.in/:path*", "permanent": true },
+    { "source": "/:path*", "has": [{ "type": "host", "value": "www.dentistinthane.com" }], "destination": "https://dentistinthane.com/:path*", "permanent": true },
+    { "source": "/:path*", "has": [{ "type": "host", "value": "www.dentistinnashik.com" }], "destination": "https://dentistinnashik.com/:path*", "permanent": true },
+    { "source": "/:path*", "has": [{ "type": "host", "value": "www.dentistinnavimumbai.in" }], "destination": "https://dentistinnavimumbai.in/:path*", "permanent": true },
+    { "source": "/:path*", "has": [{ "type": "host", "value": "www.dentistinsurat.com" }], "destination": "https://dentistinsurat.com/:path*", "permanent": true },
+    { "source": "/:path*", "has": [{ "type": "host", "value": "www.dentistinsambhajinagar.com" }], "destination": "https://dentistinsambhajinagar.com/:path*", "permanent": true },
+    { "source": "/:path*", "has": [{ "type": "host", "value": "www.dentistinrajkot.in" }], "destination": "https://dentistinrajkot.in/:path*", "permanent": true },
+    { "source": "/:path*", "has": [{ "type": "host", "value": "www.dentistingoa.in" }], "destination": "https://dentistingoa.in/:path*", "permanent": true },
+    { "source": "/:path*", "has": [{ "type": "host", "value": "www.dentistinjamnagar.in" }], "destination": "https://dentistinjamnagar.in/:path*", "permanent": true },
+    { "source": "/:path*", "has": [{ "type": "host", "value": "www.dentistinahmedabad.com" }], "destination": "https://dentistinahmedabad.com/:path*", "permanent": true },
+    { "source": "/:path*", "has": [{ "type": "host", "value": "www.dentistinindia.in" }], "destination": "https://dentistinindia.in/:path*", "permanent": true }
   ]
 }
