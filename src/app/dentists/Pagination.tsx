@@ -15,8 +15,11 @@ export default function Pagination({ currentPage, totalPages }: PaginationProps)
 
   function goToPage(page: number) {
     const params = new URLSearchParams(searchParams.toString())
-    params.set('page', String(page))
-    router.push(`/dentists?${params.toString()}`)
+    // page=1 is the bare URL — never emit &page=1 (Section 4).
+    if (page <= 1) params.delete('page')
+    else params.set('page', String(page))
+    const qs = params.toString()
+    router.push(qs ? `/dentists?${qs}` : '/dentists')
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 

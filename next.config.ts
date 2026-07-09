@@ -18,6 +18,18 @@ const nextConfig: NextConfig = {
         destination: 'https://dentistinmumbai.in/:path*',
         permanent: true,
       },
+      // Section 7 — static 301s for legacy/dead URLs surfaced in GSC. These map
+      // old flat URLs and retired blog posts onto their live equivalents so the
+      // crawl equity transfers instead of 404-ing. Verified live on 2026-07-09:
+      // all destinations resolve (treatments dental-implants/root-canal exist;
+      // /area/koregaon-park exists in Pune; /privacy and /dentists exist).
+      // The consent/cookie redirects from the ticket are intentionally omitted
+      // — there are no /consent or /cookies pages to point them at.
+      { source: '/dentist-in-koregaon-park', destination: '/area/koregaon-park', permanent: true },
+      { source: '/blog/best-dental-clinics-pune-guide-2026', destination: '/dentists', permanent: true },
+      { source: '/blog/dental-implants-pune-cost-types-success', destination: '/treatment/dental-implants', permanent: true },
+      { source: '/blog/root-canal-treatment-pune-cost-procedure', destination: '/treatment/root-canal', permanent: true },
+      { source: '/privacy-policy', destination: '/privacy', permanent: true },
     ]
   },
 };

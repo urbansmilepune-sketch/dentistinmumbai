@@ -1,5 +1,6 @@
 import { unstable_cache } from 'next/cache'
 import { createAnonClient } from '@/lib/supabase/anon'
+import { completionPct } from '@/lib/profileCompletion'
 
 // Cached data fetchers for the two public-facing pages that don't need
 // live data: the city homepage and the dentist profile. The route shells
@@ -223,6 +224,32 @@ export const getDentistProfileData = unstable_cache(
   { revalidate: 60, tags: ['dentist-profile'] },
 )
 
+// Resolve a stale/legacy dentist slug to the dentist's CURRENT slug via the
+// previous_slugs array. Powers the permanent-redirect safety net on the
+// profile route: an old crawled/indexed URL that no longer resolves (name
+// changed, clinic renamed) is 308'd to the live profile instead of 404-ing
+// and mass-manufacturing dead URLs in GSC. Returns null when no active
+// dentist claims the slug — that's a genuine 404.
+//
+// Graceful degradation: if the previous_slugs column isn't live yet (it's
+// added out-of-band via the Supabase SQL editor), the query returns an error
+// which we swallow → null → notFound(). No crash, no behaviour change until
+// the column and its backfill land.
+export const resolveCurrentSlug = unstable_cache(
+  async (oldSlug: string): Promise<string | null> => {
+    const supabase = createAnonClient()
+    const { data } = await supabase
+      .from('dentists')
+      .select('slug')
+      .contains('previous_slugs', [oldSlug])
+      .eq('is_active', true)
+      .maybeSingle()
+    return (data as { slug?: string } | null)?.slug ?? null
+  },
+  ['resolve-current-slug'],
+  { revalidate: 300, tags: ['dentist-profile'] },
+)
+
 // Live per-city aggregates the denormalized columns don't reliably carry:
 //   - treatmentDentistCount: how many active dentists in this city offer each
 //     treatment (keyed by treatment id). Drives the homepage intent tiles.
@@ -316,6 +343,99 @@ export function getCityAreaDentistCounts(citySlug: string): Promise<Record<strin
     },
     ['city-area-dentist-counts', citySlug],
     { revalidate: 300, tags: ['city-home', 'dentists', 'areas'] },
+  )()
+}
+
+// ── Density gate (Week 1 index hygiene, Section 3) ──────────────────────────
+// A "complete profile" for indexing purposes is 80%+ on the five-field
+// completion score (profile_photo, cover_photo, bio≥50, whatsapp, maps_embed)
+// — the same score the dentist sees. The two helpers below drive both the
+// density gate on the area / area×treatment routes AND the sitemap emission
+// (Section 1), so the "should this page exist / be indexed?" decision is made
+// in exactly one place and can never drift between route and sitemap.
+const COMPLETE_PROFILE_THRESHOLD = 80
+
+// The five completion fields, fetched together so completionPct can be scored
+// per dentist server-side. Kept local to this module.
+const COMPLETION_SELECT = 'profile_photo, cover_photo, bio, whatsapp, maps_embed'
+
+function isCompleteProfile(row: {
+  profile_photo?: string | null
+  cover_photo?: string | null
+  bio?: string | null
+  whatsapp?: string | null
+  maps_embed?: string | null
+}): boolean {
+  return completionPct({
+    profile_photo: row.profile_photo,
+    cover_photo: row.cover_photo,
+    bio: row.bio,
+    whatsapp: row.whatsapp,
+    maps_embed: row.maps_embed,
+  }) >= COMPLETE_PROFILE_THRESHOLD
+}
+
+// Count of COMPLETE-profile active dentists per area (keyed by stringified
+// area id) for one city. Density gate for /area/[slug]:
+//   0 → notFound() + drop from sitemap; 1–2 → noindex + drop from sitemap;
+//   ≥3 → index + sitemap.
+export function getAreaCompleteDentistCounts(citySlug: string): Promise<Record<string, number>> {
+  return unstable_cache(
+    async (): Promise<Record<string, number>> => {
+      const supabase = createAnonClient()
+      const { data } = await supabase
+        .from('dentists')
+        .select(`area_id, ${COMPLETION_SELECT}`)
+        .eq('is_active', true)
+        .eq('city', citySlug)
+      const counts: Record<string, number> = {}
+      for (const row of (data ?? []) as any[]) {
+        if (row.area_id === null || row.area_id === undefined) continue
+        if (!isCompleteProfile(row)) continue
+        const key = String(row.area_id)
+        counts[key] = (counts[key] ?? 0) + 1
+      }
+      return counts
+    },
+    ['area-complete-dentist-counts', citySlug],
+    { revalidate: 300, tags: ['dentists', 'areas'] },
+  )()
+}
+
+// Count of DISTINCT complete-profile active dentists per (area, treatment) who
+// offer that treatment AND have a fee set for it (fee_from or fee_to > 0),
+// keyed by `${areaId}:${treatmentId}`. Density gate for /area/[slug]/[treatment]:
+//   <3 → notFound() + drop from sitemap; ≥3 → index + sitemap.
+export function getAreaTreatmentCompleteCounts(citySlug: string): Promise<Record<string, number>> {
+  return unstable_cache(
+    async (): Promise<Record<string, number>> => {
+      const supabase = createAnonClient()
+      const { data } = await supabase
+        .from('dentist_treatments')
+        .select(`treatment_id, fee_from, fee_to, dentists!inner(id, area_id, ${COMPLETION_SELECT})`)
+        .eq('dentists.city', citySlug)
+        .eq('dentists.is_active', true)
+      // Dedup to DISTINCT dentists per (area, treatment): the same dentist can
+      // have duplicate link rows, and count must match the "N dentists offer
+      // this" the page shows.
+      const sets: Record<string, Set<string>> = {}
+      for (const row of (data ?? []) as any[]) {
+        const d = Array.isArray(row.dentists) ? row.dentists[0] : row.dentists
+        if (!d || d.area_id === null || d.area_id === undefined) continue
+        const feeSet =
+          (typeof row.fee_from === 'number' && row.fee_from > 0) ||
+          (typeof row.fee_to === 'number' && row.fee_to > 0)
+        if (!feeSet) continue
+        if (!isCompleteProfile(d)) continue
+        const key = `${d.area_id}:${row.treatment_id}`
+        ;(sets[key] ??= new Set<string>()).add(d.id)
+      }
+      const counts: Record<string, number> = {}
+      for (const [key, set] of Object.entries(sets)) counts[key] = set.size
+      return counts
+    },
+    ['area-treatment-complete-counts', citySlug],
+    { revalidate: 300, tags: ['dentists', 'treatments'] },
   )()
 }
 

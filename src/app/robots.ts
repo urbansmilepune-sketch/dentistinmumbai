@@ -16,7 +16,9 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
           '/for-dentists/dashboard/',
           '/for-dentists/login',
           '/for-dentists/register',
-          '/book/',
+          // Prefix (no trailing slash) so it covers both /book and /book/*
+          // — nothing under /book should ever be crawled or indexed.
+          '/book',
           '/api/',
         ],
       },

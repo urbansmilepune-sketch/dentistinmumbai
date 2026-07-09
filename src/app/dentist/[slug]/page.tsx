@@ -1,9 +1,9 @@
 
 import type { Metadata } from 'next'
-import { notFound, redirect } from 'next/navigation'
+import { notFound, redirect, permanentRedirect } from 'next/navigation'
 import Link from 'next/link'
 import { headers } from 'next/headers'
-import { getDentistProfileData, getCityAreas } from '@/lib/cache/public-pages'
+import { getDentistProfileData, getCityAreas, resolveCurrentSlug } from '@/lib/cache/public-pages'
 import { getCityBySlug, cityOrigin } from '@/config/cities'
 import SiteHeader from '@/components/SiteHeader'
 import { whatsappLink } from '@/lib/phone'
@@ -59,6 +59,19 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const d = cached?.dentist as any
   if (!d) return {}
 
+  // Index gate: a thin profile (<60% complete) is a low-quality page that
+  // dilutes crawl budget and earns "crawled – not indexed" rejections in
+  // GSC, so we noindex it until the dentist fills it out. Same five-field
+  // score the dashboard shows the dentist. Kept in sync with the sitemap,
+  // which excludes the same sub-60% profiles.
+  const indexable = completionPct({
+    profile_photo: d.profile_photo,
+    cover_photo: d.cover_photo,
+    bio: d.bio,
+    whatsapp: d.whatsapp,
+    maps_embed: d.maps_embed,
+  }) >= 60
+
   const brand = `DentistIn${city.cityName.replace(/\s+/g, '')}`
   const areaName = (d.areas as any)?.name || city.cityName
   const clinicLabel = d.clinic_name || 'Dental Clinic'
@@ -99,7 +112,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       description,
       ...(ogImage ? { images: [ogImage] } : {}),
     },
-    robots: { index: true, follow: true, googleBot: { index: true, follow: true } },
+    robots: { index: indexable, follow: true, googleBot: { index: indexable, follow: true } },
   }
 }
 
@@ -126,7 +139,17 @@ export default async function DentistProfilePage({ params }: Props) {
   // back to the dentist row's single address/working_hours fields — no
   // backfill of legacy data.
   const cached = await getDentistProfileData(slug)
-  if (!cached) notFound()
+  if (!cached) {
+    // Slug no longer resolves. Before 404-ing, check whether it's a retired
+    // slug (name/clinic change) that a live dentist still owns via
+    // previous_slugs → 308 permanent-redirect to their current URL so the
+    // crawl equity on the old indexed URL transfers instead of dying. This
+    // runs entirely in the route, NOT the city-slug proxy — proxy.ts is
+    // untouched. permanentRedirect() throws, so it terminates render here.
+    const current = await resolveCurrentSlug(slug)
+    if (current && current !== slug) permanentRedirect(`/dentist/${current}`)
+    notFound()
+  }
   const dentist = cached.dentist as any
   const approvedReviews = cached.approvedReviews
   const locations = cached.locations

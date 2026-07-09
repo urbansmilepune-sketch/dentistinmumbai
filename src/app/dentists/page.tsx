@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getCityBySlug, cityBrandName, cityBrandTld, cityOrigin, NATIONAL_ORIGIN } from '@/config/cities'
 import FilterSidebar from './FilterSidebar'
 import DentistCard from './DentistCard'
+import DentistResults from './DentistResults'
 import Pagination from './Pagination'
 import SortSelect from './SortSelect'
 import { haversineKm } from '@/lib/distance'
@@ -25,17 +26,32 @@ export async function generateMetadata({ searchParams }: { searchParams: Promise
   }
   const params = await searchParams
   const city = getCityBySlug(h.get('x-city-slug'))
-  const area = params.area?.split(',')[0] || ''
+  const areaVals = params.area ? params.area.split(',').filter(Boolean) : []
+  const area = areaVals[0] || ''
   const treatment = params.treatment?.split(',')[0] || ''
   const title = [treatment, area, `Dentists in ${city.cityName}`].filter(Boolean).join(' · ')
-  // Canonical points at the base /dentists URL with no query params so the
-  // many filter/sort/page combinations don't index as duplicate content.
-  // Patients still land on the filtered URL they followed; only the
-  // <link rel="canonical"> tag tells crawlers which version owns the rank.
+
+  // De-parameterisation (Section 4). The bare /dentists is the only indexable
+  // version; any query param makes this a filtered/sorted/paged view that must
+  // NOT index and self-canonicalises to /dentists so crawl equity consolidates
+  // on the real page. The one exception: a single ?area=X that maps to a live
+  // area page canonicalises to /area/X — the dedicated indexable page for that
+  // intent. Patients still land on the filtered URL they followed; only the
+  // canonical + robots tags change what crawlers do with it.
+  const hasParams = Object.values(params).some(v => (typeof v === 'string' ? v !== '' : v != null))
+  let canonical = `${cityOrigin(city)}/dentists`
+  if (areaVals.length === 1) {
+    const supabase = await createClient()
+    const { data: areaRow } = await supabase
+      .from('areas').select('slug').eq('slug', areaVals[0]).eq('city', city.citySlug).maybeSingle()
+    if (areaRow) canonical = `${cityOrigin(city)}/area/${(areaRow as { slug: string }).slug}`
+  }
+  const indexable = !hasParams
   return {
     title,
     description: `Find verified dentists in ${city.cityName}${area ? ` in ${area}` : ''}${treatment ? ` for ${treatment}` : ''}. Compare fees, read reviews, book appointments.`,
-    alternates: { canonical: `${cityOrigin(city)}/dentists` },
+    alternates: { canonical },
+    robots: { index: indexable, follow: true, googleBot: { index: indexable, follow: true } },
   }
 }
 
@@ -307,8 +323,6 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
     dentists = processed.slice(from, from + PER_PAGE)
   }
 
-  const view = (params.view as 'list' | 'grid') || 'list'
-
   // Active area names for display
   const activeAreaNames = (allAreas || []).filter(a => areaFilter.includes(a.slug)).map(a => a.name)
 
@@ -340,8 +354,11 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
       if (v === null) p.delete(k)
       else p.set(k, v)
     })
-    p.set('page', '1')
-    return `/dentists?${p.toString()}`
+    // page=1 is the bare URL — never emit `&page=1` (Section 4). Any filter
+    // change resets to page 1 by simply dropping the param.
+    p.delete('page')
+    const qs = p.toString()
+    return qs ? `/dentists?${qs}` : '/dentists'
   }
 
   function removeChip(chip: typeof chips[0]) {
@@ -362,8 +379,9 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
     const p = new URLSearchParams(params as Record<string, string>)
     p.delete('lat')
     p.delete('lng')
-    p.set('page', '1')
-    return `/dentists?${p.toString()}`
+    p.delete('page')
+    const qs = p.toString()
+    return qs ? `/dentists?${qs}` : '/dentists'
   }
 
   return (
@@ -448,21 +466,10 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  {/* Sort — hidden when distance-sorted */}
+                  {/* Sort — hidden when distance-sorted. The list/grid view
+                      toggle moved into <DentistResults> as pure client state so
+                      it no longer emits a crawlable ?view= URL (Section 4). */}
                   {!hasCoords && <SortSelect currentSort={sortBy} />}
-
-                  {/* View toggle */}
-                  <div style={{ display: 'flex', background: '#fff', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
-                    {(['list', 'grid'] as const).map(v => (
-                      <Link key={v} href={buildUrl({ view: v })} style={{
-                        padding: '8px 14px', fontSize: 16,
-                        background: view === v ? 'var(--blue)' : 'transparent',
-                        color: view === v ? '#fff' : 'var(--muted)',
-                      }}>
-                        {v === 'list' ? '☰' : '⊞'}
-                      </Link>
-                    ))}
-                  </div>
                 </div>
               </div>
 
@@ -494,8 +501,10 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
                   <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: 22, fontWeight: 700, marginBottom: 8 }}>No dentists found</h2>
                   <p style={{ color: 'var(--muted)', fontSize: 15, marginBottom: 28 }}>Try adjusting your filters or search in a nearby area</p>
                   <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+                    {/* Point at the dedicated, indexable /area/[slug] page
+                        rather than a ?area= filtered view (Section 4). */}
                     {(allAreas || []).slice(0, 4).map(area => (
-                      <Link key={area.slug} href={`/dentists?area=${area.slug}`} style={{
+                      <Link key={area.slug} href={`/area/${area.slug}`} style={{
                         padding: '8px 20px', background: 'var(--blue-light)', color: 'var(--blue)',
                         border: '1px solid #BFDBFE', borderRadius: 20, fontSize: 13, fontWeight: 600,
                       }}>📍 {area.name}</Link>
@@ -503,20 +512,31 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
                   </div>
                 </div>
               ) : (
-                <div style={{
-                  display: view === 'grid' ? 'grid' : 'flex',
-                  gridTemplateColumns: view === 'grid' ? 'repeat(auto-fill, minmax(280px, 1fr))' : undefined,
-                  flexDirection: view === 'list' ? 'column' : undefined,
-                  gap: 16,
-                }}>
-                  {dentists?.map(d => (
-                    <DentistCard key={d.id} dentist={d as any} view={view} />
-                  ))}
-                </div>
+                <DentistResults
+                  listCards={dentists?.map(d => <DentistCard key={d.id} dentist={d as any} view="list" />)}
+                  gridCards={dentists?.map(d => <DentistCard key={d.id} dentist={d as any} view="grid" />)}
+                />
               )}
 
               {/* Pagination */}
               <Pagination currentPage={page} totalPages={totalPages} />
+
+              {/* Browse by treatment — crawlable internal links to the flagship
+                  /treatment/* hubs (Section 2). Distinct from the sidebar
+                  treatment filter, which is a multi-select (not a link). */}
+              {(allTreatments || []).length > 0 && (
+                <div style={{ marginTop: 40 }}>
+                  <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16, marginBottom: 12 }}>Browse by treatment</h2>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {(allTreatments || []).map(t => (
+                      <Link key={t.slug} href={`/treatment/${t.slug}`} style={{
+                        padding: '6px 14px', background: 'var(--blue-light)', color: 'var(--blue)',
+                        border: '1px solid #BFDBFE', borderRadius: 20, fontSize: 13, fontWeight: 600,
+                      }}>{t.name}</Link>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

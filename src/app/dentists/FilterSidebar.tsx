@@ -56,7 +56,9 @@ export default function FilterSidebar({ areas, treatments, hasCoords, groupAreas
 
   function updateFilter(key: string, value: string | string[] | boolean | null) {
     const params = new URLSearchParams(searchParams.toString())
-    params.set('page', '1')
+    // Reset to page 1 by dropping the param entirely — page 1 is the bare URL,
+    // we never emit &page=1 (Section 4 de-parameterisation).
+    params.delete('page')
 
     if (value === null || value === '' || value === false || (Array.isArray(value) && value.length === 0)) {
       params.delete(key)

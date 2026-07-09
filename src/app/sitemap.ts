@@ -2,6 +2,8 @@ import { MetadataRoute } from 'next'
 import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { getCityByDomain, cityOrigin, CITY_CONFIGS, isNationalHost, NATIONAL_ORIGIN } from '@/config/cities'
+import { getAreaCompleteDentistCounts, getAreaTreatmentCompleteCounts } from '@/lib/cache/public-pages'
+import { completionPct } from '@/lib/profileCompletion'
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const h = await headers()
@@ -55,10 +57,23 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Each city's sitemap lists only its own areas + dentists. Dentist profile
   // pages use a city-scoped query so we don't leak Mumbai dentists into the
   // Pune sitemap (or vice versa).
-  const [{ data: areas }, { data: dentists }, { data: treatments }] = await Promise.all([
-    supabase.from('areas').select('slug, updated_at').eq('is_active', true).eq('city', city.citySlug),
-    supabase.from('dentists').select('slug, created_at').eq('is_active', true).eq('city', city.citySlug),
-    supabase.from('treatments').select('slug'),
+  //
+  // Density gate (Section 1 + 3): the sitemap must NEVER advertise a URL that
+  // the route would notFound() or noindex. It emits an area / area×treatment
+  // URL only when it clears the SAME ≥3-complete-profile bar the page uses
+  // (shared helpers, so route and sitemap can't drift), and a dentist profile
+  // only when it's ≥60% complete. Area×treatment is queried dynamically from
+  // live counts — never statically enumerated.
+  const [{ data: areas }, { data: dentists }, { data: treatments }, areaCompleteCounts, atCompleteCounts] = await Promise.all([
+    supabase.from('areas').select('id, slug, updated_at').eq('is_active', true).eq('city', city.citySlug),
+    supabase
+      .from('dentists')
+      .select('slug, created_at, profile_photo, cover_photo, bio, whatsapp, maps_embed')
+      .eq('is_active', true)
+      .eq('city', city.citySlug),
+    supabase.from('treatments').select('id, slug'),
+    getAreaCompleteDentistCounts(city.citySlug),
+    getAreaTreatmentCompleteCounts(city.citySlug),
   ])
 
   const staticPages: MetadataRoute.Sitemap = [
@@ -70,22 +85,34 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${BASE}/blog`, lastModified: new Date(), changeFrequency: 'weekly', priority: 0.7 },
   ]
 
-  const areaPages: MetadataRoute.Sitemap = (areas || []).map(area => ({
-    url: `${BASE}/area/${area.slug}`,
-    lastModified: new Date(),
-    changeFrequency: 'daily' as const,
-    priority: 0.85,
-  }))
-
-  const areaTreatmentPages: MetadataRoute.Sitemap = (areas || []).flatMap(area =>
-    (treatments || []).map(treatment => ({
-      url: `${BASE}/area/${area.slug}/${treatment.slug}`,
-      lastModified: new Date(),
-      changeFrequency: 'weekly' as const,
-      priority: 0.75,
+  // Only areas with ≥3 complete-profile dentists (the indexable tier). Ones
+  // that 404 (0 active) or noindex (1–2 complete) are omitted. lastmod is the
+  // area's real updated_at.
+  const areaPages: MetadataRoute.Sitemap = (areas || [])
+    .filter(area => (areaCompleteCounts[String(area.id)] ?? 0) >= 3)
+    .map(area => ({
+      url: `${BASE}/area/${area.slug}`,
+      lastModified: area.updated_at ? new Date(area.updated_at) : new Date(),
+      changeFrequency: 'daily' as const,
+      priority: 0.85,
     }))
+
+  // Dynamic, not a static matrix: emit an area×treatment URL only when ≥3
+  // complete-profile dentists in that area offer that treatment with a fee set
+  // — the exact rule the route indexes under.
+  const areaTreatmentPages: MetadataRoute.Sitemap = (areas || []).flatMap(area =>
+    (treatments || [])
+      .filter(t => (atCompleteCounts[`${area.id}:${t.id}`] ?? 0) >= 3)
+      .map(t => ({
+        url: `${BASE}/area/${area.slug}/${t.slug}`,
+        lastModified: area.updated_at ? new Date(area.updated_at) : new Date(),
+        changeFrequency: 'weekly' as const,
+        priority: 0.75,
+      }))
   )
 
+  // Treatment hubs are flagship pages — always listed so the crawler finds
+  // them (Section 2). No updated_at column on treatments, so lastmod stays now.
   const treatmentPages: MetadataRoute.Sitemap = (treatments || []).map(t => ({
     url: `${BASE}/treatment/${t.slug}`,
     lastModified: new Date(),
@@ -93,12 +120,24 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.8,
   }))
 
-  const dentistPages: MetadataRoute.Sitemap = (dentists || []).map(d => ({
-    url: `${BASE}/dentist/${d.slug}`,
-    lastModified: d.created_at ? new Date(d.created_at) : new Date(),
-    changeFrequency: 'weekly' as const,
-    priority: 0.8,
-  }))
+  // Only profiles ≥60% complete — matches the noindex gate on the profile
+  // route so we never advertise a noindexed profile. lastmod is created_at
+  // (dentists has no updated_at column yet; a maintained updated_at would give
+  // a truer freshness signal — noted as a follow-up).
+  const dentistPages: MetadataRoute.Sitemap = (dentists || [])
+    .filter(d => completionPct({
+      profile_photo: (d as any).profile_photo,
+      cover_photo: (d as any).cover_photo,
+      bio: (d as any).bio,
+      whatsapp: (d as any).whatsapp,
+      maps_embed: (d as any).maps_embed,
+    }) >= 60)
+    .map(d => ({
+      url: `${BASE}/dentist/${d.slug}`,
+      lastModified: d.created_at ? new Date(d.created_at) : new Date(),
+      changeFrequency: 'weekly' as const,
+      priority: 0.8,
+    }))
 
   // Cluster landing pages — currently just Pune's Pimpri-Chinchwad (PCMC)
   // umbrella at /pcmc, which only exists on the Pune domain.

@@ -43,6 +43,10 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
     title,
     description,
     alternates: { canonical: url },
+    // Transactional booking form — no unique SEO content. Belt-and-suspenders
+    // with the robots.txt Disallow: /book and the rel="nofollow" on every
+    // booking CTA (Section 5). Nothing under /book should index.
+    robots: { index: false, follow: false, googleBot: { index: false, follow: false } },
     openGraph: {
       title, description, url,
       siteName: city.domain,

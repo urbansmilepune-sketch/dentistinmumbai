@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { getCityBySlug } from '@/config/cities'
+import { getAreaTreatmentCompleteCounts } from '@/lib/cache/public-pages'
 import SiteHeader from '@/components/SiteHeader'
 import TreatmentNavTabs from '../TreatmentNavTabs'
 import ResultFilters from '@/components/ResultFilters'
@@ -25,14 +26,21 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const h = await headers()
   const city = getCityBySlug(h.get('x-city-slug'))
   const [{ data: area }, { data: treatment }] = await Promise.all([
-    supabase.from('areas').select('name, dentist_count').eq('slug', slug).eq('city', city.citySlug).single(),
-    supabase.from('treatments').select('name').eq('slug', treatmentSlug).single(),
+    supabase.from('areas').select('id, name, dentist_count').eq('slug', slug).eq('city', city.citySlug).single(),
+    supabase.from('treatments').select('id, name').eq('slug', treatmentSlug).single(),
   ])
   if (!area || !treatment) return { title: 'Not Found' }
+  // Density gate: this page only exists (and is indexed) when ≥3 complete-
+  // profile dentists in this area offer this treatment with a fee set. Below
+  // that the page body 404s; the robots flag here keeps metadata consistent
+  // for the ≥3 indexable case. Same rule the sitemap emits under.
+  const cnt = (await getAreaTreatmentCompleteCounts(city.citySlug))[`${area.id}:${treatment.id}`] ?? 0
+  const indexable = cnt >= 3
   return {
     title: `Best ${treatment.name} Dentists in ${area.name}, ${city.cityName} | ${city.domain}`,
     description: `Find top-rated, verified dentists for ${treatment.name} in ${area.name}, ${city.cityName}. Compare ${treatment.name} fees, read reviews, and book appointments instantly.`,
     alternates: { canonical: `https://${city.domain}/area/${slug}/${treatmentSlug}` },
+    robots: { index: indexable, follow: true, googleBot: { index: indexable, follow: true } },
   }
 }
 
@@ -104,17 +112,24 @@ export default async function AreaTreatmentPage({ params, searchParams }: { para
   const city = getCityBySlug(h.get('x-city-slug'))
   const citySlug = city.citySlug
 
-  const [{ data: area }, { data: treatment }, { data: allAreas }, { data: treatments }] = await Promise.all([
+  const [{ data: area }, { data: treatment }, { data: allAreas }, { data: treatments }, atCompleteCounts] = await Promise.all([
     // Area slug + city pair — the same slug may exist in multiple cities.
     supabase.from('areas').select('*').eq('slug', slug).eq('city', citySlug).single(),
     supabase.from('treatments').select('*').eq('slug', treatmentSlug).single(),
     supabase.from('areas').select('id, name, slug, zone, dentist_count').eq('city', citySlug).order('dentist_count', { ascending: false }),
     supabase.from('treatments').select('id, name, slug, icon').order('sort_order'),
+    getAreaTreatmentCompleteCounts(citySlug),
   ])
 
   // Either segment missing → 404. This is what fixes the broken treatment-tab
   // links across every area page.
   if (!area || !treatment) notFound()
+
+  // Density gate: fewer than 3 complete-profile dentists offering this
+  // treatment (with a fee set) in this area → 404. These thin matrix pages are
+  // exactly what GSC crawls and rejects; the sitemap drops them under the same
+  // rule. Gate runs before the heavy dentist query below.
+  if ((atCompleteCounts[`${area.id}:${treatment.id}`] ?? 0) < 3) notFound()
 
   // Dentists in this area AND offering this treatment. dentist_treatments!inner
   // + the treatment_id filter turns the embed into a join filter, so only

@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
-import { getCityAreaDentistCounts } from '@/lib/cache/public-pages'
+import { getCityAreaDentistCounts, getAreaCompleteDentistCounts } from '@/lib/cache/public-pages'
 import { getCityBySlug } from '@/config/cities'
 import { dentistCountLabel } from '@/lib/dentistCount'
 import SiteHeader from '@/components/SiteHeader'
@@ -47,10 +47,16 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const lead = liveCount > 0
     ? `${liveCount} verified dentists in ${area.name}, ${city.cityName}.`
     : `Verified dentists in ${area.name}, ${city.cityName}.`
+  // Density gate: index only when ≥3 complete-profile dentists back this area.
+  // 1–2 → noindex (thin); 0 → the page body 404s. Kept in lockstep with the
+  // sitemap, which emits this URL under the same ≥3 rule.
+  const completeCount = (await getAreaCompleteDentistCounts(city.citySlug))[String(area.id)] ?? 0
+  const indexable = completeCount >= 3
   return {
     title: `Best Dentists in ${area.name}, ${city.cityName}`,
     description: `${lead} See real fees, photos and book instantly.`,
     alternates: { canonical: `https://${city.domain}/area/${slug}` },
+    robots: { index: indexable, follow: true, googleBot: { index: indexable, follow: true } },
   }
 }
 
@@ -141,6 +147,15 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
   const areaCountOf = (id: number | string) => areaCounts[String(id)] ?? 0
 
   if (!area) notFound()
+
+  // Density gate. Only a genuinely EMPTY area (zero active dentists) 404s —
+  // that's a page with nothing to show a patient. An area that has active
+  // dentists but fewer than 3 *complete* profiles still renders for patients
+  // (they may be searching for exactly those clinics) but is noindexed via
+  // generateMetadata and dropped from the sitemap, so it stops earning GSC
+  // "crawled – not indexed" rejections. ≥3 complete → indexed + in sitemap.
+  // "Complete" = 80%+ profile completion.
+  if (areaCountOf(area.id) === 0) notFound()
 
   // Fetch dentists in this area (belt-and-suspenders city filter — area_id
   // already encodes city, but explicit filter guards against any cross-city
@@ -551,6 +566,23 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
                         <div style={{ fontSize: 13, fontWeight: 600, color: NAVY }}>{a.name}</div>
                         <div style={{ fontSize: 11, color: 'var(--muted)' }}>{dentistCountLabel(areaCountOf(a.id))}</div>
                       </Link>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Treatment hubs — internal links to the flagship /treatment/*
+                  pages (Section 2 internal linking). Distinct from the
+                  TreatmentNavTabs above, which point at area×treatment. */}
+              {(treatments || []).length > 0 && (
+                <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 16, padding: '20px' }}>
+                  <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, color: NAVY, marginBottom: 14 }}>Popular treatments</h3>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {(treatments || []).map(t => (
+                      <Link key={t.slug} href={`/treatment/${t.slug}`} style={{
+                        padding: '6px 12px', background: '#F0FDFA', color: TEAL,
+                        border: '1px solid #99F6E4', borderRadius: 20, fontSize: 12.5, fontWeight: 600,
+                      }}>{t.name}</Link>
                     ))}
                   </div>
                 </div>

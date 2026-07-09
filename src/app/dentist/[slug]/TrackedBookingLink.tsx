@@ -28,7 +28,9 @@ export default function TrackedBookingLink({ dentistId, href, style, className, 
     }).catch(() => {})
   }
   return (
-    <Link href={href} style={style} className={className} onClick={handleClick}>
+    // rel="nofollow": /book is transactional and Disallowed — don't hand
+    // crawlers a follow path into it (Section 5).
+    <Link href={href} style={style} className={className} onClick={handleClick} rel="nofollow">
       {children}
     </Link>
   )

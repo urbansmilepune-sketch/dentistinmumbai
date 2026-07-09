@@ -244,7 +244,7 @@ export default function DentistCard({ dentist: d, view }: DentistCardProps) {
               <span aria-hidden="true">📞</span> Call
             </a>
           )}
-          <Link href={`/book/${d.slug}`} className="dentist-cta dentist-cta-book" aria-label={`Book ${d.name}`}>
+          <Link href={`/book/${d.slug}`} className="dentist-cta dentist-cta-book" aria-label={`Book ${d.name}`} rel="nofollow">
             <span aria-hidden="true">📅</span> Book
           </Link>
         </div>

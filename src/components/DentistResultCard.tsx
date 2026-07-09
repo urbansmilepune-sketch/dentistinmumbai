@@ -120,7 +120,7 @@ export default function DentistResultCard({ dentist: d, highlight = null, treatm
         </div>
         <div className="drc-cta-row">
           <Link href={`/dentist/${d.slug}`} className="drc-cta drc-cta-secondary">View profile</Link>
-          <Link href={`/book/${d.slug}`} className="drc-cta drc-cta-primary">Book</Link>
+          <Link href={`/book/${d.slug}`} className="drc-cta drc-cta-primary" rel="nofollow">Book</Link>
         </div>
       </div>
 
