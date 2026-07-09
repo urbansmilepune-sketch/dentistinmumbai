@@ -231,24 +231,30 @@ export const getDentistProfileData = unstable_cache(
 // and mass-manufacturing dead URLs in GSC. Returns null when no active
 // dentist claims the slug — that's a genuine 404.
 //
-// Graceful degradation: if the previous_slugs column isn't live yet (it's
-// added out-of-band via the Supabase SQL editor), the query returns an error
-// which we swallow → null → notFound(). No crash, no behaviour change until
-// the column and its backfill land.
-export const resolveCurrentSlug = unstable_cache(
-  async (oldSlug: string): Promise<string | null> => {
-    const supabase = createAnonClient()
-    const { data } = await supabase
-      .from('dentists')
-      .select('slug')
-      .contains('previous_slugs', [oldSlug])
-      .eq('is_active', true)
-      .maybeSingle()
-    return (data as { slug?: string } | null)?.slug ?? null
-  },
-  ['resolve-current-slug'],
-  { revalidate: 300, tags: ['dentist-profile'] },
-)
+// Deliberately NOT wrapped in unstable_cache. It runs ONLY on the profile 404
+// path (after getDentistProfileData has already missed), so it's rare and its
+// latency is irrelevant — but caching here was actively harmful. When the
+// previous_slugs column/backfill was still being applied out-of-band via the
+// Supabase SQL editor, any crawl that hit a dead slug ran this query, got an
+// error (swallowed → null), and pinned that null in the Data Cache for its
+// TTL. Because an out-of-band SQL backfill can't fire revalidateTag(), nothing
+// evicted the stale null, so the 308 never fired in production even after the
+// data was correct. A direct GIN-backed containment lookup is cheap and always
+// current. Errors are now logged, never cached as a false null.
+export async function resolveCurrentSlug(oldSlug: string): Promise<string | null> {
+  const supabase = createAnonClient()
+  const { data, error } = await supabase
+    .from('dentists')
+    .select('slug')
+    .contains('previous_slugs', [oldSlug])
+    .eq('is_active', true)
+    .maybeSingle()
+  if (error) {
+    console.error('[resolveCurrentSlug] lookup failed', { oldSlug, message: error.message })
+    return null
+  }
+  return (data as { slug?: string } | null)?.slug ?? null
+}
 
 // Live per-city aggregates the denormalized columns don't reliably carry:
 //   - treatmentDentistCount: how many active dentists in this city offer each
