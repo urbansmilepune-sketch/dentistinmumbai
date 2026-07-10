@@ -1729,6 +1729,7 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
                       <td style={tableCellStyle}>
                         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                           <a href={`${cityOrigin(getCityBySlug(d.city))}/dentist/${d.slug}`} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: 'var(--blue)', fontWeight: 600 }}>View →</a>
+                          <a href={`/admin/dentists/${d.id}/edit`} style={{ padding: '4px 10px', background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', borderRadius: 6, fontSize: 11, fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' }}>✏️ Edit</a>
                           {(() => {
                             const status = linkStatus[d.id]
                             const sending = status?.state === 'sending'
