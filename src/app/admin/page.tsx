@@ -173,8 +173,14 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     applyCity(adminClient.from('dentists').select('*', { count: 'exact', head: true }).eq('is_active', true)),
     applyApptCity(adminClient.from('appointments').select('*', { count: 'exact', head: true })),
     applyCity(adminClient.from('enquiries').select('*, dentists!inner(city)', { count: 'exact', head: true })),
-    applyCity(adminClient.from('dentists').select('id, slug, name, clinic_name, email, qualifications, phone, tier, is_verified, is_active, city, areas(name, slug)').order('created_at', { ascending: false }).limit(100)),
-    applyCity(adminClient.from('dentist_registrations').select('*').order('created_at', { ascending: false }).limit(100)),
+    // Dentists + registrations tab lists. Cap bumped 100 → 500: the old 100
+    // silently hid every dentist past the newest 100 (roster is ~125 active
+    // plus inactive rows — this query has no is_active filter). 500 gives 4×
+    // headroom and stays well under PostgREST's max-rows ceiling (≥2000 here;
+    // see healthDentists below). Both tabs filter client-side, so a proper
+    // pagination UI only becomes worthwhile if either list outgrows 500.
+    applyCity(adminClient.from('dentists').select('id, slug, name, clinic_name, email, qualifications, phone, tier, is_verified, is_active, city, areas(name, slug)').order('created_at', { ascending: false }).limit(500)),
+    applyCity(adminClient.from('dentist_registrations').select('*').order('created_at', { ascending: false }).limit(500)),
     applyApptCity(adminClient.from('appointments').select('*, treatments(name)').order('created_at', { ascending: false }).limit(50)),
     applyCity(adminClient.from('enquiries').select('*, dentists!inner(name, city)').order('created_at', { ascending: false }).limit(50)),
     // Reviews don't carry city — filter via the joined dentist.
