@@ -6,6 +6,7 @@ import AdminShell from './AdminShell'
 import CommunicationsTab from './CommunicationsTab'
 import OutreachTab from './OutreachTab'
 import VisitLogsTab from './VisitLogsTab'
+import ArticlesTab from './ArticlesTab'
 import AutoRefresh from '@/components/AutoRefresh'
 import { CITY_CONFIGS, cityOrigin, getCityBySlug } from '@/config/cities'
 
@@ -1923,6 +1924,11 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
             employees in the dentauraprime.com platform. */}
         {section === 'visit-logs' && (
           <VisitLogsTab />
+        )}
+
+        {/* ARTICLES — dentist-submitted article review queue (pending first). */}
+        {section === 'articles' && (
+          <ArticlesTab />
         )}
 
         {/* AREAS */}

@@ -20,7 +20,7 @@ cloudinary.config({
   secure: true,
 })
 
-const ALLOWED_TYPES = ['profile', 'cover', 'gallery', 'xray', 'patient_photo'] as const
+const ALLOWED_TYPES = ['profile', 'cover', 'gallery', 'xray', 'patient_photo', 'article'] as const
 type UploadType = typeof ALLOWED_TYPES[number]
 const MAX_SIZE = 10 * 1024 * 1024
 
@@ -36,6 +36,10 @@ const TRANSFORMS: Record<UploadType, object[]> = {
   gallery:       [{ width: 1200, crop: 'limit' }],
   xray:          [{ width: 1200, crop: 'limit' }],
   patient_photo: [{ width: 1600, crop: 'limit' }],
+  // Article body images: cap width so a phone photo doesn't blow out the
+  // reading column. Not persisted to any table — the URL is embedded inline
+  // in the article's Tiptap HTML, same as patient_photo.
+  article:       [{ width: 1200, crop: 'limit' }],
 }
 
 export async function POST(request: NextRequest) {

@@ -4,6 +4,8 @@ import { notFound, redirect, permanentRedirect } from 'next/navigation'
 import Link from 'next/link'
 import { headers } from 'next/headers'
 import { getDentistProfileData, getCityAreas, resolveCurrentSlug } from '@/lib/cache/public-pages'
+import { getDentistPublishedArticles } from '@/lib/publicArticles'
+import { topicLabel as articleTopicLabel } from '@/lib/articles'
 import { getCityBySlug, cityOrigin } from '@/config/cities'
 import SiteHeader from '@/components/SiteHeader'
 import { whatsappLink } from '@/lib/phone'
@@ -188,6 +190,10 @@ export default async function DentistProfilePage({ params }: Props) {
   // Keyed on the dentist's own city so it stays correct even when the request
   // host's city slug differs (thane/navimumbai → mumbai domain).
   const cityAreas = await getCityAreas(dentist.city)
+  // Published patient-education articles this dentist has written — surfaced in
+  // an "Articles by [Name]" section further down. Service-role scoped read (no
+  // public RLS policy on dentist_articles); returns [] when there are none.
+  const publishedArticles = await getDentistPublishedArticles(dentist.id)
   const treatments = (dentist.dentist_treatments || []) as any[]
   const gallery = (dentist.gallery_photos || []) as any[]
   const galleryPhotos = gallery
@@ -538,6 +544,25 @@ export default async function DentistProfilePage({ params }: Props) {
             <section id="treatments" className="profile-section">
               <h2 className="profile-section-title">Treatments &amp; fees</h2>
               <TreatmentsList treatments={treatments} dentistId={dentist.id} slug={dentist.slug} />
+            </section>
+          )}
+
+          {/* ─── ARTICLES BY THIS DENTIST ──────────────────────────────── */}
+          {publishedArticles.length > 0 && (
+            <section id="articles" className="profile-section">
+              <h2 className="profile-section-title">Articles by {drName}</h2>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {publishedArticles.map(a => (
+                  <Link
+                    key={a.slug}
+                    href={`/dentist/${dentist.slug}/articles/${a.slug}`}
+                    style={{ display: 'block', background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '16px 18px', textDecoration: 'none' }}
+                  >
+                    <span style={{ display: 'block', fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 }}>{articleTopicLabel(a.topic_type)}</span>
+                    <span style={{ display: 'block', fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16, color: NAVY }}>{a.title}</span>
+                  </Link>
+                ))}
+              </div>
             </section>
           )}
 

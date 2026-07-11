@@ -46,6 +46,7 @@ const NAV: NavItem[] = [
   { href: '/for-dentists/dashboard/communications', icon: '📣', label: 'Communications', staffRoles: ['owner'] },
   { href: '/for-dentists/dashboard/photos',       icon: '📸', label: 'Photos',       staffRoles: ['owner', 'associate_dentist'] },
   { href: '/for-dentists/dashboard/treatments',   icon: '🦷', label: 'Treatments',   staffRoles: ['owner', 'associate_dentist'] },
+  { href: '/for-dentists/dashboard/articles',     icon: '✍️', label: 'Articles',     staffRoles: ['owner', 'associate_dentist'] },
   { href: '/for-dentists/dashboard/consent-forms', icon: '📝', label: 'Consent Forms', staffRoles: ['owner', 'associate_dentist', 'reception'] },
   { href: '/for-dentists/dashboard/emr-templates', icon: '📋', label: 'EMR Templates', staffRoles: ['owner', 'associate_dentist'] },
   { href: '/for-dentists/dashboard/analytics',    icon: '📈', label: 'Analytics',    staffRoles: ['owner'] },
