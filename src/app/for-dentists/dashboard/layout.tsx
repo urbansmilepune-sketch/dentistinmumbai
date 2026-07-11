@@ -52,19 +52,28 @@ export default async function DashboardLayout({ children }: { children: React.Re
     if (!dentist.is_active && !isDemoEmail(user.email)) redirect('/for-dentists/pending')
     const pct = completionPct(dentist)
 
-    // First-run onboarding gate. A dentist who hasn't finished the wizard AND
-    // is missing any key patient-facing field (photo / fee / map) is routed to
-    // /onboard. Finishing or skipping the wizard sets onboarding_completed, so
-    // this stops firing. This layout does NOT wrap /onboard (sibling route), so
-    // the redirect can't loop — no pathname guard needed.
+    // Onboarding gate. Photo / fee / map are MANDATORY to publish a profile.
+    // A profile missing any of them is routed to /onboard, whatever its
+    // onboarding_completed flag says:
+    //   • never finished the wizard → run it from the top (step 1).
+    //   • onboarding_completed = true but still missing a mandatory field
+    //     (a data inconsistency from before these were required) → jump
+    //     straight to the specific missing step via ?step=.
+    // Finishing the wizard only sets onboarding_completed once all three are
+    // present, so a complete profile falls through and this stops firing. This
+    // layout does NOT wrap /onboard (sibling route), so no loop is possible.
     //
     // NOTE: uses profile_photo (the column the app actually writes), NOT
     // profile_photo_url (exists but is never populated).
-    const needsOnboarding =
-      !dentist.onboarding_completed &&
-      (!dentist.profile_photo || !dentist.consultation_fee || !dentist.maps_embed)
-    if (needsOnboarding && !isDemoEmail(user.email)) {
-      redirect('/for-dentists/onboard')
+    const missingStep =
+      !dentist.profile_photo ? 3
+      : (!dentist.consultation_fee || Number(dentist.consultation_fee) <= 0) ? 4
+      : !dentist.maps_embed ? 6
+      : null
+    if (missingStep !== null && !isDemoEmail(user.email)) {
+      redirect(dentist.onboarding_completed
+        ? `/for-dentists/onboard?step=${missingStep}`
+        : '/for-dentists/onboard')
     }
     return (
       <>

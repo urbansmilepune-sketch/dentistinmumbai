@@ -116,6 +116,12 @@ export default function OnboardWizard() {
         experience_years: (d as any).experience_years ? String((d as any).experience_years) : '',
         gender: (d as any).gender || '',
       }))
+      // Deep-link support: the dashboard gate sends data-inconsistent profiles
+      // (onboarding_completed = true but missing a mandatory field) straight to
+      // the step they still need, via ?step=. Read it directly from the URL
+      // (same pattern as the login page) to avoid a Suspense boundary.
+      const wanted = Number(new URLSearchParams(window.location.search).get('step'))
+      if (wanted >= 1 && wanted <= TOTAL) setStep(wanted)
       setLoading(false)
     }
     load()
@@ -189,21 +195,33 @@ export default function OnboardWizard() {
     setBusy(false)
   }
 
+  // Step 6 — resolve the clinic name to a Google Maps iframe and PERSIST it to
+  // dentists.maps_embed. Save-only: it does NOT advance the wizard. The Continue
+  // button on step 6 unlocks off form.maps_embed, which is set here only after
+  // the DB write succeeds — so Next can never enable on typing alone.
   async function saveMaps() {
+    if (!form.mapsName.trim()) {
+      setErr('Please enter your clinic name so patients can find you.')
+      return
+    }
     setBusy(true); setErr('')
     try {
-      if (form.mapsName.trim()) {
-        const res = await fetch('/api/dentist/maps-embed', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ input: '', name: form.mapsName, clinic_name: form.clinic_name }),
-        })
-        const data = await res.json().catch(() => ({}))
-        if (!res.ok) throw new Error(data.error || 'Could not process the map.')
-        await save({ maps_embed: data.maps_embed || '' })
-        setForm(f => ({ ...f, maps_embed: data.maps_embed || '' }))
+      const res = await fetch('/api/dentist/maps-embed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input: '', name: form.mapsName, clinic_name: form.clinic_name }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Could not process the map.')
+      // An empty embed means we couldn't find the clinic — surface it and keep
+      // Continue locked (and never wipe an existing embed with '').
+      if (!data.maps_embed) {
+        throw new Error("Couldn't find your clinic on Google Maps. Please check the name and try again.")
       }
-      setStep(7)
+      await save({ maps_embed: data.maps_embed })
+      // Only now — after the DB write resolved — does the embed enter state and
+      // unlock Continue.
+      setForm(f => ({ ...f, maps_embed: data.maps_embed }))
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not save your location.')
     }
@@ -280,12 +298,20 @@ export default function OnboardWizard() {
   const h1: React.CSSProperties = { fontSize: 26, fontWeight: 800, color: NAVY, lineHeight: 1.2 }
   const sub: React.CSSProperties = { color: '#64748B', fontSize: 15, lineHeight: 1.5 }
 
-  // Step-5 completion mirrors the wizard's three key fields (photo, fee, map).
-  const doneChecks = [
-    !!form.profile_photo,
-    !!form.consultation_fee && Number(form.consultation_fee) > 0,
-    !!form.maps_embed,
+  // The three MANDATORY fields (photo, fee, map) and their steps. A profile
+  // can't be published until all three are done; the Done screen blocks and
+  // the dashboard gate redirects back here if any is missing.
+  const feeValid = !!form.consultation_fee && Number(form.consultation_fee) > 0
+  const mandatory = [
+    { ok: !!form.profile_photo, label: 'Add your photo', step: 3 },
+    { ok: feeValid, label: 'Set your consultation fee', step: 4 },
+    { ok: !!form.maps_embed, label: 'Add your clinic location', step: 6 },
   ]
+  const missingMandatory = mandatory.filter(m => !m.ok)
+  const allMandatoryDone = missingMandatory.length === 0
+
+  // Step-7 completion mirrors the wizard's three key fields (photo, fee, map).
+  const doneChecks = mandatory.map(m => m.ok)
   const donePct = Math.round((doneChecks.filter(Boolean).length / doneChecks.length) * 100)
   const missingLabel = !form.profile_photo
     ? 'a profile photo'
@@ -399,7 +425,7 @@ export default function OnboardWizard() {
             {step === 3 && (
               <div>
                 <h1 style={{ ...h1, marginBottom: 8 }}>Add your photo</h1>
-                <p style={{ ...sub, marginBottom: 24 }}>Dentists with photos get 3x more bookings</p>
+                <p style={{ ...sub, marginBottom: 24 }}>A photo is required to publish your profile. Patients are 3x more likely to book dentists with photos.</p>
                 <label style={{
                   display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                   minHeight: 220, border: `2px dashed ${TEAL}`, borderRadius: 16, cursor: 'pointer', marginBottom: 8,
@@ -409,10 +435,15 @@ export default function OnboardWizard() {
                   <input type="file" accept="image/*" style={{ display: 'none' }}
                     onChange={e => { const file = e.target.files?.[0]; if (file) uploadPhoto(file) }} />
                 </label>
-                {form.profile_photo && (
-                  <button style={{ ...btn, marginTop: 8 }} disabled={busy} onClick={() => setStep(4)}>Looks good, Continue →</button>
-                )}
-                <button style={skipLink} onClick={() => setStep(4)}>Skip for now →</button>
+                <p style={{ ...sub, fontSize: 13, marginTop: 12, marginBottom: 12 }}>
+                  Tip: Send your photo to yourself on WhatsApp first — it compresses automatically, then upload here.
+                </p>
+                <button
+                  style={{ ...btn, opacity: (busy || !form.profile_photo) ? 0.5 : 1, cursor: (busy || !form.profile_photo) ? 'not-allowed' : 'pointer' }}
+                  disabled={busy || !form.profile_photo}
+                  onClick={() => setStep(4)}>
+                  {form.profile_photo ? 'Looks good, Continue →' : 'Upload a photo to continue'}
+                </button>
               </div>
             )}
 
@@ -426,11 +457,15 @@ export default function OnboardWizard() {
                   <input style={input} inputMode="numeric" placeholder="500" value={form.consultation_fee}
                     onChange={e => setForm(f => ({ ...f, consultation_fee: e.target.value.replace(/\D/g, '') }))} />
                 </div>
-                <button style={btn} disabled={busy}
-                  onClick={() => next(form.consultation_fee ? { consultation_fee: Number(form.consultation_fee) } : {})}>
+                <button
+                  style={{ ...btn, opacity: (busy || !feeValid) ? 0.5 : 1, cursor: (busy || !feeValid) ? 'not-allowed' : 'pointer' }}
+                  disabled={busy || !feeValid}
+                  onClick={() => next({ consultation_fee: Number(form.consultation_fee) })}>
                   {busy ? 'Saving…' : 'Continue →'}
                 </button>
-                <button style={skipLink} onClick={() => setStep(5)}>Skip for now →</button>
+                <p style={{ ...sub, fontSize: 13, textAlign: 'center', marginTop: 16 }}>
+                  Your consultation fee is required — patients need to know your pricing before booking.
+                </p>
               </div>
             )}
 
@@ -474,15 +509,57 @@ export default function OnboardWizard() {
               <div>
                 <h1 style={{ ...h1, marginBottom: 8 }}>Help patients find you</h1>
                 <p style={{ ...sub, marginBottom: 24 }}>Your clinic name on Google Maps</p>
-                <input style={{ ...input, marginBottom: 28 }} placeholder="e.g. Sambhav Dental Clinic, Wakad"
-                  value={form.mapsName} onChange={e => setForm(f => ({ ...f, mapsName: e.target.value }))} />
-                <button style={btn} disabled={busy} onClick={saveMaps}>{busy ? 'Saving…' : 'Continue →'}</button>
-                <button style={skipLink} onClick={() => setStep(7)}>Skip for now →</button>
+                {/* Editing the name invalidates any previously-saved embed, so
+                    Continue re-locks until the new name is saved again. */}
+                <input style={{ ...input, marginBottom: 16 }} placeholder="e.g. Sambhav Dental Clinic, Wakad"
+                  value={form.mapsName}
+                  onChange={e => setForm(f => ({ ...f, mapsName: e.target.value, maps_embed: '' }))} />
+                {/* Save = resolve the name to an iframe + write dentists.maps_embed.
+                    This is the ONLY thing that sets form.maps_embed, so Continue
+                    below can't unlock until the DB write has succeeded. */}
+                <button
+                  style={{ ...btnNavy, marginBottom: 16, opacity: (busy || !form.mapsName.trim()) ? 0.5 : 1, cursor: (busy || !form.mapsName.trim()) ? 'not-allowed' : 'pointer' }}
+                  disabled={busy || !form.mapsName.trim()}
+                  onClick={saveMaps}>
+                  {busy ? 'Saving…' : form.maps_embed ? 'Update location' : 'Save location'}
+                </button>
+                {form.maps_embed && (
+                  <>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#0F766E', marginBottom: 10 }}>✅ Location saved to your profile</div>
+                    <div style={{ borderRadius: 12, overflow: 'hidden', border: '1.5px solid #CBD5E1', marginBottom: 20 }}
+                      dangerouslySetInnerHTML={{ __html: form.maps_embed }} />
+                  </>
+                )}
+                <button
+                  style={{ ...btn, opacity: (busy || !form.maps_embed) ? 0.5 : 1, cursor: (busy || !form.maps_embed) ? 'not-allowed' : 'pointer' }}
+                  disabled={busy || !form.maps_embed}
+                  onClick={() => setStep(7)}>
+                  Continue →
+                </button>
+                <p style={{ ...sub, fontSize: 13, textAlign: 'center', marginTop: 16 }}>
+                  Your clinic location is required so patients can find you.
+                </p>
+              </div>
+            )}
+
+            {/* STEP 7 — Blocking gate: a profile can't be published until photo,
+                fee and map are all set. This only shows on the edge case where a
+                dentist reaches Done without them (e.g. a state we didn't force). */}
+            {step === 7 && !allMandatoryDone && (
+              <div>
+                <h1 style={{ ...h1, marginBottom: 8 }}>Complete these to publish your profile</h1>
+                <p style={{ ...sub, marginBottom: 24 }}>Your profile can&apos;t go live until these are done:</p>
+                {missingMandatory.map(m => (
+                  <button key={m.step} style={{ ...btnNavy, justifyContent: 'space-between', padding: '0 18px' }} onClick={() => setStep(m.step)}>
+                    <span>{m.label}</span>
+                    <span>→</span>
+                  </button>
+                ))}
               </div>
             )}
 
             {/* STEP 7 — Done: value-revelation moment */}
-            {step === 7 && (
+            {step === 7 && allMandatoryDone && (
               <div>
                 <div style={{ textAlign: 'center', marginBottom: 20 }}>
                   <h1 style={{ ...h1, marginBottom: 8 }}>You&apos;re live on DentistIn! 🎉</h1>
