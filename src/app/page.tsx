@@ -209,7 +209,9 @@ export default async function HomePage() {
                 const count = t ? (stats.treatmentDentistCount[String(t.id)] ?? 0) : 0
                 const icon = t?.icon || tile.emoji
                 return (
-                  <Link key={tile.slug} href={`/treatment/${tile.slug}`} className="intent-tile">
+                  // Intent tiles link to filtered dentist list, not treatment editorial
+                  // pages — patients want dentists, not content
+                  <Link key={tile.slug} href={`/dentists?treatment=${tile.slug}`} className="intent-tile">
                     <span className="intent-icon" aria-hidden="true">{icon}</span>
                     <span className="intent-label">{tile.label}</span>
                     <span className="intent-count">{dentistCountLabel(count)}</span>
