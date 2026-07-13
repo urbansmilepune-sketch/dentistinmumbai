@@ -9,6 +9,7 @@ import ProfileQRCard from './ProfileQRCard'
 import RequestReviewCard from './RequestReviewCard'
 import { resolveCurrentDentist } from '@/lib/currentDentist'
 import { getCityBySlug } from '@/config/cities'
+import { topicBadge, topicLabel } from '@/lib/articles'
 
 export const dynamic = 'force-dynamic'
 
@@ -131,6 +132,26 @@ export default async function DashboardPage() {
     .eq('dentist_id', dentist.id)
     .order('created_at', { ascending: false })
     .limit(5)
+
+  // Published articles for the overview card. RLS on dentist_articles grants a
+  // dentist their OWN rows (dentist_id ↔ auth email), so the authenticated
+  // `supabase` client reads them directly — no service role needed. Fetch 4 to
+  // show the newest 3 and still detect whether a "See all" link is warranted.
+  const { data: articleRows } = await supabase
+    .from('dentist_articles')
+    .select('id, title, slug, topic_type, published_at')
+    .eq('dentist_id', dentist.id)
+    .eq('status', 'published')
+    .order('published_at', { ascending: false })
+    .limit(4)
+  const articles = ((articleRows ?? []) as Array<{
+    id: string; title: string; slug: string; topic_type: string; published_at: string | null
+  }>)
+  const publishedArticles = articles.slice(0, 3)
+  const hasMoreArticles = articles.length > 3
+  // City the dentist belongs to — used for the article public URL host context
+  // and the "appears on DentistIn <City>" CTA copy.
+  const dentistCity = getCityBySlug((dentist as any).city)
 
   // Month-to-date engagement aggregates derived from analytics_events.
   // We pre-bucket the event types we surface so the JSX stays cheap.
@@ -460,6 +481,51 @@ export default async function DashboardPage() {
             <div style={{ fontSize: 12, color: 'var(--muted)' }}>{action.desc}</div>
           </Link>
         ))}
+      </div>
+
+      {/* Published articles — the dentist's live Expert Advice pieces, or a CTA
+          to write their first. Public URL is /dentist/<slug>/articles/<slug>,
+          which resolves on the dentist's own city domain (this dashboard host). */}
+      <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden', marginTop: 24 }}>
+        {publishedArticles.length > 0 ? (
+          <>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16 }}>Your Published Articles</h3>
+              {hasMoreArticles && (
+                <Link href="/for-dentists/dashboard/articles" style={{ fontSize: 13, color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>See all articles →</Link>
+              )}
+            </div>
+            <div>
+              {publishedArticles.map((a, i) => {
+                const badge = topicBadge(a.topic_type)
+                const liveUrl = dentist.slug ? `/dentist/${dentist.slug}/articles/${a.slug}` : '#'
+                return (
+                  <div key={a.id} style={{ padding: '14px 20px', borderTop: i === 0 ? 'none' : '1px solid var(--border)', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                    <div style={{ flex: 1, minWidth: 220 }}>
+                      <span style={{ display: 'inline-block', background: badge.bg, color: badge.text, padding: '3px 10px', borderRadius: 999, fontSize: 11, fontWeight: 700, marginBottom: 6 }}>{topicLabel(a.topic_type)}</span>
+                      <Link href={liveUrl} target="_blank" rel="noopener noreferrer" style={{ display: 'block', fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, color: 'var(--text)', textDecoration: 'none', marginBottom: 2 }}>{a.title}</Link>
+                      <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                        {a.published_at ? `Published ${new Date(a.published_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : 'Published'}
+                      </div>
+                    </div>
+                    <a href={liveUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, color: 'var(--blue)', fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' }}>View live →</a>
+                  </div>
+                )
+              })}
+            </div>
+          </>
+        ) : (
+          <div style={{ padding: '28px 24px', textAlign: 'center' }}>
+            <div style={{ fontSize: 36, marginBottom: 10 }}>✍️</div>
+            <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 18, marginBottom: 6 }}>Share your expertise</h3>
+            <p style={{ fontSize: 14, color: 'var(--muted)', maxWidth: 460, margin: '0 auto 18px' }}>
+              Write a patient education article — it appears on DentistIn {dentistCity.cityName} and DentistIn India.
+            </p>
+            <Link href="/for-dentists/dashboard/articles/new" style={{ display: 'inline-block', padding: '11px 20px', background: 'var(--blue)', color: '#fff', borderRadius: 10, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
+              Write your first article →
+            </Link>
+          </div>
+        )}
       </div>
     </div>
   )
