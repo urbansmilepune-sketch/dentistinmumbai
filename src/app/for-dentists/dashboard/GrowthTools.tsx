@@ -90,6 +90,34 @@ export default function GrowthTools({
         Free self-serve tools to bring more patients to your DentistIn profile.
       </p>
 
+      {/* Dual-visibility highlight — every listing is live on both the city site
+          and the national one; the tools below drive traffic to both. Teal/navy
+          gradient, prominent but not overwhelming. */}
+      <div
+        style={{
+          background: `linear-gradient(135deg, ${NAVY} 0%, #115E59 55%, #14B8A6 100%)`,
+          color: '#fff',
+          borderRadius: 14,
+          padding: '16px 20px',
+          marginBottom: 16,
+          boxShadow: '0 6px 20px rgba(15,23,42,0.18)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+          <span style={{ fontSize: 20 }} aria-hidden="true">🌐</span>
+          <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(15px, 2.4vw, 18px)', lineHeight: 1.2 }}>
+            Your clinic is listed on TWO platforms
+          </h3>
+        </div>
+        <div style={{ display: 'grid', gap: 4, fontSize: 13.5, lineHeight: 1.5 }}>
+          <div><strong>DentistIn {cityName}</strong> — local patients find you</div>
+          <div><strong>DentistIn India</strong> — patients across India find you</div>
+        </div>
+        <div style={{ fontSize: 12.5, opacity: 0.88, marginTop: 8 }}>
+          Use the tools below to drive more traffic to both.
+        </div>
+      </div>
+
       {/* auto-fit grid stacks to one column under ~320px without a media query */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, alignItems: 'start' }}>
         {/* ── TOOL 1: Website verified badge ───────────────────────────── */}
@@ -98,7 +126,9 @@ export default function GrowthTools({
             🏅 Add a Verified Badge to Your Website
           </h3>
           <p style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.55, marginBottom: 14 }}>
-            Patients trust clinics that display their DentistIn verification. Paste this code anywhere on your website.
+            Patients trust clinics that display their DentistIn verification. Your profile appears on
+            both DentistIn {cityName} and DentistIn India — this badge links patients directly to your
+            verified listing.
           </p>
 
           <pre
@@ -139,7 +169,8 @@ export default function GrowthTools({
             📍 Add Booking Link to Google Profile
           </h3>
           <p style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.55, marginBottom: 14 }}>
-            Patients searching on Google Maps can book directly from your listing.
+            Patients searching on Google Maps can book directly from your listing. Your profile is live
+            on DentistIn {cityName} and DentistIn India — one link covers both.
           </p>
 
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
