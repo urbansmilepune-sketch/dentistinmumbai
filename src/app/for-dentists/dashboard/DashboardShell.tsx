@@ -334,6 +334,22 @@ export default function DashboardShell({ dentist, completionPct, staffRole = nul
               </div>
             )}
           </div>
+          {/* Write Article — ghost/outline style so it sits beside the
+              primary "+ Add" without competing. Label collapses to just
+              the ✍️ glyph on mobile (see .dash-write-label media rule). */}
+          <Link href="/for-dentists/dashboard/articles/new"
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              height: 40, minHeight: 40, padding: '0 14px',
+              background: 'transparent', color: 'var(--blue)',
+              border: '1px solid var(--blue)', borderRadius: 10,
+              fontWeight: 700, fontSize: 14, cursor: 'pointer',
+              fontFamily: 'var(--font-body)', textDecoration: 'none',
+              whiteSpace: 'nowrap',
+            }}>
+            <span style={{ fontSize: 16, lineHeight: 1 }}>✍️</span>
+            <span className="dash-write-label">Write Article</span>
+          </Link>
           <a href={`/dentist/${dentist.slug}`} target="_blank" rel="noopener noreferrer"
             style={{ fontSize: 12, color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>View Profile →</a>
           <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--blue-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: 'var(--blue)', overflow: 'hidden' }}>
@@ -370,6 +386,7 @@ export default function DashboardShell({ dentist, completionPct, staffRole = nul
         @media (max-width: 768px) {
           .dash-sidebar { display: none !important; }
           .dash-hamburger { display: inline-flex !important; }
+          .dash-write-label { display: none; }
           .dash-content { padding: 16px !important; padding-bottom: 88px !important; }
           .dash-bottom-nav {
             display: flex;
