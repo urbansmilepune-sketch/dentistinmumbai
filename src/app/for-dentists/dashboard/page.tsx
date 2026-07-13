@@ -10,6 +10,7 @@ import RequestReviewCard from './RequestReviewCard'
 import { resolveCurrentDentist } from '@/lib/currentDentist'
 import { getCityBySlug } from '@/config/cities'
 import { topicBadge, topicLabel } from '@/lib/articles'
+import GrowthTools from './GrowthTools'
 
 export const dynamic = 'force-dynamic'
 
@@ -152,6 +153,32 @@ export default async function DashboardPage() {
   // City the dentist belongs to — used for the article public URL host context
   // and the "appears on DentistIn <City>" CTA copy.
   const dentistCity = getCityBySlug((dentist as any).city)
+
+  // Pre-rendered verified-badge HTML for the "Grow Your Practice" tools. Built
+  // server-side with the dentist's REAL city domain + slug (via profileUrl
+  // above), so a Pune dentist gets dentistinpune.in, a Mumbai dentist
+  // dentistinmumbai.in — never a hardcoded host. The GrowthTools client island
+  // renders it in a copyable code block + a live preview.
+  const badgeHtml = `<!-- DentistIn Verified Badge -->
+<a href="${profileUrl}"
+   target="_blank" rel="noopener"
+   style="display:inline-block;text-decoration:none;">
+  <div style="display:inline-flex;align-items:center;gap:10px;
+              background:#0F172A;color:#ffffff;
+              padding:10px 16px;border-radius:10px;
+              font-family:Arial,sans-serif;font-size:13px;
+              border:1px solid #1E293B;">
+    <span style="font-size:20px;">🦷</span>
+    <div>
+      <div style="font-weight:700;font-size:13px;">
+        Verified on DentistIn ${dentistCity.cityName}
+      </div>
+      <div style="font-size:11px;color:#94A3B8;margin-top:1px;">
+        View profile & book online →
+      </div>
+    </div>
+  </div>
+</a>`
 
   // Month-to-date engagement aggregates derived from analytics_events.
   // We pre-bucket the event types we surface so the JSX stays cheap.
@@ -527,6 +554,10 @@ export default async function DashboardPage() {
           </div>
         )}
       </div>
+
+      {/* Grow Your Practice — self-serve badge + Google booking-link tools.
+          Below the articles card; shown to ALL dentists (no completion gate). */}
+      <GrowthTools badgeHtml={badgeHtml} profileUrl={profileUrl} cityName={dentistCity.cityName} />
     </div>
   )
 }
