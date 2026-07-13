@@ -135,7 +135,7 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
   const city = getCityBySlug(h.get('x-city-slug'))
   const citySlug = city.citySlug
 
-  const [{ data: area }, { data: allAreas }, { data: treatments }, areaCounts] = await Promise.all([
+  const [{ data: area }, { data: allAreas }, { data: treatments }, areaCounts, completeCounts] = await Promise.all([
     // Area slug + city pair — necessary because the same slug may exist in
     // multiple cities (e.g. "central" in Mumbai and Pune).
     supabase.from('areas').select('*').eq('slug', slug).eq('city', citySlug).single(),
@@ -143,8 +143,11 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
     supabase.from('treatments').select('id, name, slug, icon').order('sort_order'),
     // Live per-area dentist counts — areas.dentist_count is unmaintained (0s).
     getCityAreaDentistCounts(citySlug),
+    // Complete-profile (80%+) per-area counts — the density gate. ≥3 = indexed.
+    getAreaCompleteDentistCounts(citySlug),
   ])
   const areaCountOf = (id: number | string) => areaCounts[String(id)] ?? 0
+  const completeCountOf = (id: number | string) => completeCounts[String(id)] ?? 0
 
   if (!area) notFound()
 
@@ -274,6 +277,17 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
     .filter(a => a.slug !== slug && hasDentists(a) && !nearbySlugs.has(a.slug))
     .sort((a, b) => areaCountOf(b.id) - areaCountOf(a.id))
   const nearbyAreas = [...primaryNearby, ...padNearby].slice(0, NEARBY_SLOTS)
+
+  // Indexed-only nearby areas — the crawlable link loop between the city's
+  // density-gated (≥3 complete-profile dentists) area pages. Unlike the
+  // patient widget above (which uses live ≥1 counts and can point at thin,
+  // noindexed areas), this links ONLY to pages Google actually indexes, so the
+  // internal-link equity stays inside the indexed set. Exclude the current
+  // area; strongest first; cap at 4.
+  const indexedNearbyAreas = (allAreas || [])
+    .filter(a => a.slug !== slug && completeCountOf(a.id) >= 3)
+    .sort((a, b) => completeCountOf(b.id) - completeCountOf(a.id))
+    .slice(0, 4)
 
   // Transit line (Mumbai only): `zone` is the suburban railway line. Same-line
   // areas that actually have dentists feed the "Getting to {area}" block. Empty
@@ -460,21 +474,21 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
                 <AreaFAQAccordion items={faqs} />
               </div>
 
-              {/* Nearby Areas */}
-              {nearbyAreas.length > 0 && (
+              {/* Explore dentists in nearby areas — density-gated internal link
+                  loop between the city's indexed area pages (≥3 complete
+                  profiles). Chips link to /area/[slug]. */}
+              {indexedNearbyAreas.length > 0 && (
                 <div style={{ marginTop: 48 }}>
-                  <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 20, marginBottom: 20 }}>
-                    Dentists in Nearby Areas
+                  <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 20, marginBottom: 16 }}>
+                    Explore dentists in nearby areas
                   </h2>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
-                    {nearbyAreas.map(a => (
-                      <Link key={a.slug} href={`/area/${a.slug}`} className="area-card" style={{
-                        padding: '16px', background: '#fff', border: '1px solid var(--border)',
-                        borderRadius: 12, cursor: 'pointer', transition: 'all 0.2s', display: 'block',
-                      }}>
-                        <div style={{ fontWeight: 600, fontSize: 15, fontFamily: 'var(--font-heading)', marginBottom: 4 }}>{a.name}</div>
-                        <div style={{ fontSize: 12, color: 'var(--muted)' }}>{dentistCountLabel(areaCountOf(a.id))}</div>
-                      </Link>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+                    {indexedNearbyAreas.map(a => (
+                      <Link key={a.slug} href={`/area/${a.slug}`} style={{
+                        padding: '9px 16px', background: '#F0FDFA', color: TEAL,
+                        border: '1px solid #99F6E4', borderRadius: 20, fontSize: 13.5, fontWeight: 600,
+                        textDecoration: 'none',
+                      }}>📍 Dentists in {a.name}</Link>
                     ))}
                   </div>
                 </div>
