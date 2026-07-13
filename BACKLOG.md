@@ -40,6 +40,14 @@ Warn before saving if the email domain matches a common typo — `gmai.com`,
 tickets (dentist registers under a typo'd domain, then can't be matched to her
 confirmed `auth.users` login and appears locked out of the dashboard).
 
+## TODO: Duplicate phone / email check on registration
+
+If a registering dentist's phone number already exists in the `dentists` table,
+show "A profile with this number already exists. Login instead →" and redirect to
+`/for-dentists/login`. Do the same check for email — if the email already exists,
+redirect to login. Prevents duplicate registrations when a dentist assumes the
+first attempt failed and registers again.
+
 ## TODO: Make admin data fixes on `dentists` reliable (RLS write trap)
 
 **Original hypothesis (recorded, but NOT confirmed):** "the Supabase SQL editor
