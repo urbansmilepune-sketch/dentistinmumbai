@@ -132,7 +132,21 @@ export async function POST(request: NextRequest) {
     user_metadata: { full_name: name },
   })
   if (signupErr || !created?.user) {
-    return NextResponse.json({ error: 'Could not create account', detail: signupErr?.message }, { status: 500 })
+    const authMsg = signupErr?.message || ''
+    const alreadyExists =
+      (signupErr as { code?: string })?.code === 'email_exists' ||
+      signupErr?.status === 422 ||
+      /already.*(registered|exists)/i.test(authMsg)
+    if (alreadyExists) {
+      return NextResponse.json(
+        { error: 'This email is already registered. Please sign in instead — or use "Forgot password" to reset it.', code: 'email_exists' },
+        { status: 409 },
+      )
+    }
+    return NextResponse.json(
+      { error: authMsg ? `Could not create account: ${authMsg}` : 'Could not create account. Please try again in a moment.', detail: authMsg },
+      { status: 500 },
+    )
   }
 
   // ── Insert dentist_registrations row (status approved + auto_approved
@@ -161,8 +175,12 @@ export async function POST(request: NextRequest) {
       experience_years: experience,
     })
   if (regErr) {
-    // Best-effort: roll back the auth user so /join is retry-able.
-    admin.auth.admin.deleteUser(created.user.id).catch(() => {})
+    // Roll back the auth user so /join is retry-able. Must be AWAITED —
+    // fire-and-forget doesn't run on serverless (function frozen at return),
+    // which leaves an orphaned auth.users row that blocks re-registration.
+    await admin.auth.admin.deleteUser(created.user.id).catch(err =>
+      console.error('[india/register] auth rollback failed — orphaned auth user', created.user.id, err),
+    )
     return NextResponse.json({ error: 'Could not save registration', detail: regErr.message }, { status: 500 })
   }
 

@@ -149,11 +149,19 @@ export async function POST(request: NextRequest) {
     const wantedAreaName = (area && area.trim()) || (area_name_raw && area_name_raw.trim()) || ''
     let area_id: string | null = null
     if (wantedAreaName) {
-      const { data: areaExact } = await admin.from('areas').select('id').eq('name', wantedAreaName).maybeSingle()
+      // Scope to this city and take the first match rather than .maybeSingle()
+      // — some names are duplicated within a city (e.g. two "Pimple Saudagar"
+      // rows in Pune), and maybeSingle() ERRORS on >1 row, which used to drop
+      // area_id to null. limit(1) picks a valid area instead of failing.
+      const { data: areaExactRows } = await admin
+        .from('areas').select('id').eq('name', wantedAreaName).eq('city', cityValue).limit(1)
+      const areaExact = areaExactRows?.[0]
       if (areaExact) {
         area_id = areaExact.id
       } else {
-        const { data: areaCi } = await admin.from('areas').select('id').ilike('name', wantedAreaName).maybeSingle()
+        const { data: areaCiRows } = await admin
+          .from('areas').select('id').ilike('name', wantedAreaName).eq('city', cityValue).limit(1)
+        const areaCi = areaCiRows?.[0]
         if (areaCi) {
           area_id = areaCi.id
         } else {
@@ -187,7 +195,28 @@ export async function POST(request: NextRequest) {
         tags: { area: 'registration-auth-create' },
         extra: { email, city: cityValue },
       })
-      return NextResponse.json({ error: 'Could not create account', detail: signupErr?.message }, { status: 500 })
+      const authMsg = signupErr?.message || ''
+      // Email already in auth.users. The dedupe above already proved there's
+      // no dentists / dentist_registrations row for this email, so this is
+      // either an orphaned auth row from a prior half-finished signup or an
+      // account registered elsewhere — in both cases signing in is the path
+      // forward (a support ping if the profile is missing).
+      const alreadyExists =
+        (signupErr as { code?: string })?.code === 'email_exists' ||
+        signupErr?.status === 422 ||
+        /already.*(registered|exists)/i.test(authMsg)
+      if (alreadyExists) {
+        return NextResponse.json(
+          { error: 'This email is already registered. Please sign in instead — or use "Forgot password" to reset it.', code: 'email_exists' },
+          { status: 409 },
+        )
+      }
+      // Weak password, auth rate limit, etc. — surface the real reason so the
+      // dentist (and our logs) see something better than a generic failure.
+      return NextResponse.json(
+        { error: authMsg ? `Could not create account: ${authMsg}` : 'Could not create account. Please try again in a moment.', detail: authMsg },
+        { status: 500 },
+      )
     }
 
     // Unique slug for the public profile URL.
@@ -247,8 +276,14 @@ export async function POST(request: NextRequest) {
         tags: { area: 'registration-dentist-insert' },
         extra: { email, city: cityValue, slug },
       })
-      // Roll back the auth user so a retry can succeed.
-      admin.auth.admin.deleteUser(created.user.id).catch(() => {})
+      // Roll back the auth user so a retry can succeed. Must be AWAITED: on
+      // serverless the response is sent and the function frozen the instant we
+      // return, so a fire-and-forget delete never runs — that's exactly what
+      // orphaned z.sheth.zs@gmail.com and blocked her re-registration with a
+      // misleading "Could not create account". Awaiting keeps auth.users clean.
+      await admin.auth.admin.deleteUser(created.user.id).catch(err =>
+        console.error('[registrations] auth rollback failed — orphaned auth user', created.user.id, err),
+      )
       return NextResponse.json({ error: 'Could not create profile', detail: dentErr?.message }, { status: 500 })
     }
 
