@@ -5,9 +5,10 @@ import BrandLogo from './BrandLogo'
 
 // Shared header + footer for the secondary national pages (every
 // national surface except / and /cities, which have their own inline
-// navs). Nav reflects the LinkedIn-style pivot: Cases / Dentists /
-// Cities / For Dentists, plus "My Feed" and "My Profile" when the
-// viewer is signed in, or "Join the Network" when not.
+// navs). Nav: Dentists / Cities / Dental Insights / For Dentists, plus
+// "My Feed" and "My Profile" when the viewer is signed in, or "Join the
+// Network" when not. (Dental Insights is the merged /insights hub that
+// consolidates the old Cases + Expert Advice surfaces.)
 //
 // Auth state is fetched server-side in this component itself (rather
 // than via a prop) so every consumer doesn't have to thread it through.
@@ -39,11 +40,10 @@ export default async function NationalShell({ badge, children }: Props) {
             )}
           </Link>
           <div style={{ display: 'flex', alignItems: 'center', gap: 18, fontSize: 14, fontWeight: 600 }}>
-            <Link href="/cases"        style={{ color: '#475569', textDecoration: 'none' }}>Discover</Link>
             <Link href="/dentists"     style={{ color: '#475569', textDecoration: 'none' }}>Dentists</Link>
             <Link href="/cities"       style={{ color: '#475569', textDecoration: 'none' }}>Cities</Link>
+            <Link href="/insights"     style={{ color: '#475569', textDecoration: 'none' }}>Dental Insights</Link>
             <Link href="/for-dentists" style={{ color: '#475569', textDecoration: 'none' }}>For Dentists</Link>
-            <Link href="/articles"     style={{ color: '#475569', textDecoration: 'none' }}>Expert Advice</Link>
             {signedIn ? (
               <>
                 <FeedNavLink />

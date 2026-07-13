@@ -18,6 +18,23 @@ const nextConfig: NextConfig = {
         destination: 'https://dentistinmumbai.in/:path*',
         permanent: true,
       },
+      // National consolidation — the merged /insights hub replaces the separate
+      // Cases + Expert Advice surfaces on dentistinindia.in ONLY. Exact-path
+      // sources so detail routes (/cases/[id], /articles/[city]/[slug]) are NOT
+      // caught; Next forwards any query string onto the destination. City
+      // domains have no /cases and keep their own /articles hub — no host match.
+      {
+        source: '/cases',
+        has: [{ type: 'host', value: '(www\\.)?dentistinindia\\.in' }],
+        destination: '/insights?tab=cases',
+        permanent: true,
+      },
+      {
+        source: '/articles',
+        has: [{ type: 'host', value: '(www\\.)?dentistinindia\\.in' }],
+        destination: '/insights?tab=articles',
+        permanent: true,
+      },
       // Section 7 — static 301s for legacy/dead URLs surfaced in GSC. These map
       // old flat URLs and retired blog posts onto their live equivalents so the
       // crawl equity transfers instead of 404-ing. Verified live on 2026-07-09:
