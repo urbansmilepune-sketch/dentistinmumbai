@@ -32,6 +32,9 @@ export default function SiteHeader({ city, initialQuery }: Props) {
         </div>
 
         <div className="sh-actions">
+          <Link href="/articles" style={{ padding: '8px 12px', fontWeight: 600, fontSize: 14, color: 'var(--blue)', whiteSpace: 'nowrap', textDecoration: 'none' }}>
+            Expert Advice
+          </Link>
           <Link href="/for-dentists/login" className="sh-login">
             <span className="sh-login-pre">Dentist </span>Login
           </Link>
@@ -71,7 +74,7 @@ export default function SiteHeader({ city, initialQuery }: Props) {
             gap: 10px;
           }
           .sh-brand { order: 1; }
-          .sh-actions { order: 2; margin-left: auto; }
+          .sh-actions { order: 2; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
           .sh-search { order: 3; flex-basis: 100%; max-width: none; }
           /* Keep Login visible on mobile (discoverability), but drop the
              "Dentist " prefix so it stays compact next to the button. */

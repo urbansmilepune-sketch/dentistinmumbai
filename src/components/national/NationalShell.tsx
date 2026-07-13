@@ -43,6 +43,7 @@ export default async function NationalShell({ badge, children }: Props) {
             <Link href="/dentists"     style={{ color: '#475569', textDecoration: 'none' }}>Dentists</Link>
             <Link href="/cities"       style={{ color: '#475569', textDecoration: 'none' }}>Cities</Link>
             <Link href="/for-dentists" style={{ color: '#475569', textDecoration: 'none' }}>For Dentists</Link>
+            <Link href="/articles"     style={{ color: '#475569', textDecoration: 'none' }}>Expert Advice</Link>
             {signedIn ? (
               <>
                 <FeedNavLink />

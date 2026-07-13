@@ -130,6 +130,7 @@ export default async function NationalHome() {
               <Link href="/cases"        style={{ color: '#475569', textDecoration: 'none' }}>Discover</Link>
               <Link href="/dentists"     style={{ color: '#475569', textDecoration: 'none' }}>Dentists</Link>
               <Link href="/cities"       style={{ color: '#475569', textDecoration: 'none' }}>Cities</Link>
+              <Link href="/articles"     style={{ color: '#475569', textDecoration: 'none' }}>Expert Advice</Link>
               {signedIn && <Link href="/feed" style={{ color: '#1D4ED8', textDecoration: 'none', fontWeight: 700 }}>My Feed</Link>}
               {signedIn ? (
                 <>

@@ -71,6 +71,21 @@ export function topicLabel(type: string): string {
   return TOPIC_BY_TYPE[type]?.label ?? 'Article'
 }
 
+// Colour-coded badge palette for the four topic types, reused by the article
+// hub cards (city + national) and the national article page. Mirrors the
+// zone-colour approach on the homepage: soft tint + saturated ink, one hue per
+// type. Unknown types fall back to a neutral slate chip.
+export const TOPIC_BADGE: Record<string, { bg: string; text: string }> = {
+  treatment_explainer: { bg: '#EFF6FF', text: '#1D4ED8' },
+  patient_faq:         { bg: '#F0FDF4', text: '#166534' },
+  case_story:          { bg: '#FDF4FF', text: '#7E22CE' },
+  dental_tip:          { bg: '#FFF7ED', text: '#C2410C' },
+}
+
+export function topicBadge(type: string): { bg: string; text: string } {
+  return TOPIC_BADGE[type] ?? { bg: '#F1F5F9', text: '#475569' }
+}
+
 // Kebab-case slug from a title. Strips accents, drops anything that isn't a
 // letter/number, collapses runs of dashes. Bounded to 80 chars so a rambling
 // title doesn't produce an unwieldy URL.
