@@ -82,7 +82,7 @@ export default async function NationalShell({ badge, children }: Props) {
           </div>
           <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap' }}>
             <FooterCol title="Network">
-              <FooterLink href="/cases">Browse cases</FooterLink>
+              <FooterLink href="/insights?tab=cases">Browse cases</FooterLink>
               <FooterLink href="/dentists">Discover dentists</FooterLink>
               <FooterLink href="/cities">Cities</FooterLink>
             </FooterCol>

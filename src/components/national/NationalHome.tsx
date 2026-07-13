@@ -319,7 +319,7 @@ export default async function NationalHome() {
             </div>
             <div style={{ display: 'flex', gap: 32 }}>
               <FooterColumn title="Network">
-                <FooterLink href="/cases">Browse cases</FooterLink>
+                <FooterLink href="/insights?tab=cases">Browse cases</FooterLink>
                 <FooterLink href="/dentists">Discover dentists</FooterLink>
                 <FooterLink href="/cities">Cities</FooterLink>
               </FooterColumn>
