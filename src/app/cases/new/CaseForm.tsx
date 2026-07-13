@@ -4,6 +4,13 @@
 // photo uploads (sequential POSTs to /api/cases/upload-photo), and a
 // single final POST to /api/cases that creates the case + photo rows
 // transactionally on the server.
+//
+// The form follows a structured patient-case template:
+//   Basics → Patient introduction → Pre-treatment photos →
+//   Diagnosis & plan → Post-treatment photos → Dentist conclusion →
+//   Materials → Logistics → Clinical notes.
+// Patient privacy: we deliberately collect NO name/contact — only age,
+// gender, and clinical context.
 
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -19,28 +26,63 @@ interface UploadedPhoto {
 }
 
 const KIND_LABEL: Record<Kind, string> = {
-  before: 'Before — clinical photos',
-  after: 'After — clinical photos',
-  xray_before: 'X-ray (before)',
-  xray_after: 'X-ray (after)',
+  before: 'Before Treatment (Clinical Photos)',
+  after: 'After Treatment (Clinical Photos)',
+  xray_before: 'Pre-Treatment X-Ray / OPG',
+  xray_after: 'Post-Treatment X-Ray / OPG',
 }
 
 const KIND_HINT: Record<Kind, string> = {
-  before: 'Pre-treatment intra-oral / facial views.',
-  after: 'Post-treatment intra-oral / facial views.',
-  xray_before: 'Pre-op periapical, OPG, or CBCT slice.',
-  xray_after: 'Post-op imaging used for documentation.',
+  before: 'Intraoral photos, smile photos, face photos',
+  after: 'Intraoral photos, smile photos, face photos',
+  xray_before: 'OPG, CBCT, periapical X-rays',
+  xray_after: 'OPG, CBCT, periapical X-rays showing outcome',
+}
+
+// Per-kind caption placeholder — nudges dentists toward useful, specific
+// captions rather than generic "photo 1" labels.
+const KIND_CAPTION_PH: Record<Kind, string> = {
+  before: 'Front view before treatment',
+  after: 'Front view after treatment',
+  xray_before: 'OPG showing bone loss in upper right',
+  xray_after: 'OPG showing implants placed',
 }
 
 const MAX_PER_KIND = 4
 
+// Kinds grouped into the two photo sections so the pre/post blocks and
+// their upload-error scoping stay in sync.
+const PRE_KINDS: Kind[]  = ['before', 'xray_before']
+const POST_KINDS: Kind[] = ['after', 'xray_after']
+
+const SATISFACTION_OPTIONS = ['Excellent', 'Good', 'Satisfactory', 'Requires follow-up']
+
 export default function CaseForm({ dentistName, isVerified }: { dentistName: string; isVerified: boolean }) {
   const router = useRouter()
 
+  // Basics
   const [title, setTitle]                       = useState('')
   const [specialty, setSpecialty]               = useState('')
   const [complexity, setComplexity]             = useState(3)
   const [description, setDescription]           = useState('')
+
+  // Section 1 — Patient introduction (no name/contact for privacy)
+  const [patientAge, setPatientAge]             = useState('')
+  const [patientGender, setPatientGender]       = useState('')
+  const [chiefComplaint, setChiefComplaint]     = useState('')
+  const [medicalHistory, setMedicalHistory]     = useState('')
+
+  // Section 3 — Diagnosis & treatment plan
+  const [diagnosis, setDiagnosis]                   = useState('')
+  const [treatmentPlanDetail, setTreatmentPlanDetail] = useState('')
+  const [numSittings, setNumSittings]               = useState('')
+
+  // Section 5 — Dentist conclusion
+  const [outcomeSummary, setOutcomeSummary]         = useState('')
+  const [keyLearning, setKeyLearning]               = useState('')
+  const [patientSatisfaction, setPatientSatisfaction] = useState('')
+
+  // Existing meta
   const [materials, setMaterials]               = useState<Set<string>>(new Set())
   const [costMin, setCostMin]                   = useState('')
   const [costMax, setCostMax]                   = useState('')
@@ -50,7 +92,9 @@ export default function CaseForm({ dentistName, isVerified }: { dentistName: str
   const [discussionEnabled, setDiscussionEnabled] = useState(true)
 
   const [photos, setPhotos]                     = useState<UploadedPhoto[]>([])
-  const [uploadErr, setUploadErr]               = useState('')
+  // Upload errors are scoped to the kind that failed so the message shows
+  // under the right photo section (pre vs post), never duplicated.
+  const [uploadErr, setUploadErr]               = useState<{ kind: Kind; msg: string } | null>(null)
   const [uploading, setUploading]               = useState<Kind | null>(null)
 
   const [submitting, setSubmitting]             = useState(false)
@@ -65,9 +109,9 @@ export default function CaseForm({ dentistName, isVerified }: { dentistName: str
   }
 
   async function handleFile(file: File, kind: Kind) {
-    setUploadErr('')
+    setUploadErr(null)
     if (photos.filter(p => p.kind === kind).length >= MAX_PER_KIND) {
-      setUploadErr(`Max ${MAX_PER_KIND} ${KIND_LABEL[kind].toLowerCase()} reached`)
+      setUploadErr({ kind, msg: `Max ${MAX_PER_KIND} ${KIND_LABEL[kind].toLowerCase()} reached` })
       return
     }
     setUploading(kind)
@@ -78,12 +122,12 @@ export default function CaseForm({ dentistName, isVerified }: { dentistName: str
       const res = await fetch('/api/cases/upload-photo', { method: 'POST', body: fd })
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data?.url) {
-        setUploadErr(data?.error || 'Upload failed')
+        setUploadErr({ kind, msg: data?.error || 'Upload failed' })
       } else {
         setPhotos(prev => [...prev, { url: data.url as string, kind, caption: '' }])
       }
     } catch {
-      setUploadErr('Network error — please try again.')
+      setUploadErr({ kind, msg: 'Network error — please try again.' })
     }
     setUploading(null)
   }
@@ -92,12 +136,18 @@ export default function CaseForm({ dentistName, isVerified }: { dentistName: str
     setPhotos(prev => prev.filter((_, i) => i !== idx))
   }
 
+  function updateCaption(idx: number, caption: string) {
+    setPhotos(prev => prev.map((p, i) => (i === idx ? { ...p, caption } : p)))
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setSubmitErr('')
-    if (!title.trim())     return setSubmitErr('Add a case title')
-    if (!specialty)        return setSubmitErr('Pick a specialty')
-    if (photos.length === 0) return setSubmitErr('Upload at least one photo')
+    if (!title.trim())              return setSubmitErr('Add a case title')
+    if (!specialty)                 return setSubmitErr('Pick a specialty')
+    if (!diagnosis.trim())          return setSubmitErr('Add a diagnosis')
+    if (!treatmentPlanDetail.trim()) return setSubmitErr('Add a treatment plan')
+    if (photos.length === 0)        return setSubmitErr('Upload at least one photo')
 
     setSubmitting(true)
     try {
@@ -113,6 +163,17 @@ export default function CaseForm({ dentistName, isVerified }: { dentistName: str
           cost_min: costMin ? Number(costMin) : null,
           cost_max: costMax ? Number(costMax) : null,
           duration_weeks: durationWeeks ? Number(durationWeeks) : null,
+          // Structured patient-case template
+          patient_age: patientAge ? Number(patientAge) : null,
+          patient_gender: patientGender || null,
+          chief_complaint: chiefComplaint || null,
+          medical_history: medicalHistory || null,
+          diagnosis,
+          treatment_plan_detail: treatmentPlanDetail,
+          num_sittings: numSittings ? Number(numSittings) : null,
+          outcome_summary: outcomeSummary || null,
+          key_learning: keyLearning || null,
+          patient_satisfaction: patientSatisfaction || null,
           photos: photos.map((p, i) => ({ url: p.url, kind: p.kind, caption: p.caption, display_order: i })),
         }),
       })
@@ -142,6 +203,61 @@ export default function CaseForm({ dentistName, isVerified }: { dentistName: str
     borderRadius: 8, border: '1.5px solid #E2E8F0', background: '#fff', color: '#0F1923',
     fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box',
   }
+  const captionInputStyle: React.CSSProperties = {
+    width: '100%', marginTop: 6, padding: '7px 10px', fontSize: 12,
+    borderRadius: 6, border: '1px solid #E2E8F0', background: '#fff', color: '#0F1923',
+    fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box',
+  }
+  const sectionHeadingStyle: React.CSSProperties = {
+    fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 16, marginBottom: 12, color: '#0F1923',
+  }
+
+  // One upload block for a single photo kind: label + subtitle + picker,
+  // then the uploaded thumbnails each with an editable caption.
+  const renderKindBlock = (kind: Kind) => {
+    const here = photos.filter(p => p.kind === kind)
+    return (
+      <div key={kind} style={{ marginBottom: 18 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6, gap: 12 }}>
+          <div>
+            <label style={labelStyle}>{KIND_LABEL[kind]}</label>
+            <p style={{ fontSize: 11, color: '#94A3B8' }}>{KIND_HINT[kind]} · max {MAX_PER_KIND}</p>
+          </div>
+          <PhotoPicker kind={kind} disabled={uploading !== null || here.length >= MAX_PER_KIND} uploading={uploading === kind} onFile={handleFile} />
+        </div>
+        {here.length > 0 && (
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            {here.map(p => {
+              const globalIdx = photos.indexOf(p)
+              return (
+                <div key={globalIdx} style={{ width: 150 }}>
+                  <div style={{ position: 'relative', width: 150, height: 110, borderRadius: 8, overflow: 'hidden', border: '1px solid #E2E8F0' }}>
+                    <img src={p.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <button type="button" onClick={() => removePhoto(globalIdx)}
+                      style={{ position: 'absolute', top: 4, right: 4, width: 24, height: 24, borderRadius: '50%', background: 'rgba(15,25,35,0.75)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12 }}
+                      aria-label="Remove photo">✕</button>
+                  </div>
+                  <input
+                    value={p.caption}
+                    onChange={e => updateCaption(globalIdx, e.target.value)}
+                    placeholder={KIND_CAPTION_PH[kind]}
+                    maxLength={200}
+                    aria-label={`Caption for ${KIND_LABEL[kind]} photo`}
+                    style={captionInputStyle}
+                  />
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  const uploadErrIn = (kinds: Kind[]) =>
+    uploadErr && kinds.includes(uploadErr.kind)
+      ? <div style={{ color: '#DC2626', fontSize: 13, marginTop: 6, fontWeight: 600 }}>{uploadErr.msg}</div>
+      : null
 
   return (
     <form onSubmit={submit}>
@@ -189,44 +305,103 @@ export default function CaseForm({ dentistName, isVerified }: { dentistName: str
         </div>
       </section>
 
-      {/* Photos — one block per kind */}
+      {/* Section 1 — Patient introduction */}
       <section style={sectionStyle}>
-        <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 16, marginBottom: 12, color: '#0F1923' }}>Photos</h2>
-        {(Object.keys(KIND_LABEL) as Kind[]).map(kind => {
-          const here = photos.filter(p => p.kind === kind)
-          return (
-            <div key={kind} style={{ marginBottom: 18 }}>
-              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6 }}>
-                <div>
-                  <label style={labelStyle}>{KIND_LABEL[kind]}</label>
-                  <p style={{ fontSize: 11, color: '#94A3B8' }}>{KIND_HINT[kind]} · max {MAX_PER_KIND}</p>
-                </div>
-                <PhotoPicker kind={kind} disabled={uploading !== null || here.length >= MAX_PER_KIND} uploading={uploading === kind} onFile={handleFile} />
-              </div>
-              {here.length > 0 && (
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {here.map((p, i) => {
-                    const globalIdx = photos.indexOf(p)
-                    return (
-                      <div key={globalIdx} style={{ position: 'relative', width: 110, height: 110, borderRadius: 8, overflow: 'hidden', border: '1px solid #E2E8F0' }}>
-                        <img src={p.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        <button type="button" onClick={() => removePhoto(globalIdx)}
-                          style={{ position: 'absolute', top: 4, right: 4, width: 24, height: 24, borderRadius: '50%', background: 'rgba(15,25,35,0.75)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12 }}
-                          aria-label="Remove photo">✕</button>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          )
-        })}
-        {uploadErr && <div style={{ color: '#DC2626', fontSize: 13, marginTop: 6, fontWeight: 600 }}>{uploadErr}</div>}
+        <h2 style={sectionHeadingStyle}>👤 Patient Introduction</h2>
+        <p style={{ fontSize: 12, color: '#64748B', marginBottom: 14 }}>All optional. For patient privacy, do not enter names or contact details.</p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+          <div>
+            <label style={labelStyle} htmlFor="patient-age">Patient age</label>
+            <input id="patient-age" inputMode="numeric" maxLength={3} placeholder="e.g. 42" value={patientAge}
+              onChange={e => setPatientAge(e.target.value.replace(/\D/g, ''))} style={inputStyle} />
+          </div>
+          <div>
+            <label style={labelStyle} htmlFor="patient-gender">Patient gender</label>
+            <select id="patient-gender" value={patientGender} onChange={e => setPatientGender(e.target.value)} style={inputStyle}>
+              <option value="">Select…</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle} htmlFor="chief-complaint">Chief complaint</label>
+          <textarea id="chief-complaint" rows={3} value={chiefComplaint} onChange={e => setChiefComplaint(e.target.value)}
+            placeholder="What brought the patient in? e.g. Pain in lower left molar for 3 weeks"
+            style={{ ...inputStyle, minHeight: 76, resize: 'vertical' }} />
+        </div>
+        <div>
+          <label style={labelStyle} htmlFor="medical-history">Medical history</label>
+          <textarea id="medical-history" rows={3} value={medicalHistory} onChange={e => setMedicalHistory(e.target.value)}
+            placeholder="Relevant medical conditions, medications, allergies. e.g. Diabetic, on Metformin"
+            style={{ ...inputStyle, minHeight: 76, resize: 'vertical' }} />
+        </div>
+      </section>
+
+      {/* Section 2 — Pre-treatment photos */}
+      <section style={sectionStyle}>
+        <h2 style={sectionHeadingStyle}>Pre-Treatment Photos</h2>
+        {PRE_KINDS.map(renderKindBlock)}
+        {uploadErrIn(PRE_KINDS)}
+      </section>
+
+      {/* Section 3 — Diagnosis & treatment plan */}
+      <section style={sectionStyle}>
+        <h2 style={sectionHeadingStyle}>🔬 Diagnosis &amp; Treatment Plan</h2>
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle} htmlFor="diagnosis">Diagnosis <span style={{ color: '#DC2626' }}>*</span></label>
+          <textarea id="diagnosis" required rows={3} value={diagnosis} onChange={e => setDiagnosis(e.target.value)}
+            placeholder="e.g. Chronic periodontitis Grade III, missing 36, 37. Adequate bone for implant placement."
+            style={{ ...inputStyle, minHeight: 88, resize: 'vertical' }} />
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle} htmlFor="treatment-plan">Treatment plan <span style={{ color: '#DC2626' }}>*</span></label>
+          <textarea id="treatment-plan" required rows={4} value={treatmentPlanDetail} onChange={e => setTreatmentPlanDetail(e.target.value)}
+            placeholder="e.g. Phase 1: Scaling and root planing. Phase 2: Implant placement 36, 37. Phase 3: Crown placement after osseointegration (3 months)"
+            style={{ ...inputStyle, minHeight: 110, resize: 'vertical' }} />
+        </div>
+        <div style={{ maxWidth: 220 }}>
+          <label style={labelStyle} htmlFor="num-sittings">Number of sittings</label>
+          <input id="num-sittings" inputMode="numeric" maxLength={3} placeholder="e.g. 4" value={numSittings}
+            onChange={e => setNumSittings(e.target.value.replace(/\D/g, ''))} style={inputStyle} />
+        </div>
+      </section>
+
+      {/* Section 4 — Post-treatment photos */}
+      <section style={sectionStyle}>
+        <h2 style={sectionHeadingStyle}>Post-Treatment Photos</h2>
+        {POST_KINDS.map(renderKindBlock)}
+        {uploadErrIn(POST_KINDS)}
+      </section>
+
+      {/* Section 5 — Dentist conclusion */}
+      <section style={sectionStyle}>
+        <h2 style={sectionHeadingStyle}>✅ Dentist Conclusion</h2>
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle} htmlFor="outcome-summary">Outcome summary</label>
+          <textarea id="outcome-summary" rows={3} value={outcomeSummary} onChange={e => setOutcomeSummary(e.target.value)}
+            placeholder="e.g. Patient reports complete pain relief. Implants osseointegrated successfully. Patient highly satisfied with aesthetic outcome."
+            style={{ ...inputStyle, minHeight: 88, resize: 'vertical' }} />
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle} htmlFor="key-learning">Key learning</label>
+          <textarea id="key-learning" rows={3} value={keyLearning} onChange={e => setKeyLearning(e.target.value)}
+            placeholder="What would you do differently? Any tips for peers?"
+            style={{ ...inputStyle, minHeight: 76, resize: 'vertical' }} />
+        </div>
+        <div style={{ maxWidth: 260 }}>
+          <label style={labelStyle} htmlFor="patient-satisfaction">Patient satisfaction</label>
+          <select id="patient-satisfaction" value={patientSatisfaction} onChange={e => setPatientSatisfaction(e.target.value)} style={inputStyle}>
+            <option value="">Select…</option>
+            {SATISFACTION_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
+        </div>
       </section>
 
       {/* Materials */}
       <section style={sectionStyle}>
-        <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 16, marginBottom: 12, color: '#0F1923' }}>Materials used</h2>
+        <h2 style={sectionHeadingStyle}>Materials used</h2>
         <p style={{ fontSize: 12, color: '#64748B', marginBottom: 12 }}>Tap any that apply. Selected: {materials.size}</p>
         {MATERIAL_GROUPS.map(g => (
           <div key={g.label} style={{ marginBottom: 14 }}>

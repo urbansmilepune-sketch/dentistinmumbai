@@ -40,6 +40,18 @@ interface CaseRow {
   like_count: number
   comment_count: number
   created_at: string
+  // Structured patient-case template — nullable/optional because they're
+  // added to the DB out-of-band; a pre-migration row simply omits them.
+  patient_age: number | null
+  patient_gender: string | null
+  chief_complaint: string | null
+  medical_history: string | null
+  diagnosis: string | null
+  treatment_plan_detail: string | null
+  num_sittings: number | null
+  outcome_summary: string | null
+  key_learning: string | null
+  patient_satisfaction: string | null
   dentists: {
     name: string
     slug: string
@@ -71,8 +83,10 @@ async function loadCase(id: string): Promise<{ row: CaseRow; photos: PhotoRow[] 
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   )
   const [{ data: row }, { data: photos }] = await Promise.all([
+    // Select `*` so the query never 400s on the structured-template columns
+    // before their out-of-band migration lands; embed the dentist join.
     admin.from('cases')
-      .select('id, dentist_id, title, specialty, complexity, description, materials, cost_min, cost_max, duration_weeks, clinical_notes, is_private_notes, discussion_enabled, status, view_count, like_count, comment_count, created_at, dentists(name, slug, clinic_name, city, email, is_verified)')
+      .select('*, dentists(name, slug, clinic_name, city, email, is_verified)')
       .eq('id', id).single(),
     admin.from('case_photos').select('id, url, kind, caption, display_order').eq('case_id', id).order('display_order'),
   ])
@@ -247,9 +261,17 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
           )}
         </header>
 
-        {/* Photo gallery */}
-        <PhotoBlock title="Clinical photos" beforeRows={before} afterRows={after} />
-        <PhotoBlock title="X-rays" beforeRows={xrayBefore} afterRows={xrayAfter} />
+        {/* Structured patient-case template — each block self-hides when it
+            has no data, so older cases (and pre-migration rows) still render
+            cleanly. Order: intro → pre-op imaging → plan → post-op imaging →
+            conclusion. */}
+        <PatientIntroCard row={data.row} />
+        <PhotoGroup title="Before Treatment — Clinical Photos" rows={before} />
+        <PhotoGroup title="Pre-Treatment X-Ray / OPG" rows={xrayBefore} />
+        <DiagnosisCard row={data.row} />
+        <PhotoGroup title="After Treatment — Clinical Photos" rows={after} />
+        <PhotoGroup title="Post-Treatment X-Ray / OPG" rows={xrayAfter} />
+        <ConclusionCard row={data.row} />
 
         {/* Description */}
         {data.row.description && (
@@ -320,39 +342,100 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
   )
 }
 
-function PhotoBlock({ title, beforeRows, afterRows }: { title: string; beforeRows: PhotoRow[]; afterRows: PhotoRow[] }) {
-  if (beforeRows.length === 0 && afterRows.length === 0) return null
+// Card + heading styles shared by the structured-template sections and the
+// photo groups (module scope so the helper components below can use them).
+const templateCardStyle: React.CSSProperties = {
+  background: '#fff', border: '1px solid #E2E8F0', borderRadius: 14, padding: 24, marginBottom: 18,
+}
+const templateHeadingStyle: React.CSSProperties = {
+  fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 18, color: '#0F1923', marginBottom: 14,
+}
+
+// A single photo group (one kind), rendered only when it has photos. Each
+// image shows its caption underneath.
+function PhotoGroup({ title, rows }: { title: string; rows: PhotoRow[] }) {
+  if (rows.length === 0) return null
   return (
-    <section style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 14, padding: 24, marginBottom: 18 }}>
-      <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 16, color: '#0F1923', marginBottom: 12 }}>{title}</h2>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
-        <PhotoColumn label="Before" rows={beforeRows} accent="#0F1923" />
-        <PhotoColumn label="After"  rows={afterRows}  accent="#166534" />
+    <section style={templateCardStyle}>
+      <h2 style={{ ...templateHeadingStyle, fontSize: 16, marginBottom: 12 }}>{title}</h2>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16 }}>
+        {rows.map(r => (
+          <figure key={r.id} style={{ margin: 0 }}>
+            <img src={r.url} alt={r.caption || title} style={{ width: '100%', height: 'auto', display: 'block', borderRadius: 10, border: '1px solid #E2E8F0' }} />
+            {r.caption && <figcaption style={{ fontSize: 12, color: '#64748B', marginTop: 6, lineHeight: 1.5 }}>{r.caption}</figcaption>}
+          </figure>
+        ))}
       </div>
     </section>
   )
 }
 
-function PhotoColumn({ label, rows, accent }: { label: string; rows: PhotoRow[]; accent: string }) {
-  if (rows.length === 0) {
-    return (
-      <div style={{ background: '#F8FAFC', border: '1px dashed #E2E8F0', borderRadius: 12, padding: 20, textAlign: 'center', color: '#94A3B8', fontSize: 13 }}>
-        No {label.toLowerCase()} photos
-      </div>
-    )
-  }
+function LabeledText({ label, text }: { label: string; text: string }) {
   return (
-    <div>
-      <div style={{ fontSize: 11, fontWeight: 700, color: accent, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>{label}</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {rows.map(r => (
-          <figure key={r.id} style={{ margin: 0 }}>
-            <img src={r.url} alt={r.caption || label} style={{ width: '100%', height: 'auto', display: 'block', borderRadius: 10, border: '1px solid #E2E8F0' }} />
-            {r.caption && <figcaption style={{ fontSize: 12, color: '#64748B', marginTop: 6, lineHeight: 1.5 }}>{r.caption}</figcaption>}
-          </figure>
-        ))}
-      </div>
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: '#94A3B8', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 6 }}>{label}</div>
+      <p style={{ fontSize: 15, color: '#475569', lineHeight: 1.7, whiteSpace: 'pre-wrap', margin: 0 }}>{text}</p>
     </div>
+  )
+}
+
+// Section 1 — patient introduction (👤). Hidden entirely when empty.
+function PatientIntroCard({ row }: { row: CaseRow }) {
+  if (!row.patient_age && !row.patient_gender && !row.chief_complaint && !row.medical_history) return null
+  const hasText = !!(row.chief_complaint || row.medical_history)
+  return (
+    <section style={templateCardStyle}>
+      <h2 style={templateHeadingStyle}>👤 Patient introduction</h2>
+      {(row.patient_age || row.patient_gender) && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 18, marginBottom: hasText ? 18 : 0 }}>
+          {row.patient_age ? <Fact label="Age" value={`${row.patient_age} years`} /> : null}
+          {row.patient_gender ? <Fact label="Gender" value={row.patient_gender} /> : null}
+        </div>
+      )}
+      {row.chief_complaint && <LabeledText label="Chief complaint" text={row.chief_complaint} />}
+      {row.medical_history && <LabeledText label="Medical history" text={row.medical_history} />}
+    </section>
+  )
+}
+
+// Section 3 — diagnosis & treatment plan (🔬).
+function DiagnosisCard({ row }: { row: CaseRow }) {
+  if (!row.diagnosis && !row.treatment_plan_detail && !row.num_sittings) return null
+  return (
+    <section style={templateCardStyle}>
+      <h2 style={templateHeadingStyle}>🔬 Diagnosis &amp; treatment plan</h2>
+      {row.diagnosis && <LabeledText label="Diagnosis" text={row.diagnosis} />}
+      {row.treatment_plan_detail && <LabeledText label="Treatment plan" text={row.treatment_plan_detail} />}
+      {row.num_sittings ? <Fact label="Number of sittings" value={String(row.num_sittings)} /> : null}
+    </section>
+  )
+}
+
+const SATISFACTION_BADGE: Record<string, { bg: string; color: string }> = {
+  'Excellent':          { bg: '#DCFCE7', color: '#166534' },
+  'Good':               { bg: '#DBEAFE', color: '#1D4ED8' },
+  'Satisfactory':       { bg: '#FEF3C7', color: '#92400E' },
+  'Requires follow-up': { bg: '#FEE2E2', color: '#991B1B' },
+}
+
+// Section 5 — dentist conclusion (✅), with a colour-coded satisfaction badge.
+function ConclusionCard({ row }: { row: CaseRow }) {
+  if (!row.outcome_summary && !row.key_learning && !row.patient_satisfaction) return null
+  const badge = row.patient_satisfaction ? SATISFACTION_BADGE[row.patient_satisfaction] : undefined
+  const hasText = !!(row.outcome_summary || row.key_learning)
+  return (
+    <section style={templateCardStyle}>
+      <h2 style={templateHeadingStyle}>✅ Dentist conclusion</h2>
+      {row.patient_satisfaction && (
+        <div style={{ marginBottom: hasText ? 16 : 0 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, padding: '4px 12px', borderRadius: 999, background: badge?.bg ?? '#F1F5F9', color: badge?.color ?? '#475569' }}>
+            Patient satisfaction: {row.patient_satisfaction}
+          </span>
+        </div>
+      )}
+      {row.outcome_summary && <LabeledText label="Outcome summary" text={row.outcome_summary} />}
+      {row.key_learning && <LabeledText label="Key learning" text={row.key_learning} />}
+    </section>
   )
 }
 

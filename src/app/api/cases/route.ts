@@ -29,6 +29,24 @@ function intInRange(v: unknown, min: number, max: number): number | null {
   return n
 }
 
+// Only keep an enum-style value if it's one of the allowed labels.
+function oneOf(v: unknown, allowed: readonly string[]): string | null {
+  return typeof v === 'string' && (allowed as readonly string[]).includes(v) ? v : null
+}
+
+const GENDERS = ['Male', 'Female', 'Other'] as const
+const SATISFACTIONS = ['Excellent', 'Good', 'Satisfactory', 'Requires follow-up'] as const
+
+// The structured patient-template columns are added to `cases` out-of-band
+// (Supabase SQL editor). Until that ALTER runs on the live DB, an insert
+// that references them fails with 42703 / PGRST204. Detect that so we can
+// retry without the template fields rather than 500 the whole submission.
+function isMissingColumnError(err: { code?: string; message?: string } | null): boolean {
+  if (!err) return false
+  if (err.code === '42703' || err.code === 'PGRST204') return true
+  return /could not find the .* column|column .* does not exist/i.test(err.message || '')
+}
+
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -60,6 +78,19 @@ export async function POST(request: NextRequest) {
   const costMax = intInRange(payload.cost_max, 0, 10_000_000)
   const durationWeeks = intInRange(payload.duration_weeks, 0, 520)
 
+  // Structured patient-case template (all optional server-side; the form
+  // enforces diagnosis + treatment plan as required client-side).
+  const patientAge = intInRange(payload.patient_age, 0, 130)
+  const patientGender = oneOf(payload.patient_gender, GENDERS)
+  const chiefComplaint = cap(payload.chief_complaint, 2000)
+  const medicalHistory = cap(payload.medical_history, 2000)
+  const diagnosis = cap(payload.diagnosis, 5000)
+  const treatmentPlanDetail = cap(payload.treatment_plan_detail, 5000)
+  const numSittings = intInRange(payload.num_sittings, 0, 999)
+  const outcomeSummary = cap(payload.outcome_summary, 5000)
+  const keyLearning = cap(payload.key_learning, 5000)
+  const patientSatisfaction = oneOf(payload.patient_satisfaction, SATISFACTIONS)
+
   // Materials — accept only entries that match the curated catalogue.
   const rawMaterials = Array.isArray(payload.materials) ? payload.materials : []
   const materials = rawMaterials
@@ -89,25 +120,48 @@ export async function POST(request: NextRequest) {
   const initialStatus = (approvedCount ?? 0) >= AUTO_APPROVE_THRESHOLD ? 'approved' : 'pending'
 
   // ── Insert case + photos ─────────────────────────────────────────────
-  const { data: caseRow, error: caseErr } = await supabase
-    .from('cases')
-    .insert({
-      dentist_id: dentist.id,
-      title,
-      specialty,
-      complexity,
-      description,
-      materials,
-      cost_min: costMin,
-      cost_max: costMax,
-      duration_weeks: durationWeeks,
-      clinical_notes: clinicalNotes,
-      is_private_notes: isPrivateNotes,
-      discussion_enabled: discussionEnabled,
-      status: initialStatus,
-    })
-    .select('id, status')
-    .single()
+  const baseFields = {
+    dentist_id: dentist.id,
+    title,
+    specialty,
+    complexity,
+    description,
+    materials,
+    cost_min: costMin,
+    cost_max: costMax,
+    duration_weeks: durationWeeks,
+    clinical_notes: clinicalNotes,
+    is_private_notes: isPrivateNotes,
+    discussion_enabled: discussionEnabled,
+    status: initialStatus,
+  }
+  const templateFields = {
+    patient_age: patientAge,
+    patient_gender: patientGender,
+    chief_complaint: chiefComplaint,
+    medical_history: medicalHistory,
+    diagnosis,
+    treatment_plan_detail: treatmentPlanDetail,
+    num_sittings: numSittings,
+    outcome_summary: outcomeSummary,
+    key_learning: keyLearning,
+    patient_satisfaction: patientSatisfaction,
+  }
+
+  const insertCase = (includeTemplate: boolean) =>
+    supabase
+      .from('cases')
+      .insert(includeTemplate ? { ...baseFields, ...templateFields } : baseFields)
+      .select('id, status')
+      .single()
+
+  let { data: caseRow, error: caseErr } = await insertCase(true)
+  // Migration window: if the template columns aren't on the live DB yet,
+  // retry without them so the case still saves (template data is dropped
+  // until the ALTER runs — see the SQL handed off separately).
+  if (caseErr && isMissingColumnError(caseErr)) {
+    ;({ data: caseRow, error: caseErr } = await insertCase(false))
+  }
   if (caseErr || !caseRow) {
     return NextResponse.json({ error: `Could not save case: ${caseErr?.message ?? 'unknown'}` }, { status: 500 })
   }
