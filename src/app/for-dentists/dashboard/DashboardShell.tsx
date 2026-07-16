@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { getCityByDomain, getCityBySlug, type CityConfig } from '@/config/cities'
 import BugReportButton from './BugReportButton'
@@ -76,7 +76,6 @@ export default function DashboardShell({ dentist, completionPct, staffRole = nul
   const navItems = visibleNav(NAV, staffRole)
   const mobileItems = visibleNav(MOBILE_NAV, staffRole)
   const pathname = usePathname()
-  const router = useRouter()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
   const addRef = useRef<HTMLDivElement>(null)
@@ -105,9 +104,14 @@ export default function DashboardShell({ dentist, completionPct, staffRole = nul
   }, [addOpen])
 
   async function handleLogout() {
+    // Clear the client session, then hit the server route so the httpOnly
+    // "remember me" cookie is cleared and its DB token revoked (JS can't touch
+    // an httpOnly cookie). Hard-navigate so the fully-reloaded page reads no
+    // session.
     const supabase = createClient()
     await supabase.auth.signOut()
-    router.push('/for-dentists/login')
+    try { await fetch('/auth/signout', { method: 'POST' }) } catch {}
+    window.location.href = '/for-dentists/login'
   }
 
   const initials = dentist.name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2) || 'D'

@@ -11,7 +11,9 @@
 // user and bounced back to /login.
 
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
+import { REMEMBER_COOKIE, rememberCookieOptions, issueRememberToken } from '@/lib/auth/rememberMe'
 
 export async function POST(request: NextRequest) {
   let body: any
@@ -41,5 +43,25 @@ export async function POST(request: NextRequest) {
 
   // Session cookies are queued on this response. The client hard-navigates to
   // its computed landing (national /feed vs city dashboard, honouring ?next=).
-  return NextResponse.json({ success: true })
+  const response = NextResponse.json({ success: true })
+
+  // "Remember me" (default on): issue a long-lived rotating token so an expired
+  // session can be silently re-minted (free plan has no configurable timeout).
+  // Owner dentists only — staff have no dentists row for the FK; they fall back
+  // to the normal session.
+  const admin = createServiceClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  )
+  const { data: dentist } = await admin
+    .from('dentists')
+    .select('id')
+    .eq('email', email)
+    .maybeSingle()
+  if (dentist?.id) {
+    const cookieValue = await issueRememberToken(admin, dentist.id)
+    if (cookieValue) response.cookies.set(REMEMBER_COOKIE, cookieValue, rememberCookieOptions())
+  }
+
+  return response
 }
