@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { createClient as createServerClient } from '@/lib/supabase/server'
+import { resolveCurrentDentist } from '@/lib/currentDentist'
 import { getCityBySlug } from '@/config/cities'
 
 function admin() {
@@ -7,6 +9,17 @@ function admin() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   )
+}
+
+// Resolves the current session to the clinic dentist they're authorised to
+// act on — the owner (own dentists.email row) OR an active clinic_staff
+// member of that clinic (same shape via resolveCurrentDentist). Returns the
+// clinic's dentist id, or null when there's no valid dentist/staff session.
+// Uses the RLS-aware server client, NOT the service role, for the auth check.
+async function authedDentistId(): Promise<string | null> {
+  const supabase = await createServerClient()
+  const current = await resolveCurrentDentist(supabase, 'id')
+  return current?.id ?? null
 }
 
 async function fetchPrescription(id: string) {
@@ -20,18 +33,29 @@ async function fetchPrescription(id: string) {
 }
 
 // GET /api/prescriptions/pdf?id=<uuid> — returns a print-ready HTML page so the
-// dentist (and patient via shared link) can open it in a new tab and trigger
-// the native print dialog. Kept as HTML rather than a PDF binary because the
-// repo's only PDF generator (jsPDF in the billing page) is client-only and
-// puppeteer is intentionally not a dependency. Browsers print this layout
-// cleanly via the autoPrint script at the end of the body.
+// dentist can open it in a new tab and trigger the native print dialog. Kept as
+// HTML rather than a PDF binary because the repo's only PDF generator (jsPDF in
+// the billing page) is client-only and puppeteer is intentionally not a
+// dependency. Browsers print this layout cleanly via the autoPrint script at
+// the end of the body.
+//
+// AUTH: this returns full patient PHI (name, phone, allergies), so it requires
+// a valid dentist/staff session that OWNS the prescription. A prescription that
+// belongs to another clinic is reported as 404 (not 403) so the endpoint can't
+// be used to probe which prescription ids exist. Patient-facing "shared links"
+// would need a separate signed short-lived token — there is no such token here.
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const id = searchParams.get('id')
   if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
 
+  const dentistId = await authedDentistId()
+  if (!dentistId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
   const rx = await fetchPrescription(id)
-  if (!rx) return NextResponse.json({ error: 'Prescription not found' }, { status: 404 })
+  if (!rx || rx.dentist_id !== dentistId) {
+    return NextResponse.json({ error: 'Prescription not found' }, { status: 404 })
+  }
 
   return new Response(generatePrescriptionHTML(rx, { autoPrint: true }), {
     status: 200,
@@ -44,9 +68,14 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const dentistId = await authedDentistId()
+    if (!dentistId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
     const { prescription_id } = await request.json()
     const rx = await fetchPrescription(prescription_id)
-    if (!rx) return NextResponse.json({ error: 'Prescription not found' }, { status: 404 })
+    if (!rx || rx.dentist_id !== dentistId) {
+      return NextResponse.json({ error: 'Prescription not found' }, { status: 404 })
+    }
     const html = generatePrescriptionHTML(rx)
     return NextResponse.json({ success: true, html, prescription: rx })
   } catch (error: any) {
