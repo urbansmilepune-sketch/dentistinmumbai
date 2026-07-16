@@ -10,12 +10,27 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
     rules: [
       {
         userAgent: '*',
-        allow: '/',
-        disallow: [
-          '/admin/',
-          '/for-dentists/dashboard/',
-          '/for-dentists/login',
+        allow: [
+          '/',
+          // Public funnel pages that live under the otherwise-disallowed
+          // /for-dentists/ tree. Longer than the '/for-dentists/' disallow
+          // below, so longest-match precedence keeps these crawlable.
           '/for-dentists/register',
+          '/for-dentists/login',
+        ],
+        disallow: [
+          // No trailing slash so it also catches the /admin index route;
+          // '/admin/' kept for the subtree.
+          '/admin',
+          '/admin/',
+          // Whole authed dashboard tree — register/login re-allowed above.
+          // '/for-dentists/dashboard/' kept from before (now redundant).
+          '/for-dentists/',
+          '/for-dentists/dashboard/',
+          // Patient portal — private, never indexable. No trailing slash so
+          // it covers both /patient and /patient/*.
+          '/patient',
+          '/login',
           // Prefix (no trailing slash) so it covers both /book and /book/*
           // — nothing under /book should ever be crawled or indexed.
           '/book',
