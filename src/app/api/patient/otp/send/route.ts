@@ -51,12 +51,29 @@ export async function POST(request: NextRequest) {
     }, { status: 404 })
   }
 
+  // Rate limit: patient_portal_otps is one-row-per-phone (upsert below), so we
+  // throttle by minimum interval rather than counting rows — reject if this
+  // number was sent a code in the last 3 minutes. Caps ~3 sends per 10 min and
+  // stops SMS-bombing a victim's phone. Relies on the upsert refreshing
+  // created_at.
+  const { data: lastOtp } = await db
+    .from('patient_portal_otps')
+    .select('created_at')
+    .eq('phone', phone)
+    .maybeSingle()
+  if (lastOtp?.created_at && Date.now() - new Date(lastOtp.created_at).getTime() < 3 * 60 * 1000) {
+    return NextResponse.json(
+      { error: 'Too many requests. Please wait a few minutes before requesting another OTP.' },
+      { status: 429 },
+    )
+  }
+
   const otp = Math.floor(100000 + Math.random() * 900000).toString()
   const expires_at = new Date(Date.now() + 10 * 60 * 1000).toISOString()
 
   const { error: upsertErr } = await db
     .from('patient_portal_otps')
-    .upsert({ phone, otp, expires_at, used: false }, { onConflict: 'phone' })
+    .upsert({ phone, otp, expires_at, used: false, created_at: new Date().toISOString() }, { onConflict: 'phone' })
   if (upsertErr) {
     console.error('[patient/otp/send] upsert failed', upsertErr)
     return NextResponse.json({ error: 'Could not issue OTP' }, { status: 500 })

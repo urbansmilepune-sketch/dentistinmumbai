@@ -49,16 +49,34 @@ export async function POST(_request: NextRequest) {
     return NextResponse.json({ success: true, already_verified: true })
   }
 
+  // Rate limit: dentist_phone_otps is one-row-per-dentist (upsert below), so we
+  // throttle by minimum interval rather than counting rows — reject if this
+  // dentist was sent a code in the last 3 minutes. Caps ~3 sends per 10 min and
+  // stops SMS-bombing the listed number. Relies on the upsert refreshing
+  // created_at.
+  const { data: lastOtp } = await admin
+    .from('dentist_phone_otps')
+    .select('created_at')
+    .eq('dentist_id', dentist.id)
+    .maybeSingle()
+  if (lastOtp?.created_at && Date.now() - new Date(lastOtp.created_at).getTime() < 3 * 60 * 1000) {
+    return NextResponse.json(
+      { error: 'Too many requests. Please wait a few minutes before requesting another OTP.' },
+      { status: 429 },
+    )
+  }
+
   const otp = Math.floor(100000 + Math.random() * 900000).toString()
   const expires_at = new Date(Date.now() + 10 * 60 * 1000).toISOString()
 
   // Upsert on dentist_id so a re-click of "Send OTP" (mistyped first
   // code, SMS late, etc.) resets the row instead of failing on the
-  // unique constraint.
+  // unique constraint, and refreshes created_at so the rate-limit window
+  // above measures from the latest send.
   const { error: insertErr } = await admin
     .from('dentist_phone_otps')
     .upsert(
-      { dentist_id: dentist.id, phone: phoneDigits, otp, expires_at, used: false },
+      { dentist_id: dentist.id, phone: phoneDigits, otp, expires_at, used: false, created_at: new Date().toISOString() },
       { onConflict: 'dentist_id' },
     )
   if (insertErr) {

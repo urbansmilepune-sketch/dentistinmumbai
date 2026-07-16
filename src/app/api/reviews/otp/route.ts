@@ -38,18 +38,35 @@ export async function POST(request: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY,
   )
 
+  // Rate limit: review_otps is one-row-per-phone (upsert below), so we throttle
+  // by minimum interval rather than counting rows — reject if this number was
+  // sent a code in the last 3 minutes. Caps ~3 sends per 10 min and stops
+  // SMS-bombing a victim's phone. Relies on the upsert refreshing created_at.
+  const { data: lastOtp } = await supabase
+    .from('review_otps')
+    .select('created_at')
+    .eq('phone', phone)
+    .maybeSingle()
+  if (lastOtp?.created_at && Date.now() - new Date(lastOtp.created_at).getTime() < 3 * 60 * 1000) {
+    return NextResponse.json(
+      { error: 'Too many requests. Please wait a few minutes before requesting another OTP.' },
+      { status: 429 },
+    )
+  }
+
   const otp = Math.floor(100000 + Math.random() * 900000).toString()
   const expires_at = new Date(Date.now() + 10 * 60 * 1000).toISOString()
 
   // Upsert on `phone` so a patient who re-clicks "Send OTP" (mistyped the
   // first code, didn't receive the SMS, etc.) gets a fresh OTP + expiry on
   // the SAME row instead of a 23505 from the phone-unique index. The
-  // re-request also resets `used` to false so a previously-burnt row
-  // doesn't lock the patient out of resending.
+  // re-request also resets `verified` to false so a previously-burnt row
+  // doesn't lock the patient out of resending, and refreshes created_at so the
+  // rate-limit window above measures from the latest send.
   const { error: insertErr } = await supabase
     .from('review_otps')
     .upsert(
-      { phone, otp, expires_at, verified: false },
+      { phone, otp, expires_at, verified: false, created_at: new Date().toISOString() },
       { onConflict: 'phone' },
     )
   if (insertErr) {
