@@ -194,7 +194,7 @@ function BillingPageInner() {
     }
 
     const invNo = `INV-${Date.now().toString().slice(-6)}`
-    const { data } = await supabase.from('invoices').insert({
+    const { data, error } = await supabase.from('invoices').insert({
       invoice_no: invNo, dentist_id: dentistId, patient_id: form.patient_id,
       invoice_date: form.date,
       items: itemsPayload,
@@ -203,9 +203,16 @@ function BillingPageInner() {
       payment_method: form.payment_method || null,
       location_id: form.location_id || null,
     }).select('*, patients(name, phone), clinic_locations(id, clinic_name)').single()
-    if (data) setInvoices(prev => [data, ...prev])
-    setShowAdd(false)
-    resetForm()
+    if (error || !data) {
+      setSaving(false)
+      setActionError(error?.message || 'Failed to save invoice. Please try again.')
+      return  // keep modal open
+    }
+    if (data) {
+      setInvoices(prev => [data, ...prev])
+      setShowAdd(false)
+      resetForm()
+    }
     setSaving(false)
   }
 

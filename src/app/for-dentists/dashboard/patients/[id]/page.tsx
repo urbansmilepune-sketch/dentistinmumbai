@@ -143,6 +143,12 @@ export default function PatientDetailPage() {
   const [aiSuggestions, setAiSuggestions] = useState<any[]>([])
   const [aiSuggestError, setAiSuggestError] = useState<string | null>(null)
 
+  // Surfaced when a visit/prescription write is rejected (RLS denial or DB
+  // error) so the modal stays open with the clinician's unsaved data instead
+  // of silently closing. Kept separate from the AI-feature error states above.
+  const [visitSaveError, setVisitSaveError] = useState<string | null>(null)
+  const [rxSaveError, setRxSaveError] = useState<string | null>(null)
+
   // AI: quick-note templates + note refinement for the visit editor.
   const [showQuickNotes, setShowQuickNotes] = useState(false)
   const [refining, setRefining] = useState(false)
@@ -213,8 +219,9 @@ export default function PatientDetailPage() {
 
   async function saveVisit() {
     setSaving(true)
+    setVisitSaveError(null)
     const supabase = createClient()
-    const { data } = await supabase.from('visits').insert({
+    const { data, error } = await supabase.from('visits').insert({
       patient_id: patientId, dentist_id: dentistId,
       visit_date: visitForm.visit_date,
       chief_complaint: visitForm.chief_complaint || null,
@@ -224,7 +231,14 @@ export default function PatientDetailPage() {
       next_appointment_recommended: visitForm.next_appointment_recommended || null,
       next_appointment_notes: visitForm.next_appointment_notes || null,
     }).select('*').single()
-    if (data) setVisits(prev => [data, ...prev])
+    // A silent RLS denial returns no error AND no row — treat both as failure so
+    // we don't close the modal and lose the dentist's notes on a rejected write.
+    if (error || !data) {
+      setSaving(false)
+      setVisitSaveError(error?.message || 'Failed to save visit. Please try again.')
+      return  // keep modal open
+    }
+    setVisits(prev => [data, ...prev])
     setShowAddVisit(false)
     setVisitForm({ visit_date: new Date().toISOString().split('T')[0], chief_complaint: '', clinical_findings: '', treatment_done: '', materials_used: '', next_appointment_recommended: '', next_appointment_notes: '' })
     setNotesBeforeRefine(null)
@@ -235,14 +249,22 @@ export default function PatientDetailPage() {
 
   async function saveRx() {
     setSaving(true)
+    setRxSaveError(null)
     const supabase = createClient()
-    const { data } = await supabase.from('prescriptions').insert({
+    const { data, error } = await supabase.from('prescriptions').insert({
       patient_id: patientId, dentist_id: dentistId,
       medicines: rxForm.medicines,
       instructions: rxForm.instructions || null,
       template_used: rxForm.template || null,
     }).select('*').single()
-    if (data) setPrescriptions(prev => [data, ...prev])
+    // A silent RLS denial returns no error AND no row — treat both as failure so
+    // we don't close the modal and lose the prescription on a rejected write.
+    if (error || !data) {
+      setSaving(false)
+      setRxSaveError(error?.message || 'Failed to save prescription. Please try again.')
+      return  // keep modal open
+    }
+    setPrescriptions(prev => [data, ...prev])
     setShowAddRx(false)
     setRxForm({ template: '', medicines: [], instructions: '' })
     resetAiSuggestions()
@@ -582,6 +604,11 @@ export default function PatientDetailPage() {
                   <input value={visitForm.next_appointment_notes} onChange={e => setVisitForm(f => ({ ...f, next_appointment_notes: e.target.value }))} placeholder="What to do next visit" style={inputStyle} />
                 </div>
               </div>
+              {visitSaveError && (
+                <div style={{ color: '#DC2626', fontSize: 13, marginBottom: 8 }}>
+                  {visitSaveError}
+                </div>
+              )}
               <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
                 <button onClick={() => { setShowAddVisit(false); setShowQuickNotes(false); setRefineError(null) }} style={{ padding: '9px 18px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>Cancel</button>
                 <button onClick={saveVisit} disabled={saving} style={{ padding: '9px 20px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>{saving ? 'Saving...' : 'Save Visit'}</button>
@@ -719,6 +746,11 @@ export default function PatientDetailPage() {
                 </div>
                 <textarea value={rxForm.instructions} onChange={e => setRxForm(f => ({ ...f, instructions: e.target.value }))} placeholder="Avoid cold foods, salt water gargle, follow up in 1 week..." rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
               </div>
+              {rxSaveError && (
+                <div style={{ color: '#DC2626', fontSize: 13, marginBottom: 8 }}>
+                  {rxSaveError}
+                </div>
+              )}
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
                 <button onClick={() => { setShowAddRx(false); resetAiSuggestions() }} style={{ padding: '9px 18px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>Cancel</button>
                 <button onClick={saveRx} disabled={saving} style={{ padding: '9px 20px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>{saving ? 'Saving...' : 'Save Prescription'}</button>
