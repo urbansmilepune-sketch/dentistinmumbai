@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { cdnImg } from '@/lib/cloudinary'
 import { formatDistance } from '@/lib/distance'
 import { istDayTime } from '@/lib/time'
 import { whatsappLink } from '@/lib/phone'
@@ -108,7 +109,7 @@ export default function DentistCard({ dentist: d, view }: DentistCardProps) {
         {/* Photo banner */}
         <div style={{ height: 130, background: 'var(--blue-light)', position: 'relative', overflow: 'hidden' }}>
           {d.profile_photo ? (
-            <img src={d.profile_photo} alt={d.name} style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top', aspectRatio: '1 / 1' }} />
+            <img src={cdnImg(d.profile_photo, 400)} alt={d.name} style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top', aspectRatio: '1 / 1' }} />
           ) : (
             <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 48 }}>🦷</div>
           )}
@@ -192,7 +193,7 @@ export default function DentistCard({ dentist: d, view }: DentistCardProps) {
         border: '2px solid var(--border)',
       }}>
         {d.profile_photo ? (
-          <img src={d.profile_photo} alt={d.name} className="dentist-card-photo-img" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top', aspectRatio: '1 / 1' }} />
+          <img src={cdnImg(d.profile_photo, 400)} alt={d.name} className="dentist-card-photo-img" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top', aspectRatio: '1 / 1' }} />
         ) : (
           <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28 }}>🦷</div>
         )}

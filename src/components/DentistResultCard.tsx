@@ -8,6 +8,7 @@
 // draws a teal border and a small badge.
 
 import Link from 'next/link'
+import { cdnImg } from '@/lib/cloudinary'
 import {
   NAVY, TEAL, TEAL_DARK, TEAL_SOFT, BRAND_GRADIENT,
   normalizeDrName, initialsFrom,
@@ -78,7 +79,7 @@ export default function DentistResultCard({ dentist: d, highlight = null, treatm
       <div className="drc-top">
         <div className="drc-avatar" style={{ background: d.profile_photo ? undefined : BRAND_GRADIENT }}>
           {d.profile_photo
-            ? <img src={d.profile_photo} alt={name} />
+            ? <img src={cdnImg(d.profile_photo, 400)} alt={name} />
             : <span>{initialsFrom(d.name)}</span>}
         </div>
         <div className="drc-info">
