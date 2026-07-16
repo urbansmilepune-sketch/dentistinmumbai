@@ -23,7 +23,6 @@ export async function POST(request: NextRequest) {
 
   const phoneRaw = typeof body?.phone === 'string' ? body.phone : ''
   const phone = phoneRaw.replace(/\s/g, '')
-  const dentist_id = typeof body?.dentist_id === 'string' && body.dentist_id ? body.dentist_id : null
 
   if (!/^\d{10}$/.test(phone)) {
     return NextResponse.json({ error: 'Valid 10-digit phone required' }, { status: 400 })
@@ -50,7 +49,7 @@ export async function POST(request: NextRequest) {
   const { error: insertErr } = await supabase
     .from('review_otps')
     .upsert(
-      { phone, otp, dentist_id, expires_at, used: false },
+      { phone, otp, expires_at, verified: false },
       { onConflict: 'phone' },
     )
   if (insertErr) {
