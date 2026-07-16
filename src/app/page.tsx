@@ -366,10 +366,19 @@ export default async function HomePage() {
               </p>
             </div>
             <div>
-              <h4 style={{ color: '#fff', fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 14, marginBottom: 16, textTransform: 'uppercase', letterSpacing: '0.06em' }}>For Patients</h4>
-              {[`Find Dentists`, `Dental Implants ${city.cityName}`, `Teeth Whitening ${city.cityName}`, `Braces ${city.cityName}`, 'Emergency Dental'].map(link => (
-                <div key={link} style={{ marginBottom: 10 }}>
-                  <Link href="/dentists" style={{ fontSize: 14, color: 'rgba(255,255,255,0.6)', transition: 'color 0.2s' }}>{link}</Link>
+              <h4 style={{ color: '#fff', fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 14, marginBottom: 16, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Popular Treatments</h4>
+              {[
+                { label: 'Dental Implants', slug: 'dental-implants' },
+                { label: 'Root Canal', slug: 'root-canal' },
+                { label: 'Teeth Whitening', slug: 'teeth-whitening' },
+                { label: 'Braces & Aligners', slug: 'braces-aligners' },
+                { label: 'Smile Makeover', slug: 'smile-makeover' },
+                { label: 'Teeth Cleaning', slug: 'teeth-cleaning' },
+                { label: 'Tooth Extraction', slug: 'tooth-extraction' },
+                { label: 'Dental Crowns', slug: 'dental-crowns' },
+              ].map(t => (
+                <div key={t.slug} style={{ marginBottom: 10 }}>
+                  <Link href={`/treatment/${t.slug}`} style={{ fontSize: 14, color: 'rgba(255,255,255,0.6)', transition: 'color 0.2s' }}>{t.label}</Link>
                 </div>
               ))}
             </div>
