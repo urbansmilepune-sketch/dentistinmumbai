@@ -28,14 +28,38 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Enter a valid email address.' }, { status: 400 })
   }
 
-  const otp = Math.floor(100000 + Math.random() * 900000).toString()
-  const otp_hash = await bcrypt.hash(otp, 10)
-  const expires_at = new Date(Date.now() + 10 * 60 * 1000).toISOString()
-
   const admin = createServiceClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   )
+
+  // Rate limit: cap OTP requests to 3 per email per rolling 10-minute window
+  // so this endpoint can't be used to email-bomb an address with login codes.
+  // Counted on the service-role client because email_otps has RLS enabled with
+  // no policies. Checked BEFORE the insert below so a rejected request neither
+  // counts against itself nor leaves a burnt row behind.
+  const windowStart = new Date(Date.now() - 10 * 60 * 1000).toISOString()
+  const { count, error: countErr } = await admin
+    .from('email_otps')
+    .select('*', { count: 'exact', head: true })
+    .eq('email', email)
+    .gt('created_at', windowStart)
+  if (countErr) {
+    console.error('[auth/email-otp/send] rate-limit count failed', {
+      code: countErr.code, message: countErr.message,
+    })
+    return NextResponse.json({ error: 'Could not issue a login code. Please try again.' }, { status: 500 })
+  }
+  if ((count ?? 0) >= 3) {
+    return NextResponse.json(
+      { error: 'Too many requests. Please wait 10 minutes before requesting another OTP.' },
+      { status: 429 },
+    )
+  }
+
+  const otp = Math.floor(100000 + Math.random() * 900000).toString()
+  const otp_hash = await bcrypt.hash(otp, 10)
+  const expires_at = new Date(Date.now() + 10 * 60 * 1000).toISOString()
 
   const { error: insertErr } = await admin
     .from('email_otps')
