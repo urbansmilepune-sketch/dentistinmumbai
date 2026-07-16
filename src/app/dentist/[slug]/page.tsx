@@ -220,6 +220,15 @@ export default async function DentistProfilePage({ params }: Props) {
     }
   }
 
+  // JSON-LD hasMap must be a URL, not an <iframe> blob. maps_embed can hold
+  // either a full iframe (pull out its src) or a bare URL (use as-is); anything
+  // else (empty/null/unrecognised) is omitted so we never emit malformed schema.
+  const mapsUrl = rawMaps.startsWith('<iframe')
+    ? (rawMaps.match(/src="([^"]+)"/)?.[1] ?? null)
+    : rawMaps.startsWith('http')
+      ? rawMaps
+      : null
+
   const directionsUrl = dentist.address
     ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dentist.address)}`
     : null
@@ -257,7 +266,7 @@ export default async function DentistProfilePage({ params }: Props) {
     description: dentist.bio || `Dental clinic in ${areaName}`,
     ...(dentist.profile_photo ? { image: dentist.profile_photo } : {}),
     url: `${origin}/dentist/${slug}`,
-    telephone: dentist.phone,
+    ...(dentist.phone && { telephone: dentist.phone }),
     address: {
       '@type': 'PostalAddress',
       ...(dentist.address ? { streetAddress: dentist.address } : {}),
@@ -266,14 +275,14 @@ export default async function DentistProfilePage({ params }: Props) {
       addressCountry: 'IN',
     },
     areaServed: { '@type': 'City', name: city.cityName },
-    ...(dentist.latitude && dentist.longitude
-      ? { geo: { '@type': 'GeoCoordinates', latitude: dentist.latitude, longitude: dentist.longitude } }
+    ...(dentist.lat != null && dentist.lng != null
+      ? { geo: { '@type': 'GeoCoordinates', latitude: dentist.lat, longitude: dentist.lng } }
       : {}),
     ...(openingHoursSchema.length > 0 ? { openingHours: openingHoursSchema } : {}),
     // priceRange only when a real fee is set (0/NULL is the "unset" sentinel);
     // no fabricated "₹500-₹2000" for clinics that haven't published a fee.
     ...(dentist.consultation_fee ? { priceRange: `₹${dentist.consultation_fee}` } : {}),
-    ...(dentist.maps_embed ? { hasMap: dentist.maps_embed } : {}),
+    ...(mapsUrl ? { hasMap: mapsUrl } : {}),
     // aggregateRating must reflect the reviews actually visible on the page
     // (Google policy), so it's bound to approvedReviews — not the denormalised
     // dentist.avg_rating / review_count columns, which can drift.
