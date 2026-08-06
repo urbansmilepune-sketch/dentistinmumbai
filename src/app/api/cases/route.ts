@@ -180,14 +180,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `Case saved but photos failed: ${photoErr.message}`, case_id: caseRow.id }, { status: 500 })
   }
 
-  // Admin email alert — best-effort; never blocks the submission.
-  await sendAdminNewCaseAlert({
-    dentistName: (dentist as any).name || 'Unknown dentist',
-    clinicName: (dentist as any).clinic_name || '—',
-    city: getCityBySlug((dentist as any).city).cityName,
-    caseTitle: title,
-    caseId: caseRow.id,
-  }).catch(console.error)
+  // Admin email alert — best-effort; never blocks the submission. Only for
+  // cases that actually need review: once a dentist crosses the auto-approve
+  // threshold their cases land as 'approved' and don't warrant a ping.
+  if (caseRow.status === 'pending') {
+    await sendAdminNewCaseAlert({
+      dentistName: (dentist as any).name || 'Unknown dentist',
+      clinicName: (dentist as any).clinic_name || '—',
+      city: getCityBySlug((dentist as any).city).cityName,
+      caseTitle: title,
+      caseId: caseRow.id,
+    }).catch(console.error)
+  }
 
   return NextResponse.json({ success: true, case_id: caseRow.id, status: caseRow.status })
 }
