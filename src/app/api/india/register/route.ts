@@ -246,14 +246,29 @@ export async function POST(request: NextRequest) {
         specialties: [specialization],
       })
     if (dentErr) {
-      // dentists insert failed; keep the registration row + auth user so
-      // an admin can finish the onboarding manually. Return success-ish
-      // because the dentist's account exists.
-      return NextResponse.json({
-        success: true,
-        partial: true,
-        message: 'Account created but your public profile is being set up. Sign in to continue.',
+      // The public-profile insert failed. We previously kept the auth user +
+      // registration row and returned partial success — but that stranded an
+      // auth.users row AND a dentist_registrations row with NO dentists row,
+      // which is exactly the orphan state we had to clean up by hand. Roll
+      // both back (in reverse insert order) so /join stays fully retry-able
+      // and orphans never accumulate. Must be AWAITED: serverless freezes the
+      // function at return, so detached cleanup never runs. Logged with the DB
+      // message so a genuine (non-spam) failure is diagnosable next time.
+      console.error('[india/register] dentists insert failed — rolling back registration + auth', {
+        email, city: cityForRow, slug, detail: dentErr.message,
       })
+      const { error: regDelErr } = await admin
+        .from('dentist_registrations').delete().eq('ref_no', refNo)
+      if (regDelErr) {
+        console.error('[india/register] registration rollback failed — orphaned reg row', refNo, regDelErr)
+      }
+      await admin.auth.admin.deleteUser(created.user.id).catch(err =>
+        console.error('[india/register] auth rollback failed — orphaned auth user', created.user.id, err),
+      )
+      return NextResponse.json(
+        { error: 'Could not create your profile. Please try again in a moment.', detail: dentErr.message },
+        { status: 500 },
+      )
     }
   }
 
