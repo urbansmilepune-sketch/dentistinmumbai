@@ -9,6 +9,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { SPECIALTIES } from '@/lib/dentalSpecialties'
 import { ALL_MATERIALS } from '@/lib/dentalMaterials'
+import { getCityBySlug } from '@/config/cities'
+import { sendAdminNewCaseAlert } from '@/lib/email'
 
 const SPECIALTY_SLUGS = new Set(SPECIALTIES.map(s => s.slug))
 const ALLOWED_KINDS = new Set(['before', 'after', 'xray_before', 'xray_after'])
@@ -54,7 +56,7 @@ export async function POST(request: NextRequest) {
 
   const { data: dentist } = await supabase
     .from('dentists')
-    .select('id, is_active, is_verified')
+    .select('id, is_active, is_verified, name, clinic_name, city')
     .eq('email', user.email).single()
   if (!dentist) return NextResponse.json({ error: 'Dentist profile not found' }, { status: 404 })
   if (!dentist.is_active) return NextResponse.json({ error: 'Account inactive — contact support' }, { status: 403 })
@@ -177,6 +179,15 @@ export async function POST(request: NextRequest) {
   if (photoErr) {
     return NextResponse.json({ error: `Case saved but photos failed: ${photoErr.message}`, case_id: caseRow.id }, { status: 500 })
   }
+
+  // Admin email alert — best-effort; never blocks the submission.
+  await sendAdminNewCaseAlert({
+    dentistName: (dentist as any).name || 'Unknown dentist',
+    clinicName: (dentist as any).clinic_name || '—',
+    city: getCityBySlug((dentist as any).city).cityName,
+    caseTitle: title,
+    caseId: caseRow.id,
+  }).catch(console.error)
 
   return NextResponse.json({ success: true, case_id: caseRow.id, status: caseRow.status })
 }

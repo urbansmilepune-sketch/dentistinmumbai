@@ -22,7 +22,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { CITY_CONFIGS, type CitySlug, NATIONAL_HOST } from '@/config/cities'
-import { NATIONAL_FROM_EMAIL } from '@/lib/email'
+import { NATIONAL_FROM_EMAIL, sendAdminNewRegistrationAlert } from '@/lib/email'
 import {
   honeypotTripped,
   validateHumanName,
@@ -270,6 +270,18 @@ export async function POST(request: NextRequest) {
         { status: 500 },
       )
     }
+
+    // Admin email alert — best-effort; never blocks the signup. The national
+    // flow has no area field, so it's omitted (the helper drops empty rows).
+    await sendAdminNewRegistrationAlert({
+      dentistName: name,
+      clinicName: clinicName,
+      city: CITY_CONFIGS[cityForRow].cityName,
+      area: '',
+      phone,
+      email,
+      refNo,
+    }).catch(console.error)
   }
 
   // ── Welcome email + admin WhatsApp notification (best-effort) ────────

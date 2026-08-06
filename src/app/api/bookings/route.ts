@@ -10,6 +10,7 @@ import { getCityBySlug } from '@/config/cities'
 import {
   sendBookingRequestToPatient,
   sendBookingRequestToDentist,
+  sendAdminAppointmentAlert,
 } from '@/lib/email'
 import { sendSMS } from '@/lib/sms'
 import { isDemoEmail } from '@/lib/demo'
@@ -229,6 +230,27 @@ export async function POST(request: NextRequest) {
         error: 'Failed to create booking',
         code: error.code, message: error.message, details: error.details, hint: error.hint,
       }, { status: 500 })
+    }
+
+    // Admin email alert — best-effort. Fired here (right after the row is
+    // committed) rather than inside the `if (dentist)` block below so the
+    // admin is notified even if the dentist lookup came back empty. Falls
+    // back to placeholders when dentist details are missing.
+    try {
+      const adminCity = getCityBySlug((dentist as any)?.city)
+      const adminDate = new Date(appt_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+      await sendAdminAppointmentAlert({
+        patientName: patient_name,
+        patientPhone: patient_phone,
+        dentistName: dentist?.name || 'Unknown dentist',
+        clinicName: dentist?.clinic_name || '—',
+        city: adminCity.cityName,
+        appointmentDate: adminDate,
+        appointmentTime: time_slot,
+        treatment: treatmentName,
+      }).catch(console.error)
+    } catch (err) {
+      console.error('[bookings] admin appointment alert threw', err)
     }
 
     if (dentist) {

@@ -25,6 +25,7 @@ import { createClient as createCookieClient } from '@/lib/supabase/server'
 import * as Sentry from '@sentry/nextjs'
 import { CITY_CONFIGS, DEFAULT_CITY, type CitySlug } from '@/config/cities'
 import { seedUniversalTreatments } from '@/lib/seedTreatments'
+import { sendAdminNewRegistrationAlert } from '@/lib/email'
 import {
   honeypotTripped,
   validateHumanName,
@@ -415,6 +416,18 @@ export async function POST(request: NextRequest) {
     // Admin ping — same wa.me click-to-chat pattern the old flow used.
     const areaForDisplay = (area && area.trim()) || (area_name_raw || '')
     notifyAdmin(`✅ New Registration: ${name} (${clinic_name}, ${areaForDisplay}) from ${cityValue} — ${ref_no}`)
+
+    // Admin email alert — best-effort; the function swallows its own errors
+    // and .catch() is a second layer so a Resend hiccup never breaks signup.
+    await sendAdminNewRegistrationAlert({
+      dentistName: name,
+      clinicName: clinic_name,
+      city: CITY_CONFIGS[cityValue].cityName,
+      area: areaForDisplay,
+      phone,
+      email,
+      refNo: ref_no,
+    }).catch(console.error)
 
     return NextResponse.json({
       success: true,

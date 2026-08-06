@@ -249,6 +249,200 @@ export async function sendNewRegistrationAdminAlert(data: {
   })
 }
 
+// ─── Admin notification alerts ───────────────────────────────────────────
+// Lightweight "something needs your attention" pings to the ops inbox
+// (ADMIN_EMAIL) for the four events an admin actions: new dentist
+// registration, new patient booking, article awaiting review, case awaiting
+// review. All four:
+//   • send from the mumbai (DKIM-verified) from-address regardless of the
+//     event's city — the recipient is always the same ops inbox;
+//   • swallow their own errors (try/catch → log → return null) so a Resend
+//     hiccup can NEVER block the action that triggered them. Call sites still
+//     add .catch(console.error) as a second layer.
+
+const ADMIN_PANEL_URL = 'https://dentistinmumbai.in/admin'
+
+/** Shared, deliberately plain HTML shell for the admin alerts — a header, a
+ *  label/value table (empty values are dropped), and one CTA button. */
+function adminAlertHtml(opts: {
+  heading: string
+  intro?: string
+  rows: Array<[string, string | null | undefined]>
+  ctaLabel: string
+  ctaHref: string
+}): string {
+  const visibleRows = opts.rows.filter(([, v]) => v != null && String(v).trim().length > 0)
+  const rowsHtml = visibleRows
+    .map(([label, value], i) => {
+      const border = i < visibleRows.length - 1 ? 'border-bottom: 1px solid #e2e8f0; ' : ''
+      return `
+            <tr>
+              <td style="padding: 9px 0; ${border}color: #64748b; width: 38%; font-size: 13px; vertical-align: top;">${escapeHtml(label)}</td>
+              <td style="padding: 9px 0; ${border}color: #0F1923; font-weight: 600; font-size: 14px;">${escapeHtml(String(value))}</td>
+            </tr>`
+    })
+    .join('')
+  return `
+      <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 20px;">
+        <div style="background: #0057A8; padding: 22px 20px; border-radius: 10px 10px 0 0;">
+          <h1 style="color: #fff; margin: 0; font-size: 19px;">${escapeHtml(opts.heading)}</h1>
+          <p style="color: rgba(255,255,255,0.8); margin: 6px 0 0; font-size: 12px;">dentistinmumbai.in · admin notification</p>
+        </div>
+        <div style="background: #f8faff; padding: 24px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 10px 10px;">
+          ${opts.intro ? `<p style="margin: 0 0 16px; color: #374151; font-size: 14px; line-height: 1.6;">${escapeHtml(opts.intro)}</p>` : ''}
+          <table style="width: 100%; border-collapse: collapse;">${rowsHtml}
+          </table>
+          <div style="margin-top: 22px; text-align: center;">
+            <a href="${opts.ctaHref}" style="background: #0057A8; color: #fff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 14px; display: inline-block;">${escapeHtml(opts.ctaLabel)} →</a>
+          </div>
+        </div>
+      </div>`
+}
+
+/** New dentist registration — fires from both the city and national flows. */
+export async function sendAdminNewRegistrationAlert(data: {
+  dentistName: string
+  clinicName: string
+  city: string
+  area: string
+  phone: string
+  email: string
+  refNo: string
+}) {
+  try {
+    return await resend.emails.send({
+      from: getCityFrom('mumbai'),
+      to: ADMIN_EMAIL,
+      subject: `🦷 New Dentist Registration — ${data.clinicName}, ${data.city}`,
+      html: adminAlertHtml({
+        heading: 'New Dentist Registration',
+        intro: 'A new dentist just registered on the platform.',
+        rows: [
+          ['Reference', data.refNo],
+          ['Name', data.dentistName],
+          ['Clinic', data.clinicName],
+          ['City', data.city],
+          ['Area', data.area],
+          ['Phone', data.phone],
+          ['Email', data.email],
+        ],
+        ctaLabel: 'Review in Admin Panel',
+        ctaHref: ADMIN_PANEL_URL,
+      }),
+    })
+  } catch (err) {
+    console.error('[email] sendAdminNewRegistrationAlert failed', err)
+    return null
+  }
+}
+
+/** New patient appointment booking. */
+export async function sendAdminAppointmentAlert(data: {
+  patientName: string
+  patientPhone: string
+  dentistName: string
+  clinicName: string
+  city: string
+  appointmentDate: string
+  appointmentTime: string
+  treatment: string
+}) {
+  try {
+    return await resend.emails.send({
+      from: getCityFrom('mumbai'),
+      to: ADMIN_EMAIL,
+      subject: `📅 New Appointment — ${data.patientName} → ${data.clinicName}`,
+      html: adminAlertHtml({
+        heading: 'New Appointment Booked',
+        intro: 'A patient just booked an appointment.',
+        rows: [
+          ['Patient', data.patientName],
+          ['Phone', data.patientPhone],
+          ['Dentist', data.dentistName],
+          ['Clinic', data.clinicName],
+          ['City', data.city],
+          ['Date', data.appointmentDate],
+          ['Time', data.appointmentTime],
+          ['Treatment', data.treatment],
+        ],
+        ctaLabel: 'Open Admin Panel',
+        ctaHref: ADMIN_PANEL_URL,
+      }),
+    })
+  } catch (err) {
+    console.error('[email] sendAdminAppointmentAlert failed', err)
+    return null
+  }
+}
+
+/** Dentist submitted an article — needs admin approval (status='pending'). */
+export async function sendAdminNewArticleAlert(data: {
+  dentistName: string
+  clinicName: string
+  city: string
+  articleTitle: string
+  articleSlug: string
+  dentistSlug: string
+}) {
+  try {
+    return await resend.emails.send({
+      from: getCityFrom('mumbai'),
+      to: ADMIN_EMAIL,
+      subject: `✍️ New Article Pending Review — ${data.articleTitle}`,
+      html: adminAlertHtml({
+        heading: 'Article Pending Review',
+        intro: 'A dentist submitted an article. It stays hidden until approved.',
+        rows: [
+          ['Title', data.articleTitle],
+          ['Dentist', data.dentistName],
+          ['Clinic', data.clinicName],
+          ['City', data.city],
+          ['Article slug', data.articleSlug],
+          ['Dentist profile', `dentistinmumbai.in/dentist/${data.dentistSlug}`],
+        ],
+        ctaLabel: 'Review in Admin → Articles',
+        ctaHref: ADMIN_PANEL_URL,
+      }),
+    })
+  } catch (err) {
+    console.error('[email] sendAdminNewArticleAlert failed', err)
+    return null
+  }
+}
+
+/** Dentist submitted a clinical case — surfaced in the admin Cases tab. */
+export async function sendAdminNewCaseAlert(data: {
+  dentistName: string
+  clinicName: string
+  city: string
+  caseTitle: string
+  caseId: string
+}) {
+  try {
+    return await resend.emails.send({
+      from: getCityFrom('mumbai'),
+      to: ADMIN_EMAIL,
+      subject: `🦷 New Case Submitted — ${data.caseTitle} by ${data.dentistName}`,
+      html: adminAlertHtml({
+        heading: 'New Case Submitted',
+        intro: 'A dentist submitted a clinical case.',
+        rows: [
+          ['Case', data.caseTitle],
+          ['Dentist', data.dentistName],
+          ['Clinic', data.clinicName],
+          ['City', data.city],
+          ['Case ID', data.caseId],
+        ],
+        ctaLabel: 'Review in Admin → Cases',
+        ctaHref: ADMIN_PANEL_URL,
+      }),
+    })
+  } catch (err) {
+    console.error('[email] sendAdminNewCaseAlert failed', err)
+    return null
+  }
+}
+
 export async function sendRegistrationEmailToDentist(data: {
   name: string
   clinic_name: string

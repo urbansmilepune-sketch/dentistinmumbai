@@ -12,6 +12,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { resolveCurrentDentist } from '@/lib/currentDentist'
 import { buildArticleSlug, isTopicType } from '@/lib/articles'
+import { getCityBySlug } from '@/config/cities'
+import { sendAdminNewArticleAlert } from '@/lib/email'
 
 const ARTICLE_COLS =
   'id, title, slug, content, topic_type, status, rejection_reason, published_at, created_at, updated_at'
@@ -40,7 +42,9 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const dentist = await resolveCurrentDentist(supabase, 'id')
+  const dentist = await resolveCurrentDentist<{ id: string; name: string; clinic_name: string; city: string; slug: string }>(
+    supabase, 'id, name, clinic_name, city, slug',
+  )
   if (!dentist) return NextResponse.json({ error: 'No dentist profile found for your account.' }, { status: 404 })
 
   const body = await request.json().catch(() => null)
@@ -77,6 +81,16 @@ export async function POST(request: NextRequest) {
   if (!data) {
     return NextResponse.json({ error: 'Could not save the article (permission denied).' }, { status: 500 })
   }
+
+  // Admin email alert — best-effort; never blocks the submission.
+  await sendAdminNewArticleAlert({
+    dentistName: dentist.name,
+    clinicName: dentist.clinic_name,
+    city: getCityBySlug(dentist.city).cityName,
+    articleTitle: data.title,
+    articleSlug: data.slug,
+    dentistSlug: dentist.slug,
+  }).catch(console.error)
 
   return NextResponse.json({ success: true, article: data })
 }
