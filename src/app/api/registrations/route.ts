@@ -25,6 +25,14 @@ import { createClient as createCookieClient } from '@/lib/supabase/server'
 import * as Sentry from '@sentry/nextjs'
 import { CITY_CONFIGS, DEFAULT_CITY, type CitySlug } from '@/config/cities'
 import { seedUniversalTreatments } from '@/lib/seedTreatments'
+import {
+  honeypotTripped,
+  validateHumanName,
+  validateClinicName,
+  normalizeIndianMobile,
+  withinRateLimit,
+  clientIp,
+} from '@/lib/registrationGuards'
 
 const ADMIN_WHATSAPP = '917719013232'
 
@@ -88,7 +96,23 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    const { name, phone, clinic_name, area, selected_plan, city } = body
+
+    // ── Anti-spam gate ───────────────────────────────────────────────────
+    // Honeypot: reject silently (success-shaped 200 with no redirect / no
+    // rows created) so a form-filling bot believes it succeeded.
+    if (honeypotTripped(body)) {
+      return NextResponse.json({ success: true })
+    }
+    // Rate limit: max 3 registration attempts per IP per hour.
+    if (!withinRateLimit(`registrations:${clientIp(request)}`)) {
+      return NextResponse.json(
+        { error: 'Too many registration attempts. Please try again later.' },
+        { status: 429 },
+      )
+    }
+
+    const { name, clinic_name, area, selected_plan, city } = body
+    const phone = normalizeIndianMobile(body.phone)
     const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
     emailForAlert = email || undefined
     const rawAreaName = typeof body.area_name_raw === 'string' ? body.area_name_raw.trim() : null
@@ -103,9 +127,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Password is required (min 8 characters).' }, { status: 400 })
     }
 
-    if (!name || !phone || !email || !clinic_name) {
+    if (!name || !email || !clinic_name) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
+    if (!phone) {
+      return NextResponse.json({ error: 'Enter a valid 10-digit Indian mobile number.' }, { status: 400 })
+    }
+    if (typeof name !== 'string' || typeof clinic_name !== 'string') {
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    }
+    const nameErr = validateHumanName(name)
+    if (nameErr) return NextResponse.json({ error: nameErr }, { status: 400 })
+    const clinicErr = validateClinicName(clinic_name)
+    if (clinicErr) return NextResponse.json({ error: clinicErr }, { status: 400 })
     if (!area && !area_name_raw) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }

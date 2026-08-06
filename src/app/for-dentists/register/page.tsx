@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { HONEYPOT_FIELD } from '@/lib/registrationGuards'
 import { getCityByDomain, CITY_CONFIGS, DEFAULT_CITY, type CitySlug, type CityConfig } from '@/config/cities'
 
 type AreaStatus = 'idle' | 'loading' | 'ready' | 'error'
@@ -28,6 +29,9 @@ export default function RegisterPage() {
   })
   const [showPassword, setShowPassword] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  // Honeypot: read via ref at submit so a value set directly on the DOM is
+  // still captured. Hidden from humans; a filled value flags a bot.
+  const honeypotRef = useRef<HTMLInputElement>(null)
   const [error, setError] = useState('')
   const [prefilledFromLogin, setPrefilledFromLogin] = useState(false)
   const [planFromUrl, setPlanFromUrl] = useState<Plan | null>(null)
@@ -119,6 +123,7 @@ export default function RegisterPage() {
           selected_plan: planFromUrl,
           founding_number: Math.floor(Math.random() * 1000) + 1,
           password: form.password,
+          [HONEYPOT_FIELD]: honeypotRef.current?.value || '',
         }),
       })
       const data = await res.json()
@@ -297,6 +302,14 @@ export default function RegisterPage() {
                     <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>
                       You'll use this to login next time.
                     </p>
+                  </div>
+
+                  {/* Honeypot — hidden from humans (display:none), NOT type=hidden.
+                      Bots fill every field; the server rejects any submission
+                      that carries a value here. Do not remove. */}
+                  <div style={{ display: 'none' }} aria-hidden="true">
+                    <label htmlFor="reg-website">Website</label>
+                    <input id="reg-website" name={HONEYPOT_FIELD} ref={honeypotRef} type="text" tabIndex={-1} autoComplete="off" defaultValue="" />
                   </div>
 
                   {/* Hidden city field — set on mount from window.location.hostname so the

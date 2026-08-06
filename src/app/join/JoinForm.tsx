@@ -9,8 +9,9 @@
 // still create a national-only profile. The server handles the
 // "no city site to host them" case gracefully.
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { CITY_CONFIGS, type CitySlug } from '@/config/cities'
+import { HONEYPOT_FIELD } from '@/lib/registrationGuards'
 
 const SPECIALIZATIONS = [
   'General Dentist',
@@ -44,6 +45,9 @@ export default function JoinForm() {
   const [state, setState] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
   const [err, setErr] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
+  // Honeypot: read via ref at submit time so a value set directly on the DOM
+  // (not through a React event) is still captured. Humans never see this field.
+  const honeypotRef = useRef<HTMLInputElement>(null)
 
   function set<K extends keyof typeof form>(k: K, v: string) {
     setForm(f => ({ ...f, [k]: v }))
@@ -58,6 +62,7 @@ export default function JoinForm() {
         body: JSON.stringify({
           ...form,
           experience_years: form.experience_years ? Number(form.experience_years) : null,
+          [HONEYPOT_FIELD]: honeypotRef.current?.value || '',
         }),
       })
       const data = await res.json().catch(() => ({}))
@@ -99,6 +104,13 @@ export default function JoinForm() {
 
   return (
     <form onSubmit={submit} style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 16, padding: 28, boxShadow: '0 2px 6px rgba(15, 25, 35, 0.04)' }}>
+      {/* Honeypot — hidden from humans (display:none), NOT type=hidden. Bots
+          that fill every field will fill this; the server rejects any request
+          that carries a value here. Do not remove. */}
+      <div style={{ display: 'none' }} aria-hidden="true">
+        <label htmlFor="j-website">Website</label>
+        <input id="j-website" name={HONEYPOT_FIELD} ref={honeypotRef} type="text" tabIndex={-1} autoComplete="off" defaultValue="" />
+      </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
         <div>
           <label style={labelStyle} htmlFor="j-name">Full name</label>

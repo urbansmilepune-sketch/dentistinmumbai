@@ -23,6 +23,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { CITY_CONFIGS, type CitySlug, NATIONAL_HOST } from '@/config/cities'
 import { NATIONAL_FROM_EMAIL } from '@/lib/email'
+import {
+  honeypotTripped,
+  validateHumanName,
+  validateClinicName,
+  normalizeIndianMobile,
+  linkedinLooksFake,
+  withinRateLimit,
+  clientIp,
+} from '@/lib/registrationGuards'
 
 const admin = createServiceClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -81,10 +90,25 @@ export async function POST(request: NextRequest) {
   let payload: any
   try { payload = await request.json() } catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }) }
 
+  // ── Anti-spam gate ─────────────────────────────────────────────────────
+  // Honeypot: a bot that filled the CSS-hidden "website" field. Reject
+  // SILENTLY — return a success-shaped 200 so the bot believes it worked and
+  // moves on instead of adapting. Nothing is created.
+  if (honeypotTripped(payload)) {
+    return NextResponse.json({ success: true, message: 'Profile created.' })
+  }
+  // Rate limit: max 3 registration attempts per IP per hour.
+  if (!withinRateLimit(`india-register:${clientIp(request)}`)) {
+    return NextResponse.json(
+      { error: 'Too many registration attempts. Please try again later.' },
+      { status: 429 },
+    )
+  }
+
   // ── Validation ────────────────────────────────────────────────────────
   const name        = cap(payload.name, 120)
   const email       = cap(payload.email, 200)?.toLowerCase()
-  const phone       = cap(payload.phone, 40)
+  const phone       = normalizeIndianMobile(payload.phone)
   const password    = typeof payload.password === 'string' ? payload.password : ''
   const specialization = cap(payload.specialization, 60)
   const citySlug    = typeof payload.city === 'string' ? payload.city.trim() : ''
@@ -94,11 +118,16 @@ export async function POST(request: NextRequest) {
   const linkedinUrl = cap(payload.linkedin_url, 300)
 
   if (!name)                                            return NextResponse.json({ error: 'Full name required' }, { status: 400 })
+  const nameErr = validateHumanName(name)
+  if (nameErr)                                          return NextResponse.json({ error: nameErr }, { status: 400 })
   if (!email || !EMAIL_RE.test(email))                  return NextResponse.json({ error: 'Valid email required' }, { status: 400 })
-  if (!phone)                                           return NextResponse.json({ error: 'Phone required' }, { status: 400 })
+  if (!phone)                                           return NextResponse.json({ error: 'Enter a valid 10-digit Indian mobile number.' }, { status: 400 })
+  if (linkedinLooksFake(linkedinUrl))                   return NextResponse.json({ error: 'Enter a valid LinkedIn URL, or leave it blank.' }, { status: 400 })
   if (password.length < 8)                              return NextResponse.json({ error: 'Password must be at least 8 characters' }, { status: 400 })
   if (!specialization || !SPECIALIZATIONS.has(specialization)) return NextResponse.json({ error: 'Pick a specialization' }, { status: 400 })
   if (!clinicName)                                      return NextResponse.json({ error: 'Clinic name required' }, { status: 400 })
+  const clinicErr = validateClinicName(clinicName)
+  if (clinicErr)                                        return NextResponse.json({ error: clinicErr }, { status: 400 })
   if (experience === null)                              return NextResponse.json({ error: 'Years of experience required' }, { status: 400 })
   if (!mci)                                             return NextResponse.json({ error: 'State Dental Council registration number required' }, { status: 400 })
 
