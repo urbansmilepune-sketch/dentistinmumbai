@@ -53,6 +53,13 @@ const VERIFIED_RESEND_DOMAINS: ReadonlySet<CitySlug> = new Set<CitySlug>([
   // from hello@dentistinnashik.com will 403 until verification completes.
   // The Sentry capture in lib/approval.ts surfaces the failure if it happens.
   'nashik',
+  // NOT YET VERIFIED — the three Karnataka cities (bangalore, mysore,
+  // mangalore) went live in CITY_CONFIGS without their apex domains being
+  // added to Resend. dentistinbangalore.in, dentistinmysore.com and
+  // dentistinmangalore.com each need DKIM/SPF verification (Resend →
+  // Settings → Domains → Add Domain) before they can be appended here.
+  // Until then getCityEmail rewrites their sends to the mumbai
+  // from-address, so mail still delivers — just un-branded for those cities.
 ])
 
 /**

@@ -12,6 +12,9 @@ export type CitySlug =
   | 'rajkot'
   | 'ahmedabad'
   | 'jamnagar'
+  | 'bangalore'
+  | 'mysore'
+  | 'mangalore'
 
 export interface CityConfig {
   cityName: string
@@ -47,6 +50,9 @@ export const CITY_CONFIGS: Record<CitySlug, CityConfig> = {
   rajkot:        { cityName: 'Rajkot',         citySlug: 'rajkot',        domain: 'dentistinrajkot.in',         heroTitle: 'Find the Best Dentist in Rajkot',         heroSubtitle: 'Verified dentists across Rajkot',           metaTitle: 'Find Dentists in Rajkot | dentistinrajkot.in',                 logoPath: '/logo-india.webp',         state: 'Gujarat',      lat: 22.3039, lng: 70.8022 },
   ahmedabad:     { cityName: 'Ahmedabad',      citySlug: 'ahmedabad',     domain: 'dentistinahmedabad.com',     heroTitle: 'Find the Best Dentist in Ahmedabad',      heroSubtitle: 'Verified dentists across Ahmedabad',        metaTitle: 'Find Dentists in Ahmedabad | dentistinahmedabad.com',          logoPath: '/logo-india.webp',      state: 'Gujarat',      lat: 23.0225, lng: 72.5714 },
   jamnagar:      { cityName: 'Jamnagar',       citySlug: 'jamnagar',      domain: 'dentistinjamnagar.in',       heroTitle: 'Find the Best Dentist in Jamnagar',       heroSubtitle: 'Verified dentists across Jamnagar',         metaTitle: 'Find Dentists in Jamnagar | dentistinjamnagar.in',             logoPath: '/logo-india.webp',                state: 'Gujarat',      lat: 22.4707, lng: 70.0577 },
+  bangalore:     { cityName: 'Bangalore',      citySlug: 'bangalore',     domain: 'dentistinbangalore.in',      heroTitle: 'Find Verified Dentists in Bangalore',     heroSubtitle: 'Compare fees, read reviews and book instantly', metaTitle: 'Dentists in Bangalore — Verified Clinics & Real Fees | DentistIn Bangalore', logoPath: '/logo-india.webp',      state: 'Karnataka',    lat: 12.9716, lng: 77.5946 },
+  mysore:        { cityName: 'Mysore',         citySlug: 'mysore',        domain: 'dentistinmysore.com',        heroTitle: 'Find Verified Dentists in Mysore',        heroSubtitle: 'Compare fees, read reviews and book instantly', metaTitle: 'Dentists in Mysore — Verified Clinics & Real Fees | DentistIn Mysore',       logoPath: '/logo-india.webp',      state: 'Karnataka',    lat: 12.2958, lng: 76.6394 },
+  mangalore:     { cityName: 'Mangalore',      citySlug: 'mangalore',     domain: 'dentistinmangalore.com',     heroTitle: 'Find Verified Dentists in Mangalore',     heroSubtitle: 'Compare fees, read reviews and book instantly', metaTitle: 'Dentists in Mangalore — Verified Clinics & Real Fees | DentistIn Mangalore', logoPath: '/logo-india.webp',      state: 'Karnataka',    lat: 12.9141, lng: 74.8560 },
 }
 
 export const DEFAULT_CITY: CitySlug = 'mumbai'

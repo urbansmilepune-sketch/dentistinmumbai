@@ -18,6 +18,21 @@ const nextConfig: NextConfig = {
         destination: 'https://dentistinmumbai.in/:path*',
         permanent: true,
       },
+      // Bengaluru spelling aliases → the canonical Bangalore domain. Both are
+      // defensive registrations, not city configs — dentistinbangalore.in is
+      // the only Karnataka-metro domain in CITY_CONFIGS.
+      {
+        source: '/:path*',
+        has: [{ type: 'host', value: '(www\\.)?dentistinbengaluru\\.in' }],
+        destination: 'https://dentistinbangalore.in/:path*',
+        permanent: true,
+      },
+      {
+        source: '/:path*',
+        has: [{ type: 'host', value: '(www\\.)?dentistinbengaluru\\.com' }],
+        destination: 'https://dentistinbangalore.in/:path*',
+        permanent: true,
+      },
       // National consolidation — the merged /insights hub replaces the separate
       // Cases + Expert Advice surfaces on dentistinindia.in ONLY. Exact-path
       // sources so detail routes (/cases/[id], /articles/[city]/[slug]) are NOT

@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { Sora, DM_Sans } from 'next/font/google'
 import { headers } from 'next/headers'
-import { getCityBySlug, NATIONAL_HOST, NATIONAL_ORIGIN } from '@/config/cities'
+import { CITY_CONFIGS, getCityBySlug, NATIONAL_HOST, NATIONAL_ORIGIN } from '@/config/cities'
 import { COMING_SOON_CITIES } from '@/config/citiesNational'
 import './globals.css'
 // SupportButton was previously mounted here for every route and gated its
@@ -44,9 +44,11 @@ export async function generateMetadata(): Promise<Metadata> {
   const h = await headers()
   // National parent (dentistinindia.in) gets its own title/keywords +
   // canonical origin. Everything below the conditional is the existing
-  // per-city metadata for the 13 city domains.
+  // per-city metadata for the live city domains.
   if (h.get('x-is-national') === '1') {
-    const liveCount = 13
+    // Derived, not hardcoded — this used to be a literal 13 and silently went
+    // stale the moment a city was added to CITY_CONFIGS.
+    const liveCount = Object.keys(CITY_CONFIGS).length
     const totalCount = liveCount + COMING_SOON_CITIES.length
     const nationalTitle = `Find Verified Dentists in ${totalCount} Indian Cities | Dentist In India`
     const nationalDesc = `India's dental network across ${liveCount} live cities and ${COMING_SOON_CITIES.length} more launching soon. State Dental Council-registered dentists, zero commission, 30-second booking.`

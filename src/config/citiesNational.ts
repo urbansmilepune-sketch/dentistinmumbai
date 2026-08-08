@@ -22,7 +22,6 @@ export interface ComingSoonCity {
 export const COMING_SOON_CITIES: ComingSoonCity[] = [
   // Tier-1 metros (not already live)
   { slug: 'delhi',            name: 'Delhi',            state: 'Delhi',                lat: 28.6139, lng: 77.2090 },
-  { slug: 'bangalore',        name: 'Bangalore',        state: 'Karnataka',            lat: 12.9716, lng: 77.5946 },
   { slug: 'hyderabad',        name: 'Hyderabad',        state: 'Telangana',            lat: 17.3850, lng: 78.4867 },
   { slug: 'chennai',          name: 'Chennai',          state: 'Tamil Nadu',           lat: 13.0827, lng: 80.2707 },
   { slug: 'kolkata',          name: 'Kolkata',          state: 'West Bengal',          lat: 22.5726, lng: 88.3639 },
@@ -54,7 +53,6 @@ export const COMING_SOON_CITIES: ComingSoonCity[] = [
   { slug: 'raipur',           name: 'Raipur',           state: 'Chhattisgarh',         lat: 21.2514, lng: 81.6296 },
   { slug: 'guwahati',         name: 'Guwahati',         state: 'Assam',                lat: 26.1445, lng: 91.7362 },
   { slug: 'chandigarh',       name: 'Chandigarh',       state: 'Chandigarh',           lat: 30.7333, lng: 76.7794 },
-  { slug: 'mysuru',           name: 'Mysuru',           state: 'Karnataka',            lat: 12.2958, lng: 76.6394 },
   { slug: 'bhubaneswar',      name: 'Bhubaneswar',      state: 'Odisha',               lat: 20.2961, lng: 85.8245 },
   { slug: 'tiruchirappalli',  name: 'Tiruchirappalli',  state: 'Tamil Nadu',           lat: 10.7905, lng: 78.7047 },
   { slug: 'jabalpur',         name: 'Jabalpur',         state: 'Madhya Pradesh',       lat: 23.1815, lng: 79.9864 },
@@ -76,6 +74,5 @@ export const COMING_SOON_CITIES: ComingSoonCity[] = [
   // Kerala + South coverage
   { slug: 'thiruvananthapuram', name: 'Thiruvananthapuram', state: 'Kerala',           lat:  8.5241, lng: 76.9366 },
   { slug: 'kochi',            name: 'Kochi',            state: 'Kerala',               lat:  9.9312, lng: 76.2673 },
-  { slug: 'mangalore',        name: 'Mangalore',        state: 'Karnataka',            lat: 12.9141, lng: 74.8560 },
   { slug: 'puducherry',       name: 'Puducherry',       state: 'Puducherry',           lat: 11.9416, lng: 79.8083 },
 ]
