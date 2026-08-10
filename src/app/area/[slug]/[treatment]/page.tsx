@@ -37,7 +37,9 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const cnt = (await getAreaTreatmentCompleteCounts(city.citySlug))[`${area.id}:${treatment.id}`] ?? 0
   const indexable = cnt >= 3
   return {
-    title: `Best ${treatment.name} Dentists in ${area.name}, ${city.cityName} | ${city.domain}`,
+    // No `| ${city.domain}` suffix — the root layout's title template
+    // (`%s | <domain>`) appends it. Adding it here rendered it twice.
+    title: `Best ${treatment.name} Dentists in ${area.name}, ${city.cityName}`,
     description: `Find top-rated, verified dentists for ${treatment.name} in ${area.name}, ${city.cityName}. Compare ${treatment.name} fees, read reviews, and book appointments instantly.`,
     alternates: { canonical: `https://${city.domain}/area/${slug}/${treatmentSlug}` },
     robots: { index: indexable, follow: true, googleBot: { index: indexable, follow: true } },

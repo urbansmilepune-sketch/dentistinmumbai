@@ -9,7 +9,8 @@ export async function generateMetadata(): Promise<Metadata> {
   const h = await headers()
   const city = getCityBySlug(h.get('x-city-slug'))
   return {
-    title: `Contact Us | ${city.domain}`,
+    // Domain suffix comes from the root layout's title template.
+    title: 'Contact Us',
     description: `Get in touch with ${city.domain}. For patients, dentists, or partnership enquiries.`,
     alternates: { canonical: `${cityOrigin(city)}/contact` },
   }

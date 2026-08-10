@@ -9,7 +9,8 @@ export async function generateMetadata(): Promise<Metadata> {
   const h = await headers()
   const city = getCityBySlug(h.get('x-city-slug'))
   return {
-    title: `Privacy Policy | ${city.domain}`,
+    // Domain suffix comes from the root layout's title template.
+    title: 'Privacy Policy',
     description: `Privacy Policy for ${city.domain} — how we collect, use and protect your data.`,
     alternates: { canonical: `${cityOrigin(city)}/privacy` },
   }
