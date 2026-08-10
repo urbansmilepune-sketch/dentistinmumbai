@@ -98,8 +98,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     }))
 
   // Dynamic, not a static matrix: emit an area×treatment URL only when ≥3
-  // complete-profile dentists in that area offer that treatment with a fee set
-  // — the exact rule the route indexes under.
+  // complete-profile dentists in that area offer that treatment — the exact
+  // rule the route indexes under.
   const areaTreatmentPages: MetadataRoute.Sitemap = (areas || []).flatMap(area =>
     (treatments || [])
       .filter(t => (atCompleteCounts[`${area.id}:${t.id}`] ?? 0) >= 3)

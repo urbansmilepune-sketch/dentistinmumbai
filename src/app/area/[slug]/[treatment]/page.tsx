@@ -31,9 +31,9 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   ])
   if (!area || !treatment) return { title: 'Not Found' }
   // Density gate: this page only exists (and is indexed) when ≥3 complete-
-  // profile dentists in this area offer this treatment with a fee set. Below
-  // that the page body 404s; the robots flag here keeps metadata consistent
-  // for the ≥3 indexable case. Same rule the sitemap emits under.
+  // profile dentists in this area offer this treatment. Below that the page
+  // body 404s; the robots flag here keeps metadata consistent for the ≥3
+  // indexable case. Same rule the sitemap emits under.
   const cnt = (await getAreaTreatmentCompleteCounts(city.citySlug))[`${area.id}:${treatment.id}`] ?? 0
   const indexable = cnt >= 3
   return {
@@ -130,9 +130,10 @@ export default async function AreaTreatmentPage({ params, searchParams }: { para
   if (!area || !treatment) notFound()
 
   // Density gate: fewer than 3 complete-profile dentists offering this
-  // treatment (with a fee set) in this area → 404. These thin matrix pages are
-  // exactly what GSC crawls and rejects; the sitemap drops them under the same
-  // rule. Gate runs before the heavy dentist query below.
+  // treatment in this area → 404. These thin matrix pages are exactly what GSC
+  // crawls and rejects; the sitemap drops them under the same rule. A fee on
+  // the treatment is not required — see getAreaTreatmentCompleteCounts. Gate
+  // runs before the heavy dentist query below.
   if ((atCompleteCounts[`${area.id}:${treatment.id}`] ?? 0) < 3) notFound()
 
   // Dentists in this area AND offering this treatment. dentist_treatments!inner

@@ -409,29 +409,51 @@ export function getAreaCompleteDentistCounts(citySlug: string): Promise<Record<s
 }
 
 // Count of DISTINCT complete-profile active dentists per (area, treatment) who
-// offer that treatment AND have a fee set for it (fee_from or fee_to > 0),
-// keyed by `${areaId}:${treatmentId}`. Density gate for /area/[slug]/[treatment]:
+// OFFER that treatment, keyed by `${areaId}:${treatmentId}`. Density gate for
+// /area/[slug]/[treatment]:
 //   <3 → notFound() + drop from sitemap; ≥3 → index + sitemap.
+//
+// Deliberately does NOT require a fee on the link row. It used to, which gated
+// page existence on optional fee data and 404'd pages with plenty of real
+// supply — e.g. Wakad teeth-whitening had 16 complete-profile dentists offering
+// it but only 1 with a fee, so the page didn't exist. A fee enriches the page
+// (fee tile, Quick Facts row, lowest-fee sort, all null-guarded) but is not
+// what makes it worth indexing.
 export function getAreaTreatmentCompleteCounts(citySlug: string): Promise<Record<string, number>> {
   return unstable_cache(
     async (): Promise<Record<string, number>> => {
       const supabase = createAnonClient()
-      const { data } = await supabase
-        .from('dentist_treatments')
-        .select(`treatment_id, fee_from, fee_to, dentists!inner(id, area_id, ${COMPLETION_SELECT})`)
-        .eq('dentists.city', citySlug)
-        .eq('dentists.is_active', true)
+      // MUST paginate. PostgREST enforces a server-side max-rows of 1000 and
+      // truncates SILENTLY — no error, no flag. Pune already has 1330 link rows
+      // for active dentists, so an unpaginated read dropped ~25% of them and
+      // undercounted the gate, 404ing pages that had the supply. Worse, without
+      // an ORDER BY the truncated window was nondeterministic, so pages could
+      // appear and vanish between 5-minute revalidations. Order by the primary
+      // key to make paging stable.
+      const PAGE = 1000
+      const rows: any[] = []
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await supabase
+          .from('dentist_treatments')
+          .select(`treatment_id, dentists!inner(id, area_id, ${COMPLETION_SELECT})`)
+          .eq('dentists.city', citySlug)
+          .eq('dentists.is_active', true)
+          .order('id', { ascending: true })
+          .range(from, from + PAGE - 1)
+        // Bail on error rather than returning partial counts — a half-read here
+        // silently 404s live pages, which is worse than serving stale cache.
+        if (error) throw error
+        const page = data ?? []
+        rows.push(...page)
+        if (page.length < PAGE) break
+      }
       // Dedup to DISTINCT dentists per (area, treatment): the same dentist can
       // have duplicate link rows, and count must match the "N dentists offer
       // this" the page shows.
       const sets: Record<string, Set<string>> = {}
-      for (const row of (data ?? []) as any[]) {
+      for (const row of rows) {
         const d = Array.isArray(row.dentists) ? row.dentists[0] : row.dentists
         if (!d || d.area_id === null || d.area_id === undefined) continue
-        const feeSet =
-          (typeof row.fee_from === 'number' && row.fee_from > 0) ||
-          (typeof row.fee_to === 'number' && row.fee_to > 0)
-        if (!feeSet) continue
         if (!isCompleteProfile(d)) continue
         const key = `${d.area_id}:${row.treatment_id}`
         ;(sets[key] ??= new Set<string>()).add(d.id)
