@@ -23,7 +23,7 @@ const TIME_SLOTS = Array.from({ length: 33 }, (_, i) => {
   return { label, value }
 })
 
-const DEFAULT_HOURS = {
+const DEFAULT_HOURS: Record<string, any> = {
   mon: { is_open: true, open_time: '09:00', close_time: '19:00', has_break: false, break_start: '13:00', break_end: '14:00' },
   tue: { is_open: true, open_time: '09:00', close_time: '19:00', has_break: false, break_start: '13:00', break_end: '14:00' },
   wed: { is_open: true, open_time: '09:00', close_time: '19:00', has_break: false, break_start: '13:00', break_end: '14:00' },
@@ -60,7 +60,20 @@ export default function WorkingHoursPage() {
         // proper object. Legacy rows saved before Sunday existed omit the
         // `sun` key; without this merge hours['sun'] is undefined and the
         // Sunday toggle has no object to flip, so clicking it appears dead.
-        if (dentist.working_hours) setHours({ ...DEFAULT_HOURS, ...dentist.working_hours })
+        //
+        // The merge is per DAY, not per day-key: a top-level spread replaces a
+        // day object wholesale, so a stored {"is_open": false} would leave that
+        // day with no open_time/close_time. The selects below render their
+        // `|| '09:00'` fallback, but that value is never in state, so toggling
+        // the day open and saving writes {"is_open": true} with no hours — it
+        // looks saved in the form yet the public banner and booking grid
+        // disagree. Merging per day keeps rendered === state === saved.
+        if (dentist.working_hours) {
+          const saved = dentist.working_hours as Record<string, any>
+          const merged: Record<string, any> = {}
+          for (const { key } of DAYS) merged[key] = { ...DEFAULT_HOURS[key], ...(saved[key] || {}) }
+          setHours(merged)
+        }
       }
       setLoading(false)
     }

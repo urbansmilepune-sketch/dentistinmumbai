@@ -135,7 +135,24 @@ export default function EditProfileClient({ dentist, areas, allTreatments, denti
   const profileInputRef = useRef<HTMLInputElement>(null)
   const coverInputRef = useRef<HTMLInputElement>(null)
 
-  const [hours, setHours] = useState<Record<string, any>>({ ...DEFAULT_HOURS, ...(dentist.working_hours || {}) })
+  // Merge the saved hours PER DAY, not per day-key. A spread at the top level
+  // ({ ...DEFAULT_HOURS, ...saved }) replaces each day object wholesale, so a
+  // stored day like {"is_open": false} — the shape closed days actually have in
+  // the live column — lands in state with no open_time/close_time at all. The
+  // selects below then render their `|| '09:00'` fallback, so the admin sees
+  // "9:00 AM to 7:00 PM", but those values were never in state and so are never
+  // in the POST body: flipping the day open and saving persists
+  // {"is_open": true} with no hours. Downstream that reads as unsaved — the
+  // public Open-Now banner prints "Closed · opens " with a blank time
+  // (openStatus.ts formatTime12(undefined) → '') and the booking grid falls
+  // back to 09:00–20:00, which is not what the form showed. Merging per day
+  // guarantees rendered === state === saved.
+  const [hours, setHours] = useState<Record<string, any>>(() => {
+    const saved = (dentist.working_hours || {}) as Record<string, any>
+    const merged: Record<string, any> = {}
+    for (const { key } of DAYS) merged[key] = { ...DEFAULT_HOURS[key], ...(saved[key] || {}) }
+    return merged
+  })
   const updateDay = (day: string, field: string, value: any) => setHours(prev => ({ ...prev, [day]: { ...prev[day], [field]: value } }))
 
   // Treatment grid state keyed by treatment_id. duration_mins is carried
