@@ -318,9 +318,16 @@ export default function TreatmentPlanPage() {
       .filter(s => s.id !== stepId)
       .map((s, i) => ({ ...s, step_number: i + 1 }))
     // Persist the renumber so subsequent inserts pick up the right next slot.
-    await Promise.all(updatedSteps.map(s =>
-      supabase.from('treatment_plan_steps').update({ step_number: s.step_number }).eq('id', s.id)
+    // .select('id') makes an RLS denial observable, which matters more here than
+    // anywhere else: treatment_plan_steps is the one table a dentist writes from
+    // the dashboard that has no working policy on the live DB, so every one of
+    // these updates is currently filtered out and returns no error.
+    const renumbered = await Promise.all(updatedSteps.map(s =>
+      supabase.from('treatment_plan_steps').update({ step_number: s.step_number }).eq('id', s.id).select('id')
     ))
+    if (renumbered.some(r => r.error || !r.data || r.data.length === 0)) {
+      setError('The steps were renumbered on screen but the new order was not saved. Please reload.')
+    }
     setPlans(prev => prev.map(p => p.id === plan.id ? { ...p, treatment_plan_steps: updatedSteps } : p))
     await syncTotalCost(plan.id, updatedSteps)
   }
@@ -329,17 +336,31 @@ export default function TreatmentPlanPage() {
     const renumbered = newOrder.map((s, i) => ({ ...s, step_number: i + 1 }))
     setPlans(prev => prev.map(p => p.id === plan.id ? { ...p, treatment_plan_steps: renumbered } : p))
     const supabase = createClient()
-    await Promise.all(renumbered.map(s =>
-      supabase.from('treatment_plan_steps').update({ step_number: s.step_number }).eq('id', s.id)
+    // The setPlans above is optimistic, so without .select('id') an RLS-filtered
+    // write leaves the dentist looking at a reordered list that the database
+    // never accepted — and it reverts on the next reload with no explanation.
+    const results = await Promise.all(renumbered.map(s =>
+      supabase.from('treatment_plan_steps').update({ step_number: s.step_number }).eq('id', s.id).select('id')
     ))
+    if (results.some(r => r.error || !r.data || r.data.length === 0)) {
+      setError('The new step order was not saved. Please reload — the list you are seeing is not what is stored.')
+    }
   }
 
   async function syncTotalCost(planId: string, steps: Step[]) {
     const total = steps.reduce((sum, s) => sum + (Number(s.estimated_cost) || 0), 0)
     const supabase = createClient()
-    await supabase.from('treatment_plans')
+    // .select('id') makes an RLS denial observable — without it the plan total
+    // shown to the dentist (and quoted to the patient) can silently disagree
+    // with the stored value.
+    const { data: synced, error: syncErr } = await supabase.from('treatment_plans')
       .update({ total_estimated_cost: total, total_cost: total })
       .eq('id', planId)
+      .select('id')
+    if (syncErr || !synced || synced.length === 0) {
+      setError('The plan total was not saved. Please reload before quoting this figure to the patient.')
+      return
+    }
     setPlans(prev => prev.map(p => p.id === planId
       ? { ...p, total_estimated_cost: total, total_cost: total }
       : p))

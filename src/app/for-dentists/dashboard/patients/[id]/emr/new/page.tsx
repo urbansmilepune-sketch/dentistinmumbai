@@ -146,12 +146,24 @@ export default function NewEmrPage() {
     }
     if (t.advice && !advice.trim()) setAdvice(t.advice)
 
-    // Track usage (best-effort, non-blocking)
+    // Track usage (best-effort, non-blocking). .select('id') doesn't change the
+    // non-blocking contract — it only turns an RLS denial from an invisible
+    // no-op into a console warning, since a filtered write returns no error and
+    // no rows. Deliberately NOT surfaced to the dentist: a usage counter is
+    // telemetry, and failing to bump it must not interrupt writing an EMR.
     const supabase = createClient()
     supabase.from('emr_templates')
       .update({ used_count: (t.used_count ?? 0) + 1, last_used_at: new Date().toISOString() })
       .eq('id', t.id)
-      .then(() => {}, () => {})
+      .select('id')
+      .then(
+        ({ data, error }) => {
+          if (error || !data || data.length === 0) {
+            console.warn('emr_templates usage bump did not persist:', error?.message ?? 'zero rows returned (RLS?)')
+          }
+        },
+        () => {},
+      )
   }
 
   function toggleComplaint(c: string) {
@@ -230,9 +242,20 @@ export default function NewEmrPage() {
       follow_up_date: followUpDate || null,
       follow_up_notes: followUpNotes || null,
     }
-    const { error: insertError } = await supabase.from('emr_records').insert(payload)
+    // .select('id') makes an RLS denial observable. This is the most damaging
+    // unguarded write in the dashboard: without it a filtered insert returns no
+    // error AND no rows, and the router.push below leaves the page as though
+    // the visit were recorded — losing a clinical record with no warning.
+    const { data: emrRow, error: insertError } = await supabase
+      .from('emr_records')
+      .insert(payload)
+      .select('id')
     setSaving(false)
     if (insertError) { setError(insertError.message); return }
+    if (!emrRow || emrRow.length === 0) {
+      setError('This record was not saved — no row was created, so nothing has been stored. Do not navigate away; please try again.')
+      return
+    }
 
     // Silently persist any medication names the dentist typed that aren't already
     // in our built-in list or their existing custom list. Errors are swallowed —
@@ -251,7 +274,16 @@ export default function NewEmrPage() {
       }
       if (newMeds.length > 0) {
         const rows = newMeds.map(name => ({ dentist_id: dentistId, name }))
-        await supabase.from('custom_medicines').upsert(rows, { onConflict: 'dentist_id,name', ignoreDuplicates: true })
+        // No row-count guard here, unlike the other writes on this page:
+        // ignoreDuplicates makes this ON CONFLICT DO NOTHING, so zero returned
+        // rows is the normal result when every name is already saved and can't
+        // be distinguished from an RLS denial. Surfacing the error is all the
+        // signal available — and it stays non-blocking, since a missed
+        // autocomplete entry must not fail an EMR that already saved.
+        const { error: medsErr } = await supabase
+          .from('custom_medicines')
+          .upsert(rows, { onConflict: 'dentist_id,name', ignoreDuplicates: true })
+        if (medsErr) console.warn('custom_medicines upsert failed:', medsErr.message)
       }
     } catch { /* swallow */ }
 

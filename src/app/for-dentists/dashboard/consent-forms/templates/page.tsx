@@ -228,12 +228,20 @@ export default function ConsentTemplatesPage() {
     setDeleting(tpl.id)
     const supabase = createClient()
     // Soft delete — flip is_active off rather than removing the row.
-    const { error: delErr } = await supabase
+    // .select('id') makes an RLS denial observable: without it a filtered write
+    // returns no error AND no rows, so the template disappears from the list
+    // and comes back on the next reload.
+    const { data: deleted, error: delErr } = await supabase
       .from('consent_templates')
       .update({ is_active: false })
       .eq('id', tpl.id)
+      .select('id')
     setDeleting(null)
     if (delErr) { setError(delErr.message); return }
+    if (!deleted || deleted.length === 0) {
+      setError('Could not delete this template — no row was updated. Please try again.')
+      return
+    }
     const remaining = templates.filter(t => t.id !== tpl.id)
     setTemplates(remaining)
     if (selected?.id === tpl.id) setSelected(remaining[0] ?? null)

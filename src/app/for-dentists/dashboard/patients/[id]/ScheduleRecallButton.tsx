@@ -54,7 +54,10 @@ export default function ScheduleRecallButton({ patientId, dentistId }: Props) {
     if (!dueDate) { setError('Pick a due date.'); return }
     setSaving(true)
     const supabase = createClient()
-    const { error: insertErr } = await supabase
+    // .select('id') makes an RLS denial observable — without it a filtered
+    // insert returns no error AND no rows, and the toast below would promise a
+    // recall that will never fire.
+    const { data: inserted, error: insertErr } = await supabase
       .from('recall_reminders')
       .insert({
         dentist_id: dentistId,
@@ -65,9 +68,14 @@ export default function ScheduleRecallButton({ patientId, dentistId }: Props) {
         notes: notes.trim() || null,
         status: 'pending',
       })
+      .select('id')
     setSaving(false)
     if (insertErr) {
       setError(insertErr.message)
+      return
+    }
+    if (!inserted || inserted.length === 0) {
+      setError('Could not schedule the recall — nothing was saved. Please try again.')
       return
     }
     setOpen(false)

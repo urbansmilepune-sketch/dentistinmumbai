@@ -490,8 +490,19 @@ export default function ToothChart({
           notes: r.notes,
           severity: r.severity,
         }))
-        const { error: insErr } = await supabase.from('dental_chart_entries').insert(insertRows)
+        // .select('id') makes an RLS denial observable. Critical here because the
+        // delete above already ran: a filtered insert returns no error AND no
+        // rows, so the chart would report "saved" after wiping the previous
+        // entries and writing nothing back.
+        const { data: insRows, error: insErr } = await supabase
+          .from('dental_chart_entries')
+          .insert(insertRows)
+          .select('id')
         if (insErr) { setError(insErr.message); return }
+        if (!insRows || insRows.length === 0) {
+          setError('The chart was not saved — no rows were written. Please reload and try again before relying on this chart.')
+          return
+        }
       }
       setSavedEntries(entries)
       onSave?.(rows)

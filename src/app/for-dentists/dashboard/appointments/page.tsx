@@ -400,9 +400,18 @@ export default function AppointmentsPage() {
 
       // Backfill patient_id on the appointment so subsequent clicks skip
       // this handler and go straight to the Open button.
-      await supabase.from('appointments')
+      // .select('id') makes an RLS denial observable: without it a filtered
+      // write returns no error AND no rows, so the link silently never lands,
+      // the next click re-runs this handler, and an appointment with no phone
+      // to match on gets a second duplicate patient record.
+      const { data: linked, error: linkErr } = await supabase.from('appointments')
         .update({ patient_id: patientId })
         .eq('id', a.id)
+        .select('id')
+      if (linkErr || !linked || linked.length === 0) {
+        setStatusError(linkErr?.message || 'Could not link this appointment to the patient file. Please try again.')
+        return
+      }
 
       setAppointments(prev => prev.map(x => x.id === a.id ? { ...x, patient_id: patientId } : x))
       if (phoneDigits) {
@@ -515,20 +524,33 @@ export default function AppointmentsPage() {
       clinicName,
     ].join('\n').trim()
 
-    await supabase.from('consent_forms').insert({
-      dentist_id: dentistId,
-      patient_id: consentModal.patient_id ?? null,
-      appointment_id: consentModal.id,
-      form_type: consentType,
-      form_title: consentTitle,
-      form_text: consentContent,
-      form_content: { __v: 2, text: consentContent },
-      patient_name: patientName,
-      patient_phone: consentModal.patient_phone || null,
-      status: 'sent',
-      sent_at: now,
-      signature_method: 'manual',
-    })
+    // .select('id') makes an RLS denial observable. Without it a filtered
+    // insert returns no error AND no rows, and we would open WhatsApp anyway —
+    // the patient receives a consent request that was never recorded, so the
+    // clinic has no audit trail for a consent it actually sought. Abort
+    // instead of sending.
+    const { data: consentRow, error: consentInsertErr } = await supabase
+      .from('consent_forms')
+      .insert({
+        dentist_id: dentistId,
+        patient_id: consentModal.patient_id ?? null,
+        appointment_id: consentModal.id,
+        form_type: consentType,
+        form_title: consentTitle,
+        form_text: consentContent,
+        form_content: { __v: 2, text: consentContent },
+        patient_name: patientName,
+        patient_phone: consentModal.patient_phone || null,
+        status: 'sent',
+        sent_at: now,
+        signature_method: 'manual',
+      })
+      .select('id')
+    if (consentInsertErr || !consentRow || consentRow.length === 0) {
+      setConsentSending(false)
+      setConsentError(consentInsertErr?.message || 'Could not record the consent form, so nothing was sent. Please try again.')
+      return
+    }
 
     const waNum = phone.length === 10 ? `91${phone}` : phone
     window.open(`https://wa.me/${waNum}?text=${encodeURIComponent(waText)}`, '_blank')

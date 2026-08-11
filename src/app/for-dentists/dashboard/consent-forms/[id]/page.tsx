@@ -75,12 +75,20 @@ export default function ConsentFormDetailPage() {
     setError(null)
     const supabase = createClient()
     const now = new Date().toISOString()
-    const { error: updateErr } = await supabase
+    // .select('id') makes an RLS denial observable — without it a filtered
+    // write returns no error AND no rows, and the form would render as signed
+    // while the database still has it unsigned.
+    const { data: signed, error: updateErr } = await supabase
       .from('consent_forms')
       .update({ status: 'signed', signed_at: now, signature_method: 'manual' })
       .eq('id', form.id)
+      .select('id')
     setMarking(false)
     if (updateErr) { setError(updateErr.message); return }
+    if (!signed || signed.length === 0) {
+      setError('Could not mark this form as signed — no row was updated. Please reload and try again.')
+      return
+    }
     setForm(prev => prev ? { ...prev, status: 'signed', signed_at: now, signature_method: 'manual' } : prev)
   }
 
