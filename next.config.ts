@@ -2,6 +2,18 @@ import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
 const nextConfig: NextConfig = {
+  // Build assets carry no content worth indexing, and robots.txt doesn't
+  // disallow /_next/. An X-Robots-Tag keeps the chunks out of the index even
+  // when a crawler reaches one directly from a rendered page.
+  async headers() {
+    return [
+      {
+        source: '/_next/static/:path*',
+        headers: [{ key: 'X-Robots-Tag', value: 'noindex' }],
+      },
+    ]
+  },
+
   // Consolidate empty city domains into Mumbai so traffic doesn't hit blank
   // pages. Matched by request host, with path preserved on the destination.
   async redirects() {

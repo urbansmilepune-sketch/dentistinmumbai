@@ -64,8 +64,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // (shared helpers, so route and sitemap can't drift), and a dentist profile
   // only when it's ≥60% complete. Area×treatment is queried dynamically from
   // live counts — never statically enumerated.
-  const [{ data: areas }, { data: dentists }, { data: treatments }, areaCompleteCounts, atCompleteCounts] = await Promise.all([
-    supabase.from('areas').select('id, slug, updated_at').eq('is_active', true).eq('city', city.citySlug),
+  const [{ data: areas, error: areasErr }, { data: dentists }, { data: treatments }, areaCompleteCounts, atCompleteCounts] = await Promise.all([
+    // No updated_at / created_at column on `areas` — selecting one 42703s, and
+    // PostgREST returns data: null for the whole query, which silently emptied
+    // BOTH areaPages and areaTreatmentPages from every city sitemap. Select
+    // only columns that exist and let lastModified fall back to now.
+    supabase.from('areas').select('id, slug').eq('is_active', true).eq('city', city.citySlug),
     supabase
       .from('dentists')
       .select('slug, created_at, profile_photo, cover_photo, bio, whatsapp, maps_embed')
@@ -75,6 +79,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     getAreaCompleteDentistCounts(city.citySlug),
     getAreaTreatmentCompleteCounts(city.citySlug),
   ])
+
+  // A failed areas read drops the entire programmatic layer from the sitemap
+  // while every other section still renders, so it looks like a healthy
+  // sitemap. Make it loud rather than letting it fail open again.
+  if (areasErr) {
+    console.error('[sitemap] areas query failed — area and area×treatment URLs omitted', areasErr)
+  }
 
   const staticPages: MetadataRoute.Sitemap = [
     { url: BASE, lastModified: new Date(), changeFrequency: 'daily', priority: 1.0 },
@@ -92,7 +103,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     .filter(area => (areaCompleteCounts[String(area.id)] ?? 0) >= 3)
     .map(area => ({
       url: `${BASE}/area/${area.slug}`,
-      lastModified: area.updated_at ? new Date(area.updated_at) : new Date(),
+      lastModified: new Date(),
       changeFrequency: 'daily' as const,
       priority: 0.85,
     }))
@@ -105,7 +116,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       .filter(t => (atCompleteCounts[`${area.id}:${t.id}`] ?? 0) >= 3)
       .map(t => ({
         url: `${BASE}/area/${area.slug}/${t.slug}`,
-        lastModified: area.updated_at ? new Date(area.updated_at) : new Date(),
+        lastModified: new Date(),
         changeFrequency: 'weekly' as const,
         priority: 0.75,
       }))

@@ -12,11 +12,12 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
         userAgent: '*',
         allow: [
           '/',
-          // Public funnel pages that live under the otherwise-disallowed
+          // The one public funnel page under the otherwise-disallowed
           // /for-dentists/ tree. Longer than the '/for-dentists/' disallow
-          // below, so longest-match precedence keeps these crawlable.
+          // below, so longest-match precedence keeps it crawlable. Login is
+          // deliberately NOT re-allowed — it's a sign-in form with no search
+          // value, and the disallow below covers it.
           '/for-dentists/register',
-          '/for-dentists/login',
         ],
         disallow: [
           // No trailing slash so it also catches the /admin index route;

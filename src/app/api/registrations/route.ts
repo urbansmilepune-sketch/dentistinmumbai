@@ -60,6 +60,29 @@ function generateRef(): string {
   return ref
 }
 
+// Looks up a single auth.users row by email. supabase-js `listUsers()` only
+// pages — it has no email filter — so scanning would be O(all users) on every
+// signup. GoTrue's admin endpoint does accept ?filter=, which substring-matches
+// on email; we exact-match the result ourselves. Returns null on any failure so
+// a GoTrue hiccup degrades to the old create-and-catch path rather than
+// blocking the signup.
+async function findAuthUserByEmail(email: string): Promise<{ id: string } | null> {
+  try {
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY!
+    const res = await fetch(
+      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/admin/users?per_page=50&filter=${encodeURIComponent(email)}`,
+      { headers: { apikey: key, Authorization: `Bearer ${key}` } },
+    )
+    if (!res.ok) return null
+    const body = (await res.json()) as { users?: { id: string; email?: string }[] }
+    const hit = (body.users || []).find(u => (u.email || '').toLowerCase() === email.toLowerCase())
+    return hit ? { id: hit.id } : null
+  } catch (err) {
+    console.error('[registrations] auth.users lookup failed', err)
+    return null
+  }
+}
+
 function slugify(input: string): string {
   return input
     .toLowerCase()
@@ -168,6 +191,54 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'An account with this phone or email already exists. Try signing in instead.' }, { status: 409 })
     }
 
+    // The three checks above never looked at auth.users, so a signup whose
+    // auth row was created and whose dentists insert then failed left an
+    // orphan that passed dedupe and died on createUser — 15 dentists were
+    // locked out this way, unable to register AND unable to use the product.
+    //
+    // Resolve it here instead. An auth row with no dentists / staff / patient /
+    // admin record attached is a dead artifact of a failed signup: adopt it
+    // (reset the password to the one just submitted, skip createUser) and let
+    // the flow continue into the dentists insert. If the email owns ANY other
+    // record, adopting would hand over a live account, so refuse and send them
+    // to sign-in instead.
+    const existingAuthUser = await findAuthUserByEmail(email)
+    let adoptedExistingAuthUser = false
+    let authUserId: string | null = null
+
+    if (existingAuthUser) {
+      const [staffRow, patientRow, adminRow] = await Promise.all([
+        admin.from('clinic_staff').select('id').ilike('email', email).maybeSingle(),
+        admin.from('patients').select('id').ilike('email', email).maybeSingle(),
+        admin.from('admin_users').select('id').ilike('email', email).maybeSingle(),
+      ])
+      if (staffRow.data || patientRow.data || adminRow.data) {
+        return NextResponse.json(
+          { error: 'This email is already registered. Please sign in instead — or use "Forgot password" to reset it.', code: 'email_exists' },
+          { status: 409 },
+        )
+      }
+      const { error: adoptErr } = await admin.auth.admin.updateUserById(existingAuthUser.id, {
+        password: chosenPassword,
+        email_confirm: true,
+        user_metadata: { full_name: name },
+      })
+      if (adoptErr) {
+        console.error('[registrations] failed to adopt orphaned auth user', existingAuthUser.id, adoptErr)
+        Sentry.captureException(adoptErr, {
+          tags: { area: 'registration-auth-adopt' },
+          extra: { email, city: cityValue },
+        })
+        return NextResponse.json(
+          { error: 'This email is already registered. Please sign in instead — or use "Forgot password" to reset it.', code: 'email_exists' },
+          { status: 409 },
+        )
+      }
+      adoptedExistingAuthUser = true
+      authUserId = existingAuthUser.id
+      console.warn('[registrations] adopted orphaned auth user', existingAuthUser.id, email)
+    }
+
     // ref_no collision check — generateRef() is 36^5 so collisions are
     // rare but possible at scale. Retry up to 5 times.
     let ref_no = generateRef()
@@ -217,14 +288,18 @@ export async function POST(request: NextRequest) {
     // Create the auth.users row first so we can roll back the dentist
     // insert if auth fails (the inverse rollback is harder — deleting a
     // newly-created dentists row would also need to undo any FK cascade).
+    // Skipped when we adopted an orphaned auth row above — that row already
+    // carries this password, so the signInWithPassword below works either way.
     const password = chosenPassword
-    const { data: created, error: signupErr } = await admin.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-      user_metadata: { full_name: name },
-    })
-    if (signupErr || !created?.user) {
+    const { data: created, error: signupErr } = adoptedExistingAuthUser
+      ? { data: null, error: null }
+      : await admin.auth.admin.createUser({
+          email,
+          password,
+          email_confirm: true,
+          user_metadata: { full_name: name },
+        })
+    if (!adoptedExistingAuthUser && (signupErr || !created?.user)) {
       console.error('[registrations] auth user create failed', signupErr)
       Sentry.captureException(signupErr || new Error('createUser returned no user'), {
         tags: { area: 'registration-auth-create' },
@@ -253,6 +328,7 @@ export async function POST(request: NextRequest) {
         { status: 500 },
       )
     }
+    if (created?.user) authUserId = created.user.id
 
     // Unique slug for the public profile URL.
     const baseSlug = slugify(clinic_name || name) || 'dentist'
@@ -316,9 +392,14 @@ export async function POST(request: NextRequest) {
       // return, so a fire-and-forget delete never runs — that's exactly what
       // orphaned z.sheth.zs@gmail.com and blocked her re-registration with a
       // misleading "Could not create account". Awaiting keeps auth.users clean.
-      await admin.auth.admin.deleteUser(created.user.id).catch(err =>
-        console.error('[registrations] auth rollback failed — orphaned auth user', created.user.id, err),
-      )
+      // Only roll back an auth row WE created. An adopted row predates this
+      // request, so deleting it would destroy an account we merely borrowed —
+      // leave it and let the dentist retry.
+      if (!adoptedExistingAuthUser && authUserId) {
+        await admin.auth.admin.deleteUser(authUserId).catch(err =>
+          console.error('[registrations] auth rollback failed — orphaned auth user', authUserId, err),
+        )
+      }
       return NextResponse.json({ error: 'Could not create profile', detail: dentErr?.message }, { status: 500 })
     }
 

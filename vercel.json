@@ -52,6 +52,9 @@
     { "source": "/:path*", "has": [{ "type": "host", "value": "www.dentistingoa.in" }], "destination": "https://dentistingoa.in/:path*", "permanent": true },
     { "source": "/:path*", "has": [{ "type": "host", "value": "www.dentistinjamnagar.in" }], "destination": "https://dentistinjamnagar.in/:path*", "permanent": true },
     { "source": "/:path*", "has": [{ "type": "host", "value": "www.dentistinahmedabad.com" }], "destination": "https://dentistinahmedabad.com/:path*", "permanent": true },
+    { "source": "/:path*", "has": [{ "type": "host", "value": "www.dentistinbangalore.in" }], "destination": "https://dentistinbangalore.in/:path*", "permanent": true },
+    { "source": "/:path*", "has": [{ "type": "host", "value": "www.dentistinmysore.com" }], "destination": "https://dentistinmysore.com/:path*", "permanent": true },
+    { "source": "/:path*", "has": [{ "type": "host", "value": "www.dentistinmangalore.com" }], "destination": "https://dentistinmangalore.com/:path*", "permanent": true },
     { "source": "/:path*", "has": [{ "type": "host", "value": "www.dentistinindia.in" }], "destination": "https://dentistinindia.in/:path*", "permanent": true }
   ]
 }
