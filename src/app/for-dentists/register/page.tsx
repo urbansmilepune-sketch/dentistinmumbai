@@ -33,6 +33,9 @@ export default function RegisterPage() {
   // still captured. Hidden from humans; a filled value flags a bot.
   const honeypotRef = useRef<HTMLInputElement>(null)
   const [error, setError] = useState('')
+  // Success-but-no-session path: profile created against an adopted auth row,
+  // sign-in link emailed. Distinct from `error` so it renders green, not red.
+  const [notice, setNotice] = useState('')
   const [prefilledFromLogin, setPrefilledFromLogin] = useState(false)
   const [planFromUrl, setPlanFromUrl] = useState<Plan | null>(null)
   // Referral code from ?ref=<code> — captured on mount and passed through to
@@ -92,6 +95,7 @@ export default function RegisterPage() {
   function update(key: string, value: string) {
     setForm(f => ({ ...f, [key]: value }))
     setError('')
+    setNotice('')
   }
 
   async function handleSubmit() {
@@ -138,6 +142,14 @@ export default function RegisterPage() {
         }
         router.refresh()
         router.push(data.redirect)
+        return
+      }
+      // Success with no redirect: the profile was created against a pre-existing
+      // auth account, so there's no session to hand back — sign-in happens by
+      // clicking the emailed link. Show that instead of the generic error.
+      if (data.success && data.notice) {
+        setNotice(data.notice)
+        setSubmitting(false)
         return
       }
       setError(data.error || 'Something went wrong. Please try again.')
@@ -324,6 +336,12 @@ export default function RegisterPage() {
                   {error && (
                     <div style={{ padding: '12px 16px', background: '#FEE2E2', border: '1px solid #FECACA', borderRadius: 10, fontSize: 13, color: '#991B1B' }}>
                       ⚠️ {error}
+                    </div>
+                  )}
+
+                  {notice && (
+                    <div style={{ padding: '12px 16px', background: '#DCFCE7', border: '1px solid #BBF7D0', borderRadius: 10, fontSize: 13, color: '#166534', lineHeight: 1.6 }}>
+                      ✓ {notice}
                     </div>
                   )}
 

@@ -1,5 +1,23 @@
 # DentistIn Platform — Full Feature Audit
 
+> ## ✅ CLOSED — 2026-08-12
+>
+> All six failures are fixed and verified live. Two follow-ups were consciously
+> deferred; one item could not be made to stick. Detail in
+> **[Closeout](#closeout--2026-08-12)** at the foot of this document.
+>
+> | # | Failure | Was | Now |
+> |---|---|---|---|
+> | 1 | Sitemap area hubs | 0 | **10** |
+> | 2 | Sitemap area × treatment | 0 | **91** |
+> | 3 | Consent template creation | 42703 | **works** |
+> | 4 | Orphaned auth users | 15 | **10, self-serviceable** |
+> | 5 | Karnataka www duplicate content | 3 domains | **redirected** |
+> | 6 | `X-Robots-Tag` on `/_next/static` | absent | **`noindex`** |
+>
+> Fixes shipped in `dd90904`, `039ff71`, `9d2012d`. Public-route regression
+> re-run after each — no change to any of the 77 passing items.
+
 **Date:** 2026-08-12
 **Commit audited:** `dd90904`
 **Method:** Next 16.2.5 dev server on `localhost:3111`, driven with explicit `Host:` headers per city domain; live Supabase (`hpruudyeluingwckavws`) read via PostgREST + Auth Admin API with the service-role key; source inspection for anything behind a login.
@@ -425,3 +443,36 @@ The SKIP count is dominated by Sections 2 and 3 (43 of 49) — everything behind
 - **`CLAUDE_MODEL = 'claude-sonnet-4-6'`** (`src/lib/anthropic.ts:11`) is a previous-generation model id. I could not call the API to confirm whether it still resolves. Current equivalent is `claude-sonnet-5`.
 - **Three dead email helpers** with zero callers, one near-identically named to a live one.
 - **`{ data }` destructured without `error`** is a recurring pattern — it caused both the consent-forms symptom and the sitemap failure. Worth a lint rule.
+
+---
+
+## Closeout — 2026-08-12
+
+### What was fixed
+
+**1 & 2 — Sitemap.** `sitemap.ts:68` selected `areas.updated_at`, a column the table does not have. PostgREST returned 42703, the error was discarded by `{ data: areas }`, and both `areaPages` and `areaTreatmentPages` collapsed to empty on every city domain. Now selects only existing columns, with the error logged rather than swallowed. **133 → 234 URLs**, `/book` still absent, all non-www.
+
+**3 — Consent forms.** Schema applied out-of-band and verified live: `consent_templates` gained `template_group` and a correct `'en'` default with all 8 rows normalised off `'english'`; `consent_forms` gained all ten send-workflow columns, `patient_id` is nullable and the five-value `form_type` CHECK is gone. Replaying the exact browser create request (insert + its `RETURNING` select) returns the row, and a full send row writes and reads back. Recorded in `20260812090000_consent_templates_language_repair.sql`; `20260623120000` amended to note it finally ran.
+
+**4 — Orphaned auth users.** Registration dedupe checked `dentist_registrations` and `dentists` but never `auth.users`, so a signup whose auth row was created and whose dentists insert then failed left an orphan that passed dedupe and died on `createUser`. Now looks the email up in `auth.users` first; a row with no dentists / staff / patient / admin record attached is adopted rather than duplicated. Five orphans were separately deleted out-of-band (auth.users 244 → 235); the remaining 10 can self-serve by re-registering. Verified no collateral: all 220 dentists and every active staff member still have an auth account.
+
+**5 — Karnataka www.** `vercel.json` carried www redirects for 14 hosts but not the three Karnataka domains, and `getCityByDomain` strips `www.`, so each served a full 200 duplicate. All three added.
+
+**6 — `X-Robots-Tag`.** `next.config.ts` had no `headers()` block at all. Added one for `/_next/static/:path*`.
+
+**Bonus — robots.txt.** `Allow: /for-dentists/login` removed; it outranked the `/for-dentists/` disallow by longest-match and made a sign-in form crawlable. Register stays allowed.
+
+### Orphan adoption — magic link, not password reset
+
+The first implementation reset the adopted account's password to the one just submitted. That was rejected as an account-takeover surface: the registration form proves nothing about inbox ownership, so anyone who knew an orphaned address could seize the auth row. The adopted row's password is now **left untouched**. Instead the dentist is emailed a magic link once the profile exists — clicking it from their own inbox *is* the authentication — and they set a password from profile settings afterwards. The register page renders this as a success notice rather than routing to a dashboard it has no session for.
+
+Not yet exercised against a live orphan, by decision: Ashish contacts `dramrutatorkadi@gmail.com` first.
+
+### Not resolved
+
+**No CHECK constraint on `consent_templates.language`.** Attempted twice; three behavioural probes afterwards (`'zz_not_a_lang'`, `'NOT_A_LANG'`, `'ENGLISH'`) were each accepted with HTTP 201, so it is still not enforced. Not a data problem — every row already satisfies it. Nothing is broken meanwhile: the UI only writes valid codes and `normLang()` folds unrecognised values back to `'en'`. Defence-in-depth gap only; the statement is preserved at the foot of the migration.
+
+### Deliberately deferred
+
+- **The 30 translated system templates** (Marathi / Hindi / Gujarati / Telugu / Tamil) were never seeded — only the 7 English ones exist. INSERT blocks live in `20260620140000` and `20260620150000`; no conflict guard, so run once.
+- Everything in **"Also worth queuing"** above remains open, including the two intentional-behaviour questions (`/area/camp` returning 200 + noindex rather than 404, which the code documents as deliberate) and the in-memory rate limiter.

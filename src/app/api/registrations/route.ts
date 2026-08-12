@@ -25,7 +25,7 @@ import { createClient as createCookieClient } from '@/lib/supabase/server'
 import * as Sentry from '@sentry/nextjs'
 import { CITY_CONFIGS, DEFAULT_CITY, type CitySlug } from '@/config/cities'
 import { seedUniversalTreatments } from '@/lib/seedTreatments'
-import { sendAdminNewRegistrationAlert } from '@/lib/email'
+import { sendAdminNewRegistrationAlert, sendDentistLoginLinkEmail } from '@/lib/email'
 import {
   honeypotTripped,
   validateHumanName,
@@ -198,10 +198,17 @@ export async function POST(request: NextRequest) {
     //
     // Resolve it here instead. An auth row with no dentists / staff / patient /
     // admin record attached is a dead artifact of a failed signup: adopt it
-    // (reset the password to the one just submitted, skip createUser) and let
-    // the flow continue into the dentists insert. If the email owns ANY other
-    // record, adopting would hand over a live account, so refuse and send them
-    // to sign-in instead.
+    // (skip createUser) and let the flow continue into the dentists insert. If
+    // the email owns ANY other record, adopting would hand over a live account,
+    // so refuse and send them to sign-in instead.
+    //
+    // The adopted row's PASSWORD IS DELIBERATELY LEFT UNTOUCHED. Writing the
+    // submitted password onto it would mean anyone who knows an orphaned
+    // address could seize that auth account by "registering" — the form proves
+    // nothing about inbox ownership. Instead the dentist gets a magic link
+    // after the profile is created (see the sign-in block below): clicking it
+    // from their own inbox IS the proof, and they set a password from profile
+    // settings afterwards.
     const existingAuthUser = await findAuthUserByEmail(email)
     let adoptedExistingAuthUser = false
     let authUserId: string | null = null
@@ -219,7 +226,6 @@ export async function POST(request: NextRequest) {
         )
       }
       const { error: adoptErr } = await admin.auth.admin.updateUserById(existingAuthUser.id, {
-        password: chosenPassword,
         email_confirm: true,
         user_metadata: { full_name: name },
       })
@@ -484,14 +490,52 @@ export async function POST(request: NextRequest) {
     // Sign the dentist in. The cookie-aware server client writes the
     // Supabase auth cookie onto this response, so the dashboard's server
     // component will resolve a signed-in user on the very next request.
-    const cookieSupabase = await createCookieClient()
-    const { data: signInData, error: signInErr } = await cookieSupabase.auth.signInWithPassword({ email, password })
-    if (signInErr) {
-      console.error('[registrations] signInWithPassword failed', signInErr)
-      Sentry.captureException(signInErr, {
-        tags: { area: 'registration-signin' },
-        extra: { email, city: cityValue },
+    // Adopted accounts take the other path: we never set their password, so
+    // signInWithPassword would fail against whatever the original signup left
+    // there. Email a magic link instead — clicking it from their own inbox is
+    // what authenticates them.
+    let signInData: { session?: { access_token: string; refresh_token: string } | null } | null = null
+    let loginLinkSent = false
+
+    if (adoptedExistingAuthUser) {
+      const origin = request.headers.get('origin')
+        || request.headers.get('referer')?.split('/').slice(0, 3).join('/')
+        || `https://${CITY_CONFIGS[cityValue].domain}`
+      const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
+        type: 'magiclink',
+        email,
+        options: { redirectTo: `${origin}/for-dentists/dashboard` },
       })
+      const actionLink = linkData?.properties?.action_link
+      if (linkErr || !actionLink) {
+        console.error('[registrations] magic link generation failed for adopted account', linkErr)
+        Sentry.captureException(linkErr || new Error('generateLink returned no action_link'), {
+          tags: { area: 'registration-adopt-magiclink' },
+          extra: { email, city: cityValue },
+        })
+      } else {
+        try {
+          await sendDentistLoginLinkEmail({ to_email: email, name, action_link: actionLink, city: cityValue })
+          loginLinkSent = true
+        } catch (err) {
+          console.error('[registrations] magic link email send failed', err)
+          Sentry.captureException(err, {
+            tags: { area: 'registration-adopt-magiclink-send' },
+            extra: { email, city: cityValue },
+          })
+        }
+      }
+    } else {
+      const cookieSupabase = await createCookieClient()
+      const { data: pwData, error: signInErr } = await cookieSupabase.auth.signInWithPassword({ email, password })
+      signInData = pwData
+      if (signInErr) {
+        console.error('[registrations] signInWithPassword failed', signInErr)
+        Sentry.captureException(signInErr, {
+          tags: { area: 'registration-signin' },
+          extra: { email, city: cityValue },
+        })
+      }
     }
 
     // Admin ping — same wa.me click-to-chat pattern the old flow used.
@@ -512,9 +556,19 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      redirect: '/for-dentists/dashboard',
+      // Adopted accounts have no session to hand back — the dentist gets in by
+      // clicking the emailed link, so there is nothing to redirect to yet.
+      redirect: adoptedExistingAuthUser ? null : '/for-dentists/dashboard',
       ref_no,
       slug,
+      // Set when the profile was created against an adopted auth row. The
+      // client shows `notice` instead of routing to the dashboard.
+      loginLinkSent: adoptedExistingAuthUser ? loginLinkSent : undefined,
+      notice: adoptedExistingAuthUser
+        ? (loginLinkSent
+            ? `Your clinic profile is live. You already had an account with us, so we've sent a sign-in link to ${email} — click it to open your dashboard.`
+            : `Your clinic profile is live, but we couldn't email your sign-in link. Use "Forgot password" on the sign-in page to get in.`)
+        : undefined,
       // Return access/refresh tokens so the client can call setSession()
       // which triggers the browser's built-in "save password" prompt.
       session: signInData?.session

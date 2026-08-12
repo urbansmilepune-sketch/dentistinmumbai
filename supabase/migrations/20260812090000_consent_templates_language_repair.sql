@@ -22,14 +22,22 @@
 --
 -- ── Divergences from 20260620140000 / 20260620150000 that REMAIN ──
 --
---   1. NO CHECK constraint on `language`. The statement was supplied but did
---      not take effect — verified on 2026-08-12 by inserting
---      language = 'zz_not_a_lang', which was accepted (201). The column is
---      free text. Application code compensates: normLang() in
---      dashboard/consent-forms/templates/page.tsx folds any unrecognised value
---      back to 'en' rather than crashing the render. To add the constraint
---      later, run the block at the bottom of this file — the data is already
---      clean, so it should apply as-is.
+--   1. NO CHECK constraint on `language`, after TWO separate attempts to add
+--      it (2026-08-12). Verified behaviourally three times, each with a
+--      different invalid value — 'zz_not_a_lang', 'NOT_A_LANG' and 'ENGLISH'
+--      were all accepted with HTTP 201. The column is free text.
+--
+--      Whatever is blocking it is not the data: every row already satisfies
+--      the constraint, so it is not a validation failure on existing rows.
+--      Worth checking that the statement is running against this project
+--      (hpruudyeluingwckavws) and reporting any error the SQL editor returns,
+--      rather than adding it a third time blind.
+--
+--      Nothing is broken in the meantime. The UI only ever writes valid codes,
+--      and normLang() in dashboard/consent-forms/templates/page.tsx folds any
+--      unrecognised value back to 'en' rather than crashing the render. This
+--      is a defence-in-depth gap, not a live fault. The statement is at the
+--      bottom of this file for whenever it can be applied.
 --
 --   2. The 30 Marathi / Hindi / Gujarati / Telugu / Tamil system templates from
 --      those two migrations were never inserted and are still absent. Only the
@@ -65,10 +73,11 @@ set language = 'both'
 where is_system = true and form_type = 'basal_implant';
 
 -- ---------------------------------------------------------------------------
--- NOT APPLIED — the language CHECK constraint.
+-- NOT APPLIED — the language CHECK constraint. Attempted twice on 2026-08-12;
+-- three behavioural probes afterwards confirmed it is still not enforced.
 -- Left commented rather than deleted so the intended shape isn't lost. The
--- UPDATE above already guarantees every row satisfies it, so this should
--- apply cleanly whenever it's run.
+-- UPDATE above already guarantees every row satisfies it, so there is no data
+-- reason for it to fail — check the SQL editor's output when running it.
 -- ---------------------------------------------------------------------------
 -- alter table public.consent_templates
 --   drop constraint if exists consent_templates_language_check;

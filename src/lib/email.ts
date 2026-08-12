@@ -738,6 +738,47 @@ export async function sendLoginOtpEmail(data: {
   })
 }
 
+/**
+ * Magic-link sign-in email for a dentist whose registration adopted a
+ * pre-existing auth.users row (see api/registrations). That row's password is
+ * deliberately left untouched — resetting it would let anyone who knows an
+ * orphaned address take the account over — so a link the recipient can only
+ * click from their own inbox is the only way in. Proving inbox control IS the
+ * authentication step here.
+ */
+export async function sendDentistLoginLinkEmail(data: {
+  to_email: string
+  name: string
+  action_link: string
+  city?: string
+}) {
+  const city = resolveCity(data.city)
+  return resend.emails.send({
+    from: getCityFrom(city.citySlug),
+    to: data.to_email,
+    subject: `Finish setting up your ${city.domain} dashboard`,
+    text: `Hello ${data.name}, your clinic profile is live. Open your dashboard using this link (expires in 1 hour): ${data.action_link}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: linear-gradient(135deg, #003F7A, #0057A8); padding: 28px; border-radius: 10px 10px 0 0; text-align: center;">
+          <h1 style="color: white; margin: 0; font-size: 22px;">${city.domain}</h1>
+          <p style="color: rgba(255,255,255,0.8); margin: 6px 0 0; font-size: 14px;">Your Dashboard Access</p>
+        </div>
+        <div style="background: #fff; padding: 32px; border: 1px solid #e2e8f0; border-radius: 0 0 10px 10px;">
+          <h2 style="color: #0F1923; margin-bottom: 8px;">Hello, ${data.name}!</h2>
+          <p style="color: #374151; font-size: 15px; margin-bottom: 8px;">Your clinic profile is live on ${city.domain}.</p>
+          <p style="color: #374151; font-size: 15px; margin-bottom: 24px;">You already had an account with us from an earlier sign-up attempt, so we've linked your new profile to it rather than creating a duplicate. Click below to open your dashboard — the link expires in 1 hour.</p>
+          <div style="text-align: center; margin: 24px 0;">
+            <a href="${data.action_link}" style="background: #0057A8; color: white; padding: 14px 28px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 15px;">Open My Dashboard →</a>
+          </div>
+          <p style="color: #64748b; font-size: 13px;">Once inside, set a password from your profile settings so you can sign in directly next time.</p>
+          <p style="color: #94a3b8; font-size: 12px; margin-top: 20px; text-align: center;">© ${new Date().getFullYear()} DentistIn. All rights reserved.</p>
+        </div>
+      </div>
+    `,
+  })
+}
+
 // ─── Appointment notification helpers ────────────────────────────────────
 // Three shapes covering the booking lifecycle:
 //   - sendBookingRequestToPatient: ack after the patient submits a booking
