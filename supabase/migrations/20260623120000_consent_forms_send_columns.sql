@@ -11,6 +11,12 @@
 -- This migration adds every column that feature reads or writes. All statements
 -- are idempotent (ADD COLUMN IF NOT EXISTS / DROP ... IF EXISTS), so it is safe
 -- to run against a table that already has some of them.
+--
+-- APPLIED 2026-08-12. Written 2026-06-23 but not run until now — the send
+-- workflow was broken for the whole gap. Verified live the same day: all ten
+-- columns present, patient_id accepts NULL, and a free-text form_type inserts
+-- (the old five-value CHECK is gone), so the columns and both constraint
+-- changes below are confirmed in place.
 
 alter table public.consent_forms
   add column if not exists form_title       text,
