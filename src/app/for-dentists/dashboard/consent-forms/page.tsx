@@ -124,6 +124,7 @@ export default function ConsentFormsPage() {
   // All tab state
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   useEffect(() => {
     async function load() {
@@ -136,7 +137,7 @@ export default function ConsentFormsPage() {
       setDentistId(dentist.id)
       setDentistMeta(dentist)
 
-      const [{ data: tpls }, { data: cf }] = await Promise.all([
+      const [{ data: tpls, error: tplErr }, { data: cf, error: cfErr }] = await Promise.all([
         supabase.from('consent_templates')
           .select('id, form_type, form_title, form_content, is_system, is_active, language, template_group')
           .order('is_system', { ascending: false })
@@ -147,6 +148,11 @@ export default function ConsentFormsPage() {
           .not('form_text', 'is', null)
           .order('created_at', { ascending: false }),
       ])
+      // Both reads return data = null on a missing column (42703) or an RLS
+      // denial, which renders as "no templates yet" / "no forms yet" and hides
+      // the real cause. Say what actually failed instead.
+      const failed = [tplErr && `templates (${tplErr.message})`, cfErr && `sent forms (${cfErr.message})`].filter(Boolean)
+      setLoadError(failed.length > 0 ? failed.join(' · ') : null)
       setTemplates((tpls ?? []) as Template[])
       setForms((cf ?? []) as ConsentRow[])
       setLoading(false)
@@ -416,6 +422,12 @@ export default function ConsentFormsPage() {
           📋 Manage Templates
         </Link>
       </div>
+
+      {loadError && (
+        <div style={{ background: '#FEE2E2', border: '1px solid #FECACA', color: '#991B1B', padding: '10px 16px', borderRadius: 10, marginBottom: 16, fontSize: 13 }}>
+          Could not load {loadError}
+        </div>
+      )}
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '2px solid var(--border)', paddingBottom: 0 }}>

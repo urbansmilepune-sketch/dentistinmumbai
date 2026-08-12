@@ -17,7 +17,9 @@ interface Template {
   is_system: boolean
   is_default: boolean
   is_active?: boolean
-  language?: Lang | null
+  // Free text in the DB (no CHECK constraint), so this is deliberately wider
+  // than Lang — normalise with normLang() before using it as a lookup key.
+  language?: string | null
   template_group?: string | null
   created_at: string
 }
@@ -60,8 +62,16 @@ const LANG_BADGE: Record<Lang, { text: string; color: string }> = {
   ta:   { text: 'தமிழ்',       color: '#C62828' }, // red
   both: { text: 'EN + मराठी',  color: '#0A2558' }, // navy
 }
-function LangBadge({ language }: { language?: Lang | null }) {
-  const m = LANG_BADGE[language || 'en']
+// consent_templates.language is free text, so a row can hold a value outside
+// Lang (early manual ALTERs defaulted it to 'english'). An unrecognised key
+// makes LANG_BADGE / LANG_ORDER return undefined, which crashes the render, so
+// fold anything we don't know back to 'en'.
+function normLang(language?: string | null): Lang {
+  return language && language in LANG_BADGE ? (language as Lang) : 'en'
+}
+
+function LangBadge({ language }: { language?: string | null }) {
+  const m = LANG_BADGE[normLang(language)]
   return (
     <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: m.color, color: '#fff', fontWeight: 700, whiteSpace: 'nowrap' }}>
       {m.text}
@@ -84,6 +94,7 @@ export default function ConsentTemplatesPage() {
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
   const [editForm, setEditForm] = useState<{
@@ -107,11 +118,15 @@ export default function ConsentTemplatesPage() {
       if (!dentist) { router.push('/for-dentists/login'); return }
       setDentistId(dentist.id)
 
-      const { data } = await supabase
+      const { data, error: loadErr } = await supabase
         .from('consent_templates')
         .select('id, dentist_id, form_type, form_title, form_content, is_system, is_default, is_active, language, template_group, created_at')
         .order('is_system', { ascending: false })
         .order('form_title')
+      // Surface the failure instead of rendering an empty list: a missing
+      // column (42703) or an RLS denial both come back as data = null, which
+      // otherwise looks identical to "this clinic has no templates".
+      if (loadErr) { setLoadError(loadErr.message); setLoading(false); return }
       // Hide soft-deleted custom templates (is_active = false). System rows
       // default to active.
       const tpls = ((data ?? []) as Template[]).filter(t => t.is_active !== false)
@@ -128,7 +143,7 @@ export default function ConsentTemplatesPage() {
       form_title: tpl.form_title,
       form_content: tpl.form_content,
       is_active: tpl.is_active ?? true,
-      language: tpl.language ?? 'en',
+      language: normLang(tpl.language),
     })
     setModal('edit')
     setError(null)
@@ -263,7 +278,7 @@ export default function ConsentTemplatesPage() {
       g,
       items: systemTpls
         .filter(t => (t.template_group || t.form_type) === g)
-        .sort((a, b) => LANG_ORDER[a.language || 'en'] - LANG_ORDER[b.language || 'en']),
+        .sort((a, b) => LANG_ORDER[normLang(a.language)] - LANG_ORDER[normLang(b.language)]),
     }))
 
   return (
@@ -284,6 +299,12 @@ export default function ConsentTemplatesPage() {
       {success && (
         <div style={{ background: '#DCFCE7', border: '1px solid #BBF7D0', color: '#166534', padding: '10px 16px', borderRadius: 10, marginBottom: 16, fontSize: 13 }}>
           ✓ {success}
+        </div>
+      )}
+
+      {loadError && (
+        <div style={{ background: '#FEE2E2', border: '1px solid #FECACA', color: '#991B1B', padding: '10px 16px', borderRadius: 10, marginBottom: 16, fontSize: 13 }}>
+          Could not load templates: {loadError}
         </div>
       )}
 
