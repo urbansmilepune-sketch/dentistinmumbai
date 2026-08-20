@@ -14,6 +14,7 @@ import {
 } from '@/lib/email'
 import { sendSMS } from '@/lib/sms'
 import { isDemoEmail } from '@/lib/demo'
+import { guardRequest } from '@/lib/apiGuards'
 
 function generateRef(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
@@ -23,6 +24,18 @@ function generateRef(): string {
 }
 
 export async function POST(request: NextRequest) {
+  // Every accepted booking fans out to two SMS sends plus emails, so a flood
+  // costs real money and spams real dentists. The cap is deliberately loose:
+  // Indian mobile carriers put huge numbers of patients behind shared CGNAT
+  // addresses, and a clinic's own front desk books for walk-ins from one IP.
+  // 20/hour stops a bot without ever reaching a plausible human.
+  const limited = guardRequest(request, 'bookings', {
+    max: 20,
+    windowMs: 60 * 60 * 1000,
+    message: 'Too many booking attempts from this connection. Please try again in a minute.',
+  })
+  if (limited) return limited
+
   try {
     const body = await request.json()
     const { dentist_id, patient_name, patient_phone, patient_email, appt_date, time_slot, treatment_id, notes, location_id } = body

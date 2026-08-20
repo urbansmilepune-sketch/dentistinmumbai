@@ -15,6 +15,7 @@ import { resolveCurrentDentist } from '@/lib/currentDentist'
 import { CLAUDE_MODEL } from '@/lib/anthropic'
 import { getCityBySlug } from '@/config/cities'
 import { topicLabel, isTopicType } from '@/lib/articles'
+import { guardRequest } from '@/lib/apiGuards'
 
 const ANTHROPIC_API = 'https://api.anthropic.com/v1/messages'
 
@@ -36,6 +37,17 @@ type DentistDraftRow = {
 }
 
 export async function POST(request: NextRequest) {
+  // Rate limit BEFORE the auth round-trip: every call here spends Anthropic
+  // tokens, so a stolen session or a runaway client is a direct billing leak.
+  // 10 drafts/hour is well above real editorial use (a dentist writes a few
+  // articles a month) while capping the damage from any single IP.
+  const limited = guardRequest(request, 'ai-draft', {
+    max: 10,
+    windowMs: 60 * 60 * 1000,
+    message: 'Too many draft requests. Please wait a minute and try again.',
+  })
+  if (limited) return limited
+
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
