@@ -6,6 +6,7 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 import NationalShell from '@/components/national/NationalShell'
 import { getSpecialty } from '@/lib/dentalSpecialties'
 import ReportButton from './ReportButton'
+import Comments from './Comments'
 import ShareButton from '@/components/national/ShareButton'
 import { NATIONAL_ORIGIN } from '@/config/cities'
 
@@ -142,14 +143,32 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
   const isOwner = user?.email && data.row.dentists?.email && user.email.toLowerCase() === data.row.dentists.email.toLowerCase()
   if (data.row.status !== 'approved' && !isOwner) notFound()
 
-  // This page used to fan out to my-like, my-save and the comments thread.
-  // All three went with the social-layer freeze — case_likes, case_saves
-  // and case_comments are untouched in the database, the page simply stopped
-  // reading them. The admin client stays for the view_count bump below.
+  // Peer review context. Like and Save stay gone — those are the vanity
+  // mechanics we're deliberately not building. The comment thread is back:
+  // clinical peer feedback is the point of publishing a case, not a social
+  // interaction. Service role because the thread joins author rows that anon
+  // can't read when the case is pending (owner preview case).
   const adminClient = createServiceClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   )
+
+  // Identifies the viewer to the Comments component so it can offer the
+  // reply box (verified dentists only) and a delete affordance on their own
+  // comments. Undefined for signed-out visitors, who get a read-only thread.
+  let currentDentist: { id: string; is_verified: boolean } | undefined
+  if (user?.email) {
+    const { data: d } = await supabase
+      .from('dentists').select('id, is_verified').eq('email', user.email).single()
+    if (d) currentDentist = { id: d.id, is_verified: !!d.is_verified }
+  }
+
+  const { data: commentsRows } = await adminClient
+    .from('case_comments')
+    .select('id, content, created_at, dentist_id, dentist:dentist_id(name, slug, city, specialties, is_verified)')
+    .eq('case_id', data.row.id)
+    .order('created_at', { ascending: true })
+    .limit(200)
 
   // Bump view_count for every load on an approved case. Fire-and-forget
   // — nothing reads view_count since the trending rail went away, but the
@@ -278,9 +297,17 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
           </section>
         )}
 
-        {/* Case discussion (comments) was removed with the social-layer
-            freeze. case_comments and the rows in it are untouched — the
-            thread just isn't rendered or writable from here any more. */}
+        {/* Peer review — only when the case is approved AND the author
+            opted in. The Comments component renders its own empty /
+            verify-needed / sign-in states. */}
+        {data.row.status === 'approved' && (
+          <Comments
+            caseId={data.row.id}
+            initialComments={(commentsRows as any) || []}
+            currentDentist={currentDentist}
+            discussionEnabled={data.row.discussion_enabled}
+          />
+        )}
 
         {/* Footer actions */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginTop: 24 }}>
