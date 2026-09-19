@@ -22,12 +22,12 @@ export async function generateMetadata(): Promise<Metadata> {
   if (h.get('x-is-national') === '1' || isNationalHost(h.get('x-forwarded-host') || h.get('host'))) {
     const liveCityCount = Object.keys(CITY_CONFIGS).length
     return {
-      title: `DentistIn India | Clinical Case Review for Dentists | ${liveCityCount} Cities`,
-      description: "Publish your clinical cases and get considered peer review from State Dental Council-verified dentists across India. Reputation built on the quality of your work.",
+      title: `DentistIn India | Find a Verified Dentist in Your City | ${liveCityCount} Cities`,
+      description: `Find verified dentists across ${liveCityCount} Indian cities. Pick your city to browse clinics, compare fees and book an appointment.`,
       alternates: { canonical: NATIONAL_ORIGIN },
       openGraph: {
-        title: 'DentistIn India | Clinical Case Review for Dentists',
-        description: 'Publish a case. Get peer review from verified colleagues in your field. Build a reputation on your clinical work.',
+        title: 'DentistIn India | Find a Verified Dentist in Your City',
+        description: `Verified dentists across ${liveCityCount} Indian cities. Pick your city to browse clinics and book an appointment.`,
         url: NATIONAL_ORIGIN,
         siteName: 'Dentist In India',
         locale: 'en_IN',
