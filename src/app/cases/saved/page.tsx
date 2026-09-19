@@ -93,8 +93,12 @@ export default async function SavedCasesPage() {
           <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 14, padding: 48, textAlign: 'center' }}>
             <div style={{ fontSize: 36, marginBottom: 8 }}>☆</div>
             <p style={{ fontSize: 15, fontWeight: 600, color: '#0F1923', marginBottom: 6 }}>Nothing saved yet.</p>
+            {/* The "Browse cases →" link pointed at /cases, which was
+                removed with the social-layer freeze. There's no browse
+                surface to send anyone to, and the ☆ save button is gone
+                too, so this page is read-only history now. */}
             <p style={{ fontSize: 13, color: '#64748B' }}>
-              Hit the ☆ button on any case to bookmark it here. <Link href="/cases" style={{ color: '#1D4ED8', fontWeight: 700, textDecoration: 'none' }}>Browse cases →</Link>
+              Saving cases is no longer available.
             </p>
           </div>
         ) : (
