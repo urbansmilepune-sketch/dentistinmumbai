@@ -4,10 +4,11 @@
 // route the dentist to /for-dentists/login with their email pre-filled
 // so they can sign in immediately and start posting cases.
 //
-// The city dropdown lists the 13 live city slugs in alphabetical order
-// + a sentinel "other" value so dentists in unlaunched cities can
-// still create a national-only profile. The server handles the
-// "no city site to host them" case gracefully.
+// The city dropdown is derived from CITY_CONFIGS in alphabetical order
+// (the comment here used to say "13 live city slugs", which went stale as
+// soon as cities were added) + a sentinel "other" value so dentists in
+// unlaunched cities can still create a national-only profile. The server
+// handles the "no city site to host them" case gracefully.
 
 import { useRef, useState } from 'react'
 import { CITY_CONFIGS, type CitySlug } from '@/config/cities'
