@@ -1,11 +1,16 @@
 import { MetadataRoute } from 'next'
 import { headers } from 'next/headers'
-import { getCityByDomain, cityOrigin } from '@/config/cities'
+import { getCityByDomain, cityOrigin, isNationalHost, NATIONAL_ORIGIN } from '@/config/cities'
 
 export default async function robots(): Promise<MetadataRoute.Robots> {
   const h = await headers()
-  const city = getCityByDomain(h.get('x-forwarded-host') || h.get('host'))
-  const origin = cityOrigin(city)
+  const host = h.get('x-forwarded-host') || h.get('host')
+  // The national parent has no CitySlug, so getCityByDomain falls back to
+  // Mumbai for it. Resolving the origin through that fallback made
+  // dentistinindia.in/robots.txt advertise Mumbai's sitemap and declare
+  // `Host: dentistinmumbai.in` — pointing crawlers at the wrong property.
+  // Branch on the host first, exactly like sitemap.ts already does.
+  const origin = isNationalHost(host) ? NATIONAL_ORIGIN : cityOrigin(getCityByDomain(host))
   return {
     rules: [
       {

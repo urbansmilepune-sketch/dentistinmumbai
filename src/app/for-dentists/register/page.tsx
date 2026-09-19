@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { HONEYPOT_FIELD } from '@/lib/registrationGuards'
-import { getCityByDomain, CITY_CONFIGS, DEFAULT_CITY, type CitySlug, type CityConfig } from '@/config/cities'
+import { getCityByDomain, isNationalHost, CITY_CONFIGS, DEFAULT_CITY, type CitySlug, type CityConfig } from '@/config/cities'
 
 type AreaStatus = 'idle' | 'loading' | 'ready' | 'error'
 
@@ -65,8 +65,20 @@ export default function RegisterPage() {
 
     // City is inferred from the current hostname so a dentist registering on
     // dentistinpune.in lands a row tagged city='pune'.
-    setCityConfig(getCityByDomain(window.location.hostname))
-  }, [])
+    //
+    // The national parent isn't a city: getCityByDomain falls back to
+    // DEFAULT_CITY ('mumbai') for it, which would tag the row 'mumbai' and
+    // brand the form for Mumbai. register/layout.tsx already redirects that
+    // host to /join server-side; this is the client-side safety net for the
+    // case where the layout's header check doesn't apply (e.g. a soft
+    // client-side navigation into this route).
+    const host = window.location.hostname
+    if (isNationalHost(host)) {
+      router.replace('/join')
+      return
+    }
+    setCityConfig(getCityByDomain(host))
+  }, [router])
 
   // Refetch areas whenever the resolved city changes. Clear the previously
   // chosen area in case it doesn't exist in the new city's set.
