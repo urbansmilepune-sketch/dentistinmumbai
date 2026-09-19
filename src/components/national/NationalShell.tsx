@@ -4,13 +4,22 @@ import BrandLogo from './BrandLogo'
 
 // Shared header + footer for the secondary national pages (every
 // national surface except / and /cities, which have their own inline
-// navs). Nav: Dentists / Cities / Dental Insights / For Dentists, plus
-// "My Profile" when the viewer is signed in, or "Join Free" when not.
-// (Dental Insights is the /insights hub — articles only since the
-// social-layer freeze; the cases tab it used to carry is gone.)
+// navs).
 //
-// The "My Feed" nav link was removed with /feed itself — the platform is
-// a verified directory + vendor trust network, not a social feed.
+// Nav mirrors the homepage exactly — Case discussions / Find dentists /
+// Dental insights, then My profile when signed in or Sign in + Claim your
+// profile when not — so the two don't disagree as a visitor moves between
+// them. Cities and For dentists moved to the footer to keep the row short.
+//
+// "Case discussions" has no standalone index: /cases was deleted in the
+// social-layer freeze and stays deleted, so it deep-links to the
+// peer-reviewed rail on the homepage. Root-relative (/#…) because this
+// shell renders on sub-pages, where a bare #anchor would go nowhere.
+//
+// Dental insights is the /insights hub — articles only since the freeze;
+// the cases tab it used to carry is gone. The "My Feed" link went with
+// /feed itself: the product is clinical case review between verified
+// dentists, not a social feed and not lab discovery.
 //
 // Auth state is fetched server-side in this component itself (rather
 // than via a prop) so every consumer doesn't have to thread it through.
@@ -42,14 +51,13 @@ export default async function NationalShell({ badge, children }: Props) {
             )}
           </Link>
           <div style={{ display: 'flex', alignItems: 'center', gap: 18, fontSize: 14, fontWeight: 600 }}>
-            <Link href="/dentists"     style={{ color: '#475569', textDecoration: 'none' }}>Dentists</Link>
-            <Link href="/cities"       style={{ color: '#475569', textDecoration: 'none' }}>Cities</Link>
-            <Link href="/insights"     style={{ color: '#475569', textDecoration: 'none' }}>Dental Insights</Link>
-            <Link href="/for-dentists" style={{ color: '#475569', textDecoration: 'none' }}>For Dentists</Link>
+            <a href="/#peer-reviewed" style={{ color: '#475569', textDecoration: 'none' }}>Case discussions</a>
+            <Link href="/dentists" style={{ color: '#475569', textDecoration: 'none' }}>Find dentists</Link>
+            <Link href="/insights" style={{ color: '#475569', textDecoration: 'none' }}>Dental insights</Link>
             {signedIn ? (
               <>
                 <Link href="/professional/me" style={{ padding: '8px 16px', background: '#0F1923', color: '#fff', borderRadius: 8, textDecoration: 'none' }}>
-                  My Profile
+                  My profile
                 </Link>
                 <form action="/auth/signout" method="post" style={{ margin: 0 }}>
                   <button type="submit" style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, font: 'inherit', fontSize: 14, fontWeight: 600, color: '#475569' }}>
@@ -59,9 +67,9 @@ export default async function NationalShell({ badge, children }: Props) {
               </>
             ) : (
               <>
-                <Link href="/login" style={{ color: '#475569', textDecoration: 'none' }}>Login</Link>
+                <Link href="/login" style={{ color: '#475569', textDecoration: 'none' }}>Sign in</Link>
                 <Link href="/join" style={{ padding: '8px 16px', background: '#1D4ED8', color: '#fff', borderRadius: 8, textDecoration: 'none' }}>
-                  Join Free →
+                  Claim your profile
                 </Link>
               </>
             )}
@@ -82,12 +90,13 @@ export default async function NationalShell({ badge, children }: Props) {
             </p>
           </div>
           <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap' }}>
-            {/* "Browse cases" removed with the social-layer freeze. The
-                /dental-tourism link is removed too — the page stays live
-                and indexed, we just don't promote it while the vendor
-                pivot lands. */}
+            {/* "Browse cases" went with the social-layer freeze. The
+                /dental-tourism link is gone too — that page stays live and
+                indexed, we just don't promote it right now. No vendor link
+                here on purpose: lab discovery is reachable from the
+                homepage footer and the dentist dashboard, nowhere else. */}
             <FooterCol title="Explore">
-              <FooterLink href="/dentists">Discover dentists</FooterLink>
+              <FooterLink href="/dentists">Find dentists</FooterLink>
               <FooterLink href="/cities">Cities</FooterLink>
               <FooterLink href="/insights">Dental insights</FooterLink>
             </FooterCol>
