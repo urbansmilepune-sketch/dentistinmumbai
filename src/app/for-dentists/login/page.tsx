@@ -77,10 +77,10 @@ export default function DentistLoginPage() {
   // Per-mode copy. The login page wears two hats: a city-clinic portal
   // (DentistInMumbai.in etc.) and the national professional network
   // (DentistInIndia.in). Frame the page accordingly.
-  const heroHeadline   = national ? "India's Verified Dentist Directory" : 'Your practice dashboard awaits'
-  const heroSub        = national ? 'Sign in to manage your profile and rate the vendors you use' : 'Manage everything from one place'
+  const heroHeadline   = national ? 'Clinical Case Review for Indian Dentists' : 'Your practice dashboard awaits'
+  const heroSub        = national ? 'Sign in to publish cases and review your colleagues’ work' : 'Manage everything from one place'
   const heroBullets    = national
-    ? ['Find labs and vendors other dentists trust', 'Rate the labs you already work with', 'Keep your verified profile current', 'Get listed on your city directory']
+    ? ['Publish your clinical cases', 'Get peer review from verified colleagues', 'Keep your verified profile current', 'Get listed on your city directory']
     : ['Manage appointments 24/7', 'Upload clinic photos', 'Track patient enquiries', 'Rank higher on Google']
   const rightSubLine   = national ? 'Sign in to your profile' : 'Sign in to your practice portal'
   const submitLabel    = national ? 'Sign In' : 'Sign In to Dashboard'

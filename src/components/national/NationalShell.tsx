@@ -78,7 +78,7 @@ export default async function NationalShell({ badge, children }: Props) {
               Dentist In India
             </div>
             <p style={{ fontSize: 13, lineHeight: 1.6 }}>
-              India's verified dentist directory. Built by dental professionals.
+              Clinical case review between verified Indian dentists.
             </p>
           </div>
           <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap' }}>

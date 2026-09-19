@@ -6,15 +6,16 @@ export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
   title: 'Claim Your Verified Dentist Profile | Dentist In India',
-  description: 'Create your verified profile in 5 minutes. Listed on your city directory automatically, and rate the labs and vendors you already use.',
+  description: 'Create your verified profile in 5 minutes. Publish clinical cases, get peer review from verified colleagues, and get listed on your city directory.',
 }
 
 // /join — frictionless registration for the national parent. Server
 // component wraps the client form with the national shell and a hero block.
 //
-// Copy reframed off the old "India's LinkedIn for dentists" positioning: the
-// platform is a verified directory plus a vendor trust layer, not a social
-// network. The form itself is unchanged.
+// Copy reframed off the old "India's LinkedIn for dentists" positioning —
+// and then off the vendor framing that briefly replaced it. The product is
+// clinical case review between verified dentists; vendor discovery is a
+// footer-level utility. The form itself is unchanged.
 
 export default function JoinPage() {
   return (
@@ -25,8 +26,8 @@ export default function JoinPage() {
             Claim your <span style={{ color: '#1D4ED8' }}>verified dentist profile</span>
           </h1>
           <p style={{ fontSize: 16, color: '#475569', lineHeight: 1.55 }}>
-            Takes 5 minutes. Listed on your city directory automatically — and it&apos;s what lets you
-            rate the labs and vendors you already work with.
+            Takes 5 minutes. Your State Dental Council registration is what lets you publish cases
+            and review your colleagues&apos; work — and it lists you on your city directory automatically.
           </p>
         </div>
       </section>
