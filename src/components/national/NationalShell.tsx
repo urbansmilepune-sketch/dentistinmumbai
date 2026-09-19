@@ -1,14 +1,16 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import FeedNavLink from './FeedNavLink'
 import BrandLogo from './BrandLogo'
 
 // Shared header + footer for the secondary national pages (every
 // national surface except / and /cities, which have their own inline
 // navs). Nav: Dentists / Cities / Dental Insights / For Dentists, plus
-// "My Feed" and "My Profile" when the viewer is signed in, or "Join the
-// Network" when not. (Dental Insights is the merged /insights hub that
-// consolidates the old Cases + Expert Advice surfaces.)
+// "My Profile" when the viewer is signed in, or "Join Free" when not.
+// (Dental Insights is the /insights hub — articles only since the
+// social-layer freeze; the cases tab it used to carry is gone.)
+//
+// The "My Feed" nav link was removed with /feed itself — the platform is
+// a verified directory + vendor trust network, not a social feed.
 //
 // Auth state is fetched server-side in this component itself (rather
 // than via a prop) so every consumer doesn't have to thread it through.
@@ -46,7 +48,6 @@ export default async function NationalShell({ badge, children }: Props) {
             <Link href="/for-dentists" style={{ color: '#475569', textDecoration: 'none' }}>For Dentists</Link>
             {signedIn ? (
               <>
-                <FeedNavLink />
                 <Link href="/professional/me" style={{ padding: '8px 16px', background: '#0F1923', color: '#fff', borderRadius: 8, textDecoration: 'none' }}>
                   My Profile
                 </Link>
@@ -77,23 +78,26 @@ export default async function NationalShell({ badge, children }: Props) {
               Dentist In India
             </div>
             <p style={{ fontSize: 13, lineHeight: 1.6 }}>
-              India's professional network for dentists. Built by dental professionals.
+              India's verified dentist directory. Built by dental professionals.
             </p>
           </div>
           <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap' }}>
-            <FooterCol title="Network">
-              <FooterLink href="/insights?tab=cases">Browse cases</FooterLink>
+            {/* "Browse cases" removed with the social-layer freeze. The
+                /dental-tourism link is removed too — the page stays live
+                and indexed, we just don't promote it while the vendor
+                pivot lands. */}
+            <FooterCol title="Explore">
               <FooterLink href="/dentists">Discover dentists</FooterLink>
               <FooterLink href="/cities">Cities</FooterLink>
+              <FooterLink href="/insights">Dental insights</FooterLink>
             </FooterCol>
             <FooterCol title="Get started">
-              <FooterLink href="/join">Join the network</FooterLink>
+              <FooterLink href="/join">Claim your profile</FooterLink>
               <FooterLink href="/for-dentists/login">Sign in</FooterLink>
               <FooterLink href="/for-dentists">For dentists</FooterLink>
             </FooterCol>
             <FooterCol title="Company">
               <FooterLink href="/about">About</FooterLink>
-              <FooterLink href="/dental-tourism">Dental tourism</FooterLink>
             </FooterCol>
           </div>
         </div>

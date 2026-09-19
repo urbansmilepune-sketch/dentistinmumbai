@@ -6,9 +6,6 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 import NationalShell from '@/components/national/NationalShell'
 import { getSpecialty } from '@/lib/dentalSpecialties'
 import ReportButton from './ReportButton'
-import LikeButton from './LikeButton'
-import SaveButton from './SaveButton'
-import Comments from './Comments'
 import ShareButton from '@/components/national/ShareButton'
 import { NATIONAL_ORIGIN } from '@/config/cities'
 
@@ -145,45 +142,18 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
   const isOwner = user?.email && data.row.dentists?.email && user.email.toLowerCase() === data.row.dentists.email.toLowerCase()
   if (data.row.status !== 'approved' && !isOwner) notFound()
 
-  // ── Social context ──────────────────────────────────────────────────
-  // Look up the signed-in dentist's id once, then fan out: my-like,
-  // my-save, comments thread. We use the service role for comments
-  // because the GET endpoint joins author rows that anon can't read
-  // when the case is pending (owner preview case). All fan-outs are
-  // best-effort — if any one fails we just render zero state for that
-  // section rather than failing the whole page.
+  // This page used to fan out to my-like, my-save and the comments thread.
+  // All three went with the social-layer freeze — case_likes, case_saves
+  // and case_comments are untouched in the database, the page simply stopped
+  // reading them. The admin client stays for the view_count bump below.
   const adminClient = createServiceClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   )
 
-  let currentDentist: { id: string; is_verified: boolean } | undefined
-  let myLiked = false
-  let mySaved = false
-  if (user?.email) {
-    const { data: d } = await supabase
-      .from('dentists').select('id, is_verified').eq('email', user.email).single()
-    if (d) {
-      currentDentist = { id: d.id, is_verified: !!d.is_verified }
-      const [{ data: likeRow }, { data: saveRow }] = await Promise.all([
-        adminClient.from('case_likes').select('id').eq('case_id', data.row.id).eq('dentist_id', d.id).maybeSingle(),
-        adminClient.from('case_saves').select('id').eq('case_id', data.row.id).eq('dentist_id', d.id).maybeSingle(),
-      ])
-      myLiked = !!likeRow
-      mySaved = !!saveRow
-    }
-  }
-
-  const { data: commentsRows } = await adminClient
-    .from('case_comments')
-    .select('id, content, created_at, dentist_id, dentist:dentist_id(name, slug, city, specialties, is_verified)')
-    .eq('case_id', data.row.id)
-    .order('created_at', { ascending: true })
-    .limit(200)
-
   // Bump view_count for every load on an approved case. Fire-and-forget
-  // — view counts only matter for the trending algorithm, so a missed
-  // bump on a transient error is fine. We don't await the response.
+  // — nothing reads view_count since the trending rail went away, but the
+  // counter is cheap and worth keeping warm for whatever replaces it.
   if (data.row.status === 'approved') {
     adminClient.from('cases').update({ view_count: (data.row.view_count || 0) + 1 }).eq('id', data.row.id).then(() => {})
   }
@@ -235,22 +205,12 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
               {data.row.dentists.is_verified && <span style={{ marginLeft: 8, fontSize: 11, padding: '2px 8px', background: '#DCFCE7', color: '#166534', borderRadius: 999, fontWeight: 700 }}>✓ Verified</span>}
             </div>
           )}
-          {/* Social actions — only for approved cases so a pending case's
-              owner preview doesn't get like/save buttons that would write
-              against an unpublishable row. */}
+          {/* Like and Save went with the social-layer freeze; Share stays
+              because it's a distribution affordance, not a social graph.
+              Approved-only so a pending case's owner preview doesn't offer
+              to share an unpublishable row. */}
           {data.row.status === 'approved' && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <LikeButton
-                caseId={data.row.id}
-                initialLiked={myLiked}
-                initialCount={data.row.like_count || 0}
-                signedIn={!!user?.email}
-              />
-              <SaveButton
-                caseId={data.row.id}
-                initialSaved={mySaved}
-                signedIn={!!user?.email}
-              />
               <ShareButton
                 caseId={data.row.id}
                 caseTitle={data.row.title}
@@ -318,17 +278,9 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
           </section>
         )}
 
-        {/* Discussion — only when the case is approved AND the author
-            opted in. The Comments component renders its own empty /
-            verify-needed / sign-in states. */}
-        {data.row.status === 'approved' && (
-          <Comments
-            caseId={data.row.id}
-            initialComments={(commentsRows as any) || []}
-            currentDentist={currentDentist}
-            discussionEnabled={data.row.discussion_enabled}
-          />
-        )}
+        {/* Case discussion (comments) was removed with the social-layer
+            freeze. case_comments and the rows in it are untouched — the
+            thread just isn't rendered or writable from here any more. */}
 
         {/* Footer actions */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginTop: 24 }}>

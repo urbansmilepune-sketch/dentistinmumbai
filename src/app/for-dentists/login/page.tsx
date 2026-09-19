@@ -77,15 +77,15 @@ export default function DentistLoginPage() {
   // Per-mode copy. The login page wears two hats: a city-clinic portal
   // (DentistInMumbai.in etc.) and the national professional network
   // (DentistInIndia.in). Frame the page accordingly.
-  const heroHeadline   = national ? "India's Professional Network for Dentists" : 'Your practice dashboard awaits'
-  const heroSub        = national ? 'Sign in to share cases and connect with peers' : 'Manage everything from one place'
+  const heroHeadline   = national ? "India's Verified Dentist Directory" : 'Your practice dashboard awaits'
+  const heroSub        = national ? 'Sign in to manage your profile and rate the vendors you use' : 'Manage everything from one place'
   const heroBullets    = national
-    ? ['Share clinical cases with peers', 'Connect with specialists nearby', 'Build your professional profile', 'Get listed on your city directory']
+    ? ['Find labs and vendors other dentists trust', 'Rate the labs you already work with', 'Keep your verified profile current', 'Get listed on your city directory']
     : ['Manage appointments 24/7', 'Upload clinic photos', 'Track patient enquiries', 'Rank higher on Google']
-  const rightSubLine   = national ? 'Sign in to the network' : 'Sign in to your practice portal'
+  const rightSubLine   = national ? 'Sign in to your profile' : 'Sign in to your practice portal'
   const submitLabel    = national ? 'Sign In' : 'Sign In to Dashboard'
   const joinHref       = national ? '/join' : '/for-dentists'
-  const joinCta        = national ? 'Join the network →' : 'List your clinic free →'
+  const joinCta        = national ? 'Claim your profile →' : 'List your clinic free →'
 
   const supabase = createClient()
 
@@ -94,9 +94,11 @@ export default function DentistLoginPage() {
   // can't pass an absolute URL and redirect the user off-platform.
   function nextPath(): string {
     if (nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//')) return nextParam
-    // Default landing: national host → feed (the professional network
-    // surface); city hosts → city dashboard.
-    return national ? '/feed' : '/for-dentists/dashboard'
+    // Both hosts land on the practice dashboard. This used to send national
+    // sign-ins to /feed, which no longer exists after the social-layer
+    // freeze — leaving it would have dropped every dentist signing in on
+    // dentistinindia.in onto a dead route.
+    return '/for-dentists/dashboard'
   }
 
   async function handleEmail(e: React.FormEvent) {

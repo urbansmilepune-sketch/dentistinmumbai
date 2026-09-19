@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Session cookies are queued on this response. The client hard-navigates to
-  // its computed landing (national /feed vs city dashboard, honouring ?next=).
+  // its computed landing (the practice dashboard, honouring ?next=).
   const response = NextResponse.json({ success: true })
 
   // "Remember me" (default on): issue a long-lived rotating token so an expired

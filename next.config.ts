@@ -45,22 +45,36 @@ const nextConfig: NextConfig = {
         destination: 'https://dentistinbangalore.in/:path*',
         permanent: true,
       },
-      // National consolidation — the merged /insights hub replaces the separate
+      // National consolidation — the /insights hub replaces the separate
       // Cases + Expert Advice surfaces on dentistinindia.in ONLY. Exact-path
       // sources so detail routes (/cases/[id], /articles/[city]/[slug]) are NOT
       // caught; Next forwards any query string onto the destination. City
       // domains have no /cases and keep their own /articles hub — no host match.
+      //
+      // Since the social-layer freeze /insights is articles-only, so both of
+      // these land on the bare hub rather than a ?tab= that no longer exists.
+      // /cases/[id] is deliberately still served: the six approved cases are
+      // indexable and sitemap-listed, so their URLs must keep resolving.
       {
         source: '/cases',
         has: [{ type: 'host', value: '(www\\.)?dentistinindia\\.in' }],
-        destination: '/insights?tab=cases',
+        destination: '/insights',
         permanent: true,
       },
       {
         source: '/articles',
         has: [{ type: 'host', value: '(www\\.)?dentistinindia\\.in' }],
-        destination: '/insights?tab=articles',
+        destination: '/insights',
         permanent: true,
+      },
+      // /feed is gone with the social layer. It was noindex and never in the
+      // sitemap, so there's no crawl equity to preserve — this exists purely
+      // so signed-in dentists with a bookmark land somewhere sensible.
+      {
+        source: '/feed',
+        has: [{ type: 'host', value: '(www\\.)?dentistinindia\\.in' }],
+        destination: '/',
+        permanent: false,
       },
       // Section 7 — static 301s for legacy/dead URLs surfaced in GSC. These map
       // old flat URLs and retired blog posts onto their live equivalents so the

@@ -111,8 +111,8 @@ export async function POST(request: NextRequest) {
   }
 
   // Session cookies are now queued on this response. The client hard-navigates
-  // to its own computed landing (nextPath handles national /feed vs city
-  // dashboard and any ?next=), which carries the fresh cookie.
+  // to its own computed landing (nextPath resolves the dashboard and any
+  // ?next=), which carries the fresh cookie.
   const response = NextResponse.json({ success: true })
 
   // "Remember me" (default on): issue a long-lived rotating token so an expired

@@ -7,13 +7,14 @@ export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
 
-  // dentistinindia.in is the professional-network surface, so a signed-in
-  // dentist landing on the national host wants the feed, not the city
-  // dashboard. Detect via the forwarded host (set by the platform proxy)
-  // with a fall-back to the parsed URL host for local dev.
+  // Detect the national host via the forwarded host (set by the platform
+  // proxy) with a fall-back to the parsed URL host for local dev. This used
+  // to route national sign-ins to /feed; that route went with the
+  // social-layer freeze, so both hosts now land on the practice dashboard.
+  // `national` is still needed below for the unrecognised-user branch.
   const forwardedHost = request.headers.get('x-forwarded-host') || request.headers.get('host')
   const national = isNationalHost(forwardedHost) || isNationalHost(new URL(request.url).hostname)
-  const dentistLanding = national ? '/feed' : '/for-dentists/dashboard'
+  const dentistLanding = '/for-dentists/dashboard'
 
   if (!code) {
     return NextResponse.redirect(`${origin}/for-dentists/login?error=oauth_failed&reason=no_code`)
@@ -87,10 +88,12 @@ export async function GET(request: NextRequest) {
 
   // Authenticated but unrecognised. On a city host, send them to /onboard
   // to fill in the three fields we can't get from Google (clinic_name,
-  // phone, area) before the dashboard gates them out. On the national
-  // host, /feed already handles unsigned-up users — keep that path.
+  // phone, area) before the dashboard gates them out. On the national host
+  // this used to fall through to /feed, which handled unsigned-up users by
+  // pointing them at /join — with /feed gone, send them straight to /join,
+  // which is where that path ended up anyway.
   if (national) {
-    return NextResponse.redirect(`${origin}${dentistLanding}`)
+    return NextResponse.redirect(`${origin}/join`)
   }
   return NextResponse.redirect(`${origin}/for-dentists/onboard`)
 }
