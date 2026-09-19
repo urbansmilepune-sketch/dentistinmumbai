@@ -3,6 +3,9 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { getCityByDomain, isNationalHost } from '@/config/cities'
 import { REMEMBER_COOKIE } from '@/lib/auth/rememberMe'
 
+/** Cookie that remembers a ?__host= preview override. Non-production only. */
+const PREVIEW_HOST_COOKIE = '__preview_host'
+
 export async function proxy(request: NextRequest) {
   if (request.nextUrl.pathname.startsWith('/auth/')) {
     return NextResponse.next()
@@ -12,7 +15,26 @@ export async function proxy(request: NextRequest) {
   // tag the request with x-is-national:1 and skip city resolution so pages
   // can branch on national mode. Every other host falls through to the
   // existing CITY_BY_DOMAIN lookup, which still defaults to Mumbai.
-  const host = request.headers.get('x-forwarded-host') || request.headers.get('host')
+  const realHost = request.headers.get('x-forwarded-host') || request.headers.get('host')
+
+  // Preview-only host override.
+  //
+  // Every surface on this platform is selected by Host header, but preview
+  // deployments are served from *.vercel.app — so on a preview, every host
+  // resolves to the Mumbai fallback and the national parent (and every city
+  // that isn't Mumbai) is simply unreachable for review. ?__host=<domain>
+  // stands in for the real Host header and is remembered in a cookie so it
+  // survives navigation.
+  //
+  // Hard-gated to non-production: on VERCEL_ENV=production the param and the
+  // cookie are both ignored, so this cannot be used to make dentistinmumbai.in
+  // serve another city's content. Safe to delete once previews are no longer
+  // needed for host-specific work.
+  const isProduction = process.env.VERCEL_ENV === 'production'
+  const overrideParam = isProduction ? null : request.nextUrl.searchParams.get('__host')
+  const overrideCookie = isProduction ? null : (request.cookies.get(PREVIEW_HOST_COOKIE)?.value ?? null)
+  const host = overrideParam || overrideCookie || realHost
+
   const national = isNationalHost(host)
   const city = getCityByDomain(host)
   const forwardedHeaders = new Headers(request.headers)
@@ -53,6 +75,12 @@ export async function proxy(request: NextRequest) {
     const reauth = new URL('/api/auth/remember-me', request.url)
     reauth.searchParams.set('next', path + request.nextUrl.search)
     return NextResponse.redirect(reauth)
+  }
+
+  // Persist a fresh ?__host= override so it survives navigation. Session
+  // cookie, non-production only — see the override block above.
+  if (overrideParam) {
+    response.cookies.set(PREVIEW_HOST_COOKIE, overrideParam, { path: '/', httpOnly: true, sameSite: 'lax' })
   }
 
   return response
