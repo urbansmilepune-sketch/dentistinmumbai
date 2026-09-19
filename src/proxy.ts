@@ -40,6 +40,12 @@ export async function proxy(request: NextRequest) {
   const forwardedHeaders = new Headers(request.headers)
   forwardedHeaders.set('x-city-slug', city.citySlug)
   if (national) forwardedHeaders.set('x-is-national', '1')
+  // Not every host-aware surface reads x-city-slug / x-is-national —
+  // robots.ts and sitemap.ts resolve the host themselves off
+  // x-forwarded-host. Rewrite it too so a ?__host= override reaches them
+  // as well, otherwise a preview silently serves the Mumbai robots.txt and
+  // sitemap while the pages themselves render as national.
+  if (host && host !== realHost) forwardedHeaders.set('x-forwarded-host', host)
 
   let response = NextResponse.next({ request: { headers: forwardedHeaders } })
 
