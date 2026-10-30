@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendSMS } from '@/lib/sms'
 import { phoneTail10 } from '@/lib/patientPortal'
+import { isMissingColumnError } from '@/lib/otpAttempts'
 
 function admin() {
   return createClient(
@@ -71,9 +72,17 @@ export async function POST(request: NextRequest) {
   const otp = Math.floor(100000 + Math.random() * 900000).toString()
   const expires_at = new Date(Date.now() + 10 * 60 * 1000).toISOString()
 
-  const { error: upsertErr } = await db
+  // A re-send reuses the phone's row, so reset the wrong-guess counter too.
+  // If the failed_attempts column hasn't been added yet, retry without it.
+  const otpRow = { phone, otp, expires_at, used: false, created_at: new Date().toISOString() }
+  let { error: upsertErr } = await db
     .from('patient_portal_otps')
-    .upsert({ phone, otp, expires_at, used: false, created_at: new Date().toISOString() }, { onConflict: 'phone' })
+    .upsert({ ...otpRow, failed_attempts: 0 }, { onConflict: 'phone' })
+  if (isMissingColumnError(upsertErr)) {
+    ;({ error: upsertErr } = await db
+      .from('patient_portal_otps')
+      .upsert(otpRow, { onConflict: 'phone' }))
+  }
   if (upsertErr) {
     console.error('[patient/otp/send] upsert failed', upsertErr)
     return NextResponse.json({ error: 'Could not issue OTP' }, { status: 500 })

@@ -83,7 +83,6 @@ export default async function DashboardPage() {
 
   const [
     { count: appointmentCount },
-    { count: enquiryCount },
     { count: reviewCount },
     { count: photoCount },
     { count: treatmentCount },
@@ -95,7 +94,6 @@ export default async function DashboardPage() {
     { data: monthEngagementEvents },
   ] = await Promise.all([
     supabase.from('appointments').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id),
-    supabase.from('enquiries').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id),
     supabase.from('reviews').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id).eq('status', 'approved'),
     supabase.from('gallery_photos').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id),
     supabase.from('dentist_treatments').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id),
@@ -186,7 +184,14 @@ export default async function DashboardPage() {
   const monthEngagement = {
     profile_views:   monthEv.filter(e => e.event_type === 'profile_view').length,
     whatsapp_clicks: monthEv.filter(e => e.event_type === 'whatsapp_click').length,
+    call_clicks:     monthEv.filter(e => e.event_type === 'call_click').length,
+    booking_clicks:  monthEv.filter(e => e.event_type === 'booking_click').length,
   }
+  // Every time a patient tried to reach this clinic from the public profile
+  // (Book, WhatsApp or Call). Replaces the old "Enquiries" tile, which counted
+  // an `enquiries` table nothing ever writes to, so it always showed 0.
+  const monthPatientActions =
+    monthEngagement.booking_clicks + monthEngagement.whatsapp_clicks + monthEngagement.call_clicks
 
   // Today summary computations
   const todayList = ((todayAppts ?? []) as unknown) as Array<{
@@ -244,7 +249,9 @@ export default async function DashboardPage() {
     { icon: '👁️', label: 'Profile Views · MTD', value: monthEngagement.profile_views, href: '/for-dentists/dashboard/analytics' },
     { icon: '💚', label: 'WhatsApp Clicks · MTD', value: monthEngagement.whatsapp_clicks, href: '/for-dentists/dashboard/analytics' },
     { icon: '📅', label: 'Total Appointments', value: appointmentCount || 0, href: '/for-dentists/dashboard/appointments' },
-    { icon: '💬', label: 'Enquiries', value: enquiryCount || 0, href: '/for-dentists/dashboard/enquiries' },
+    { icon: '🙋', label: 'Patient Actions · MTD', value: monthPatientActions, href: '/for-dentists/dashboard/analytics' },
+    { icon: '📲', label: 'Booking Clicks · MTD', value: monthEngagement.booking_clicks, href: '/for-dentists/dashboard/analytics' },
+    { icon: '📞', label: 'Call Clicks · MTD', value: monthEngagement.call_clicks, href: '/for-dentists/dashboard/analytics' },
     // Count-driven, NOT flag-gated: show the stat only once real reviews exist
     // (a "0 Approved Reviews" tile is pointless/discouraging). Public-page
     // review display stays behind REVIEWS_ENABLED.
