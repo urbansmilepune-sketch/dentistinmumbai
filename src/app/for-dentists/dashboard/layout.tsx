@@ -6,6 +6,11 @@ import DashboardActivityTracker from './DashboardActivityTracker'
 import SupportButton from '@/components/SupportButton'
 import { completionPct } from '@/lib/profileCompletion'
 import { isDemoEmail } from '@/lib/demo'
+import { dentistAppMetadata, dentistAppViewport } from '@/lib/dentistApp'
+import InstallAppBanner from './InstallAppBanner'
+
+export const metadata = dentistAppMetadata
+export const viewport = dentistAppViewport
 
 const DENTIST_FIELDS = 'id, slug, name, clinic_name, tier, trial_started_at, is_active, profile_photo, cover_photo, bio, whatsapp, maps_embed, city, consultation_fee, onboarding_completed'
 
@@ -91,6 +96,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     return (
       <>
         <DashboardShell dentist={dentist} completionPct={pct} staffRole={null} pendingCount={pendingCount}>
+          <InstallAppBanner />
           {children}
         </DashboardShell>
         <DashboardActivityTracker />
@@ -136,6 +142,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <>
       <DashboardShell dentist={ownerDentist} completionPct={pct} staffRole={staffRow.role} pendingCount={pendingCount}>
+        <InstallAppBanner />
         {children}
       </DashboardShell>
       <DashboardActivityTracker />
