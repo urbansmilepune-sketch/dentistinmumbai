@@ -460,10 +460,10 @@ export default function PatientDetailPage() {
               </div>
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 1fr', gap: 8 }}>
-              <button type="button" onClick={() => { setActiveTab('visits'); setShowAddVisit(true) }}
+              <Link href={`/for-dentists/dashboard/visit/${patientId}`}
                 style={{ ...actionBase, background: TEAL, borderColor: TEAL, color: '#fff' }}>
                 <PlusIcon size={16} /> Start visit
-              </button>
+              </Link>
               <Link href={`/for-dentists/dashboard/billing?patient_id=${patientId}`} style={actionBase}>Bill</Link>
               {waHref
                 ? <a href={waHref} target="_blank" rel="noopener noreferrer" style={{ ...actionBase, color: '#128C7E' }}><WhatsAppIcon size={16} /> WhatsApp</a>
