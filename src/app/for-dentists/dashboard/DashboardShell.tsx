@@ -46,6 +46,9 @@ const GROUPS: NavGroup[] = [
     { href: `${D}/locations`,  label: 'Locations', staffRoles: ['owner'] },
   ] },
   { label: 'Patient care', items: [
+    { href: `${D}/visit`,          label: "Today's visits", hint: 'Waiting list from the tablet', staffRoles: ALL },
+    { href: `${D}/tablet`,         label: 'Tablet check-in', hint: 'Hand to the patient at reception', staffRoles: ALL },
+    { href: `${D}/pending-plans`,  label: 'Pending plans', hint: 'Treatment waiting for patients', staffRoles: ['owner', 'associate_dentist'] },
     { href: `${D}/calendar`,       label: 'Calendar', staffRoles: ALL },
     { href: `${D}/recalls`,        label: 'Recalls', hint: 'Patients due for a check-up', staffRoles: ['owner', 'reception'] },
     { href: `${D}/lab-work`,       label: 'Lab work', staffRoles: ['owner', 'associate_dentist'] },
@@ -300,6 +303,7 @@ export default function DashboardShell({ dentist, completionPct, staffRole = nul
             {addOpen && (
               <div role="menu" style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: 6, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', minWidth: 210, zIndex: 70 }}>
                 {[
+                  { href: `${D}/tablet`, label: 'Tablet check-in' },
                   { href: `${D}/patients?new=1`, label: 'Walk-in patient' },
                   { href: `${D}/appointments?new=1`, label: 'Book appointment' },
                 ].map(o => (
