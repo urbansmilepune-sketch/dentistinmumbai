@@ -14,7 +14,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 
-const ADMIN_WHATSAPP = '917719013232'
+export const ADMIN_WHATSAPP = '917719013232'
 // Human-readable form shown in the popup. Derived from ADMIN_WHATSAPP (not
 // hardcoded separately) so the digits on screen can never drift from the
 // number the WhatsApp/Bug-Report links actually dial. '917719013232' →
