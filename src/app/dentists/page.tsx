@@ -175,8 +175,23 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
     const { data: txRows } = await supabase.from('treatments').select('id').in('slug', treatmentFilter)
     const txIds = txRows?.map(t => t.id) || []
     if (txIds.length > 0) {
-      const { data: dtRows } = await supabase.from('dentist_treatments').select('dentist_id').in('treatment_id', txIds)
-      const dentistIds = [...new Set(dtRows?.map(d => d.dentist_id) || [])]
+      // Scoped to this city's active dentists and paged: PostgREST silently
+      // stops at 1000 rows, which would drop dentists from the results.
+      const dtRows: { dentist_id: string }[] = []
+      for (let from = 0; ; from += 1000) {
+        const { data, error } = await supabase
+          .from('dentist_treatments')
+          .select('dentist_id, dentists!inner(city, is_active)')
+          .in('treatment_id', txIds)
+          .eq('dentists.city', citySlug)
+          .eq('dentists.is_active', true)
+          .order('id', { ascending: true })
+          .range(from, from + 999)
+        if (error) { console.error('[dentists] treatment filter read failed', error); break }
+        dtRows.push(...((data ?? []) as unknown as { dentist_id: string }[]))
+        if ((data ?? []).length < 1000) break
+      }
+      const dentistIds = [...new Set(dtRows.map(d => d.dentist_id))]
       if (dentistIds.length > 0) query = query.in('id', dentistIds)
       else query = query.in('id', ['00000000-0000-0000-0000-000000000000']) // no results
     }
