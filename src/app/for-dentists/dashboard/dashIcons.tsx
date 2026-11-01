@@ -53,3 +53,21 @@ export const WhatsAppIcon = ({ size = 18 }: P) => (
     <path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm5.3 14.1c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .1-3.3-.8-2.8-1.1-4.5-3.9-4.7-4.1-.1-.2-1.1-1.5-1.1-2.9s.7-2 1-2.3c.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.9 2.1c.1.2.1.3 0 .5l-.4.6-.4.4c-.1.1-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.3 2.4 1.5.3.1.5.1.6-.1l.9-1c.2-.3.4-.2.6-.1l2 1c.3.1.5.2.5.3.1.1.1.6-.1 1.2Z" />
   </svg>
 )
+export const PhoneIcon = ({ size = 18 }: P) => (
+  <svg {...base(size)}><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z" /></svg>
+)
+export const DotsIcon = ({ size = 20 }: P) => (
+  <svg {...base(size)} strokeWidth={3}><path d="M5 12h.01M12 12h.01M19 12h.01" /></svg>
+)
+export const RecallIcon = ({ size = 18 }: P) => (
+  <svg {...base(size)}><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5M12 7v5l3 2" /></svg>
+)
+export const AlertIcon = ({ size = 16 }: P) => (
+  <svg {...base(size)} strokeWidth={2.4}><path d="M12 8v5M12 16.5v.01" /></svg>
+)
+export const PillIcon = ({ size = 16 }: P) => (
+  <svg {...base(size)}><path d="m10.5 20.5-7-7a5 5 0 0 1 7-7l7 7a5 5 0 0 1-7 7zM7 10l7 7" /></svg>
+)
+export const CheckIcon = ({ size = 16 }: P) => (
+  <svg {...base(size)} strokeWidth={2.6}><path d="m5 12 5 5L20 7" /></svg>
+)
