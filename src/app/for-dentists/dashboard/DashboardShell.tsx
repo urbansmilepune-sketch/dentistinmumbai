@@ -5,84 +5,101 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { getCityByDomain, getCityBySlug, type CityConfig } from '@/config/cities'
+import { ADMIN_WHATSAPP } from '@/components/SupportButton'
+import { NAVY, TEAL, TEAL_DARK, TEAL_SOFT } from '@/app/dentist/[slug]/profileTheme'
 import BugReportButton from './BugReportButton'
+import { HomeIcon, CalendarIcon, PatientsIcon, RupeeIcon, MenuIcon, PlusIcon, ChevronIcon, CloseIcon } from './dashIcons'
 export type StaffRole = 'owner' | 'associate_dentist' | 'reception'
 
 type NavItem = {
   href: string
-  icon: string
   label: string
-  minTier?: 'silver' | 'gold'
-  // Roles allowed in the sidebar. `null` = clinic owner / dentist (no
-  // staffRole on the layout) — they always see everything. Items with a
-  // `staffRoles` list are visible to those roles too.
+  hint?: string
+  // Roles allowed to see the item when a staff member (not the clinic owner)
+  // is signed in. The clinic owner (staffRole = null) always sees everything.
   staffRoles?: StaffRole[]
 }
 
-// `minTier` historically marked a nav item that was tier-locked, but the
-// launch-phase override in /lib/tier.ts unlocks every feature for every
-// dentist. We keep the field on the type so historical entries compile
-// without churn, but no UI lock state is rendered.
-//
-// `staffRoles` is the role filter applied when a staff member (not the
-// clinic owner) is signed in. Reception: appointments, patients, billing,
-// calendar. Associate Dentist additionally: EMR Templates, Treatments.
-// Owner-role staff get the same surface as the clinic owner themselves.
-const NAV: NavItem[] = [
-  { href: '/for-dentists/dashboard',              icon: '📊', label: 'Overview',     staffRoles: ['owner', 'associate_dentist', 'reception'] },
-  { href: '/for-dentists/dashboard/profile',      icon: '✏️', label: 'Edit Profile', staffRoles: ['owner'] },
-  { href: '/for-dentists/dashboard/hours',        icon: '🕐', label: 'Working Hours', staffRoles: ['owner'] },
-  { href: '/for-dentists/dashboard/locations',    icon: '🏥', label: 'Locations',    staffRoles: ['owner'] },
-  { href: '/for-dentists/dashboard/staff',        icon: '👥', label: 'Staff', minTier: 'silver', staffRoles: ['owner'] },
-  { href: '/for-dentists/dashboard/appointments', icon: '📅', label: 'Appointments', staffRoles: ['owner', 'associate_dentist', 'reception'] },
-  { href: '/for-dentists/dashboard/calendar',     icon: '📆', label: 'Calendar',     staffRoles: ['owner', 'associate_dentist', 'reception'] },
-  { href: '/for-dentists/dashboard/patients',     icon: '👥', label: 'Patients',     staffRoles: ['owner', 'associate_dentist', 'reception'] },
-  { href: '/for-dentists/dashboard/billing',      icon: '💰', label: 'Billing',      staffRoles: ['owner', 'reception'] },
-  { href: '/for-dentists/dashboard/expenses',     icon: '💸', label: 'Expenses',     staffRoles: ['owner'] },
-  { href: '/for-dentists/dashboard/lab-work',     icon: '🦷', label: 'Lab Work',     staffRoles: ['owner', 'associate_dentist'] },
-  { href: '/for-dentists/dashboard/inventory',    icon: '📦', label: 'Inventory',    staffRoles: ['owner'] },
-  { href: '/for-dentists/dashboard/recalls',      icon: '📅', label: 'Recalls',      staffRoles: ['owner', 'reception'] },
-  { href: '/for-dentists/dashboard/enquiries',    icon: '💬', label: 'Enquiries',    staffRoles: ['owner', 'reception'] },
-  { href: '/for-dentists/dashboard/communications', icon: '📣', label: 'Communications', staffRoles: ['owner'] },
-  { href: '/for-dentists/dashboard/photos',       icon: '📸', label: 'Photos',       staffRoles: ['owner', 'associate_dentist'] },
-  { href: '/for-dentists/dashboard/treatments',   icon: '🦷', label: 'Treatments',   staffRoles: ['owner', 'associate_dentist'] },
-  { href: '/for-dentists/dashboard/articles',     icon: '✍️', label: 'Articles',     staffRoles: ['owner', 'associate_dentist'] },
-  { href: '/for-dentists/dashboard/consent-forms', icon: '📝', label: 'Consent Forms', staffRoles: ['owner', 'associate_dentist', 'reception'] },
-  { href: '/for-dentists/dashboard/emr-templates', icon: '📋', label: 'EMR Templates', staffRoles: ['owner', 'associate_dentist'] },
-  { href: '/for-dentists/dashboard/analytics',    icon: '📈', label: 'Analytics',    staffRoles: ['owner'] },
-  { href: '/for-dentists/dashboard/badge',        icon: '🏅', label: 'Get Badge',    staffRoles: ['owner'] },
+type NavGroup = { label: string | null; items: NavItem[] }
+
+const D = '/for-dentists/dashboard'
+const ALL: StaffRole[] = ['owner', 'associate_dentist', 'reception']
+
+// The four daily pages. Shown at the top of the desktop sidebar and as the
+// mobile bottom bar (with "More" as the fifth slot).
+const PRIMARY: NavItem[] = [
+  { href: D,                   label: 'Home',         staffRoles: ALL },
+  { href: `${D}/appointments`, label: 'Appointments', staffRoles: ALL },
+  { href: `${D}/patients`,     label: 'Patients',     staffRoles: ALL },
+  { href: `${D}/billing`,      label: 'Billing',      staffRoles: ['owner', 'reception'] },
 ]
 
-const MOBILE_NAV: NavItem[] = [
-  { href: '/for-dentists/dashboard',              icon: '📊', label: 'Overview',     staffRoles: ['owner', 'associate_dentist', 'reception'] },
-  { href: '/for-dentists/dashboard/appointments', icon: '📅', label: 'Appointments', staffRoles: ['owner', 'associate_dentist', 'reception'] },
-  { href: '/for-dentists/dashboard/patients',     icon: '👥', label: 'Patients',     staffRoles: ['owner', 'associate_dentist', 'reception'] },
-  { href: '/for-dentists/dashboard/enquiries',    icon: '💬', label: 'Enquiries',    staffRoles: ['owner', 'reception'] },
+// Everything else, grouped so a dentist can find a page by what it is for.
+// The Enquiries page still exists at its URL but is not linked: nothing in
+// the app writes to the enquiries table, so it always showed 0.
+const GROUPS: NavGroup[] = [
+  { label: 'My clinic profile', items: [
+    { href: `${D}/profile`,    label: 'Edit profile', hint: 'Name, bio, fees, phone', staffRoles: ['owner'] },
+    { href: `${D}/photos`,     label: 'Photos', staffRoles: ['owner', 'associate_dentist'] },
+    { href: `${D}/treatments`, label: 'Treatments and fees', staffRoles: ['owner', 'associate_dentist'] },
+    { href: `${D}/hours`,      label: 'Working hours', staffRoles: ['owner'] },
+    { href: `${D}/locations`,  label: 'Locations', staffRoles: ['owner'] },
+  ] },
+  { label: 'Patient care', items: [
+    { href: `${D}/calendar`,       label: 'Calendar', staffRoles: ALL },
+    { href: `${D}/recalls`,        label: 'Recalls', hint: 'Patients due for a check-up', staffRoles: ['owner', 'reception'] },
+    { href: `${D}/lab-work`,       label: 'Lab work', staffRoles: ['owner', 'associate_dentist'] },
+    { href: `${D}/consent-forms`,  label: 'Consent forms', staffRoles: ALL },
+    { href: `${D}/emr-templates`,  label: 'EMR templates', staffRoles: ['owner', 'associate_dentist'] },
+    { href: `${D}/communications`, label: 'Messages to patients', staffRoles: ['owner'] },
+  ] },
+  { label: 'Money and stock', items: [
+    { href: `${D}/expenses`,  label: 'Expenses', staffRoles: ['owner'] },
+    { href: `${D}/inventory`, label: 'Inventory', staffRoles: ['owner'] },
+    { href: `${D}/staff`,     label: 'Staff', staffRoles: ['owner'] },
+  ] },
+  { label: 'Grow', items: [
+    { href: `${D}/analytics`, label: 'Analytics', hint: 'Views and clicks over time', staffRoles: ['owner'] },
+    { href: `${D}/articles`,  label: 'Articles', staffRoles: ['owner', 'associate_dentist'] },
+    { href: `${D}/badge`,     label: 'Website badge', staffRoles: ['owner'] },
+  ] },
 ]
 
-function visibleNav(items: NavItem[], staffRole: StaffRole | null): NavItem[] {
+const PRIMARY_ICONS: Record<string, React.ReactNode> = {
+  [D]: <HomeIcon />,
+  [`${D}/appointments`]: <CalendarIcon />,
+  [`${D}/patients`]: <PatientsIcon />,
+  [`${D}/billing`]: <RupeeIcon />,
+}
+
+function visible(items: NavItem[], staffRole: StaffRole | null): NavItem[] {
   if (!staffRole) return items
   return items.filter(item => !item.staffRoles || item.staffRoles.includes(staffRole))
+}
+
+function isActivePath(pathname: string, href: string) {
+  return pathname === href || (href !== D && pathname.startsWith(href))
 }
 
 interface Props {
   dentist: any
   completionPct: number
   staffRole?: StaffRole | null
+  pendingCount?: number
   children: React.ReactNode
 }
 
-export default function DashboardShell({ dentist, completionPct, staffRole = null, children }: Props) {
-  const navItems = visibleNav(NAV, staffRole)
-  const mobileItems = visibleNav(MOBILE_NAV, staffRole)
+export default function DashboardShell({ dentist, completionPct, staffRole = null, pendingCount = 0, children }: Props) {
+  const primary = visible(PRIMARY, staffRole)
+  const groups = GROUPS
+    .map(g => ({ ...g, items: visible(g.items, staffRole) }))
+    .filter(g => g.items.length > 0)
   const pathname = usePathname()
-  const [mobileOpen, setMobileOpen] = useState(false)
+  const [moreOpen, setMoreOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
   const addRef = useRef<HTMLDivElement>(null)
-  // Tier / pricing UI hidden during the launch phase — see /lib/tier.ts.
-  // Logo/brand follow the dentist's own city (set on the row, source of truth).
-  // window.location.hostname is only used as a last-resort fallback for pre-
-  // city-column legacy rows where dentist.city might be null.
+  // Logo follows the dentist's own city (row is the source of truth); the
+  // hostname is only a fallback for legacy rows with no city.
   const dentistCity = getCityBySlug(dentist.city)
   const [cityConfig, setCityConfig] = useState<CityConfig>(dentistCity)
   useEffect(() => {
@@ -103,320 +120,228 @@ export default function DashboardShell({ dentist, completionPct, staffRole = nul
     }
   }, [addOpen])
 
+  useEffect(() => {
+    if (!moreOpen) return
+    function onEsc(e: KeyboardEvent) { if (e.key === 'Escape') setMoreOpen(false) }
+    document.addEventListener('keydown', onEsc)
+    return () => document.removeEventListener('keydown', onEsc)
+  }, [moreOpen])
+
   async function handleLogout() {
     // Clear the client session, then hit the server route so the httpOnly
-    // "remember me" cookie is cleared and its DB token revoked (JS can't touch
-    // an httpOnly cookie). Hard-navigate so the fully-reloaded page reads no
-    // session.
+    // "remember me" cookie is cleared and its DB token revoked. Hard-navigate
+    // so the reloaded page reads no session.
     const supabase = createClient()
     await supabase.auth.signOut()
     try { await fetch('/auth/signout', { method: 'POST' }) } catch {}
     window.location.href = '/for-dentists/login'
   }
 
-  const initials = dentist.name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2) || 'D'
+  const initials = dentist.name?.replace(/^\s*dr\.?\s*/i, '').split(' ').filter(Boolean).map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || 'D'
+  const supportHref = `https://wa.me/${ADMIN_WHATSAPP}?text=${encodeURIComponent(`Hi, I need help with my DentistIn dashboard (${dentist.clinic_name || dentist.name || ''}).`)}`
 
-  // Sidebar contents only (logo + dentist info + nav + bottom actions).
-  // The outer wrapper that hosts these children is the flex-column
-  // container with `overflow: hidden` — only the inner <nav> scrolls,
-  // so the bottom actions never disappear under a scroll region and
-  // the wrapper itself never shows a scrollbar.
-  const sidebarContents = (
-    <>
-      {/* Logo */}
-      <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+  const avatar = (size: number) => (
+    <div style={{ width: size, height: size, borderRadius: '50%', background: `linear-gradient(135deg, ${NAVY}, ${TEAL_DARK})`, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: size * 0.34, fontWeight: 700, fontFamily: 'var(--font-heading)', flexShrink: 0, overflow: 'hidden' }}>
+      {dentist.profile_photo ? <img src={dentist.profile_photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials}
+    </div>
+  )
+
+  const pendingPill = (n: number) => n > 0 ? (
+    <span style={{ background: '#EF4444', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 999, padding: '0 7px', lineHeight: '18px' }}>{n}</span>
+  ) : null
+
+  // ── Desktop sidebar ──────────────────────────────────────────────
+  const sidebarLink = (item: NavItem) => {
+    const active = isActivePath(pathname, item.href)
+    return (
+      <Link key={item.href} href={item.href}
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+          padding: '8px 12px', borderRadius: 8, textDecoration: 'none', fontSize: 14,
+          fontWeight: active ? 700 : 500,
+          background: active ? TEAL_SOFT : 'transparent',
+          color: active ? TEAL_DARK : 'var(--text)',
+        }}>
+        <span>{item.label}</span>
+        {item.href === `${D}/appointments` && pendingPill(pendingCount)}
+      </Link>
+    )
+  }
+
+  const groupLabel = (label: string) => (
+    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--muted)', padding: '0 12px 4px' }}>{label}</div>
+  )
+
+  const sidebar = (
+    <div className="dash-sidebar" style={{ width: 248, minWidth: 248, flexShrink: 0, height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#fff', borderRight: '1px solid var(--border)' }}>
+      <div style={{ padding: '18px 20px 14px', flexShrink: 0 }}>
         <Link href="/" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none' }}>
-          <img src={cityConfig.logoPath} alt={cityConfig.domain} style={{ height: 56, width: 'auto', display: 'block' }} />
+          <img src={cityConfig.logoPath} alt={cityConfig.domain} style={{ height: 48, width: 'auto', display: 'block' }} />
         </Link>
       </div>
-
-      {/* Dentist info */}
-      <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-          <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--blue-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: 'var(--blue)', flexShrink: 0, overflow: 'hidden' }}>
-            {dentist.profile_photo ? <img src={dentist.profile_photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials}
+      <nav aria-label="Dashboard" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '4px 12px 12px', display: 'flex', flexDirection: 'column', gap: 16, scrollbarWidth: 'none' as any }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>{primary.map(sidebarLink)}</div>
+        {groups.map(g => (
+          <div key={g.label} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {g.label && groupLabel(g.label)}
+            {g.items.map(sidebarLink)}
           </div>
-          {/* minWidth: 0 lets the ellipsis lines below shrink instead of
-              pushing the avatar around. maxWidth: '100%' is belt-and-
-              suspenders against a really long clinic name that could
-              otherwise force a horizontal scrollbar on the sidebar. */}
-          <div style={{ flex: 1, minWidth: 0, maxWidth: '100%', overflow: 'hidden' }}>
-            <div style={{ fontWeight: 700, fontSize: 13, fontFamily: 'var(--font-heading)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }} title={dentist.name}>{dentist.name}</div>
-            <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }} title={dentist.clinic_name}>{dentist.clinic_name}</div>
-          </div>
-        </div>
-        {/* Tier pill intentionally omitted — see /lib/tier.ts for the
-            launch-phase override that unlocks every feature regardless
-            of stored tier. */}
-
-        {/* Completion bar */}
-        {completionPct < 100 && (
-          <div style={{ marginTop: 12 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>
-              <span>Profile completion</span><span style={{ fontWeight: 600, color: 'var(--blue)' }}>{completionPct}%</span>
-            </div>
-            <div style={{ height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
-              <div style={{ height: '100%', width: `${completionPct}%`, background: 'var(--blue)', borderRadius: 2, transition: 'width 0.5s' }} />
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Nav — the ONLY scroll surface in the sidebar. flex:1 fills the
-          space between the dentist-info block above and the bottom
-          actions below; overflowY:auto scrolls the link list when it's
-          taller than the gap; scrollbar-width/-ms-overflow-style hide
-          the scrollbar on Firefox and legacy IE/Edge. WebKit
-          (Chrome/Safari) is covered by .dash-sidebar nav::-webkit-scrollbar
-          in globals.css. */}
-      <nav style={{ flex: 1, minHeight: 0, padding: '8px 12px', overflowY: 'auto', scrollbarWidth: 'none' as any, msOverflowStyle: 'none' as any }}>
-        {navItems.map(item => {
-          const isActive = pathname === item.href || (item.href !== '/for-dentists/dashboard' && pathname.startsWith(item.href))
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={() => setMobileOpen(false)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px',
-                borderRadius: 8, marginBottom: 2, textDecoration: 'none', fontSize: 13,
-                fontWeight: isActive ? 600 : 400,
-                background: isActive ? 'var(--blue-light)' : 'transparent',
-                color: isActive ? 'var(--blue)' : 'var(--text-secondary)',
-                transition: 'all 0.15s',
-              }}
-            >
-              <span>{item.icon}</span>
-              <span style={{ flex: 1 }}>{item.label}</span>
-            </Link>
-          )
-        })}
+        ))}
       </nav>
-
-      {/* Bottom actions — marginTop:auto pins these to the bottom even when
-          the nav list above is short and doesn't grow to fill its flex:1.
-          flexShrink:0 means they never compress when the nav list pushes. */}
-      <div style={{ marginTop: 'auto', padding: '12px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
+      <div style={{ padding: 12, borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0 }}>
         <a href={`/dentist/${dentist.slug}`} target="_blank" rel="noopener noreferrer"
-          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 8, fontSize: 12, color: 'var(--muted)', textDecoration: 'none' }}>
-          🔗 View my profile
+          style={{ padding: '8px 12px', borderRadius: 8, fontSize: 13, color: 'var(--muted)', textDecoration: 'none' }}>
+          View my public profile
         </a>
         <BugReportButton />
         <button onClick={handleLogout}
-          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 8, fontSize: 12, color: '#EF4444', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-body)', width: '100%', textAlign: 'left' }}>
-          🚪 Sign out
+          style={{ padding: '8px 12px', borderRadius: 8, fontSize: 13, color: '#B91C1C', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-body)', textAlign: 'left' }}>
+          Log out
         </button>
       </div>
-    </>
+    </div>
   )
 
-  // Shared shell style for both desktop and the mobile slide-over. Outer
-  // wrapper IS the flex-column container with `overflow: hidden` so the
-  // sidebar never shows its own scrollbar regardless of OS/browser, and
-  // only the inner <nav> can scroll.
-  const sidebarShellStyle: React.CSSProperties = {
-    width: 256, minWidth: 256, maxWidth: 256, flexShrink: 0,
-    height: '100vh',
-    display: 'flex', flexDirection: 'column',
-    overflow: 'hidden',
-    background: '#fff',
-    borderRight: '1px solid var(--border)',
-    scrollbarWidth: 'none' as any,
-    msOverflowStyle: 'none' as any,
+  // ── Mobile "More" sheet ──────────────────────────────────────────
+  const moreRow = (key: string, content: React.ReactNode, first: boolean) => (
+    <div key={key} style={{ borderTop: first ? 'none' : '1px solid var(--border)' }}>{content}</div>
+  )
+  const rowStyle: React.CSSProperties = {
+    display: 'flex', alignItems: 'center', gap: 12, padding: '13px 14px', minHeight: 48,
+    textDecoration: 'none', color: 'var(--text)', background: 'none', border: 'none', width: '100%',
+    fontFamily: 'var(--font-body)', fontSize: 15, textAlign: 'left', cursor: 'pointer',
   }
+  const rowText = (label: string, hint?: string, color?: string) => (
+    <span style={{ flex: 1, minWidth: 0 }}>
+      <span style={{ display: 'block', fontWeight: 600, color: color || 'var(--text)' }}>{label}</span>
+      {hint && <span style={{ display: 'block', fontSize: 12, color: 'var(--muted)' }}>{hint}</span>}
+    </span>
+  )
+  const chev = <span style={{ color: '#94A3B8', display: 'flex' }}><ChevronIcon /></span>
+  const card = (children: React.ReactNode) => (
+    <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>{children}</div>
+  )
+
+  const moreSheet = moreOpen && (
+    <div role="dialog" aria-modal="true" aria-label="More" style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ background: '#fff', borderBottom: '1px solid var(--border)', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+        {avatar(40)}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{dentist.clinic_name || dentist.name}</div>
+          <div style={{ fontSize: 12, color: 'var(--muted)' }}>{completionPct < 100 ? `Profile ${completionPct}% complete` : dentist.name}</div>
+        </div>
+        <button type="button" onClick={() => setMoreOpen(false)} aria-label="Close menu"
+          style={{ width: 44, height: 44, borderRadius: 12, border: '1px solid var(--border)', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--text)' }}>
+          <CloseIcon />
+        </button>
+      </div>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px 32px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {groups.map(g => (
+          <div key={g.label}>
+            {g.label && <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--muted)', padding: '0 4px 6px' }}>{g.label}</div>}
+            {card(g.items.map((item, i) => moreRow(item.href,
+              <Link href={item.href} onClick={() => setMoreOpen(false)} style={rowStyle}>{rowText(item.label, item.hint)}{chev}</Link>, i === 0)))}
+          </div>
+        ))}
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--muted)', padding: '0 4px 6px' }}>Help</div>
+          {card(<>
+            {moreRow('profile', <a href={`/dentist/${dentist.slug}`} target="_blank" rel="noopener noreferrer" style={rowStyle}>{rowText('View my public profile', 'See what patients see')}{chev}</a>, true)}
+            {moreRow('support', <a href={supportHref} target="_blank" rel="noopener noreferrer" style={rowStyle}>{rowText('Help and support', 'Chat with the DentistIn team on WhatsApp')}{chev}</a>, false)}
+            {moreRow('bug', <div style={{ padding: '6px 2px' }}><BugReportButton /></div>, false)}
+            {moreRow('logout', <button type="button" onClick={handleLogout} style={rowStyle}>{rowText('Log out', undefined, '#B91C1C')}</button>, false)}
+          </>)}
+        </div>
+      </div>
+    </div>
+  )
+
+  // ── Mobile bottom bar ────────────────────────────────────────────
+  const bottomBar = (
+    <nav className="dash-bottom-nav" aria-label="Dashboard mobile navigation">
+      {primary.map(item => {
+        const active = isActivePath(pathname, item.href) && !moreOpen
+        return (
+          <Link key={item.href} href={item.href} className="dash-bottom-item" aria-current={active ? 'page' : undefined}
+            style={{ color: active ? TEAL_DARK : 'var(--muted)' }}>
+            {active && <span style={{ position: 'absolute', top: 0, width: 28, height: 3, borderRadius: '0 0 3px 3px', background: TEAL }} />}
+            {item.href === `${D}/appointments` && pendingCount > 0 && (
+              <span style={{ position: 'absolute', top: 6, left: 'calc(50% + 4px)', background: '#EF4444', color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 999, minWidth: 16, height: 16, padding: '0 4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{pendingCount}</span>
+            )}
+            {PRIMARY_ICONS[item.href]}
+            <span style={{ fontSize: 11, fontWeight: 600, lineHeight: 1 }}>{item.label}</span>
+          </Link>
+        )
+      })}
+      <button type="button" onClick={() => setMoreOpen(true)} className="dash-bottom-item"
+        style={{ color: moreOpen ? TEAL_DARK : 'var(--muted)' }} aria-expanded={moreOpen}>
+        {moreOpen && <span style={{ position: 'absolute', top: 0, width: 28, height: 3, borderRadius: '0 0 3px 3px', background: TEAL }} />}
+        <MenuIcon />
+        <span style={{ fontSize: 11, fontWeight: 600, lineHeight: 1 }}>More</span>
+      </button>
+    </nav>
+  )
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
-      {/* Desktop sidebar — single wrapper that owns the flex column,
-          fixed 256 width, and the hidden-overflow rules. */}
-      <div className="dash-sidebar" style={sidebarShellStyle}>
-        {sidebarContents}
-      </div>
+      {sidebar}
+      {moreSheet}
 
-      {/* Mobile sidebar overlay — same shell, same 256 width, just
-          absolute-positioned over the page so it slides over the main
-          content instead of taking a fixed column. */}
-      {mobileOpen && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 1000 }}>
-          <div onClick={() => setMobileOpen(false)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)' }} />
-          {/* Close button — sits on the dimmed backdrop to the right of the
-              256px drawer (i.e. top-right of the screen), a 44×44 tap target. */}
-          <button
-            type="button"
-            onClick={() => setMobileOpen(false)}
-            aria-label="Close navigation menu"
-            style={{
-              position: 'absolute', top: 12, right: 12, zIndex: 1,
-              width: 44, height: 44,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 8,
-              color: '#fff', fontSize: 22, cursor: 'pointer',
-              fontFamily: 'var(--font-body)', padding: 0,
-            }}>
-            ✕
-          </button>
-          <div style={{ ...sidebarShellStyle, position: 'absolute', left: 0, top: 0, bottom: 0, borderRight: '1px solid var(--border)' }}>
-            {sidebarContents}
-          </div>
-        </div>
-      )}
-
-      {/* Main */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        {/* Header */}
-        <div className="dash-header" style={{ height: 56, background: '#fff', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', padding: '0 20px', gap: 12, flexShrink: 0, position: 'relative', zIndex: 60 }}>
-          {/* Hamburger — visible only on mobile (see .dash-hamburger media rule
-              below). Opens the same overlay sidebar the bottom-nav More button
-              opens, so the dentist can reach every page even when the bottom
-              nav only surfaces 4 of them. */}
-          <button
-            type="button"
-            onClick={() => setMobileOpen(true)}
-            aria-label="Open navigation menu"
-            className="dash-hamburger"
-            style={{
-              display: 'none',
-              width: 44, height: 44,
-              alignItems: 'center', justifyContent: 'center',
-              background: 'transparent', border: 'none',
-              borderRadius: 8, cursor: 'pointer',
-              fontSize: 22, color: 'var(--text)',
-              fontFamily: 'var(--font-body)',
-              padding: 0,
-            }}>
-            ☰
-          </button>
+        {/* Desktop-only header: quick add + public profile link. On phones the
+            bottom bar and each page's own heading do this job. */}
+        <div className="dash-header" style={{ height: 56, background: '#fff', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', padding: '0 24px', gap: 12, flexShrink: 0, position: 'relative', zIndex: 60 }}>
           <div style={{ flex: 1 }} />
-          {/* Quick-add */}
           <div ref={addRef} style={{ position: 'relative' }}>
             <button type="button" onClick={() => setAddOpen(v => !v)} aria-haspopup="menu" aria-expanded={addOpen}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6,
-                height: 40, minHeight: 40, padding: '0 16px',
-                background: 'var(--blue)', color: '#fff',
-                border: 'none', borderRadius: 10,
-                fontWeight: 700, fontSize: 14, cursor: 'pointer',
-                fontFamily: 'var(--font-body)',
-              }}>
-              <span style={{ fontSize: 16, lineHeight: 1 }}>+</span>
-              <span>Add</span>
-              <span style={{ fontSize: 10, marginLeft: 2, opacity: 0.85 }}>▾</span>
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 38, padding: '0 14px', background: TEAL, color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 14, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
+              <PlusIcon size={16} /> Add
             </button>
             {addOpen && (
-              <div role="menu"
-                style={{
-                  position: 'absolute', top: 'calc(100% + 6px)', right: 0,
-                  background: '#fff', border: '1px solid var(--border)',
-                  borderRadius: 12, padding: 6,
-                  boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
-                  minWidth: 220, zIndex: 70,
-                }}>
-                <Link href="/for-dentists/dashboard/patients?new=1" role="menuitem"
-                  onClick={() => setAddOpen(false)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 10,
-                    padding: '12px 14px', minHeight: 48,
-                    borderRadius: 8, textDecoration: 'none',
-                    fontSize: 14, fontWeight: 600, color: 'var(--text)',
-                    background: '#fff',
-                  }}>
-                  <span style={{ fontSize: 18 }}>👤</span>
-                  Add Patient
-                </Link>
-                <Link href="/for-dentists/dashboard/appointments?new=1" role="menuitem"
-                  onClick={() => setAddOpen(false)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 10,
-                    padding: '12px 14px', minHeight: 48,
-                    borderRadius: 8, textDecoration: 'none',
-                    fontSize: 14, fontWeight: 600, color: 'var(--text)',
-                    background: '#fff',
-                  }}>
-                  <span style={{ fontSize: 18 }}>📅</span>
-                  Add Appointment
-                </Link>
+              <div role="menu" style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: 6, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', minWidth: 210, zIndex: 70 }}>
+                {[
+                  { href: `${D}/patients?new=1`, label: 'Walk-in patient' },
+                  { href: `${D}/appointments?new=1`, label: 'Book appointment' },
+                ].map(o => (
+                  <Link key={o.href} href={o.href} role="menuitem" onClick={() => setAddOpen(false)}
+                    style={{ display: 'flex', alignItems: 'center', padding: '12px 14px', minHeight: 44, borderRadius: 8, textDecoration: 'none', fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
+                    {o.label}
+                  </Link>
+                ))}
               </div>
             )}
           </div>
-          {/* Write Article — ghost/outline style so it sits beside the
-              primary "+ Add" without competing. Label collapses to just
-              the ✍️ glyph on mobile (see .dash-write-label media rule). */}
-          <Link href="/for-dentists/dashboard/articles/new"
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              height: 40, minHeight: 40, padding: '0 14px',
-              background: 'transparent', color: 'var(--blue)',
-              border: '1px solid var(--blue)', borderRadius: 10,
-              fontWeight: 700, fontSize: 14, cursor: 'pointer',
-              fontFamily: 'var(--font-body)', textDecoration: 'none',
-              whiteSpace: 'nowrap',
-            }}>
-            <span style={{ fontSize: 16, lineHeight: 1 }}>✍️</span>
-            <span className="dash-write-label">Write Article</span>
-          </Link>
           <a href={`/dentist/${dentist.slug}`} target="_blank" rel="noopener noreferrer"
-            style={{ fontSize: 12, color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>View Profile →</a>
-          <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--blue-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: 'var(--blue)', overflow: 'hidden' }}>
-            {dentist.profile_photo ? <img src={dentist.profile_photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials}
-          </div>
+            style={{ fontSize: 13, color: TEAL_DARK, fontWeight: 700, textDecoration: 'none' }}>View profile</a>
+          {avatar(32)}
         </div>
 
-        {/* Content */}
         <div className="dash-content" style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
           {children}
         </div>
       </div>
 
-      {/* Mobile bottom nav */}
-      <nav className="dash-bottom-nav" aria-label="Dashboard mobile navigation">
-        {mobileItems.map(item => {
-          const isActive = pathname === item.href || (item.href !== '/for-dentists/dashboard' && pathname.startsWith(item.href))
-          return (
-            <Link key={item.href} href={item.href} className={`dash-bottom-item${isActive ? ' is-active' : ''}`}>
-              <span className="dash-bottom-icon">{item.icon}</span>
-              <span className="dash-bottom-label">{item.label}</span>
-            </Link>
-          )
-        })}
-        <button type="button" onClick={() => setMobileOpen(true)} className="dash-bottom-item dash-bottom-more">
-          <span className="dash-bottom-icon">☰</span>
-          <span className="dash-bottom-label">More</span>
-        </button>
-      </nav>
+      {bottomBar}
 
       <style>{`
-        .dash-sidebar { display: flex !important; }
         .dash-bottom-nav { display: none; }
         @media (max-width: 768px) {
           .dash-sidebar { display: none !important; }
-          .dash-hamburger { display: inline-flex !important; }
-          .dash-write-label { display: none; }
-          .dash-content { padding: 16px !important; padding-bottom: 88px !important; }
+          .dash-header { display: none !important; }
+          .dash-support-fab { display: none !important; }
+          .dash-content { padding: 16px !important; padding-bottom: 92px !important; }
           .dash-bottom-nav {
-            display: flex;
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
             position: fixed; left: 0; right: 0; bottom: 0;
-            height: 64px;
-            background: #fff;
-            border-top: 1px solid var(--border);
-            z-index: 150;
-            box-shadow: 0 -2px 12px rgba(0,0,0,0.06);
-            padding: 4px 0 max(4px, env(safe-area-inset-bottom));
+            background: #fff; border-top: 1px solid var(--border);
+            z-index: 150; box-shadow: 0 -2px 12px rgba(0,0,0,0.06);
+            padding: 0 0 env(safe-area-inset-bottom);
           }
           .dash-bottom-item {
-            flex: 1;
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            gap: 2px;
-            min-height: 56px;
-            background: none; border: none;
-            color: var(--muted);
-            text-decoration: none;
-            cursor: pointer;
-            font-family: var(--font-body);
-            padding: 4px;
+            position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: 3px; min-height: 60px; background: none; border: none; text-decoration: none;
+            cursor: pointer; font-family: var(--font-body); padding: 4px 0;
           }
-          .dash-bottom-item.is-active { color: var(--blue); }
-          .dash-bottom-icon { font-size: 20px; line-height: 1; }
-          .dash-bottom-label { font-size: 11px; font-weight: 600; line-height: 1; }
         }
       `}</style>
     </div>

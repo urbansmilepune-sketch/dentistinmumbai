@@ -1,5 +1,7 @@
 'use client'
 
+import { WhatsAppIcon } from './dashIcons'
+
 export interface TodayAppt {
   time_slot: string | null
   patient_name: string | null
@@ -64,14 +66,14 @@ export default function TodayWhatsAppButton({
     <button type="button" onClick={handleClick}
       title="Share today's schedule on WhatsApp"
       style={{
-        display: 'inline-flex', alignItems: 'center', gap: 8,
-        padding: '10px 18px', minHeight: 44,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+        width: '100%', padding: '10px 18px', minHeight: 46,
         background: '#25D366', color: '#fff',
-        border: 'none', borderRadius: 10,
+        border: 'none', borderRadius: 12,
         fontWeight: 700, fontSize: 14, cursor: 'pointer',
         fontFamily: 'var(--font-body)',
       }}>
-      💬 Share on WhatsApp
+      <WhatsAppIcon /> Send today&apos;s list on WhatsApp
     </button>
   )
 }

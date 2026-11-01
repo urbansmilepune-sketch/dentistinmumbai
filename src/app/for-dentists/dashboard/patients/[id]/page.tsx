@@ -10,6 +10,10 @@ import ImageVault from '@/components/dental/ImageVault'
 import { downloadInvoicePdf } from '@/lib/invoicePdf'
 import { type RxLang, RX_LANG_LABELS, INSTRUCTION_PHRASES, rxLangStorageKey, isRxLang } from '@/lib/instructionPhrases'
 import ScheduleRecallButton from './ScheduleRecallButton'
+import { whatsappLink } from '@/lib/phone'
+import { getCityBySlug } from '@/config/cities'
+import { TEAL, TEAL_DARK, BRAND_GRADIENT } from '@/app/dentist/[slug]/profileTheme'
+import { PlusIcon, WhatsAppIcon } from '../../dashIcons'
 
 const TABS = [
   { id: 'overview', label: 'Overview', icon: '👤' },
@@ -27,6 +31,16 @@ const TABS = [
   // 20260521170000.
   { id: 'images', label: 'X-Rays & Photos', icon: '🔬' },
   { id: 'lab', label: 'Lab Work', icon: '🧪' },
+]
+
+// The 11 record sections above are grouped under 4 top-level tabs so the
+// strip fits on a phone. Each group shows its sections as small chips.
+// Section ids (and so ?tab= deep links) are unchanged.
+const TAB_GROUPS: { id: string; label: string; tabs: string[] }[] = [
+  { id: 'summary', label: 'Summary', tabs: ['overview'] },
+  { id: 'visits', label: 'Visits', tabs: ['visits', 'prescriptions', 'treatment-plan', 'timeline'] },
+  { id: 'bills', label: 'Bills', tabs: ['invoices'] },
+  { id: 'records', label: 'Records', tabs: ['images', 'dental-chart', 'emr', 'consent', 'lab'] },
 ]
 
 const PRESCRIPTION_TEMPLATES = {
@@ -417,71 +431,130 @@ export default function PatientDetailPage() {
 
   return (
     <div>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
-        <Link href="/for-dentists/dashboard/patients" style={{ color: 'var(--muted)', fontSize: 13, textDecoration: 'none' }}>← All Patients</Link>
-        <span style={{ color: 'var(--border)' }}>|</span>
-        <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'var(--blue-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>
-          {patient.gender === 'Female' ? '👩' : '👨'}
-        </div>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22 }}>{patient.name}</h1>
-            {patient.allergies && <span style={{ fontSize: 11, fontWeight: 700, color: '#991B1B', background: '#FEE2E2', padding: '2px 8px', borderRadius: 10 }}>⚠️ ALLERGIC: {patient.allergies}</span>}
-          </div>
-          <div style={{ fontSize: 13, color: 'var(--muted)', display: 'flex', gap: 12 }}>
-            {patient.age && <span>{patient.age} yrs</span>}
-            {patient.gender && <span>{patient.gender}</span>}
-            {patient.blood_group && <span style={{ color: '#7C3AED', fontWeight: 600 }}>{patient.blood_group}</span>}
-            <span>📞 {patient.phone}</span>
-          </div>
-        </div>
-        <div style={{ marginLeft: 'auto' }}>
-          <ScheduleRecallButton patientId={patientId} dentistId={dentistId} />
-        </div>
-      </div>
+      <div style={{ maxWidth: 960, margin: '0 auto' }}>
+      <Link href="/for-dentists/dashboard/patients" style={{ display: 'inline-block', color: TEAL_DARK, fontWeight: 700, fontSize: 14, textDecoration: 'none', marginBottom: 12 }}>‹ Patients</Link>
 
-      {/* Tabs */}
-      <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', marginBottom: 24, overflowX: 'auto' }}>
-        {TABS.map(tab => (
-          <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-            style={{ padding: '12px 20px', border: 'none', background: 'none', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: 13, fontWeight: activeTab === tab.id ? 700 : 400, color: activeTab === tab.id ? 'var(--blue)' : 'var(--muted)', borderBottom: `2px solid ${activeTab === tab.id ? 'var(--blue)' : 'transparent'}`, whiteSpace: 'nowrap' }}>
-            {tab.icon} {tab.label}
-          </button>
-        ))}
-      </div>
+      {/* Patient header: identity, safety info, the three common actions. */}
+      {(() => {
+        const nameParts = String(patient.name || '').trim().split(/\s+/).filter(Boolean)
+        const initials = nameParts.length === 0 ? '?' : nameParts.length === 1 ? nameParts[0].slice(0, 2).toUpperCase() : (nameParts[0][0] + nameParts[nameParts.length - 1][0]).toUpperCase()
+        const meta = [patient.age ? `${patient.age} yrs` : null, patient.gender, patient.blood_group, patient.uhid ? `ID ${patient.uhid}` : null].filter(Boolean).join(' · ')
+        const waHref = whatsappLink(patient.phone)
+        const actionBase: React.CSSProperties = { height: 46, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontWeight: 700, fontSize: 14, border: '1.5px solid var(--border)', background: '#fff', color: 'var(--text)', textDecoration: 'none', whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: 'var(--font-body)', padding: '0 10px' }
+        return (
+          <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: 16, display: 'grid', gap: 12, marginBottom: 16 }}>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ width: 52, height: 52, borderRadius: '50%', background: BRAND_GRADIENT, color: '#fff', fontFamily: 'var(--font-heading)', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{initials}</div>
+              <div style={{ flex: '1 1 180px', minWidth: 0 }}>
+                <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 20, margin: 0 }}>{patient.name}</h1>
+                {meta && <div style={{ fontSize: 13, color: 'var(--muted)' }}>{meta}</div>}
+                {patient.phone && <div style={{ fontSize: 13, color: 'var(--muted)' }}>{patient.phone}</div>}
+              </div>
+              <ScheduleRecallButton patientId={patientId} dentistId={dentistId} />
+            </div>
+            {(patient.allergies || patient.current_medications) && (
+              <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', color: '#991B1B', borderRadius: 10, padding: '8px 12px', fontSize: 13 }}>
+                {patient.allergies && <><b>Allergy:</b> {patient.allergies}</>}
+                {patient.allergies && patient.current_medications && ' · '}
+                {patient.current_medications && <><b>Takes:</b> {patient.current_medications}</>}
+              </div>
+            )}
+            <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 1fr', gap: 8 }}>
+              <button type="button" onClick={() => { setActiveTab('visits'); setShowAddVisit(true) }}
+                style={{ ...actionBase, background: TEAL, borderColor: TEAL, color: '#fff' }}>
+                <PlusIcon size={16} /> Start visit
+              </button>
+              <Link href={`/for-dentists/dashboard/billing?patient_id=${patientId}`} style={actionBase}>Bill</Link>
+              {waHref
+                ? <a href={waHref} target="_blank" rel="noopener noreferrer" style={{ ...actionBase, color: '#128C7E' }}><WhatsAppIcon size={16} /> WhatsApp</a>
+                : <span title="No phone number saved" style={{ ...actionBase, color: '#94A3B8', cursor: 'not-allowed' }}>WhatsApp</span>}
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Tabs: 4 groups, then the sections inside the active group. */}
+      {(() => {
+        const group = TAB_GROUPS.find(g => g.tabs.includes(activeTab)) || TAB_GROUPS[0]
+        return (
+          <div style={{ marginBottom: 20 }}>
+            <div role="tablist" style={{ display: 'flex', background: '#fff', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
+              {TAB_GROUPS.map(g => {
+                const on = g.id === group.id
+                return (
+                  <button key={g.id} role="tab" aria-selected={on} onClick={() => setActiveTab(g.tabs[0])}
+                    style={{ flex: 1, padding: '12px 4px', border: 'none', background: 'none', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: 14, fontWeight: on ? 700 : 600, color: on ? 'var(--text)' : 'var(--muted)', borderBottom: `3px solid ${on ? TEAL : 'transparent'}` }}>
+                    {g.label}
+                  </button>
+                )
+              })}
+            </div>
+            {group.tabs.length > 1 && (
+              <div style={{ display: 'flex', gap: 6, marginTop: 10, overflowX: 'auto', scrollbarWidth: 'none' as any }}>
+                {group.tabs.map(id => {
+                  const t = TABS.find(x => x.id === id)
+                  if (!t) return null
+                  const on = activeTab === id
+                  return (
+                    <button key={id} type="button" onClick={() => setActiveTab(id)} aria-pressed={on}
+                      style={{ fontSize: 13, fontWeight: 600, padding: '7px 13px', borderRadius: 999, whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: 'var(--font-body)', border: `1px solid ${on ? '#0F172A' : 'var(--border)'}`, background: on ? '#0F172A' : '#fff', color: on ? '#fff' : 'var(--text)' }}>
+                      {t.label}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       {/* OVERVIEW */}
       {activeTab === 'overview' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
           <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '20px', gridColumn: '1/-1' }}>
-            <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16, marginBottom: 16 }}>Patient Summary</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
-              {[
-                { label: 'Total Visits', value: visits.length, icon: '📋' },
-                { label: 'Prescriptions', value: prescriptions.length, icon: '💊' },
-                { label: 'Invoices', value: invoices.length, icon: '🧾' },
-                { label: 'Treatment Plans', value: plans.length, icon: '🦷' },
-                { label: 'Lab Work', value: labWork.length, icon: '🧪' },
-              ].map(stat => (
-                <div key={stat.label} style={{ background: 'var(--bg)', borderRadius: 10, padding: '14px', textAlign: 'center' }}>
-                  <div style={{ fontSize: 24, marginBottom: 4 }}>{stat.icon}</div>
-                  <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22 }}>{stat.value}</div>
-                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>{stat.label}</div>
-                </div>
-              ))}
-            </div>
+            {(() => {
+              const due = invoices.filter((i: any) => i.payment_status !== 'paid').reduce((sum: number, i: any) => sum + Number(i.total || 0), 0)
+              const lastVisit = visits[0]
+              const rows = [
+                { label: 'Amount due', value: due > 0 ? `₹${due.toLocaleString('en-IN')}` : 'Nothing due', color: due > 0 ? '#B45309' : undefined },
+                { label: 'Last visit', value: lastVisit?.visit_date ? new Date(`${String(lastVisit.visit_date).slice(0, 10)}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'No visits yet' },
+                { label: 'Visits', value: String(visits.length) },
+                { label: 'Treatment plans', value: String(plans.length) },
+              ]
+              return (
+                <>
+                  <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, marginBottom: 6 }}>Summary</h3>
+                  {rows.map((r, i) => (
+                    <div key={r.label} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '10px 0', borderTop: i === 0 ? 'none' : '1px solid var(--border)', fontSize: 14 }}>
+                      <span style={{ color: 'var(--muted)' }}>{r.label}</span>
+                      <span style={{ fontWeight: 700, color: r.color || 'var(--text)', textAlign: 'right' }}>{r.value}</span>
+                    </div>
+                  ))}
+                  {visits.length > 0 && (
+                    <div style={{ marginTop: 12 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                        <b style={{ fontSize: 14 }}>Recent visits</b>
+                        <button type="button" onClick={() => setActiveTab('visits')} style={{ border: 'none', background: 'none', color: TEAL_DARK, fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>All {visits.length}</button>
+                      </div>
+                      {visits.slice(0, 2).map((v: any) => (
+                        <div key={v.id} style={{ display: 'grid', gridTemplateColumns: '64px 1fr', gap: 10, padding: '8px 0', borderTop: '1px solid var(--border)', fontSize: 13 }}>
+                          <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{v.visit_date ? new Date(`${String(v.visit_date).slice(0, 10)}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : ''}</span>
+                          <span>
+                            <b style={{ display: 'block' }}>{v.chief_complaint || 'Visit'}</b>
+                            {v.treatment_done && <span style={{ color: 'var(--muted)', fontSize: 12 }}>{String(v.treatment_done).length > 90 ? `${String(v.treatment_done).slice(0, 90)}…` : v.treatment_done}</span>}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )
+            })()}
           </div>
           {patient.medical_history && (
             <div style={{ background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: 14, padding: '20px' }}>
               <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, marginBottom: 8, color: '#92400E' }}>📋 Medical History</h3>
               <p style={{ fontSize: 14, color: '#92400E', lineHeight: 1.7 }}>{patient.medical_history}</p>
-            </div>
-          )}
-          {patient.current_medications && (
-            <div style={{ background: '#EDE9FE', border: '1px solid #DDD6FE', borderRadius: 14, padding: '20px' }}>
-              <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, marginBottom: 8, color: '#5B21B6' }}>💊 Current Medications</h3>
-              <p style={{ fontSize: 14, color: '#5B21B6', lineHeight: 1.7 }}>{patient.current_medications}</p>
             </div>
           )}
           <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '20px' }}>
@@ -520,6 +593,19 @@ export default function PatientDetailPage() {
               <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: patient.portal_access ? '#CCFBF1' : 'var(--bg)', color: patient.portal_access ? '#0F766E' : 'var(--muted)' }}>
                 {patient.portal_access ? '● Enabled' : '○ Disabled'}
               </span>
+              {patient.portal_access && patient.uhid && (() => {
+                // Portal link on the clinic's own city domain (was hardcoded
+                // to dentistinpune.in, which sent Mumbai patients to Pune).
+                const portalUrl = `https://${getCityBySlug(dentistMeta?.city).domain}/patient/portal?id=${encodeURIComponent(patient.uhid)}`
+                const message = `Hi ${patient.name}, you can now see your dental records and reports online here: ${portalUrl} - Dr. ${dentistName}${dentistMeta?.clinic_name ? `, ${dentistMeta.clinic_name}` : ''}`
+                const href = whatsappLink(patient.phone, message)
+                return href ? (
+                  <a href={href} target="_blank" rel="noopener noreferrer"
+                    style={{ padding: '9px 14px', borderRadius: 8, fontWeight: 700, fontSize: 13, background: '#25D366', color: '#fff', textDecoration: 'none' }}>
+                    Send portal link on WhatsApp
+                  </a>
+                ) : null
+              })()}
             </div>
             {patient.portal_last_login && (
               <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 12 }}>
@@ -1076,6 +1162,7 @@ export default function PatientDetailPage() {
           )}
         </div>
       )}
+      </div>
     </div>
   )
 }

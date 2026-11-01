@@ -9,12 +9,15 @@ import ProfileQRCard from './ProfileQRCard'
 import RequestReviewCard from './RequestReviewCard'
 import { resolveCurrentDentist } from '@/lib/currentDentist'
 import { getCityBySlug } from '@/config/cities'
-import { topicBadge, topicLabel } from '@/lib/articles'
+import { completionPct } from '@/lib/profileCompletion'
+import { NAVY, TEAL, TEAL_DARK, TEAL_SOFT, BRAND_GRADIENT } from '@/app/dentist/[slug]/profileTheme'
 import GrowthTools from './GrowthTools'
+import { PlusIcon, CalendarIcon, QrIcon, StarIcon, PenIcon, BadgeIcon, ChevronIcon } from './dashIcons'
 
 export const dynamic = 'force-dynamic'
 
 const IST_TZ = 'Asia/Kolkata'
+const D = '/for-dentists/dashboard'
 
 function istTodayIso(): string {
   // en-CA locale returns YYYY-MM-DD which is what Postgres `date` columns expect.
@@ -29,6 +32,10 @@ function istTodayLabel(): string {
   }).format(new Date())
 }
 
+function istMonthLabel(): string {
+  return `1 ${new Intl.DateTimeFormat('en-IN', { timeZone: IST_TZ, month: 'long' }).format(new Date())}`
+}
+
 function formatTimeLabel(slot: string | null | undefined): string {
   if (!slot) return '—'
   const [hStr, mStr] = slot.split(':')
@@ -39,7 +46,28 @@ function formatTimeLabel(slot: string | null | undefined): string {
   return `${hour12}:${String(m || 0).padStart(2, '0')} ${ampm}`
 }
 
+function formatDateLabel(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(`${iso}T00:00:00`)
+  if (isNaN(d.getTime())) return iso
+  return d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })
+}
+
 const CLOSED_STATUSES = new Set(['completed', 'cancelled', 'no_show'])
+
+const STATUS_PILL: Record<string, { bg: string; text: string; label: string }> = {
+  pending:   { bg: '#FEF3C7', text: '#92400E', label: 'Pending' },
+  confirmed: { bg: '#E0F2FE', text: '#075985', label: 'Confirmed' },
+  completed: { bg: '#DCFCE7', text: '#166534', label: 'Done' },
+  cancelled: { bg: '#FEE2E2', text: '#991B1B', label: 'Cancelled' },
+  no_show:   { bg: '#F1F5F9', text: '#475569', label: 'No-show' },
+}
+
+type Appt = {
+  id: string; patient_name: string | null; patient_phone: string | null;
+  appt_date: string; time_slot: string | null; status: string;
+  treatments: { name: string | null } | null;
+}
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -48,7 +76,7 @@ export default async function DashboardPage() {
 
   const dentist = await resolveCurrentDentist<any>(
     supabase,
-    'id, name, clinic_name, slug, city, tier, is_verified, profile_photo, cover_photo, bio, phone, whatsapp, working_hours, maps_embed, created_at',
+    'id, name, clinic_name, slug, city, tier, is_verified, profile_photo, cover_photo, bio, phone, whatsapp, working_hours, maps_embed, consultation_fee, created_at',
   )
 
   if (!dentist) redirect('/for-dentists/login')
@@ -56,109 +84,131 @@ export default async function DashboardPage() {
   const todayIso = istTodayIso()
   const todayLabel = istTodayLabel()
   const clinicName = (dentist as any).clinic_name || dentist.name || ''
-  // Public profile URL the overview QR card encodes — resolved from the
-  // dentist's city so the host matches the live listing's domain.
-  const profileUrl = dentist.slug
-    ? `https://${getCityBySlug((dentist as any).city).domain}/dentist/${dentist.slug}`
-    : ''
-  // Start of the current calendar month in UTC. Used as the lower bound on
-  // "this month" appointment counts and engagement-event aggregates so the
-  // cards line up with how a clinic reads "this month" rather than a
-  // rolling 30-day window.
+  const dentistCity = getCityBySlug((dentist as any).city)
+  // Public profile URL for the QR card / review request / badge, on the
+  // dentist's own city domain (never a hardcoded host).
+  const profileUrl = dentist.slug ? `https://${dentistCity.domain}/dentist/${dentist.slug}` : ''
+
+  // Start of the current calendar month, for the "this month" numbers.
   const _ms = new Date()
   _ms.setUTCDate(1); _ms.setUTCHours(0, 0, 0, 0)
   const monthStartIso = _ms.toISOString()
 
-  // analytics_events has RLS that blocks the authenticated-dentist role
-  // from SELECTing even their own rows — the lifetime counter columns on
-  // `dentists` (profile_views, whatsapp_clicks) work because they live on
-  // a row the dentist can read, but the per-event log table doesn't. Use
-  // the service-role client for the MTD aggregate; the dentist_id filter
-  // is locked to the auth-resolved dentist row above so this isn't a
-  // privilege escalation.
+  // analytics_events RLS blocks the dentist role from reading its own rows,
+  // so the month counts use the service-role client. Every query is pinned
+  // to the auth-resolved dentist id above.
   const adminClient = createServiceClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   )
+  // head:true counts (not row fetches) so busy profiles are not capped at
+  // PostgREST's 1000-row limit.
+  const countEvent = (eventType: string) => adminClient
+    .from('analytics_events')
+    .select('id', { count: 'exact', head: true })
+    .eq('dentist_id', dentist.id)
+    .eq('event_type', eventType)
+    .gte('created_at', monthStartIso)
 
   const [
-    { count: appointmentCount },
-    { count: enquiryCount },
     { count: reviewCount },
-    { count: photoCount },
-    { count: treatmentCount },
-    { count: pendingCount },
-    { count: monthApptCount },
     { data: todayAppts },
-    { data: priorPhones },
+    { data: pendingAppts },
+    { count: pendingTotal },
     { data: unpaidInvoices },
-    { data: monthEngagementEvents },
+    { count: monthViews },
+    { count: monthWhatsApp },
+    { count: monthCalls },
+    { count: monthBookTaps },
+    { count: articleCount },
   ] = await Promise.all([
-    supabase.from('appointments').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id),
-    supabase.from('enquiries').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id),
-    supabase.from('reviews').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id).eq('status', 'approved'),
-    supabase.from('gallery_photos').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id),
-    supabase.from('dentist_treatments').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id),
-    supabase.from('appointments').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id).eq('status', 'pending'),
-    supabase.from('appointments').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id).gte('created_at', monthStartIso),
+    supabase.from('reviews').select('id', { count: 'exact', head: true }).eq('dentist_id', dentist.id).eq('status', 'approved'),
     supabase
       .from('appointments')
       .select('id, patient_name, patient_phone, appt_date, time_slot, status, treatments(name)')
       .eq('dentist_id', dentist.id)
       .eq('appt_date', todayIso)
       .order('time_slot', { ascending: true }),
+    // Booking requests waiting for a reply, soonest first.
     supabase
       .from('appointments')
-      .select('patient_phone')
+      .select('id, patient_name, patient_phone, appt_date, time_slot, status, treatments(name)')
       .eq('dentist_id', dentist.id)
-      .lt('appt_date', todayIso),
+      .eq('status', 'pending')
+      .gte('appt_date', todayIso)
+      .order('appt_date', { ascending: true })
+      .order('time_slot', { ascending: true })
+      .limit(5),
+    supabase.from('appointments').select('id', { count: 'exact', head: true }).eq('dentist_id', dentist.id).eq('status', 'pending').gte('appt_date', todayIso),
     supabase
       .from('invoices')
       .select('total, payment_status')
       .eq('dentist_id', dentist.id)
       .in('payment_status', ['pending', 'overdue']),
-    adminClient
-      .from('analytics_events')
-      .select('event_type')
-      .eq('dentist_id', dentist.id)
-      .gte('created_at', monthStartIso),
+    countEvent('profile_view'),
+    countEvent('whatsapp_click'),
+    countEvent('call_click'),
+    countEvent('booking_click'),
+    supabase.from('dentist_articles').select('id', { count: 'exact', head: true }).eq('dentist_id', dentist.id).eq('status', 'published'),
   ])
 
-  // Recent appointments — include id and patient_phone so the inline
-  // confirm/decline buttons can address the row and the dashboard can
-  // resolve the patient record if needed downstream.
-  const { data: recentAppts } = await supabase
-    .from('appointments')
-    .select('id, reference_no, patient_name, appt_date, time_slot, status')
-    .eq('dentist_id', dentist.id)
-    .order('created_at', { ascending: false })
-    .limit(5)
+  const todayList = ((todayAppts ?? []) as unknown) as Appt[]
+  const pendingList = ((pendingAppts ?? []) as unknown) as Appt[]
+  const totalToday = todayList.filter(a => a.status !== 'cancelled').length
 
-  // Published articles for the overview card. RLS on dentist_articles grants a
-  // dentist their OWN rows (dentist_id ↔ auth email), so the authenticated
-  // `supabase` client reads them directly — no service role needed. Fetch 4 to
-  // show the newest 3 and still detect whether a "See all" link is warranted.
-  const { data: articleRows } = await supabase
-    .from('dentist_articles')
-    .select('id, title, slug, topic_type, published_at')
-    .eq('dentist_id', dentist.id)
-    .eq('status', 'published')
-    .order('published_at', { ascending: false })
-    .limit(4)
-  const articles = ((articleRows ?? []) as Array<{
-    id: string; title: string; slug: string; topic_type: string; published_at: string | null
-  }>)
-  const publishedArticles = articles.slice(0, 3)
-  const hasMoreArticles = articles.length > 3
-  // City the dentist belongs to — used for the article public URL host context
-  // and the "appears on DentistIn <City>" CTA copy.
-  const dentistCity = getCityBySlug((dentist as any).city)
+  // New vs follow-up: a patient is a follow-up if the same phone had an
+  // earlier appointment. Only today's phones are checked, so this stays a
+  // small query however large the clinic's history is.
+  const todayPhones = Array.from(new Set(todayList.map(a => a.patient_phone).filter(Boolean))) as string[]
+  let priorPhoneSet = new Set<string>()
+  if (todayPhones.length > 0) {
+    const { data: prior } = await supabase
+      .from('appointments')
+      .select('patient_phone')
+      .eq('dentist_id', dentist.id)
+      .lt('appt_date', todayIso)
+      .in('patient_phone', todayPhones)
+    priorPhoneSet = new Set(((prior ?? []) as Array<{ patient_phone: string | null }>).map(r => r.patient_phone || '').filter(Boolean))
+  }
+  let newCount = 0
+  let followUpCount = 0
+  for (const a of todayList) {
+    if (a.status === 'cancelled') continue
+    if (a.patient_phone && priorPhoneSet.has(a.patient_phone)) followUpCount++
+    else newCount++
+  }
 
-  // Pre-rendered verified-badge HTML for the "Grow Your Practice" tools. Built
-  // server-side with the dentist's REAL city domain + slug (via profileUrl
-  // above), so a Pune dentist gets dentistinpune.in, a Mumbai dentist
-  // dentistinmumbai.in — never a hardcoded host. The GrowthTools client island
-  // renders it in a copyable code block + a live preview.
+  // Next patient: earliest open slot after "now" (IST), else earliest open slot.
+  const nowHm = new Intl.DateTimeFormat('en-GB', {
+    timeZone: IST_TZ, hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(new Date())
+  const open = todayList
+    .filter(a => !CLOSED_STATUSES.has(a.status))
+    .sort((a, b) => (a.time_slot ?? '').localeCompare(b.time_slot ?? ''))
+  const nextAppt = open.find(a => (a.time_slot ?? '') > nowHm) || open[0] || null
+  const doneCount = todayList.filter(a => a.status === 'completed').length
+
+  const pendingDue = ((unpaidInvoices ?? []) as Array<{ total: number | null }>)
+    .reduce((sum, inv) => sum + Number(inv.total || 0), 0)
+
+  const todayApptsForMsg: TodayAppt[] = todayList.map(a => ({
+    time_slot: a.time_slot,
+    patient_name: a.patient_name,
+    treatment: a.treatments?.name ?? null,
+    status: a.status,
+  }))
+
+  // Profile completeness: same scoring as the sidebar / admin (profileCompletion.ts).
+  // The "next step" link points at the first missing basic.
+  const pct = completionPct(dentist as any)
+  const nextStep =
+    !dentist.profile_photo ? { label: 'Add your photo', href: `${D}/photos` }
+    : !dentist.cover_photo ? { label: 'Add clinic photos', href: `${D}/photos` }
+    : !(dentist.bio && dentist.bio.length >= 50) ? { label: 'Write a longer bio', href: `${D}/profile` }
+    : !dentist.whatsapp ? { label: 'Add your WhatsApp number', href: `${D}/profile` }
+    : !dentist.maps_embed ? { label: 'Add your Google Maps location', href: `${D}/profile` }
+    : { label: 'Finish your profile', href: `${D}/profile` }
+
   const badgeHtml = `<!-- DentistIn Verified Badge -->
 <a href="${profileUrl}"
    target="_blank" rel="noopener"
@@ -180,404 +230,268 @@ export default async function DashboardPage() {
   </div>
 </a>`
 
-  // Month-to-date engagement aggregates derived from analytics_events.
-  // We pre-bucket the event types we surface so the JSX stays cheap.
-  const monthEv = (monthEngagementEvents || []) as Array<{ event_type: string }>
-  const monthEngagement = {
-    profile_views:   monthEv.filter(e => e.event_type === 'profile_view').length,
-    whatsapp_clicks: monthEv.filter(e => e.event_type === 'whatsapp_click').length,
+  const firstName = (dentist.name || '').replace(/^\s*dr\.?\s*/i, '').split(' ')[0]
+  const initials = (dentist.name || 'D').replace(/^\s*dr\.?\s*/i, '').split(' ').filter(Boolean).map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
+  const contactTaps = (monthWhatsApp ?? 0) + (monthCalls ?? 0)
+
+  // ── Shared styles ────────────────────────────────────────────────
+  const card: React.CSSProperties = { background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }
+  const cardHead: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', gap: 8 }
+  const h3: React.CSSProperties = { fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, display: 'flex', alignItems: 'center', gap: 8, margin: 0 }
+  const headLink: React.CSSProperties = { color: TEAL_DARK, fontWeight: 700, fontSize: 13, textDecoration: 'none' }
+  const rowIcon: React.CSSProperties = { width: 36, height: 36, borderRadius: 10, background: TEAL_SOFT, color: TEAL_DARK, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }
+  const chev = <span style={{ color: '#94A3B8', display: 'flex' }}><ChevronIcon /></span>
+
+  // ── Blocks ───────────────────────────────────────────────────────
+  const header = (
+    <div className="dh-top" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+      <div style={{ width: 44, height: 44, borderRadius: '50%', background: BRAND_GRADIENT, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, flexShrink: 0, overflow: 'hidden' }}>
+        {dentist.profile_photo ? <img src={dentist.profile_photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials}
+      </div>
+      <div style={{ flex: '1 1 200px', minWidth: 0 }}>
+        <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 19, lineHeight: 1.2, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{clinicName}</h1>
+        <div style={{ fontSize: 13, color: 'var(--muted)' }}>
+          {firstName ? `Dr. ${firstName}` : ''}{firstName ? ' · ' : ''}
+          {dentist.is_verified
+            ? <span style={{ color: TEAL_DARK, fontWeight: 700 }}>Verified</span>
+            : <span style={{ color: '#B45309', fontWeight: 700 }}>Verification pending</span>}
+        </div>
+      </div>
+      <div className="dh-desktop-actions" style={{ display: 'flex', gap: 10 }}>{primaryActions(true)}</div>
+      <AutoRefresh />
+    </div>
+  )
+
+  function primaryActions(compact: boolean) {
+    const base: React.CSSProperties = {
+      height: compact ? 48 : 56, borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+      fontWeight: 700, fontSize: 14, textDecoration: 'none', whiteSpace: 'nowrap', padding: '0 16px',
+    }
+    return (
+      <>
+        <Link href={`${D}/patients?new=1`} style={{ ...base, background: TEAL, color: '#fff' }}>
+          <PlusIcon /> Walk-in patient
+        </Link>
+        <Link href={`${D}/appointments?new=1`} style={{ ...base, background: '#fff', color: 'var(--text)', border: '1.5px solid var(--border)' }}>
+          <CalendarIcon size={18} /> Book appointment
+        </Link>
+      </>
+    )
   }
 
-  // Today summary computations
-  const todayList = ((todayAppts ?? []) as unknown) as Array<{
-    id: string; patient_name: string | null; patient_phone: string | null;
-    appt_date: string; time_slot: string | null; status: string;
-    treatments: { name: string | null } | null;
-  }>
-  const totalToday = todayList.length
-  const priorPhoneSet = new Set<string>(((priorPhones ?? []) as Array<{ patient_phone: string | null }>)
-    .map(r => r.patient_phone || '')
-    .filter(Boolean))
-  let newCount = 0
-  let followUpCount = 0
-  for (const a of todayList) {
-    if (a.patient_phone && priorPhoneSet.has(a.patient_phone)) followUpCount++
-    else newCount++
-  }
-  // Next appointment: earliest non-closed slot today, preferring future-of-now,
-  // falling back to earliest of any non-closed slot if none in the future.
-  const nowHm = new Intl.DateTimeFormat('en-GB', {
-    timeZone: IST_TZ, hour: '2-digit', minute: '2-digit', hour12: false,
-  }).format(new Date())
-  const upcoming = todayList
-    .filter(a => !CLOSED_STATUSES.has(a.status) && (a.time_slot ?? '') > nowHm)
-    .sort((a, b) => (a.time_slot ?? '').localeCompare(b.time_slot ?? ''))
-  const anyOpen = todayList
-    .filter(a => !CLOSED_STATUSES.has(a.status))
-    .sort((a, b) => (a.time_slot ?? '').localeCompare(b.time_slot ?? ''))
-  const nextAppt = upcoming[0] || anyOpen[0] || null
+  const setupBar = pct < 100 && (
+    <div style={{ ...card, padding: '12px 16px', display: 'grid', gap: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, gap: 8 }}>
+        <b>Profile {pct}% complete</b>
+        <Link href={nextStep.href} style={headLink}>{nextStep.label}</Link>
+      </div>
+      <div style={{ height: 6, background: 'var(--border)', borderRadius: 3, overflow: 'hidden' }}>
+        <div style={{ height: '100%', width: `${pct}%`, background: TEAL, borderRadius: 3 }} />
+      </div>
+    </div>
+  )
 
-  const pendingDue = ((unpaidInvoices ?? []) as Array<{ total: number | null }>)
-    .reduce((sum, inv) => sum + Number(inv.total || 0), 0)
-
-  const todayApptsForMsg: TodayAppt[] = todayList.map(a => ({
-    time_slot: a.time_slot,
-    patient_name: a.patient_name,
-    treatment: a.treatments?.name ?? null,
-    status: a.status,
-  }))
-
-  // Onboarding checklist — 4 critical fields a dentist must fill before their
-  // profile is patient-ready. Card hides once everything is done.
-  const completionItems = [
-    { label: 'Profile photo',     done: !!dentist.profile_photo,                       href: '/for-dentists/dashboard/photos' },
-    { label: 'Bio (20+ chars)',   done: !!(dentist.bio && dentist.bio.length > 20),    href: '/for-dentists/dashboard/profile' },
-    { label: 'Working hours',     done: !!dentist.working_hours,                       href: '/for-dentists/dashboard/hours' },
-    { label: 'Phone number',      done: !!dentist.phone,                               href: '/for-dentists/dashboard/profile' },
-  ]
-  const pct = Math.round((completionItems.filter(i => i.done).length / completionItems.length) * 100)
-
-  const STATS = [
-    { icon: '📅', label: "Today's Appointments", value: totalToday, href: '/for-dentists/dashboard/appointments' },
-    { icon: '⏳', label: 'Pending Approval', value: pendingCount || 0, href: '/for-dentists/dashboard/appointments?status=pending' },
-    { icon: '🗓️', label: 'This Month', value: monthApptCount || 0, href: '/for-dentists/dashboard/appointments' },
-    { icon: '👁️', label: 'Profile Views · MTD', value: monthEngagement.profile_views, href: '/for-dentists/dashboard/analytics' },
-    { icon: '💚', label: 'WhatsApp Clicks · MTD', value: monthEngagement.whatsapp_clicks, href: '/for-dentists/dashboard/analytics' },
-    { icon: '📅', label: 'Total Appointments', value: appointmentCount || 0, href: '/for-dentists/dashboard/appointments' },
-    { icon: '💬', label: 'Enquiries', value: enquiryCount || 0, href: '/for-dentists/dashboard/enquiries' },
-    // Count-driven, NOT flag-gated: show the stat only once real reviews exist
-    // (a "0 Approved Reviews" tile is pointless/discouraging). Public-page
-    // review display stays behind REVIEWS_ENABLED.
-    ...((reviewCount ?? 0) > 0 ? [{ icon: '⭐', label: 'Approved Reviews', value: reviewCount || 0, href: '/for-dentists/dashboard/profile' }] : []),
-  ]
-
-  const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-    pending: { bg: '#FEF3C7', text: '#92400E' },
-    confirmed: { bg: '#DBEAFE', text: '#1D4ED8' },
-    completed: { bg: '#DCFCE7', text: '#166534' },
-    cancelled: { bg: '#FEE2E2', text: '#991B1B' },
-  }
-
-  return (
-    <div>
-      {/* Onboarding checklist — appears first when profile is incomplete, hides at 100%. */}
-      {pct < 100 && (
-        <section style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '20px 24px', marginBottom: 20, boxShadow: '0 4px 14px rgba(15,25,35,0.05)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--blue)', marginBottom: 4 }}>Get started</div>
-              <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 18 }}>Finish setting up your profile</h2>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, color: 'var(--blue)' }}>{pct}%</span>
-              <span style={{ fontSize: 12, color: 'var(--muted)' }}>{completionItems.filter(i => i.done).length} of {completionItems.length} done</span>
-            </div>
+  const todayCard = (
+    <section className="dh-today" style={{ background: NAVY, color: '#fff', borderRadius: 18, padding: 18, display: 'grid', gap: 14 }}>
+      <div>
+        <div style={{ fontSize: 12, opacity: 0.7, fontWeight: 600 }}>{todayLabel}</div>
+        <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: 24, fontWeight: 800, lineHeight: 1.15, margin: 0 }}>
+          {totalToday === 0 ? 'No patients booked today' : `${totalToday} ${totalToday === 1 ? 'patient' : 'patients'} today`}
+        </h2>
+      </div>
+      {nextAppt ? (
+        <div style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.14)', borderRadius: 12, padding: '10px 12px', display: 'flex', gap: 12, alignItems: 'center' }}>
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 17, color: TEAL, whiteSpace: 'nowrap' }}>{formatTimeLabel(nextAppt.time_slot)}</div>
+          <div style={{ fontSize: 13, minWidth: 0 }}>
+            <div style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Next: {nextAppt.patient_name || 'Patient'}</div>
+            {nextAppt.treatments?.name && <div style={{ opacity: 0.7, fontSize: 12 }}>{nextAppt.treatments.name}</div>}
           </div>
-          <div style={{ height: 8, background: '#E2E8F0', borderRadius: 4, overflow: 'hidden', marginBottom: 14 }}>
-            <div style={{ height: '100%', width: `${pct}%`, background: 'linear-gradient(90deg, #0057A8, #00A878)', borderRadius: 4, transition: 'width 0.5s' }} />
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
-            {completionItems.map(item => (
-              <Link key={item.label} href={item.href} style={{
-                display: 'flex', alignItems: 'center', gap: 10,
-                padding: '10px 14px', borderRadius: 10,
-                background: item.done ? '#F0FDF4' : 'var(--bg)',
-                border: `1px solid ${item.done ? '#BBF7D0' : 'var(--border)'}`,
-                textDecoration: 'none',
-              }}>
-                <span style={{
-                  width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: item.done ? '#00A878' : '#fff',
-                  border: item.done ? 'none' : '1.5px solid #CBD5E1',
-                  color: '#fff', fontSize: 12, fontWeight: 800,
-                }}>{item.done ? '✓' : ''}</span>
-                <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: item.done ? '#166534' : 'var(--text)', textDecoration: item.done ? 'line-through' : 'none' }}>
-                  {item.label}
-                </span>
-                {!item.done && <span style={{ fontSize: 13, color: 'var(--blue)', fontWeight: 700 }}>→</span>}
-              </Link>
-            ))}
-          </div>
-        </section>
+        </div>
+      ) : totalToday > 0 ? (
+        <div style={{ fontSize: 13, opacity: 0.8 }}>All of today&apos;s appointments are done.</div>
+      ) : null}
+      <div className="dh-minis" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        <div style={{ fontSize: 12, opacity: 0.85 }}>
+          <b style={{ display: 'block', fontFamily: 'var(--font-heading)', fontSize: 15, whiteSpace: 'nowrap' }}>{newCount} new · {followUpCount} follow-up</b>
+          patient mix
+        </div>
+        <Link href={`${D}/billing`} style={{ fontSize: 12, opacity: 0.85, color: '#fff', textDecoration: 'none' }}>
+          <b style={{ display: 'block', fontFamily: 'var(--font-heading)', fontSize: 15 }}>₹{pendingDue.toLocaleString('en-IN')}</b>
+          {pendingDue === 0 ? 'all bills paid' : 'unpaid bills'}
+        </Link>
+        <div className="dh-desktop-only" style={{ fontSize: 12, opacity: 0.85 }}>
+          <b style={{ display: 'block', fontFamily: 'var(--font-heading)', fontSize: 15 }}>{doneCount} done · {Math.max(totalToday - doneCount, 0)} left</b>
+          today so far
+        </div>
+      </div>
+      {totalToday > 0 && (
+        <TodayWhatsAppButton
+          dateLabel={todayLabel}
+          clinicName={clinicName}
+          total={totalToday}
+          newCount={newCount}
+          followUpCount={followUpCount}
+          nextAppt={nextAppt ? { time_slot: nextAppt.time_slot, patient_name: nextAppt.patient_name } : null}
+          pendingDue={pendingDue}
+          appts={todayApptsForMsg}
+        />
       )}
+    </section>
+  )
 
-      {/* Today's Schedule */}
-      <section style={{
-        background: 'linear-gradient(135deg, #0057A8 0%, #003F7A 100%)',
-        color: '#fff', borderRadius: 18, padding: '20px 24px', marginBottom: 20,
-        boxShadow: '0 6px 20px rgba(0,87,168,0.18)',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
-          <div>
-            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', opacity: 0.7, marginBottom: 4 }}>
-              Today
+  const needsReply = pendingList.length > 0 && (
+    <section style={card}>
+      <div style={cardHead}>
+        <h3 style={h3}>
+          Needs your reply
+          <span style={{ background: '#FEE2E2', color: '#991B1B', fontFamily: 'var(--font-body)', fontSize: 12, fontWeight: 700, borderRadius: 999, padding: '1px 8px' }}>{pendingTotal ?? pendingList.length}</span>
+        </h3>
+        {(pendingTotal ?? 0) > pendingList.length && <Link href={`${D}/appointments?status=pending`} style={headLink}>See all</Link>}
+      </div>
+      <div className="dh-reqs" style={{ display: 'grid' }}>
+        {pendingList.map(a => (
+          <div key={a.id} style={{ borderTop: '1px solid var(--border)', borderLeft: '4px solid #F59E0B', padding: '12px 16px', display: 'grid', gap: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+              <b style={{ fontSize: 14 }}>{a.patient_name || 'Patient'}</b>
+              <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999, background: '#FEF3C7', color: '#92400E', whiteSpace: 'nowrap' }}>New booking</span>
             </div>
-            <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 'clamp(20px, 3vw, 28px)', lineHeight: 1.15 }}>
-              {todayLabel}
-            </h2>
+            <div style={{ fontSize: 13, color: 'var(--muted)' }}>
+              {[formatDateLabel(a.appt_date), formatTimeLabel(a.time_slot), a.treatments?.name].filter(Boolean).join(' · ')}
+            </div>
+            <RecentApptActions appointmentId={a.id} status={a.status} variant="large" />
           </div>
-          <TodayWhatsAppButton
-            dateLabel={todayLabel}
-            clinicName={clinicName}
-            total={totalToday}
-            newCount={newCount}
-            followUpCount={followUpCount}
-            nextAppt={nextAppt ? { time_slot: nextAppt.time_slot, patient_name: nextAppt.patient_name } : null}
-            pendingDue={pendingDue}
-            appts={todayApptsForMsg}
-          />
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
-          <ScheduleTile
-            label="Appointments"
-            value={String(totalToday)}
-            sub={totalToday === 0 ? 'Nothing on the books' : `${totalToday === 1 ? '1 patient' : `${totalToday} patients`} expected`}
-          />
-          <ScheduleTile
-            label="Mix"
-            value={`${newCount} / ${followUpCount}`}
-            sub="new · follow-up"
-          />
-          <ScheduleTile
-            label="Next up"
-            value={nextAppt ? formatTimeLabel(nextAppt.time_slot) : '—'}
-            sub={nextAppt ? (nextAppt.patient_name ?? 'Patient') : (totalToday === 0 ? 'No appointments today' : 'All done')}
-          />
-          <ScheduleTile
-            label="Pending dues"
-            value={`₹${pendingDue.toLocaleString('en-IN')}`}
-            sub={pendingDue === 0 ? 'All invoices settled' : 'Across unpaid invoices'}
-          />
-        </div>
-      </section>
-
-      {/* Welcome */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
-        <div>
-          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 4 }}>
-            Welcome back, {dentist.name?.split(' ')[0]} 👋
-          </h1>
-          <p style={{ fontSize: 14, color: 'var(--muted)' }}>
-            {dentist.is_verified ? '✅ Verified listing' : '⏳ Verification pending'}
-          </p>
-        </div>
-        <AutoRefresh />
-      </div>
-
-      {/* Primary CTAs — Walk-in is the dominant action */}
-      <div className="dash-primary-ctas" style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 16, marginBottom: 24 }}>
-        <Link href="/for-dentists/dashboard/patients?new=1"
-          style={{
-            display: 'flex', alignItems: 'center', gap: 16,
-            padding: '22px 24px', minHeight: 96,
-            background: 'linear-gradient(135deg, #00A878 0%, #00875E 100%)',
-            color: '#fff', borderRadius: 16, textDecoration: 'none',
-            boxShadow: '0 6px 20px rgba(0,168,120,0.28)',
-            transition: 'transform 0.15s, box-shadow 0.15s',
-          }}>
-          <div style={{
-            width: 56, height: 56, borderRadius: 14, flexShrink: 0,
-            background: 'rgba(255,255,255,0.18)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 28,
-          }}>👤</div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', opacity: 0.85, marginBottom: 4 }}>Most used</div>
-            <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, lineHeight: 1.1, marginBottom: 4 }}>Walk-in Patient</div>
-            <div style={{ fontSize: 13, opacity: 0.9 }}>Register a new patient who just walked in.</div>
-          </div>
-          <span style={{ fontSize: 24, opacity: 0.85, flexShrink: 0 }}>→</span>
-        </Link>
-
-        <Link href="/for-dentists/dashboard/appointments?new=1"
-          style={{
-            display: 'flex', alignItems: 'center', gap: 16,
-            padding: '22px 24px', minHeight: 96,
-            background: 'linear-gradient(135deg, #0057A8 0%, #003F7A 100%)',
-            color: '#fff', borderRadius: 16, textDecoration: 'none',
-            boxShadow: '0 6px 20px rgba(0,87,168,0.24)',
-            transition: 'transform 0.15s, box-shadow 0.15s',
-          }}>
-          <div style={{
-            width: 56, height: 56, borderRadius: 14, flexShrink: 0,
-            background: 'rgba(255,255,255,0.18)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 28,
-          }}>📅</div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 20, lineHeight: 1.1, marginBottom: 4 }}>Book Appointment</div>
-            <div style={{ fontSize: 13, opacity: 0.9 }}>Schedule a future visit.</div>
-          </div>
-          <span style={{ fontSize: 24, opacity: 0.85, flexShrink: 0 }}>→</span>
-        </Link>
-      </div>
-
-      {/* Stats */}
-      <div className="dash-stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 16, marginBottom: 24 }}>
-        {STATS.map(stat => (
-          <Link key={stat.label} href={stat.href} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '20px', display: 'block', textDecoration: 'none', transition: 'box-shadow 0.2s' }}>
-            <div style={{ fontSize: 28, marginBottom: 8 }}>{stat.icon}</div>
-            <div className="dash-stat-num" style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 28, color: 'var(--text)', marginBottom: 4 }}>{stat.value}</div>
-            <div className="dash-stat-label" style={{ fontSize: 13, color: 'var(--muted)' }}>{stat.label}</div>
-          </Link>
         ))}
       </div>
+    </section>
+  )
 
-      {/* Share Your Profile — always-visible QR to the public listing. */}
-      {profileUrl && <ProfileQRCard profileUrl={profileUrl} clinicName={clinicName} />}
-
-      {/* Get Your First Review — WhatsApp a review request to an existing
-          patient. Shown ONLY while the dentist has 0 approved reviews (it's a
-          "first review" prompt); `reviewCount` is the live approved-review
-          count. Not behind REVIEWS_ENABLED: review *solicitation* stays on even
-          though review *display* is hidden, so new dentists can start
-          collecting. `!reviewCount` also covers a null count (query error). */}
-      {!reviewCount && profileUrl && <RequestReviewCard profileUrl={profileUrl} clinicName={clinicName} dentistName={dentist.name || ''} />}
-
-      {/* Recent appointments */}
-      <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden', marginBottom: 24 }}>
-        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16 }}>Recent Appointments</h3>
-          <Link href="/for-dentists/dashboard/appointments" style={{ fontSize: 13, color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>View all →</Link>
+  const todayListCard = (
+    <section style={card}>
+      <div style={cardHead}>
+        <h3 style={h3}>Today</h3>
+        <Link href={`${D}/appointments`} style={headLink}>See all</Link>
+      </div>
+      {todayList.length === 0 ? (
+        <div style={{ borderTop: '1px solid var(--border)', padding: '18px 16px', fontSize: 13, color: 'var(--muted)' }}>
+          No appointments today. Share your profile QR at the front desk so patients can book you directly.
         </div>
-        {recentAppts && recentAppts.length > 0 ? (
-          <div className="table-wrapper">
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 680 }}>
-            <thead>
-              <tr>
-                {['Reference', 'Patient', 'Date', 'Time', 'Status', 'Actions'].map(h => (
-                  <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: 'var(--muted)', background: 'var(--bg)' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {recentAppts.map((a: any) => {
-                const sc = STATUS_COLORS[a.status] || { bg: '#F3F4F6', text: '#374151' }
-                return (
-                  <tr key={a.id} style={{ borderTop: '1px solid var(--border)' }}>
-                    <td style={{ padding: '12px 16px', fontSize: 12, fontFamily: 'monospace', color: 'var(--blue)', fontWeight: 600 }}>{a.reference_no}</td>
-                    <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600 }}>{a.patient_name}</td>
-                    <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--muted)' }}>{new Date(a.appt_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</td>
-                    <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--muted)' }}>{a.time_slot}</td>
-                    <td style={{ padding: '12px 16px' }}>
-                      <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: sc.bg, color: sc.text }}>{a.status}</span>
-                    </td>
-                    <td style={{ padding: '12px 16px' }}>
-                      <RecentApptActions appointmentId={a.id} status={a.status} />
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+      ) : todayList.map(a => {
+        const pill = STATUS_PILL[a.status] || { bg: '#F1F5F9', text: '#475569', label: a.status }
+        const faded = CLOSED_STATUSES.has(a.status)
+        return (
+          <Link key={a.id} href={`${D}/appointments`} style={{ borderTop: '1px solid var(--border)', padding: '11px 16px', display: 'grid', gridTemplateColumns: '74px 1fr auto', gap: 10, alignItems: 'center', textDecoration: 'none', color: 'var(--text)', opacity: faded ? 0.55 : 1 }}>
+            <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{formatTimeLabel(a.time_slot)}</span>
+            <span style={{ minWidth: 0 }}>
+              <b style={{ display: 'block', fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.patient_name || 'Patient'}</b>
+              {a.treatments?.name && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{a.treatments.name}</span>}
+            </span>
+            <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999, background: pill.bg, color: pill.text, whiteSpace: 'nowrap' }}>{pill.label}</span>
+          </Link>
+        )
+      })}
+    </section>
+  )
+
+  const monthCard = (
+    <section style={card}>
+      <div style={cardHead}>
+        <h3 style={h3}>DentistIn this month</h3>
+        <Link href={`${D}/analytics`} style={headLink}>Details</Link>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', borderTop: '1px solid var(--border)' }}>
+        {[
+          { value: monthViews ?? 0, label: 'people saw your profile' },
+          { value: contactTaps, label: 'tapped Call or WhatsApp' },
+          { value: monthBookTaps ?? 0, label: 'tapped Book online' },
+        ].map((s, i) => (
+          <div key={s.label} style={{ padding: '12px 8px', textAlign: 'center', borderLeft: i === 0 ? 'none' : '1px solid var(--border)' }}>
+            <b style={{ display: 'block', fontFamily: 'var(--font-heading)', fontSize: 20, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>{s.value.toLocaleString('en-IN')}</b>
+            <span style={{ display: 'block', fontSize: 12, color: 'var(--muted)', lineHeight: 1.25 }}>{s.label}</span>
           </div>
-        ) : (
-          <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)' }}>
-            <div style={{ fontSize: 36, marginBottom: 8 }}>📅</div>
-            <p style={{ fontSize: 14 }}>No appointments yet. Share your profile to start getting bookings.</p>
-          </div>
-        )}
+        ))}
+      </div>
+      <div style={{ borderTop: '1px solid var(--border)', padding: '10px 16px', fontSize: 12, color: 'var(--muted)' }}>
+        Counted from {istMonthLabel()}.
+      </div>
+    </section>
+  )
+
+  // "Get more patients": one list. Rows that hold a tool (QR, review
+  // request, badge) open in place with <details>, so the home page stays
+  // short until the dentist asks for the tool.
+  const growRow = (icon: React.ReactNode, title: string, sub: string) => (
+    <>
+      <span style={rowIcon}>{icon}</span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <b style={{ display: 'block', fontSize: 14 }}>{title}</b>
+        <span style={{ fontSize: 12, color: 'var(--muted)' }}>{sub}</span>
+      </span>
+      {chev}
+    </>
+  )
+  const rowStyle: React.CSSProperties = { borderTop: '1px solid var(--border)', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, textDecoration: 'none', color: 'var(--text)', cursor: 'pointer', listStyle: 'none' }
+
+  const growCard = (
+    <section style={card}>
+      <div style={cardHead}><h3 style={h3}>Get more patients</h3></div>
+      {profileUrl && (
+        <details className="dh-grow">
+          <summary style={rowStyle}>{growRow(<QrIcon />, 'Share your profile', 'QR code for your reception desk')}</summary>
+          <div style={{ padding: '0 12px 4px' }}><ProfileQRCard profileUrl={profileUrl} clinicName={clinicName} /></div>
+        </details>
+      )}
+      {!reviewCount && profileUrl && (
+        <details className="dh-grow">
+          <summary style={rowStyle}>{growRow(<StarIcon />, 'Ask for your first review', 'Send a WhatsApp to a happy patient')}</summary>
+          <div style={{ padding: '0 12px 4px' }}><RequestReviewCard profileUrl={profileUrl} clinicName={clinicName} dentistName={dentist.name || ''} /></div>
+        </details>
+      )}
+      <Link href={articleCount ? `${D}/articles` : `${D}/articles/new`} style={rowStyle}>
+        {growRow(<PenIcon />, articleCount ? `Your articles (${articleCount} published)` : 'Write an article', `Shows on DentistIn ${dentistCity.cityName} and DentistIn India`)}
+      </Link>
+      {profileUrl && (
+        <details className="dh-grow">
+          <summary style={rowStyle}>{growRow(<BadgeIcon />, 'Website badge and Google link', 'Get bookings from your own website')}</summary>
+          <div style={{ padding: '0 16px 16px' }}><GrowthTools badgeHtml={badgeHtml} profileUrl={profileUrl} cityName={dentistCity.cityName} /></div>
+        </details>
+      )}
+    </section>
+  )
+
+  return (
+    <div style={{ maxWidth: 1160, margin: '0 auto', display: 'grid', gap: 16 }}>
+      {header}
+      <div className="dh-mobile-actions" style={{ display: 'none', gridTemplateColumns: '1fr 1fr', gap: 10 }}>{primaryActions(false)}</div>
+      <div className="dh-cols" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.55fr) minmax(0, 1fr)', gap: 18, alignItems: 'start' }}>
+        <div style={{ display: 'grid', gap: 16 }}>
+          {setupBar}
+          {todayCard}
+          {needsReply}
+          {todayListCard}
+        </div>
+        <div style={{ display: 'grid', gap: 16 }}>
+          {monthCard}
+          {growCard}
+        </div>
       </div>
 
       <style>{`
+        .dh-grow > summary::-webkit-details-marker { display: none; }
+        .dh-grow[open] > summary svg:last-child { transform: rotate(90deg); }
+        .dh-grow section { margin-bottom: 12px !important; box-shadow: none !important; }
+        .dh-reqs { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+        .dh-minis { grid-template-columns: 1fr 1fr 1fr !important; }
+        @media (max-width: 900px) {
+          .dh-cols { grid-template-columns: minmax(0, 1fr) !important; }
+        }
         @media (max-width: 768px) {
-          /* Action cards stack full-width (minHeight already 96px ≥ 72px). */
-          .dash-primary-ctas { grid-template-columns: 1fr !important; gap: 12px !important; }
-          /* Stat cards: 2-column grid, 80px floor, 24px number, 12px label. */
-          .dash-stats-grid { grid-template-columns: 1fr 1fr !important; gap: 12px !important; }
-          .dash-stats-grid > a { min-height: 80px; padding: 16px !important; }
-          .dash-stat-num { font-size: 24px !important; }
-          .dash-stat-label { font-size: 12px !important; }
-          /* Quick-action tiles: 2-column instead of 4. */
-          .dash-quick-actions { grid-template-columns: 1fr 1fr !important; gap: 12px !important; }
+          .dh-desktop-actions { display: none !important; }
+          .dh-mobile-actions { display: grid !important; }
+          .dh-desktop-only { display: none !important; }
+          .dh-minis { grid-template-columns: 1fr 1fr !important; }
+          .dh-mobile-actions a { padding: 0 8px !important; font-size: 13.5px !important; }
         }
       `}</style>
-
-      {/* Quick actions */}
-      <div className="dash-quick-actions" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
-        {[
-          { icon: '✏️', label: 'Edit Profile', href: '/for-dentists/dashboard/profile', desc: 'Update your clinic details' },
-          { icon: '📸', label: 'Upload Photos', href: '/for-dentists/dashboard/photos', desc: 'Add clinic & gallery photos' },
-          { icon: '🕐', label: 'Set Hours', href: '/for-dentists/dashboard/hours', desc: 'Configure working hours' },
-          { icon: '🦷', label: 'Add Treatments', href: '/for-dentists/dashboard/treatments', desc: 'Set treatments & fees' },
-        ].map(action => (
-          <Link key={action.label} href={action.href} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: '16px', textDecoration: 'none', display: 'block', transition: 'box-shadow 0.2s' }}>
-            <div style={{ fontSize: 24, marginBottom: 8 }}>{action.icon}</div>
-            <div style={{ fontWeight: 700, fontSize: 14, fontFamily: 'var(--font-heading)', marginBottom: 4, color: 'var(--text)' }}>{action.label}</div>
-            <div style={{ fontSize: 12, color: 'var(--muted)' }}>{action.desc}</div>
-          </Link>
-        ))}
-      </div>
-
-      {/* Published articles — the dentist's live Expert Advice pieces, or a CTA
-          to write their first. Public URL is /dentist/<slug>/articles/<slug>,
-          which resolves on the dentist's own city domain (this dashboard host). */}
-      <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden', marginTop: 24 }}>
-        {publishedArticles.length > 0 ? (
-          <>
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 16 }}>Your Published Articles</h3>
-              {hasMoreArticles && (
-                <Link href="/for-dentists/dashboard/articles" style={{ fontSize: 13, color: 'var(--blue)', fontWeight: 600, textDecoration: 'none' }}>See all articles →</Link>
-              )}
-            </div>
-            <div>
-              {publishedArticles.map((a, i) => {
-                const badge = topicBadge(a.topic_type)
-                const liveUrl = dentist.slug ? `/dentist/${dentist.slug}/articles/${a.slug}` : '#'
-                return (
-                  <div key={a.id} style={{ padding: '14px 20px', borderTop: i === 0 ? 'none' : '1px solid var(--border)', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                    <div style={{ flex: 1, minWidth: 220 }}>
-                      <span style={{ display: 'inline-block', background: badge.bg, color: badge.text, padding: '3px 10px', borderRadius: 999, fontSize: 11, fontWeight: 700, marginBottom: 6 }}>{topicLabel(a.topic_type)}</span>
-                      <Link href={liveUrl} target="_blank" rel="noopener noreferrer" style={{ display: 'block', fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, color: 'var(--text)', textDecoration: 'none', marginBottom: 2 }}>{a.title}</Link>
-                      <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                        {a.published_at ? `Published ${new Date(a.published_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : 'Published'}
-                      </div>
-                    </div>
-                    <a href={liveUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, color: 'var(--blue)', fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' }}>View live →</a>
-                  </div>
-                )
-              })}
-            </div>
-          </>
-        ) : (
-          <div style={{ padding: '28px 24px', textAlign: 'center' }}>
-            <div style={{ fontSize: 36, marginBottom: 10 }}>✍️</div>
-            <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 18, marginBottom: 6 }}>Share your expertise</h3>
-            <p style={{ fontSize: 14, color: 'var(--muted)', maxWidth: 460, margin: '0 auto 18px' }}>
-              Write a patient education article — it appears on DentistIn {dentistCity.cityName} and DentistIn India.
-            </p>
-            <Link href="/for-dentists/dashboard/articles/new" style={{ display: 'inline-block', padding: '11px 20px', background: 'var(--blue)', color: '#fff', borderRadius: 10, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
-              Write your first article →
-            </Link>
-          </div>
-        )}
-      </div>
-
-      {/* Grow Your Practice — self-serve badge + Google booking-link tools.
-          Below the articles card; shown to ALL dentists (no completion gate). */}
-      <GrowthTools badgeHtml={badgeHtml} profileUrl={profileUrl} cityName={dentistCity.cityName} />
-    </div>
-  )
-}
-
-function ScheduleTile({ label, value, sub }: { label: string; value: string; sub: string }) {
-  return (
-    <div style={{
-      background: 'rgba(255,255,255,0.12)',
-      border: '1px solid rgba(255,255,255,0.18)',
-      borderRadius: 12, padding: '12px 14px',
-    }}>
-      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', opacity: 0.75, marginBottom: 4 }}>
-        {label}
-      </div>
-      <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, lineHeight: 1.15 }}>
-        {value}
-      </div>
-      <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {sub}
-      </div>
     </div>
   )
 }

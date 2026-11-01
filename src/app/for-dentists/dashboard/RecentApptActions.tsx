@@ -6,6 +6,9 @@ import { useRouter } from 'next/navigation'
 interface Props {
   appointmentId: string
   status: string
+  // 'large' = the full-width Decline / Confirm pair on the dashboard home
+  // "Needs your reply" cards (thumb-sized on phones).
+  variant?: 'compact' | 'large'
 }
 
 // Inline confirm/decline for the recent-appointments table on the dentist
@@ -13,7 +16,7 @@ interface Props {
 // the appointments page uses) so server-side side-effects — confirmation
 // email, status transition guardrails — fire identically here. After
 // success we router.refresh() so the dashboard's server data re-fetches.
-export default function RecentApptActions({ appointmentId, status }: Props) {
+export default function RecentApptActions({ appointmentId, status, variant = 'compact' }: Props) {
   const router = useRouter()
   const [busy, setBusy] = useState<'confirm' | 'cancel' | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -40,6 +43,28 @@ export default function RecentApptActions({ appointmentId, status }: Props) {
     } finally {
       setBusy(null)
     }
+  }
+
+  if (variant === 'large') {
+    const btn: React.CSSProperties = {
+      height: 42, borderRadius: 10, fontWeight: 700, fontSize: 14,
+      fontFamily: 'var(--font-body)', cursor: busy ? 'wait' : 'pointer',
+    }
+    return (
+      <div style={{ display: 'grid', gap: 6 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <button onClick={() => patch('cancelled')} disabled={busy !== null}
+            style={{ ...btn, background: '#fff', color: 'var(--text)', border: '1.5px solid var(--border)' }}>
+            {busy === 'cancel' ? 'Declining…' : 'Decline'}
+          </button>
+          <button onClick={() => patch('confirmed')} disabled={busy !== null}
+            style={{ ...btn, background: '#14B8A6', color: '#fff', border: '1.5px solid #14B8A6' }}>
+            {busy === 'confirm' ? 'Confirming…' : 'Confirm'}
+          </button>
+        </div>
+        {error && <span style={{ fontSize: 12, color: '#991B1B' }}>{error}</span>}
+      </div>
+    )
   }
 
   return (

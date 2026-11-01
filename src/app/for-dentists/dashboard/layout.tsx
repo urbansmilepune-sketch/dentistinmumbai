@@ -9,6 +9,18 @@ import { isDemoEmail } from '@/lib/demo'
 
 const DENTIST_FIELDS = 'id, slug, name, clinic_name, tier, trial_started_at, is_active, profile_photo, cover_photo, bio, whatsapp, maps_embed, city, consultation_fee, onboarding_completed'
 
+// Booking requests still waiting for the clinic to confirm or decline. Drives
+// the red count on the Appointments tab. Scoped to the signed-in clinic's id.
+async function countPending(admin: any, dentistId: string): Promise<number> {
+  const { count, error } = await admin
+    .from('appointments')
+    .select('id', { count: 'exact', head: true })
+    .eq('dentist_id', dentistId)
+    .eq('status', 'pending')
+  if (error) return 0
+  return count ?? 0
+}
+
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -51,6 +63,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     // the row write-locked so the demo can't accrue real patient data.
     if (!dentist.is_active && !isDemoEmail(user.email)) redirect('/for-dentists/pending')
     const pct = completionPct(dentist)
+    const pendingCount = await countPending(admin, dentist.id)
 
     // Onboarding gate. Photo / fee / map are MANDATORY to publish a profile.
     // A profile missing any of them is routed to /onboard, whatever its
@@ -77,11 +90,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
     }
     return (
       <>
-        <DashboardShell dentist={dentist} completionPct={pct} staffRole={null}>
+        <DashboardShell dentist={dentist} completionPct={pct} staffRole={null} pendingCount={pendingCount}>
           {children}
         </DashboardShell>
         <DashboardActivityTracker />
-        <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 9999, display: 'flex' }}>
+        <div className="dash-support-fab" style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 9999, display: 'flex' }}>
           <SupportButton />
         </div>
       </>
@@ -118,14 +131,15 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (!ownerDentist.is_active) redirect('/for-dentists/pending')
 
   const pct = completionPct(ownerDentist)
+  const pendingCount = await countPending(admin, ownerDentist.id)
 
   return (
     <>
-      <DashboardShell dentist={ownerDentist} completionPct={pct} staffRole={staffRow.role}>
+      <DashboardShell dentist={ownerDentist} completionPct={pct} staffRole={staffRow.role} pendingCount={pendingCount}>
         {children}
       </DashboardShell>
       <DashboardActivityTracker />
-      <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 9999, display: 'flex' }}>
+      <div className="dash-support-fab" style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 9999, display: 'flex' }}>
         <SupportButton />
       </div>
     </>
