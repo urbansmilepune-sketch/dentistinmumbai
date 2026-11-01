@@ -1218,3 +1218,55 @@ function escapeHtml(s: string): string {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
 }
+
+// Sent to the clinic when a patient moves or cancels an appointment from the
+// patient app. A moved appointment goes back to "pending" so the clinic
+// confirms the new time in the dashboard.
+export async function sendPatientChangedAppointmentToDentist(data: {
+  to_email: string
+  dentist_name: string
+  patient_name: string
+  patient_phone: string
+  action: 'rescheduled' | 'cancelled'
+  old_date: string
+  old_time: string
+  new_date?: string
+  new_time?: string
+  reference_no: string | null
+  city?: string
+}) {
+  const city = resolveCity(data.city)
+  const dashboardUrl = `${city.origin}/for-dentists/dashboard/appointments`
+  const moved = data.action === 'rescheduled'
+  const subject = moved
+    ? `${data.patient_name} moved their appointment to ${formatApptDate(data.new_date || '')}, ${data.new_time}`
+    : `${data.patient_name} cancelled their appointment on ${formatApptDate(data.old_date)}`
+  const row = (k: string, v: string) =>
+    `<tr><td style="padding: 8px 0; color: #64748b; width: 38%;">${k}</td><td style="padding: 8px 0; font-weight: 600; color: #0F172A;">${v}</td></tr>`
+  return resend.emails.send({
+    from: getCityFrom(city.citySlug),
+    to: data.to_email,
+    subject,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: #0F172A; padding: 24px 20px; border-radius: 12px 12px 0 0; text-align: center;">
+          <h1 style="color: white; margin: 0; font-size: 21px;">${moved ? 'Appointment moved by patient' : 'Appointment cancelled by patient'}</h1>
+          <p style="color: #5EEAD4; margin: 8px 0 0; font-size: 13px;">From the DentistIn patient app</p>
+        </div>
+        <div style="background: #fff; padding: 26px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 12px 12px;">
+          <p style="color: #374151; font-size: 15px; line-height: 1.6; margin: 0 0 16px;">
+            Hi ${escapeHtml(data.dentist_name.split(' ')[0] || 'Doctor')}, ${escapeHtml(data.patient_name)} ${moved ? 'picked a new time. Please confirm it in your dashboard.' : 'cancelled. The slot is free again.'}
+          </p>
+          <table style="width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 22px;">
+            ${row('Patient', escapeHtml(data.patient_name))}
+            ${row('Phone', escapeHtml(data.patient_phone))}
+            ${row(moved ? 'Old time' : 'Was booked for', `${formatApptDate(data.old_date)}, ${escapeHtml(data.old_time)}`)}
+            ${moved ? row('New time', `${formatApptDate(data.new_date || '')}, ${escapeHtml(data.new_time || '')}`) : ''}
+            ${data.reference_no ? row('Reference', escapeHtml(data.reference_no)) : ''}
+          </table>
+          <a href="${dashboardUrl}" style="display: block; text-align: center; background: #14B8A6; color: #fff; padding: 13px 18px; border-radius: 10px; text-decoration: none; font-weight: 700; font-size: 14px;">Open appointments</a>
+        </div>
+      </div>
+    `,
+  })
+}

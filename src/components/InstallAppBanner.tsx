@@ -1,6 +1,8 @@
 'use client'
 
-// "Install DentistIn" banner for the dentist dashboard.
+// "Install DentistIn" banner, shared by the dentist dashboard and the patient
+// app. Each app passes its own copy and storage key so dismissing one doesn't
+// hide the other.
 // - Android / desktop Chrome / Edge: an Install button that opens the
 //   browser's own install dialog (beforeinstallprompt).
 // - iPhone / iPad: Apple has no install button, so we show the two steps
@@ -11,7 +13,7 @@
 // just hide the banner.
 //
 // Chrome fires beforeinstallprompt once, often before React has hydrated, so
-// the dashboard layout catches it early into window.__dinInstallPrompt
+// the app's layout catches it early into window.__dinInstallPrompt
 // (see INSTALL_PROMPT_CATCHER in src/lib/dentistApp.ts) and this component picks it up from there.
 
 import { useEffect, useState } from 'react'
@@ -21,9 +23,6 @@ type InstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
 }
 
-const VISITS_KEY = 'din_app_visits'
-const SESSION_KEY = 'din_app_visit_counted'
-const DISMISS_KEY = 'din_app_dismissed_at'
 const DISMISS_DAYS = 30
 const MIN_VISITS = 1
 
@@ -44,7 +43,10 @@ function isIOS(): boolean {
   return /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)
 }
 
-function readyToShow(): boolean {
+function readyToShow(prefix: string): boolean {
+  const VISITS_KEY = `${prefix}_visits`
+  const SESSION_KEY = `${prefix}_visit_counted`
+  const DISMISS_KEY = `${prefix}_dismissed_at`
   try {
     if (!sessionStorage.getItem(SESSION_KEY)) {
       sessionStorage.setItem(SESSION_KEY, '1')
@@ -85,13 +87,26 @@ function ShareIcon() {
   )
 }
 
-export default function InstallAppBanner() {
+type Props = {
+  title?: string
+  pitch?: string
+  // localStorage prefix. Dentist app keeps the original 'din_app' keys.
+  storageKey?: string
+  style?: React.CSSProperties
+}
+
+export default function InstallAppBanner({
+  title = 'Install DentistIn',
+  pitch = "Open today's patients in one tap, full screen.",
+  storageKey = 'din_app',
+  style,
+}: Props = {}) {
   const [mode, setMode] = useState<'hidden' | 'prompt' | 'ios' | 'android'>('hidden')
   const [promptEvent, setPromptEvent] = useState<InstallPromptEvent | null>(null)
 
   useEffect(() => {
     if (isStandalone()) return
-    const ok = readyToShow()
+    const ok = readyToShow(storageKey)
     const w = window as WindowWithPrompt
 
     const pickUp = () => {
@@ -124,12 +139,12 @@ export default function InstallAppBanner() {
       window.removeEventListener('beforeinstallprompt', onPrompt)
       window.removeEventListener('appinstalled', onInstalled)
     }
-  }, [])
+  }, [storageKey])
 
   if (mode === 'hidden') return null
 
   const dismiss = () => {
-    try { localStorage.setItem(DISMISS_KEY, String(Date.now())) } catch { /* ignore */ }
+    try { localStorage.setItem(`${storageKey}_dismissed_at`, String(Date.now())) } catch { /* ignore */ }
     setMode('hidden')
   }
 
@@ -144,13 +159,13 @@ export default function InstallAppBanner() {
   }
 
   return (
-    <div role="region" aria-label="Install the DentistIn app"
-      style={{ background: NAVY, color: '#fff', borderRadius: 16, padding: 12, display: 'flex', gap: 12, alignItems: 'center', marginBottom: 16, boxShadow: '0 10px 24px rgba(15,23,42,.18)', fontFamily: 'var(--font-body)' }}>
+    <div role="region" aria-label={title}
+      style={{ background: NAVY, color: '#fff', borderRadius: 16, padding: 12, display: 'flex', gap: 12, alignItems: 'center', marginBottom: 16, boxShadow: '0 10px 24px rgba(15,23,42,.18)', fontFamily: 'var(--font-body)', ...style }}>
       <AppIcon />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontWeight: 800, fontSize: 14 }}>Install DentistIn</div>
+        <div style={{ fontWeight: 800, fontSize: 14 }}>{title}</div>
         {mode === 'prompt' ? (
-          <div style={{ fontSize: 12.5, color: '#CBD5E1' }}>Open today&apos;s patients in one tap, full screen.</div>
+          <div style={{ fontSize: 12.5, color: '#CBD5E1' }}>{pitch}</div>
         ) : mode === 'android' ? (
           <div style={{ fontSize: 12.5, color: '#CBD5E1' }}>
             Tap the <b style={{ color: '#fff' }}>⋮ menu</b> at the top, then <b style={{ color: '#fff' }}>Install app</b> or <b style={{ color: '#fff' }}>Add to Home screen</b>.

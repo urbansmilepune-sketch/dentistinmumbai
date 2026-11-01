@@ -7,7 +7,7 @@ import SupportButton from '@/components/SupportButton'
 import { completionPct } from '@/lib/profileCompletion'
 import { isDemoEmail } from '@/lib/demo'
 import { dentistAppMetadata, dentistAppViewport, INSTALL_PROMPT_CATCHER } from '@/lib/dentistApp'
-import InstallAppBanner from './InstallAppBanner'
+import InstallAppBanner from '@/components/InstallAppBanner'
 
 export const metadata = dentistAppMetadata
 export const viewport = dentistAppViewport
