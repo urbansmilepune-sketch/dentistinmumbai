@@ -12,6 +12,8 @@ import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentDentist } from '@/lib/currentDentist'
+import MedicineNameInput from '@/components/MedicineNameInput'
+import { fetchMedicineHistory, type PastMedicine } from '@/lib/medicineHistory'
 import { whatsappLink } from '@/lib/phone'
 import { NAVY, TEAL, TEAL_DARK, WHATSAPP } from '@/app/dentist/[slug]/profileTheme'
 import {
@@ -52,6 +54,9 @@ function chipStyle(on: boolean, suggested = false): React.CSSProperties {
 
 const card: React.CSSProperties = { background: '#fff', border: `1px solid ${LINE}`, borderRadius: 14, padding: 16, display: 'grid', gap: 12, alignContent: 'start' }
 const smallMuted: React.CSSProperties = { fontSize: 12.5, color: MUTED }
+const fieldStyle: React.CSSProperties = { border: `1.5px solid ${LINE}`, borderRadius: 10, padding: '9px 10px', fontFamily: 'var(--font-body)', fontSize: 14, color: NAVY, background: '#fff', minHeight: 40, width: '100%', boxSizing: 'border-box', outline: 'none' }
+const NEW_RX = 'New prescription'
+const EMPTY_DRAFT: Medicine = { name: '', dosage: '', frequency: '', duration: '', instructions: '' }
 
 function StepHead({ n, title, hint, done }: { n: number; title: string; hint?: string; done?: boolean }) {
   return (
@@ -97,6 +102,8 @@ export default function VisitPage() {
   const [meds, setMeds] = useState<Medicine[]>([])
   const [rxNotes, setRxNotes] = useState<string[]>([])
   const [rxAdvice, setRxAdvice] = useState('')
+  const [medHistory, setMedHistory] = useState<PastMedicine[]>([])
+  const [draft, setDraft] = useState<Medicine>(EMPTY_DRAFT)
   const [nextMode, setNextMode] = useState<NextMode>('book')
   const [nextDate, setNextDate] = useState(addDaysIso(today, 7))
   const [nextSlot, setNextSlot] = useState('11:00 AM')
@@ -171,6 +178,9 @@ export default function VisitPage() {
         }
         setMyTemplates(mt)
 
+        // Medicines this dentist prescribed before, for the "Add a medicine" box.
+        fetchMedicineHistory(supabase, d.id).then(h => { if (!cancelled) setMedHistory(h) })
+
         // Pre-select from the tablet answers.
         const c = myIntake?.complaint as IntakeComplaint | undefined
         const sugg = suggestDiagnoses(c)
@@ -218,6 +228,24 @@ export default function VisitPage() {
     setRxName(tpl.name)
     const { medicines, notes } = applyAllergySwaps(tpl.medicines, patient?.allergies)
     setMeds(medicines); setRxNotes(notes); setRxAdvice(tpl.advice || '')
+  }
+  function startNewRx() {
+    setRxName(NEW_RX); setMeds([]); setRxNotes([]); setRxAdvice(''); setDraft(EMPTY_DRAFT)
+  }
+  // Add one medicine to whatever is on the prescription. Never swaps it: the
+  // dentist chose it by name, so we only flag a possible allergy clash.
+  function addMedicine(m: Medicine) {
+    const med: Medicine = { ...m, name: m.name.trim() }
+    if (!med.name) return
+    if (!rxName || rxName === 'No medicine') setRxName(NEW_RX)
+    setMeds(ms => [...ms.filter(x => x.name.toLowerCase() !== med.name.toLowerCase()), med])
+    if (applyAllergySwaps([med], patient?.allergies).notes.length) {
+      setRxNotes(n => [...n, `Check ${med.name}: allergy noted (${String(patient?.allergies || '').trim()}).`])
+    }
+    setDraft(EMPTY_DRAFT)
+  }
+  function addPastMedicine(p: PastMedicine) {
+    addMedicine({ name: p.name, dosage: p.dosage, frequency: p.frequency, duration: p.duration, instructions: p.instructions || undefined })
   }
 
   // The patient's answer also pre-picks the usual prescription and next step.
@@ -420,6 +448,7 @@ export default function VisitPage() {
   const otherWaiting = waiting.filter(w => w.patient_id !== patient.id)
   const dxList = showAllDx ? DIAGNOSES : Array.from(new Set([...suggestedDx, ...dx, ...DIAGNOSES.slice(0, 6)]))
   const rxChoices = [...RX_TEMPLATES.slice(0, 4), ...myTemplates, RX_TEMPLATES[4]]
+  const draftName = draft.name.trim()
 
   const tooth = (n: number, upper: boolean) => {
     const sel = teeth.includes(n)
@@ -638,15 +667,39 @@ export default function VisitPage() {
           <div style={card}>
             <StepHead n={5} title="Prescription" hint="Your templates included" done={!!rxName} />
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <button type="button" onClick={startNewRx} style={chipStyle(rxName === NEW_RX)}>+ {NEW_RX}</button>
               {rxChoices.map(tpl => <button key={`${tpl.mine ? 'm' : 'd'}-${tpl.name}`} type="button" onClick={() => pickRx(tpl)} style={chipStyle(rxName === tpl.name)}>{tpl.name}</button>)}
             </div>
+            {rxName && rxName !== 'No medicine' && (
+              <div style={{ display: 'grid', gap: 8 }}>
+                <MedicineNameInput
+                  value={draft.name}
+                  onChange={name => setDraft(d => ({ ...d, name }))}
+                  onPick={addPastMedicine}
+                  onEnter={() => { if (draftName) addMedicine(draft) }}
+                  history={medHistory}
+                  autoFocus={rxName === NEW_RX && meds.length === 0}
+                  placeholder={medHistory.length ? 'Add a medicine: type to see ones you use' : 'Add a medicine, e.g. Amoxicillin'}
+                  ariaLabel="Add a medicine"
+                  style={fieldStyle}
+                />
+                {draftName && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 6 }}>
+                    <input value={draft.dosage} onChange={e => setDraft(d => ({ ...d, dosage: e.target.value }))} placeholder="500 mg" aria-label="Dose" style={fieldStyle} />
+                    <input value={draft.frequency} onChange={e => setDraft(d => ({ ...d, frequency: e.target.value }))} placeholder="1-0-1" aria-label="How often" style={fieldStyle} />
+                    <input value={draft.duration} onChange={e => setDraft(d => ({ ...d, duration: e.target.value }))} placeholder="5 days" aria-label="How long" style={fieldStyle} />
+                    <button type="button" onClick={() => addMedicine(draft)} style={{ border: 0, borderRadius: 10, background: TEAL, color: '#fff', fontWeight: 700, padding: '0 14px', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: 14 }}>Add</button>
+                  </div>
+                )}
+              </div>
+            )}
             {meds.length > 0 && (
               <div style={{ border: `1px solid ${LINE}`, borderRadius: 12, padding: '8px 12px', display: 'grid', gap: 6, fontSize: 13.5 }}>
                 {meds.map((m, i) => (
                   <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
                     <span><b>{m.name}</b> {m.dosage}</span>
                     <span style={{ color: MUTED, display: 'flex', gap: 8, alignItems: 'center' }}>
-                      {m.frequency} · {m.duration}
+                      {[m.frequency, m.duration].filter(Boolean).join(' · ')}
                       <button type="button" aria-label={`Remove ${m.name}`} onClick={() => setMeds(ms => ms.filter((_, j) => j !== i))} style={{ border: 0, background: 'none', color: MUTED, cursor: 'pointer', fontSize: 16 }}>×</button>
                     </span>
                   </div>
