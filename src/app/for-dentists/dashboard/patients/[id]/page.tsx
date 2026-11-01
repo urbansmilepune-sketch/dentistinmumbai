@@ -14,6 +14,8 @@ import { whatsappLink } from '@/lib/phone'
 import { getCityBySlug } from '@/config/cities'
 import { TEAL, TEAL_DARK, BRAND_GRADIENT } from '@/app/dentist/[slug]/profileTheme'
 import { PlusIcon, WhatsAppIcon } from '../../dashIcons'
+import MedicineNameInput from '@/components/MedicineNameInput'
+import { fetchMedicineHistory, type PastMedicine } from '@/lib/medicineHistory'
 
 const TABS = [
   { id: 'overview', label: 'Overview', icon: '👤' },
@@ -144,6 +146,9 @@ export default function PatientDetailPage() {
   const [rxForm, setRxForm] = useState({
     template: '', medicines: [] as any[], instructions: '',
   })
+  // Every medicine this dentist has prescribed before (any patient), for the
+  // medicine-name auto-complete in the prescription form.
+  const [medHistory, setMedHistory] = useState<PastMedicine[]>([])
   // Instruction language for the prescription form (persisted per dentist).
   const [rxLang, setRxLang] = useState<RxLang>('en')
 
@@ -204,6 +209,7 @@ export default function PatientDetailPage() {
       if (!p) { router.push('/for-dentists/dashboard/patients'); return }
       setPatient(p); setVisits(v || []); setPrescriptions(rx || []); setPlans(pl || []); setInvoices(inv || []); setLabWork(lw || [])
       setLoading(false)
+      fetchMedicineHistory(supabase, dentist.id).then(setMedHistory)
     }
     load()
   }, [patientId])
@@ -267,7 +273,8 @@ export default function PatientDetailPage() {
     const supabase = createClient()
     const { data, error } = await supabase.from('prescriptions').insert({
       patient_id: patientId, dentist_id: dentistId,
-      medicines: rxForm.medicines,
+      // Drop empty rows (the form starts with one blank line to type into).
+      medicines: rxForm.medicines.filter(m => String(m?.name || '').trim()),
       instructions: rxForm.instructions || null,
       template_used: rxForm.template || null,
     }).select('*').single()
@@ -283,6 +290,7 @@ export default function PatientDetailPage() {
     setRxForm({ template: '', medicines: [], instructions: '' })
     resetAiSuggestions()
     setSaving(false)
+    fetchMedicineHistory(supabase, dentistId).then(setMedHistory)
   }
 
   async function markInvoicePaid(id: string) {
@@ -317,8 +325,32 @@ export default function PatientDetailPage() {
   }
 
   function applyTemplate(templateName: string) {
-    const meds = PRESCRIPTION_TEMPLATES[templateName as keyof typeof PRESCRIPTION_TEMPLATES] || []
+    // Copy the rows so editing a medicine never changes the template itself.
+    const meds = (PRESCRIPTION_TEMPLATES[templateName as keyof typeof PRESCRIPTION_TEMPLATES] || []).map(m => ({ ...m }))
     setRxForm(f => ({ ...f, template: templateName, medicines: meds }))
+  }
+
+  function updateMed(i: number, patch: Record<string, string>) {
+    setRxForm(f => ({ ...f, medicines: f.medicines.map((m, j) => j === i ? { ...m, ...patch } : m) }))
+  }
+
+  // Picked from the dentist's own history: fill the name and what they used
+  // last time. This form has one dose column, so dose + frequency share it.
+  function pickPastMedicine(i: number, m: PastMedicine) {
+    updateMed(i, {
+      name: m.name,
+      dosage: [m.dosage, m.frequency].filter(Boolean).join(' '),
+      duration: m.duration,
+      instructions: m.instructions,
+    })
+  }
+
+  function openNewRx() {
+    resetAiSuggestions()
+    setRxSaveError(null)
+    // Start with one empty line so the dentist can type a medicine straight away.
+    setRxForm(f => f.medicines.length ? f : { ...f, medicines: [{ name: '', dosage: '', duration: '', instructions: '' }] })
+    setShowAddRx(true)
   }
 
   async function togglePortalAccess() {
@@ -722,7 +754,7 @@ export default function PatientDetailPage() {
       {activeTab === 'prescriptions' && (
         <div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
-            <button onClick={() => { resetAiSuggestions(); setShowAddRx(true) }} style={{ padding: '10px 20px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>+ New Prescription</button>
+            <button onClick={openNewRx} style={{ padding: '10px 20px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>+ New Prescription</button>
           </div>
           {showAddRx && (
             <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '24px', marginBottom: 20 }}>
@@ -779,26 +811,28 @@ export default function PatientDetailPage() {
                   ))}
                 </div>
               </div>
-              {rxForm.medicines.length > 0 && (
-                <div style={{ marginBottom: 16 }}>
+              <div style={{ marginBottom: 16 }}>
                   <label style={labelStyle}>Medicines</label>
+                  {medHistory.length > 0 && (
+                    <p style={{ fontSize: 12, color: 'var(--muted)', margin: '-2px 0 8px' }}>Start typing a name to pick from medicines you have prescribed before.</p>
+                  )}
                   {rxForm.medicines.map((med, i) => (
                     <div key={i} style={{ marginBottom: 8 }}>
                       {med.aiSuggested && (
                         <span style={{ display: 'inline-block', marginBottom: 4, fontSize: 10, fontWeight: 700, color: '#5B21B6', background: '#EDE9FE', padding: '2px 8px', borderRadius: 10 }}>✨ AI suggested</span>
                       )}
                       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 2fr', gap: 8 }}>
-                        <input value={med.name} onChange={e => { const m = [...rxForm.medicines]; m[i].name = e.target.value; setRxForm(f => ({ ...f, medicines: m })) }} placeholder="Medicine name" style={inputStyle} />
-                        <input value={med.dosage} onChange={e => { const m = [...rxForm.medicines]; m[i].dosage = e.target.value; setRxForm(f => ({ ...f, medicines: m })) }} placeholder="Dosage & freq (1-0-1)" style={inputStyle} />
-                        <input value={med.duration} onChange={e => { const m = [...rxForm.medicines]; m[i].duration = e.target.value; setRxForm(f => ({ ...f, medicines: m })) }} placeholder="5 days" style={inputStyle} />
-                        <input value={med.instructions} onChange={e => { const m = [...rxForm.medicines]; m[i].instructions = e.target.value; setRxForm(f => ({ ...f, medicines: m })) }} placeholder="Instructions" style={inputStyle} />
+                        <MedicineNameInput value={med.name} onChange={name => updateMed(i, { name })} onPick={pm => pickPastMedicine(i, pm)}
+                          history={medHistory} placeholder="Medicine name" ariaLabel={`Medicine ${i + 1} name`} style={inputStyle} />
+                        <input value={med.dosage} onChange={e => updateMed(i, { dosage: e.target.value })} placeholder="Dosage & freq (1-0-1)" style={inputStyle} />
+                        <input value={med.duration} onChange={e => updateMed(i, { duration: e.target.value })} placeholder="5 days" style={inputStyle} />
+                        <input value={med.instructions} onChange={e => updateMed(i, { instructions: e.target.value })} placeholder="Instructions" style={inputStyle} />
                       </div>
                     </div>
                   ))}
                   <button onClick={() => setRxForm(f => ({ ...f, medicines: [...f.medicines, { name: '', dosage: '', duration: '', instructions: '' }] }))}
                     style={{ fontSize: 12, color: 'var(--blue)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-body)' }}>+ Add medicine</button>
                 </div>
-              )}
               <div style={{ marginBottom: 16 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
                   <label style={{ ...labelStyle, marginBottom: 0 }}>Special Instructions</label>
