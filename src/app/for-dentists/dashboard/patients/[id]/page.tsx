@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -13,37 +13,58 @@ import ScheduleRecallButton from './ScheduleRecallButton'
 import { whatsappLink } from '@/lib/phone'
 import { getCityBySlug } from '@/config/cities'
 import { TEAL, TEAL_DARK, BRAND_GRADIENT } from '@/app/dentist/[slug]/profileTheme'
-import { PlusIcon, WhatsAppIcon } from '../../dashIcons'
+import { PlusIcon, WhatsAppIcon, RupeeIcon, RecallIcon, PhoneIcon, DotsIcon, AlertIcon, PillIcon, CheckIcon, ChevronIcon } from '../../dashIcons'
 import MedicineNameInput from '@/components/MedicineNameInput'
 import { fetchMedicineHistory, type PastMedicine } from '@/lib/medicineHistory'
+import { findBloodThinner, recordedState } from '@/lib/medicineWarnings'
 
-const TABS = [
-  { id: 'overview', label: 'Overview', icon: '👤' },
-  { id: 'timeline', label: 'Timeline', icon: '📈' },
-  { id: 'visits', label: 'Visit Notes', icon: '📋' },
-  { id: 'prescriptions', label: 'Prescriptions', icon: '💊' },
-  { id: 'invoices', label: 'Invoices', icon: '🧾' },
-  { id: 'treatment-plan', label: 'Treatment Plan', icon: '🦷' },
-  { id: 'dental-chart', label: 'Dental Chart', icon: '🦷' },
-  { id: 'emr', label: 'EMR', icon: '🏥' },
-  { id: 'consent', label: 'Consent', icon: '📝' },
-  // Unified vault — replaces the older `xrays` and `photos` tabs which
-  // queried two separate tables (xray_images + patient_photos). Both
-  // legacy tables were merged into patient_images by migration
-  // 20260521170000.
-  { id: 'images', label: 'X-Rays & Photos', icon: '🔬' },
-  { id: 'lab', label: 'Lab Work', icon: '🧪' },
-]
-
-// The 11 record sections above are grouped under 4 top-level tabs so the
-// strip fits on a phone. Each group shows its sections as small chips.
-// Section ids (and so ?tab= deep links) are unchanged.
+// The patient page has 4 tabs. Old section ids still work as ?tab= deep links:
+// they open the tab that now holds that section.
 const TAB_GROUPS: { id: string; label: string; tabs: string[] }[] = [
   { id: 'summary', label: 'Summary', tabs: ['overview'] },
+  // Visit notes, prescriptions, treatment plans and the timeline are one list.
   { id: 'visits', label: 'Visits', tabs: ['visits', 'prescriptions', 'treatment-plan', 'timeline'] },
   { id: 'bills', label: 'Bills', tabs: ['invoices'] },
-  { id: 'records', label: 'Records', tabs: ['images', 'dental-chart', 'emr', 'consent', 'lab'] },
+  // Records opens like folders; `records` means all folders closed.
+  { id: 'records', label: 'Records', tabs: ['images', 'dental-chart', 'consent', 'lab', 'emr', 'records'] },
 ]
+
+const NAVY = '#0F172A'
+const RED_BG = '#FEF2F2', RED_LINE = '#FECACA', RED_INK = '#991B1B'
+const AMBER_BG = '#FEF3C7', AMBER_LINE = '#FDE68A', AMBER_INK = '#92400E'
+const GREEN_BG = '#DCFCE7', GREEN_INK = '#166534'
+const OPEN_PLAN = ['presented', 'accepted', 'in_progress']
+
+// Fields the "Edit details" form can change.
+const EDIT_FIELDS = ['name', 'phone', 'email', 'age', 'gender', 'blood_group', 'address', 'emergency_contact_name', 'emergency_contact_phone', 'allergies', 'current_medications', 'medical_history'] as const
+
+// Two-column layout only when there is room next to the dashboard sidebar.
+function useWide(minWidth: number) {
+  const [wide, setWide] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia(`(min-width: ${minWidth}px)`)
+    const update = () => setWide(mq.matches)
+    update()
+    mq.addEventListener('change', update)
+    return () => mq.removeEventListener('change', update)
+  }, [minWidth])
+  return wide
+}
+
+// Calendar day (YYYY-MM-DD, local time) of a date or timestamp value.
+function dayOf(value: unknown): string {
+  const s = String(value || '')
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+  const d = new Date(s)
+  if (isNaN(d.getTime())) return s.slice(0, 10)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+function fmtDay(day: string, withYear = false): string {
+  if (!day) return ''
+  return new Date(`${day}T00:00:00`).toLocaleDateString('en-IN', withYear ? { day: 'numeric', month: 'short', year: 'numeric' } : { day: 'numeric', month: 'short' })
+}
+const rupees = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`
+
 
 const PRESCRIPTION_TEMPLATES = {
   'Post-RCT': [
@@ -175,6 +196,24 @@ export default function PatientDetailPage() {
   // Snapshot of the note before AI refinement so "Undo" can restore it.
   const [notesBeforeRefine, setNotesBeforeRefine] = useState<string | null>(null)
 
+  // Patient header: next recall, next appointment, record counts, menus.
+  const [nextRecall, setNextRecall] = useState<string | null>(null)
+  const [nextAppt, setNextAppt] = useState<{ appt_date: string; time_slot: string | null } | null>(null)
+  const [imageCount, setImageCount] = useState<number | null>(null)
+  const [consentCount, setConsentCount] = useState<number | null>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [showAllVisits, setShowAllVisits] = useState(false)
+  // Shown in the sticky tab bar once the safety card scrolls off a phone screen.
+  const safetyRef = useRef<HTMLDivElement | null>(null)
+  const [safetyOffscreen, setSafetyOffscreen] = useState(false)
+  const wide = useWide(1100)
+
+  // "Edit details" form.
+  const [editOpen, setEditOpen] = useState(false)
+  const [editForm, setEditForm] = useState<Record<string, string>>({})
+  const [editSaving, setEditSaving] = useState(false)
+  const [editError, setEditError] = useState<string | null>(null)
+
   useEffect(() => {
     async function load() {
       const supabase = createClient()
@@ -210,6 +249,24 @@ export default function PatientDetailPage() {
       setPatient(p); setVisits(v || []); setPrescriptions(rx || []); setPlans(pl || []); setInvoices(inv || []); setLabWork(lw || [])
       setLoading(false)
       fetchMedicineHistory(supabase, dentist.id).then(setMedHistory)
+      // Header extras. Each is optional: a failure just leaves the line blank.
+      const todayIso = dayOf(new Date().toISOString())
+      const phoneOk = /^\+?\d{6,15}$/.test(String(p.phone || ''))
+      const apptQuery = supabase.from('appointments').select('appt_date, time_slot')
+        .eq('dentist_id', dentist.id).gte('appt_date', todayIso).not('status', 'in', '(cancelled,no_show)')
+      Promise.all([
+        supabase.from('recall_reminders').select('due_date').eq('patient_id', patientId).eq('dentist_id', dentist.id).eq('status', 'pending').order('due_date', { ascending: true }).limit(1),
+        (phoneOk ? apptQuery.or(`patient_id.eq.${patientId},patient_phone.eq.${p.phone}`) : apptQuery.eq('patient_id', patientId))
+          .order('appt_date', { ascending: true }).order('time_slot', { ascending: true }).limit(1),
+        supabase.from('patient_images').select('id', { count: 'exact', head: true }).eq('patient_id', patientId).eq('dentist_id', dentist.id),
+        supabase.from('consent_forms').select('id', { count: 'exact', head: true }).eq('patient_id', patientId).eq('dentist_id', dentist.id),
+      ]).then(([rc, ap, im, cf]) => {
+        if (!rc.error) setNextRecall(rc.data?.[0]?.due_date || null)
+        if (!ap.error) setNextAppt(ap.data?.[0] || null)
+        if (!im.error) setImageCount(im.count ?? null)
+        if (!cf.error) setConsentCount(cf.count ?? null)
+      })
+
     }
     load()
   }, [patientId])
@@ -455,159 +512,433 @@ export default function PatientDetailPage() {
     }
   }
 
+  // Watch the safety card so the phone tab bar can repeat the allergy line
+  // once the card has scrolled away.
+  useEffect(() => {
+    const el = safetyRef.current
+    if (!el || wide) return
+    const io = new IntersectionObserver(([e]) => setSafetyOffscreen(!e.isIntersecting && e.boundingClientRect.top < 0))
+    io.observe(el)
+    return () => io.disconnect()
+  }, [wide, loading])
+
+  function openEdit() {
+    setEditForm(Object.fromEntries(EDIT_FIELDS.map(k => [k, patient?.[k] == null ? '' : String(patient[k])])))
+    setEditError(null)
+    setMenuOpen(false)
+    setEditOpen(true)
+  }
+
+  async function saveEdit() {
+    if (!String(editForm.name || '').trim() || !String(editForm.phone || '').trim()) { setEditError('Name and phone are required'); return }
+    setEditSaving(true)
+    setEditError(null)
+    const patch: Record<string, string | number | null> = {}
+    for (const k of EDIT_FIELDS) {
+      const v = String(editForm[k] || '').trim()
+      patch[k] = k === 'age' ? (v ? parseInt(v, 10) || null : null) : (v || null)
+    }
+    const supabase = createClient()
+    // .select() so an RLS denial shows as an error instead of a silent no-op.
+    const { data, error } = await supabase.from('patients').update(patch).eq('id', patientId).eq('dentist_id', dentistId).select('*')
+    setEditSaving(false)
+    if (error) { setEditError(error.message); return }
+    if (!data || data.length === 0) { setEditError('Update rejected. You may not have permission to edit this patient.'); return }
+    setPatient(data[0])
+    setEditOpen(false)
+  }
+
+  function goToPortal() {
+    setMenuOpen(false)
+    setActiveTab('overview')
+    setTimeout(() => document.getElementById('patient-portal')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+  }
+
   const inputStyle = { width: '100%', padding: '9px 12px', borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 13, fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box' as const }
   const labelStyle = { fontSize: 12, fontWeight: 600 as const, display: 'block' as const, marginBottom: 4 }
 
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300 }}><p style={{ color: 'var(--muted)' }}>Loading patient...</p></div>
   if (!patient) return null
 
-  return (
+  const group = TAB_GROUPS.find(g => g.tabs.includes(activeTab)) || TAB_GROUPS[0]
+  const card: React.CSSProperties = { background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: 16 }
+  const cardTitle: React.CSSProperties = { fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, margin: 0 }
+  const linkBtn: React.CSSProperties = { border: 'none', background: 'none', color: TEAL_DARK, fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-body)', textDecoration: 'none', padding: '4px 0', minHeight: 0 }
+
+  // ---- numbers used in several places ----
+  const due = invoices.filter((i: any) => i.payment_status !== 'paid').reduce((sum: number, i: any) => sum + Number(i.total || 0), 0)
+  const unpaid = invoices.filter((i: any) => i.payment_status !== 'paid')
+  const openPlans = plans.filter((pl: any) => OPEN_PLAN.includes(pl.status))
+  const lastVisit = visits[0]
+
+  // ---- identity ----
+  const nameParts = String(patient.name || '').trim().split(/\s+/).filter(Boolean)
+  const initials = nameParts.length === 0 ? '?' : nameParts.length === 1 ? nameParts[0].slice(0, 2).toUpperCase() : (nameParts[0][0] + nameParts[nameParts.length - 1][0]).toUpperCase()
+  const meta = [patient.age ? `${patient.age} yrs` : null, patient.gender, patient.blood_group, patient.uhid ? `ID ${patient.uhid}` : null].filter(Boolean).join(' · ')
+  const waHref = whatsappLink(patient.phone)
+  const telHref = patient.phone ? `tel:${String(patient.phone).replace(/[^\d+]/g, '')}` : null
+
+  const identity = (
+    <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+      <div style={{ width: 52, height: 52, borderRadius: '50%', background: BRAND_GRADIENT, color: '#fff', fontFamily: 'var(--font-heading)', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{initials}</div>
+      <div style={{ minWidth: 0 }}>
+        <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 20, margin: 0, lineHeight: 1.2 }}>{patient.name}</h1>
+        {meta && <div style={{ fontSize: 13, color: 'var(--muted)' }}>{meta}</div>}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+          {due > 0 && <span style={{ fontSize: 12, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: AMBER_BG, border: `1px solid ${AMBER_LINE}`, color: AMBER_INK }}>{rupees(due)} due</span>}
+          {lastVisit?.visit_date && <span style={{ fontSize: 12, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--muted)' }}>Last visit {fmtDay(dayOf(lastVisit.visit_date))}</span>}
+        </div>
+      </div>
+    </div>
+  )
+
+  // ---- safety card: allergies, daily medicines, conditions ----
+  const allergyState = recordedState(patient.allergies)
+  const medsState = recordedState(patient.current_medications)
+  const historyState = recordedState(patient.medical_history)
+  const thinner = medsState === 'value' ? findBloodThinner(patient.current_medications) : null
+  const safetyRow = (bg: string, iconBg: string, ink: string, icon: React.ReactNode, label: string, value: React.ReactNode, note?: string, action?: React.ReactNode) => (
+    <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 12px', background: bg, borderTop: `1px solid ${RED_LINE}` }}>
+      <span style={{ width: 26, height: 26, borderRadius: 8, background: iconBg, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{icon}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.6, textTransform: 'uppercase', color: ink }}>{label}</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: ink, overflowWrap: 'anywhere' }}>{value}</div>
+        {note && <div style={{ fontSize: 12, fontWeight: 600, color: ink, marginTop: 2 }}>{note}</div>}
+      </div>
+      {action}
+    </div>
+  )
+  const editLink = <button type="button" onClick={openEdit} style={{ ...linkBtn, fontSize: 12, alignSelf: 'center' }}>Edit</button>
+  const nothingRecorded = allergyState === 'blank' && medsState === 'blank' && historyState === 'blank'
+  const safetyCard = nothingRecorded ? (
+    <div ref={safetyRef} style={{ border: '1.5px dashed #94A3B8', background: '#fff', borderRadius: 14, display: 'flex', gap: 10, alignItems: 'center', padding: '10px 12px' }}>
+      <span style={{ width: 26, height: 26, borderRadius: 8, background: '#E2E8F0', color: 'var(--muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, flexShrink: 0 }}>?</span>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.6, textTransform: 'uppercase', color: 'var(--muted)' }}>Allergies and medicines</div>
+        <div style={{ fontSize: 14, fontWeight: 700 }}>Nothing recorded yet</div>
+      </div>
+      <button type="button" onClick={openEdit} style={{ background: TEAL, color: '#fff', border: 'none', borderRadius: 8, padding: '7px 12px', fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>Add</button>
+    </div>
+  ) : (
+    <div ref={safetyRef} style={{ border: `1.5px solid ${allergyState === 'value' ? RED_LINE : 'var(--border)'}`, borderRadius: 14, overflow: 'hidden', marginTop: 0 }}>
+      <div style={{ marginTop: -1 }}>
+        {allergyState === 'value' && safetyRow(RED_BG, '#DC2626', RED_INK, <AlertIcon />, 'Allergy', patient.allergies, undefined, editLink)}
+        {allergyState === 'none' && safetyRow(GREEN_BG, '#16A34A', GREEN_INK, <CheckIcon size={14} />, 'Allergy', 'No known allergies', undefined, editLink)}
+        {allergyState === 'blank' && safetyRow('#fff', '#94A3B8', 'var(--muted)', <span style={{ fontWeight: 800 }}>?</span>, 'Allergy', 'Not recorded', undefined, editLink)}
+        {medsState === 'value' && safetyRow(AMBER_BG, '#D97706', AMBER_INK, <PillIcon size={14} />, 'Takes daily', patient.current_medications, thinner ? 'Blood thinner: check before extraction' : undefined)}
+        {medsState === 'none' && safetyRow('#fff', '#16A34A', GREEN_INK, <CheckIcon size={14} />, 'Takes daily', 'No regular medicines')}
+        {historyState === 'value' && safetyRow('#fff', NAVY, 'var(--text)', <PlusIcon size={14} />, 'Conditions', patient.medical_history)}
+      </div>
+    </div>
+  )
+
+  // ---- actions ----
+  const actionBase: React.CSSProperties = { height: 48, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontWeight: 700, fontSize: 14, border: '1.5px solid var(--border)', background: '#fff', color: 'var(--text)', textDecoration: 'none', whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: 'var(--font-body)', padding: '0 6px', width: '100%' }
+  const actions = (
+    <div style={{ display: 'grid', gap: 8 }}>
+      <Link href={`/for-dentists/dashboard/visit/${patientId}`} style={{ ...actionBase, height: 50, fontSize: 15, background: TEAL, borderColor: TEAL, color: '#fff' }}>
+        <PlusIcon size={16} /> Start visit
+      </Link>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
+        <Link href={`/for-dentists/dashboard/billing?patient_id=${patientId}`} style={actionBase}><RupeeIcon size={16} /> Bill</Link>
+        {waHref
+          ? <a href={waHref} target="_blank" rel="noopener noreferrer" style={{ ...actionBase, color: '#128C7E' }}><WhatsAppIcon size={16} /> WhatsApp</a>
+          : <span title="No phone number saved" style={{ ...actionBase, color: '#94A3B8', cursor: 'not-allowed' }}>WhatsApp</span>}
+        <ScheduleRecallButton patientId={patientId} dentistId={dentistId}
+          onScheduled={d => setNextRecall(prev => (!prev || d < prev ? d : prev))}
+          buttonStyle={{ ...actionBase, flexDirection: 'column', gap: 0, lineHeight: 1.15 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><RecallIcon size={16} /> Recall</span>
+          <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)' }}>{nextRecall ? fmtDay(nextRecall) : 'Not set'}</span>
+        </ScheduleRecallButton>
+      </div>
+    </div>
+  )
+
+  // ---- contact + rarely used links ----
+  const contactRows = [
+    { label: 'Phone', value: patient.phone },
+    { label: 'Email', value: patient.email },
+    { label: 'Address', value: patient.address },
+    { label: 'Emergency', value: patient.emergency_contact_name ? `${patient.emergency_contact_name}${patient.emergency_contact_phone ? ` · ${patient.emergency_contact_phone}` : ''}` : null },
+  ].filter(i => i.value)
+  const contact = (
     <div>
-      <div style={{ maxWidth: 960, margin: '0 auto' }}>
-      <Link href="/for-dentists/dashboard/patients" style={{ display: 'inline-block', color: TEAL_DARK, fontWeight: 700, fontSize: 14, textDecoration: 'none', marginBottom: 12 }}>‹ Patients</Link>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+        <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.6, textTransform: 'uppercase', color: 'var(--muted)' }}>Contact</span>
+        <button type="button" onClick={openEdit} style={{ ...linkBtn, fontSize: 12 }}>Edit</button>
+      </div>
+      {contactRows.length === 0 && <div style={{ fontSize: 13, color: 'var(--muted)' }}>No contact details saved.</div>}
+      {contactRows.map(item => (
+        <div key={item.label} style={{ display: 'flex', gap: 8, fontSize: 13, padding: '3px 0' }}>
+          <span style={{ color: 'var(--muted)', width: 72, flexShrink: 0 }}>{item.label}</span>
+          <span style={{ overflowWrap: 'anywhere' }}>{item.value}</span>
+        </div>
+      ))}
+    </div>
+  )
+  const moreItems: { key: string; label: string; sub?: string; icon: React.ReactNode; href?: string; onClick?: () => void }[] = [
+    ...(telHref ? [{ key: 'call', label: 'Call patient', sub: String(patient.phone), icon: <PhoneIcon size={18} />, href: telHref }] : []),
+    { key: 'edit', label: 'Edit patient details', icon: <span style={{ fontWeight: 800 }}>✎</span>, onClick: openEdit },
+    { key: 'portal', label: 'Patient portal', sub: patient.portal_access ? 'On. Send login link on WhatsApp' : 'Off. Let the patient see records online', icon: <span style={{ fontWeight: 800 }}>↗</span>, onClick: goToPortal },
+    { key: 'history', label: 'Full history', sub: 'Every visit, bill, X-ray and appointment', icon: <RecallIcon size={18} />, href: `/for-dentists/dashboard/patients/${patientId}/timeline` },
+  ]
 
-      {/* Patient header: identity, safety info, the three common actions. */}
-      {(() => {
-        const nameParts = String(patient.name || '').trim().split(/\s+/).filter(Boolean)
-        const initials = nameParts.length === 0 ? '?' : nameParts.length === 1 ? nameParts[0].slice(0, 2).toUpperCase() : (nameParts[0][0] + nameParts[nameParts.length - 1][0]).toUpperCase()
-        const meta = [patient.age ? `${patient.age} yrs` : null, patient.gender, patient.blood_group, patient.uhid ? `ID ${patient.uhid}` : null].filter(Boolean).join(' · ')
-        const waHref = whatsappLink(patient.phone)
-        const actionBase: React.CSSProperties = { height: 46, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontWeight: 700, fontSize: 14, border: '1.5px solid var(--border)', background: '#fff', color: 'var(--text)', textDecoration: 'none', whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: 'var(--font-body)', padding: '0 10px' }
+  // ---- tabs ----
+  const tabCount = (id: string) => id === 'visits' ? visits.length : id === 'bills' ? unpaid.length : 0
+  const tabs = (
+    <div role="tablist" style={{ display: 'flex', background: '#fff', ...(wide ? { borderRadius: 14, border: '1px solid var(--border)', padding: '0 6px' } : {}) }}>
+      {TAB_GROUPS.map(g => {
+        const on = g.id === group.id
+        const n = tabCount(g.id)
         return (
-          <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: 16, display: 'grid', gap: 12, marginBottom: 16 }}>
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-              <div style={{ width: 52, height: 52, borderRadius: '50%', background: BRAND_GRADIENT, color: '#fff', fontFamily: 'var(--font-heading)', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{initials}</div>
-              <div style={{ flex: '1 1 180px', minWidth: 0 }}>
-                <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 20, margin: 0 }}>{patient.name}</h1>
-                {meta && <div style={{ fontSize: 13, color: 'var(--muted)' }}>{meta}</div>}
-                {patient.phone && <div style={{ fontSize: 13, color: 'var(--muted)' }}>{patient.phone}</div>}
-              </div>
-              <ScheduleRecallButton patientId={patientId} dentistId={dentistId} />
-            </div>
-            {(patient.allergies || patient.current_medications) && (
-              <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', color: '#991B1B', borderRadius: 10, padding: '8px 12px', fontSize: 13 }}>
-                {patient.allergies && <><b>Allergy:</b> {patient.allergies}</>}
-                {patient.allergies && patient.current_medications && ' · '}
-                {patient.current_medications && <><b>Takes:</b> {patient.current_medications}</>}
-              </div>
-            )}
-            <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 1fr', gap: 8 }}>
-              <Link href={`/for-dentists/dashboard/visit/${patientId}`}
-                style={{ ...actionBase, background: TEAL, borderColor: TEAL, color: '#fff' }}>
-                <PlusIcon size={16} /> Start visit
-              </Link>
-              <Link href={`/for-dentists/dashboard/billing?patient_id=${patientId}`} style={actionBase}>Bill</Link>
-              {waHref
-                ? <a href={waHref} target="_blank" rel="noopener noreferrer" style={{ ...actionBase, color: '#128C7E' }}><WhatsAppIcon size={16} /> WhatsApp</a>
-                : <span title="No phone number saved" style={{ ...actionBase, color: '#94A3B8', cursor: 'not-allowed' }}>WhatsApp</span>}
-            </div>
-          </div>
+          <button key={g.id} role="tab" aria-selected={on} onClick={() => setActiveTab(g.tabs[0])}
+            style={{ flex: wide ? '0 0 auto' : 1, padding: wide ? '14px 20px 11px' : '12px 2px 9px', border: 'none', background: 'none', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: 14, fontWeight: on ? 800 : 600, color: on ? 'var(--text)' : 'var(--muted)', borderBottom: `3px solid ${on ? TEAL : 'transparent'}`, whiteSpace: 'nowrap' }}>
+            {g.label}
+            {n > 0 && <span style={{ marginLeft: 4, fontSize: 11, fontWeight: 700, padding: '0 6px', borderRadius: 999, background: g.id === 'bills' ? AMBER_BG : 'var(--bg)', color: g.id === 'bills' ? AMBER_INK : 'var(--muted)', border: `1px solid ${g.id === 'bills' ? AMBER_LINE : 'var(--border)'}` }}>{n}</span>}
+          </button>
         )
-      })()}
+      })}
+    </div>
+  )
 
-      {/* Tabs: 4 groups, then the sections inside the active group. */}
-      {(() => {
-        const group = TAB_GROUPS.find(g => g.tabs.includes(activeTab)) || TAB_GROUPS[0]
-        return (
-          <div style={{ marginBottom: 20 }}>
-            <div role="tablist" style={{ display: 'flex', background: '#fff', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
-              {TAB_GROUPS.map(g => {
-                const on = g.id === group.id
+  // ---- open treatment plan card (Summary + Visits) ----
+  const planCard = (pl: any) => {
+    const steps = [...(pl.treatment_plan_steps || [])].sort((a: any, b: any) => (a.step_number || 0) - (b.step_number || 0))
+    const done = steps.filter((s: any) => s.status === 'completed').length
+    const total = Number(pl.total_estimated_cost || pl.total_cost || 0)
+    const pct = steps.length ? Math.round((done / steps.length) * 100) : 0
+    return (
+      <div key={pl.id} style={{ background: NAVY, color: '#fff', borderRadius: 14, padding: 16 }}>
+        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15 }}>Open treatment: {pl.title}</div>
+        <div style={{ fontSize: 12.5, color: '#CBD5E1', marginTop: 2 }}>
+          {[steps.length ? `${done} of ${steps.length} done` : null, total > 0 ? `${rupees(total)} total` : null, pl.status === 'presented' ? 'Patient said later' : null].filter(Boolean).join(' · ')}
+        </div>
+        {steps.length > 0 && (
+          <>
+            <div style={{ height: 6, background: 'rgba(255,255,255,.18)', borderRadius: 99, margin: '10px 0 8px', overflow: 'hidden' }}><div style={{ width: `${pct}%`, height: '100%', background: TEAL }} /></div>
+            <div style={{ display: 'grid', gap: 6, fontSize: 13 }}>
+              {steps.slice(0, 5).map((s: any) => {
+                const ok = s.status === 'completed'
+                const tooth = s.tooth_numbers || s.tooth_number
                 return (
-                  <button key={g.id} role="tab" aria-selected={on} onClick={() => setActiveTab(g.tabs[0])}
-                    style={{ flex: 1, padding: '12px 4px', border: 'none', background: 'none', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: 14, fontWeight: on ? 700 : 600, color: on ? 'var(--text)' : 'var(--muted)', borderBottom: `3px solid ${on ? TEAL : 'transparent'}` }}>
-                    {g.label}
-                  </button>
+                  <div key={s.id} style={{ display: 'flex', gap: 8, alignItems: 'center', color: s.status === 'skipped' ? '#64748B' : '#fff' }}>
+                    <span style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: ok ? TEAL : 'transparent', border: ok ? 'none' : '1.5px solid #64748B', color: NAVY }}>{ok && <CheckIcon size={11} />}</span>
+                    <span>{s.treatment_name}{tooth ? `, tooth ${tooth}` : ''}{ok && s.completed_at ? ` · ${fmtDay(dayOf(s.completed_at))}` : ''}</span>
+                  </div>
                 )
               })}
+              {steps.length > 5 && <div style={{ fontSize: 12, color: '#CBD5E1' }}>+{steps.length - 5} more steps</div>}
             </div>
-            {group.tabs.length > 1 && (
-              <div style={{ display: 'flex', gap: 6, marginTop: 10, overflowX: 'auto', scrollbarWidth: 'none' as any }}>
-                {group.tabs.map(id => {
-                  const t = TABS.find(x => x.id === id)
-                  if (!t) return null
-                  const on = activeTab === id
-                  return (
-                    <button key={id} type="button" onClick={() => setActiveTab(id)} aria-pressed={on}
-                      style={{ fontSize: 13, fontWeight: 600, padding: '7px 13px', borderRadius: 999, whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: 'var(--font-body)', border: `1px solid ${on ? '#0F172A' : 'var(--border)'}`, background: on ? '#0F172A' : '#fff', color: on ? '#fff' : 'var(--text)' }}>
-                      {t.label}
-                    </button>
-                  )
-                })}
+          </>
+        )}
+        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+          <Link href={`/for-dentists/dashboard/visit/${patientId}`} style={{ flex: 1, textAlign: 'center', padding: 9, borderRadius: 10, fontWeight: 700, fontSize: 13, background: TEAL, color: NAVY, textDecoration: 'none' }}>Next sitting</Link>
+          <Link href={`/for-dentists/dashboard/patients/${patientId}/treatment-plan`} style={{ flex: 1, textAlign: 'center', padding: 9, borderRadius: 10, fontWeight: 700, fontSize: 13, border: '1px solid #334155', color: '#fff', textDecoration: 'none' }}>View plan</Link>
+        </div>
+      </div>
+    )
+  }
+
+  // ---- Visits timeline: each visit with the prescriptions, plans and bills from that day ----
+  type Entry = { key: string; day: string; visit?: any; rxs: any[]; plans: any[]; bills: any[] }
+  const entries: Entry[] = []
+  const byDay = new Map<string, Entry>()
+  for (const v of visits) {
+    const e: Entry = { key: `v-${v.id}`, day: dayOf(v.visit_date), visit: v, rxs: [], plans: [], bills: [] }
+    entries.push(e)
+    if (!byDay.has(e.day)) byDay.set(e.day, e)
+  }
+  const entryFor = (day: string, key: string) => {
+    let e = byDay.get(day)
+    if (!e) { e = { key, day, rxs: [], plans: [], bills: [] }; byDay.set(day, e); entries.push(e) }
+    return e
+  }
+  for (const rx of prescriptions) entryFor(dayOf(rx.created_at), `rx-${rx.id}`).rxs.push(rx)
+  for (const pl of plans) entryFor(dayOf(pl.created_at), `pl-${pl.id}`).plans.push(pl)
+  for (const inv of invoices) entryFor(dayOf(inv.invoice_date), `inv-${inv.id}`).bills.push(inv)
+  entries.sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : 0))
+  const shownEntries = showAllVisits ? entries : entries.slice(0, 8)
+
+  const pill = (color: string, children: React.ReactNode, key?: string) => (
+    <span key={key} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap', fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 999, background: '#fff', border: '1px solid var(--border)', color }}>{children}</span>
+  )
+  const rxBlock = (rx: any) => {
+    const meds = (rx.medicines || []).map((m: any) => [m.name, m.dosage, m.duration].filter(Boolean).join(' ')).filter(Boolean)
+    const phone = String(patient.phone || '').replace(/\D/g, '').slice(-10)
+    const clinic = dentistMeta?.clinic_name || dentistMeta?.name || 'your clinic'
+    const link = typeof window !== 'undefined' ? `${window.location.origin}/api/prescriptions/pdf?id=${rx.id}` : `/api/prescriptions/pdf?id=${rx.id}`
+    return (
+      <div key={rx.id} style={{ background: '#fff', border: '1px solid #E9D5FF', borderRadius: 10, padding: '8px 10px', fontSize: 13 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <span style={{ color: '#7C3AED', display: 'flex' }}><PillIcon size={14} /></span>
+          <b style={{ color: '#5B21B6' }}>{rx.template_used || 'Prescription'}</b>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 10 }}>
+            <a href={`/api/prescriptions/pdf?id=${rx.id}`} target="_blank" rel="noopener noreferrer" style={{ ...linkBtn, fontSize: 12 }}>PDF</a>
+            {phone.length === 10 && <a href={`https://wa.me/91${phone}?text=${encodeURIComponent(`Your prescription from ${clinic}: ${link}`)}`} target="_blank" rel="noopener noreferrer" style={{ ...linkBtn, fontSize: 12, color: '#128C7E' }}>Send</a>}
+          </span>
+        </div>
+        {meds.length > 0 && <div style={{ color: 'var(--text)', marginTop: 4 }}>{meds.join(', ')}</div>}
+        {rx.instructions && <div style={{ color: 'var(--muted)', fontSize: 12, marginTop: 2 }}>{rx.instructions}</div>}
+      </div>
+    )
+  }
+  const visitTitle = (e: Entry) => {
+    if (e.visit) return e.visit.chief_complaint || (e.visit.treatment_done ? String(e.visit.treatment_done).split(/[.\n]/)[0].slice(0, 60) : 'Visit')
+    if (e.plans.length) return 'Treatment plan made'
+    if (e.rxs.length) return 'Prescription'
+    return 'Bill'
+  }
+  const field = (label: string, text: unknown) => text ? (
+    <div style={{ marginTop: 4 }}><span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', letterSpacing: 0.4 }}>{label} </span><span>{String(text)}</span></div>
+  ) : null
+  const visitCard = (e: Entry) => {
+    const v = e.visit
+    const hasAttachments = e.rxs.length + e.plans.length + e.bills.length > 0
+    return (
+      <div key={e.key} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, padding: '12px 14px 4px' }}>
+          <b style={{ fontFamily: 'var(--font-heading)', fontSize: 14 }}>{visitTitle(e)}</b>
+          <span style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{fmtDay(e.day)}</span>
+        </div>
+        {v && (
+          <div style={{ padding: '0 14px 12px', fontSize: 13.5, color: '#334155' }}>
+            {field('FINDINGS', v.clinical_findings)}
+            {field('DONE', v.treatment_done)}
+            {v.materials_used?.length > 0 && field('MATERIALS', v.materials_used.join(', '))}
+            {v.next_appointment_recommended && <div style={{ marginTop: 6, fontSize: 12.5, fontWeight: 600, color: GREEN_INK }}>Next visit: {fmtDay(dayOf(v.next_appointment_recommended), true)}{v.next_appointment_notes ? `, ${v.next_appointment_notes}` : ''}</div>}
+          </div>
+        )}
+        {hasAttachments && (
+          <div style={{ display: 'grid', gap: 8, padding: '10px 14px', borderTop: '1px solid var(--border)', background: 'var(--bg)' }}>
+            {e.rxs.map(rxBlock)}
+            {(e.plans.length > 0 || e.bills.length > 0) && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {e.plans.map((pl: any) => (
+                  <Link key={pl.id} href={`/for-dentists/dashboard/patients/${patientId}/treatment-plan`} style={{ textDecoration: 'none' }}>
+                    {pill(NAVY, <>Plan: {pl.title}{Number(pl.total_estimated_cost || pl.total_cost || 0) > 0 ? ` · ${rupees(Number(pl.total_estimated_cost || pl.total_cost))}` : ''}</>)}
+                  </Link>
+                ))}
+                {e.bills.map((inv: any) => (
+                  <button key={inv.id} type="button" onClick={() => setActiveTab('invoices')} style={{ border: 'none', background: 'none', padding: 0, minHeight: 0, cursor: 'pointer' }}>
+                    {pill(inv.payment_status === 'paid' ? GREEN_INK : AMBER_INK, `${rupees(Number(inv.total || 0))} ${inv.payment_status === 'paid' ? 'paid' : 'due'}`)}
+                  </button>
+                ))}
               </div>
             )}
           </div>
-        )
-      })()}
+        )}
+      </div>
+    )
+  }
 
-      {/* OVERVIEW */}
-      {activeTab === 'overview' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
-          <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '20px', gridColumn: '1/-1' }}>
-            {(() => {
-              const due = invoices.filter((i: any) => i.payment_status !== 'paid').reduce((sum: number, i: any) => sum + Number(i.total || 0), 0)
-              const lastVisit = visits[0]
-              const rows = [
-                { label: 'Amount due', value: due > 0 ? `₹${due.toLocaleString('en-IN')}` : 'Nothing due', color: due > 0 ? '#B45309' : undefined },
-                { label: 'Last visit', value: lastVisit?.visit_date ? new Date(`${String(lastVisit.visit_date).slice(0, 10)}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'No visits yet' },
-                { label: 'Visits', value: String(visits.length) },
-                { label: 'Treatment plans', value: String(plans.length) },
-              ]
-              return (
-                <>
-                  <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, marginBottom: 6 }}>Summary</h3>
-                  {rows.map((r, i) => (
-                    <div key={r.label} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '10px 0', borderTop: i === 0 ? 'none' : '1px solid var(--border)', fontSize: 14 }}>
-                      <span style={{ color: 'var(--muted)' }}>{r.label}</span>
-                      <span style={{ fontWeight: 700, color: r.color || 'var(--text)', textAlign: 'right' }}>{r.value}</span>
-                    </div>
-                  ))}
-                  {visits.length > 0 && (
-                    <div style={{ marginTop: 12 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                        <b style={{ fontSize: 14 }}>Recent visits</b>
-                        <button type="button" onClick={() => setActiveTab('visits')} style={{ border: 'none', background: 'none', color: TEAL_DARK, fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>All {visits.length}</button>
-                      </div>
-                      {visits.slice(0, 2).map((v: any) => (
-                        <div key={v.id} style={{ display: 'grid', gridTemplateColumns: '64px 1fr', gap: 10, padding: '8px 0', borderTop: '1px solid var(--border)', fontSize: 13 }}>
-                          <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{v.visit_date ? new Date(`${String(v.visit_date).slice(0, 10)}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : ''}</span>
-                          <span>
-                            <b style={{ display: 'block' }}>{v.chief_complaint || 'Visit'}</b>
-                            {v.treatment_done && <span style={{ color: 'var(--muted)', fontSize: 12 }}>{String(v.treatment_done).length > 90 ? `${String(v.treatment_done).slice(0, 90)}…` : v.treatment_done}</span>}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </>
-              )
-            })()}
-          </div>
-          {patient.medical_history && (
-            <div style={{ background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: 14, padding: '20px' }}>
-              <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, marginBottom: 8, color: '#92400E' }}>📋 Medical History</h3>
-              <p style={{ fontSize: 14, color: '#92400E', lineHeight: 1.7 }}>{patient.medical_history}</p>
+  // ---- Records folders ----
+  const recordSections: { id: string; label: string; sub: string; icon: string }[] = [
+    { id: 'images', label: 'X-rays and photos', sub: imageCount == null ? 'Upload and view X-rays and photos' : imageCount === 0 ? 'Nothing yet' : `${imageCount} file${imageCount === 1 ? '' : 's'}`, icon: '▣' },
+    { id: 'dental-chart', label: 'Dental chart', sub: 'Tooth chart and gum chart', icon: '◠' },
+    { id: 'consent', label: 'Consent forms', sub: consentCount == null ? 'Patient signs on screen' : consentCount === 0 ? 'Nothing yet' : `${consentCount} signed`, icon: '✎' },
+    { id: 'lab', label: 'Lab work', sub: labWork.length === 0 ? 'Nothing sent yet' : `${labWork.length} case${labWork.length === 1 ? '' : 's'}`, icon: '⚗' },
+    { id: 'emr', label: 'Medical record (EMR)', sub: 'Full clinical record form', icon: '⎘' },
+  ]
+
+  return (
+    <div>
+      <div style={{ maxWidth: wide ? 1240 : 960, margin: '0 auto' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <Link href="/for-dentists/dashboard/patients" style={{ color: TEAL_DARK, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>‹ Patients</Link>
+        {!wide && (
+          <button type="button" aria-label="More options" onClick={() => setMenuOpen(true)}
+            style={{ width: 38, height: 38, borderRadius: 10, border: '1px solid var(--border)', background: '#fff', color: 'var(--muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+            <DotsIcon />
+          </button>
+        )}
+      </div>
+
+      <div style={wide ? { display: 'grid', gridTemplateColumns: '330px minmax(0, 1fr)', gap: 20, alignItems: 'start' } : undefined}>
+        {/* Patient, safety and actions. Fixed on the left on wide screens. */}
+        <aside style={wide
+          ? { ...card, padding: 18, display: 'grid', gap: 14, position: 'sticky', top: 0, maxHeight: 'calc(100vh - 110px)', overflowY: 'auto' }
+          : { ...card, display: 'grid', gap: 12, marginBottom: 12 }}>
+          {identity}
+          {safetyCard}
+          {actions}
+          {wide && <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>{contact}</div>}
+          {wide && (
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, display: 'grid', gap: 2 }}>
+              {moreItems.filter(m => m.key !== 'call').map(m => m.href
+                ? <Link key={m.key} href={m.href} style={{ ...linkBtn, padding: '5px 0', textAlign: 'left' }}>{m.label}</Link>
+                : <button key={m.key} type="button" onClick={m.onClick} style={{ ...linkBtn, padding: '5px 0', textAlign: 'left' }}>{m.label}</button>)}
             </div>
           )}
-          <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '20px' }}>
-            <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, marginBottom: 12 }}>Contact Details</h3>
-            {[
-              { label: 'Phone', value: patient.phone },
-              { label: 'Email', value: patient.email },
-              { label: 'Address', value: patient.address },
-              { label: 'Emergency', value: patient.emergency_contact_name ? `${patient.emergency_contact_name} — ${patient.emergency_contact_phone}` : null },
-            ].filter(i => i.value).map(item => (
-              <div key={item.label} style={{ display: 'flex', gap: 8, marginBottom: 8, fontSize: 13 }}>
-                <span style={{ color: 'var(--muted)', width: 70, flexShrink: 0 }}>{item.label}</span>
-                <span style={{ color: 'var(--text)' }}>{item.value}</span>
+        </aside>
+
+        <section style={{ minWidth: 0 }}>
+          {/* Tabs. On phones they stick to the top and repeat the allergy line
+              once the safety card has scrolled away. */}
+          <div style={wide ? { marginBottom: 16 } : { position: 'sticky', top: 0, zIndex: 20, marginBottom: 12, borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border)', boxShadow: safetyOffscreen ? '0 4px 12px rgba(15,23,42,.08)' : 'none' }}>
+            {!wide && safetyOffscreen && allergyState === 'value' && (
+              <div style={{ background: RED_BG, borderBottom: `1px solid ${RED_LINE}`, color: RED_INK, fontSize: 13, fontWeight: 700, padding: '7px 16px', display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span style={{ width: 20, height: 20, borderRadius: 6, background: '#DC2626', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><AlertIcon size={13} /></span>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{patient.name}: allergic to {patient.allergies}</span>
               </div>
-            ))}
+            )}
+            {tabs}
           </div>
 
+      {/* SUMMARY */}
+      {group.id === 'summary' && (
+        <div style={{ display: 'grid', gridTemplateColumns: wide ? 'minmax(0, 1.3fr) minmax(0, 1fr)' : '1fr', gap: 12, alignItems: 'start' }}>
+          <div style={{ display: 'grid', gap: 12 }}>
+            {openPlans.slice(0, 1).map(planCard)}
+            {openPlans.length > 1 && <button type="button" onClick={() => setActiveTab('visits')} style={{ ...linkBtn, textAlign: 'left' }}>{openPlans.length - 1} more open plan{openPlans.length > 2 ? 's' : ''} in Visits</button>}
+            <div style={card}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <h3 style={cardTitle}>{visits.length > 1 ? 'Recent visits' : 'Last visit'}</h3>
+                {visits.length > 0 && <button type="button" onClick={() => setActiveTab('visits')} style={linkBtn}>All {visits.length} ›</button>}
+              </div>
+              {visits.length === 0 && <div style={{ fontSize: 13, color: 'var(--muted)' }}>No visits yet. Tap Start visit when the patient is in the chair.</div>}
+              {visits.slice(0, wide ? 3 : 1).map((v: any, i: number) => (
+                <div key={v.id} style={{ padding: '8px 0', borderTop: i === 0 ? 'none' : '1px solid var(--border)', fontSize: 13.5 }}>
+                  <b>{fmtDay(dayOf(v.visit_date))} · {v.chief_complaint || 'Visit'}</b>
+                  {v.treatment_done && <div style={{ color: 'var(--muted)' }}>{String(v.treatment_done).length > 110 ? `${String(v.treatment_done).slice(0, 110)}…` : v.treatment_done}</div>}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div style={{ display: 'grid', gap: 12 }}>
+            <div style={card}>
+              <h3 style={{ ...cardTitle, marginBottom: 4 }}>At a glance</h3>
+              {[
+                { label: 'Next appointment', value: nextAppt ? `${fmtDay(nextAppt.appt_date, true)}${nextAppt.time_slot ? `, ${nextAppt.time_slot}` : ''}` : 'Not booked' },
+                { label: 'Amount due', value: due > 0 ? rupees(due) : 'Nothing due', color: due > 0 ? AMBER_INK : undefined },
+                { label: 'Recall', value: nextRecall ? fmtDay(nextRecall, true) : 'Not set' },
+                { label: 'Patient since', value: patient.created_at ? new Date(patient.created_at).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : '' },
+                { label: 'Visits', value: String(visits.length) },
+              ].filter(r => r.value).map((r, i) => (
+                <div key={r.label} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '9px 0', borderTop: i === 0 ? 'none' : '1px solid var(--border)', fontSize: 13.5 }}>
+                  <span style={{ color: 'var(--muted)' }}>{r.label}</span>
+                  <span style={{ fontWeight: 700, color: r.color || 'var(--text)', textAlign: 'right' }}>{r.value}</span>
+                </div>
+              ))}
+            </div>
+            {unpaid.length > 0 && (
+              <div style={card}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <h3 style={cardTitle}>Unpaid {unpaid.length === 1 ? 'bill' : 'bills'}</h3>
+                  <button type="button" onClick={() => setActiveTab('invoices')} style={linkBtn}>Bills ›</button>
+                </div>
+                {unpaid.slice(0, 3).map((inv: any, i: number) => (
+                  <div key={inv.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '8px 0', borderTop: i === 0 ? 'none' : '1px solid var(--border)', fontSize: 13.5 }}>
+                    <span style={{ color: 'var(--muted)' }}>{inv.invoice_no} · {fmtDay(dayOf(inv.invoice_date))}</span>
+                    <b>{rupees(Number(inv.total || 0))}</b>
+                  </div>
+                ))}
+              </div>
+            )}
+            {!wide && <div style={card}>{contact}</div>}
           {/* PATIENT PORTAL — enable/disable the patient's self-service portal
               (dentistinmumbai.in/patient) where they log in with their own
               mobile number to view appointments, prescriptions and invoices. */}
-          <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '20px' }}>
+          <div id="patient-portal" style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '16px', scrollMarginTop: 70 }}>
             <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, marginBottom: 12 }}>🔐 Patient Portal</h3>
             <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 14, lineHeight: 1.6 }}>
               {patient.portal_access
@@ -645,14 +976,21 @@ export default function PatientDetailPage() {
               </p>
             )}
           </div>
+          </div>
         </div>
       )}
 
-      {/* VISIT NOTES */}
-      {activeTab === 'visits' && (
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
-            <button onClick={() => setShowAddVisit(true)} style={{ padding: '10px 20px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>+ Add Visit Note</button>
+      {/* VISITS: one timeline with notes, prescriptions, plans and bills */}
+      {group.id === 'visits' && (
+        <div style={{ display: 'grid', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
+            {[
+              { key: 'v', label: '+ Visit note', onClick: () => { setVisitSaveError(null); setShowAddVisit(true) } },
+              { key: 'rx', label: '+ Prescription', onClick: openNewRx },
+            ].map(b => (
+              <button key={b.key} type="button" onClick={b.onClick} style={{ padding: '10px 4px', borderRadius: 10, border: '1.5px dashed #CBD5E1', background: '#fff', color: TEAL_DARK, fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>{b.label}</button>
+            ))}
+            <Link href={`/for-dentists/dashboard/patients/${patientId}/treatment-plan`} style={{ padding: '10px 4px', borderRadius: 10, border: '1.5px dashed #CBD5E1', background: '#fff', color: TEAL_DARK, fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none' }}>+ Plan</Link>
           </div>
           {showAddVisit && (
             <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '24px', marginBottom: 20 }}>
@@ -733,29 +1071,6 @@ export default function PatientDetailPage() {
               </div>
             </div>
           )}
-          {visits.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '40px', background: '#fff', borderRadius: 14, border: '1px solid var(--border)', color: 'var(--muted)' }}>No visit notes yet.</div>
-          ) : visits.map(v => (
-            <div key={v.id} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '20px', marginBottom: 12 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-                <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15 }}>📅 {new Date(v.visit_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
-              </div>
-              {v.chief_complaint && <div style={{ marginBottom: 8 }}><span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>COMPLAINT</span><p style={{ fontSize: 14, marginTop: 2 }}>{v.chief_complaint}</p></div>}
-              {v.clinical_findings && <div style={{ marginBottom: 8 }}><span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>FINDINGS</span><p style={{ fontSize: 14, marginTop: 2 }}>{v.clinical_findings}</p></div>}
-              {v.treatment_done && <div style={{ marginBottom: 8 }}><span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>TREATMENT</span><p style={{ fontSize: 14, marginTop: 2 }}>{v.treatment_done}</p></div>}
-              {v.materials_used?.length > 0 && <div style={{ marginBottom: 8 }}><span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>MATERIALS</span><div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>{v.materials_used.map((m: string) => <span key={m} style={{ fontSize: 11, padding: '2px 8px', background: 'var(--blue-light)', color: 'var(--blue)', borderRadius: 10 }}>{m}</span>)}</div></div>}
-              {v.next_appointment_recommended && <div style={{ marginTop: 8, padding: '8px 12px', background: '#DCFCE7', borderRadius: 8, fontSize: 13, color: '#166534' }}>📅 Next visit: {new Date(v.next_appointment_recommended).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}{v.next_appointment_notes ? ` — ${v.next_appointment_notes}` : ''}</div>}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* PRESCRIPTIONS */}
-      {activeTab === 'prescriptions' && (
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
-            <button onClick={openNewRx} style={{ padding: '10px 20px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>+ New Prescription</button>
-          </div>
           {showAddRx && (
             <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 16, padding: '24px', marginBottom: 20 }}>
               <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, marginBottom: 16 }}>New Prescription</h3>
@@ -877,68 +1192,28 @@ export default function PatientDetailPage() {
               </div>
             </div>
           )}
-          {prescriptions.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '40px', background: '#fff', borderRadius: 14, border: '1px solid var(--border)', color: 'var(--muted)' }}>No prescriptions yet.</div>
-          ) : prescriptions.map(rx => (
-            <div key={rx.id} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '20px', marginBottom: 12 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12, gap: 12, flexWrap: 'wrap' }}>
-                <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700 }}>💊 {rx.template_used || 'Prescription'}</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 12, color: 'var(--muted)' }}>{new Date(rx.created_at).toLocaleDateString('en-IN')}</span>
-                  <a
-                    href={`/api/prescriptions/pdf?id=${rx.id}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ padding: '5px 10px', background: 'var(--blue-light)', color: 'var(--blue)', border: '1px solid #BFDBFE', borderRadius: 6, fontSize: 11, fontWeight: 600, textDecoration: 'none' }}
-                  >
-                    📄 Download PDF
-                  </a>
-                  {patient.phone && (() => {
-                    const phone = String(patient.phone).replace(/\D/g, '').slice(-10)
-                    const clinic = dentistMeta?.clinic_name || dentistMeta?.name || 'your clinic'
-                    // Patient-facing share link: absolute so wa.me lands the
-                    // patient on a working URL regardless of which device opens
-                    // the WhatsApp message.
-                    const link = typeof window !== 'undefined'
-                      ? `${window.location.origin}/api/prescriptions/pdf?id=${rx.id}`
-                      : `/api/prescriptions/pdf?id=${rx.id}`
-                    const msg = `Your prescription from ${clinic}: ${link}`
-                    return (
-                      <a
-                        href={`https://wa.me/91${phone}?text=${encodeURIComponent(msg)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{ padding: '5px 10px', background: '#25D366', color: '#fff', borderRadius: 6, fontSize: 11, fontWeight: 600, textDecoration: 'none' }}
-                      >
-                        💚 Send to Patient
-                      </a>
-                    )
-                  })()}
-                </div>
+          {openPlans.map(planCard)}
+          {entries.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 32, background: '#fff', borderRadius: 14, border: '1px solid var(--border)', color: 'var(--muted)' }}>No visits yet.</div>
+          ) : shownEntries.map((e, i) => {
+            const month = e.day.slice(0, 7)
+            const showMonth = i === 0 || shownEntries[i - 1].day.slice(0, 7) !== month
+            return (
+              <div key={e.key} style={{ display: 'grid', gap: 8 }}>
+                {showMonth && e.day && <div style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: 0.6, textTransform: 'uppercase', color: 'var(--muted)', margin: '4px 2px 0' }}>{new Date(`${month}-01T00:00:00`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}</div>}
+                {visitCard(e)}
               </div>
-              {rx.medicines?.length > 0 && (
-                <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 12 }}>
-                  <thead><tr style={{ background: 'var(--bg)' }}>
-                    {['Medicine', 'Dosage & Frequency', 'Duration', 'Instructions'].map(h => <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: 'var(--muted)' }}>{h}</th>)}
-                  </tr></thead>
-                  <tbody>{rx.medicines.map((med: any, i: number) => (
-                    <tr key={i} style={{ borderTop: '1px solid var(--border)' }}>
-                      <td style={{ padding: '8px 12px', fontSize: 13, fontWeight: 500 }}>{med.name}</td>
-                      <td style={{ padding: '8px 12px', fontSize: 13 }}>{med.dosage}</td>
-                      <td style={{ padding: '8px 12px', fontSize: 13 }}>{med.duration}</td>
-                      <td style={{ padding: '8px 12px', fontSize: 13, color: 'var(--muted)' }}>{med.instructions}</td>
-                    </tr>
-                  ))}</tbody>
-                </table>
-              )}
-              {rx.instructions && <p style={{ fontSize: 13, color: 'var(--text-secondary)', background: 'var(--bg)', padding: '8px 12px', borderRadius: 8 }}>📝 {rx.instructions}</p>}
-            </div>
-          ))}
+            )
+          })}
+          {!showAllVisits && entries.length > 8 && (
+            <button type="button" onClick={() => setShowAllVisits(true)} style={{ ...linkBtn, padding: 6 }}>Show {entries.length - 8} older</button>
+          )}
+          <Link href={`/for-dentists/dashboard/patients/${patientId}/timeline`} style={{ ...linkBtn, textAlign: 'center', padding: 4, fontSize: 12.5 }}>Full history with X-rays, EMR and appointments ›</Link>
         </div>
       )}
 
       {/* INVOICES */}
-      {activeTab === 'invoices' && (() => {
+      {group.id === 'bills' && (() => {
         const outstanding = invoices
           .filter(i => i.payment_status !== 'paid')
           .reduce((sum, i) => sum + (Number(i.total) || 0), 0)
@@ -1029,78 +1304,26 @@ export default function PatientDetailPage() {
         )
       })()}
 
-      {/* TREATMENT PLAN — the single treatment-plan surface. This launcher
-          opens the dedicated /treatment-plan workflow route (draft/presented/
-          accepted lifecycle, drag-reorder, per-step completion, convert to
-          invoice, WhatsApp PDF, patient acceptance tracking), kept on its own
-          route so its form state and step manager don't bloat this already-busy
-          file. The older inline "plans" tab — a basic create form with no
-          lifecycle — was removed in favour of this richer page. */}
-      {activeTab === 'treatment-plan' && (
-        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '28px', textAlign: 'center' }}>
-          <div style={{ fontSize: 40, marginBottom: 10 }}>🦷</div>
-          <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18, marginBottom: 6 }}>Treatment Plan Workflow</h3>
-          <p style={{ fontSize: 14, color: 'var(--muted)', maxWidth: 520, margin: '0 auto 20px' }}>
-            Build a multi-step plan, track patient acceptance, mark steps completed one-by-one, share a PDF on WhatsApp, and convert the whole plan into an invoice in one click.
-          </p>
-          <Link href={`/for-dentists/dashboard/patients/${patientId}/treatment-plan`}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '11px 22px', minHeight: 44, background: 'var(--blue)', color: '#fff', borderRadius: 10, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
-            Open Treatment Plan →
-          </Link>
-        </div>
-      )}
-
-      {/* EMR */}
-      {activeTab === 'emr' && (
-        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '28px', textAlign: 'center' }}>
-          <div style={{ fontSize: 40, marginBottom: 10 }}>🏥</div>
-          <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18, marginBottom: 6 }}>Electronic Medical Record</h3>
-          <p style={{ fontSize: 14, color: 'var(--muted)', maxWidth: 480, margin: '0 auto 20px' }}>
-            Capture a full clinical encounter — vitals, complaints, diagnosis, medications, procedures, advice, and follow-up — in one form.
-          </p>
-          <Link href={`/for-dentists/dashboard/patients/${patientId}/emr/new`}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '11px 22px', minHeight: 44, background: 'var(--blue)', color: '#fff', borderRadius: 10, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
-            + New EMR Record
-          </Link>
-        </div>
-      )}
-
-      {/* TIMELINE */}
-      {activeTab === 'timeline' && (
-        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '28px', textAlign: 'center' }}>
-          <div style={{ fontSize: 40, marginBottom: 10 }}>📈</div>
-          <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18, marginBottom: 6 }}>Treatment History Timeline</h3>
-          <p style={{ fontSize: 14, color: 'var(--muted)', maxWidth: 480, margin: '0 auto 20px' }}>
-            One chronological view of every visit, prescription, EMR, invoice, appointment, consent form, and X-ray for this patient.
-          </p>
-          <Link href={`/for-dentists/dashboard/patients/${patientId}/timeline`}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '11px 22px', minHeight: 44, background: 'var(--blue)', color: '#fff', borderRadius: 10, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
-            Open Timeline →
-          </Link>
-        </div>
-      )}
-
-      {/* CONSENT */}
-      {activeTab === 'consent' && (
-        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '28px', textAlign: 'center' }}>
-          <div style={{ fontSize: 40, marginBottom: 10 }}>📝</div>
-          <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18, marginBottom: 6 }}>Digital Consent Forms</h3>
-          <p style={{ fontSize: 14, color: 'var(--muted)', maxWidth: 480, margin: '0 auto 20px' }}>
-            Implant, extraction, RCT, and whitening consent templates — patient signs on screen, save and download a PDF in one tap.
-          </p>
-          <Link href={`/for-dentists/dashboard/patients/${patientId}/consent`}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '11px 22px', minHeight: 44, background: 'var(--blue)', color: '#fff', borderRadius: 10, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
-            Open Consent Forms →
-          </Link>
-        </div>
-      )}
-
-      {/* DENTAL CHART — interactive ToothChart (caries / RCT / crown /
-          missing / implant / bridge / fracture / sensitivity) plus the
-          periodontal chart (pocket depth, BOP, recession, mobility,
-          furcation) as sibling sub-tabs under one top-level tab so we
-          don't bloat the patient strip with two near-identical labels. */}
-      {activeTab === 'dental-chart' && (
+      {/* RECORDS: folders that open in place */}
+      {group.id === 'records' && (
+        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden' }}>
+          {recordSections.map((r, i) => {
+            const open = activeTab === r.id
+            return (
+              <div key={r.id} style={{ borderTop: i === 0 ? 'none' : '1px solid var(--border)' }}>
+                <button type="button" aria-expanded={open} onClick={() => setActiveTab(open ? 'records' : r.id)}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '13px 14px', background: open ? 'var(--bg)' : '#fff', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-body)', textAlign: 'left', color: 'var(--text)' }}>
+                  <span style={{ width: 36, height: 36, borderRadius: 10, background: 'var(--bg)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>{r.icon}</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <b style={{ display: 'block', fontSize: 14 }}>{r.label}</b>
+                    <span style={{ fontSize: 12, color: 'var(--muted)' }}>{r.sub}</span>
+                  </span>
+                  <span style={{ color: 'var(--muted)', display: 'flex', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}><ChevronIcon /></span>
+                </button>
+                {open && (
+                  <div style={{ padding: '4px 14px 16px', background: 'var(--bg)' }}>
+                    {r.id === 'images' && <ImageVault patientId={patientId} dentistId={dentistId} />}
+                    {r.id === 'dental-chart' && (
         <div>
           <div style={{ display: 'flex', gap: 8, marginBottom: 16, borderBottom: '1px solid var(--border)' }}>
             {([
@@ -1128,20 +1351,20 @@ export default function PatientDetailPage() {
           {chartSubTab === 'tooth' && <ToothChart patientId={patientId} dentistId={dentistId} patientName={patient?.name} dentistName={dentistName} />}
           {chartSubTab === 'perio' && <PerioChart patientId={patientId} dentistId={dentistId} />}
         </div>
-      )}
-
-      {/* UNIFIED X-RAY + PHOTO VAULT — replaces the legacy `xrays` and
-          `photos` tabs. Backed by the new patient_images table. */}
-      {activeTab === 'images' && (
-        <ImageVault patientId={patientId} dentistId={dentistId} />
-      )}
-
-      {/* LAB WORK — per-patient view of crowns / bridges / dentures etc.
-          sent to external labs. CRUD lives on the standalone
-          /dashboard/lab-work page so we don't duplicate the form here —
-          this tab is a read-only roll-up plus a quick "open the full
-          tracker" link. */}
-      {activeTab === 'lab' && (
+                    )}
+                    {r.id === 'consent' && (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                        <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0 }}>Implant, extraction, RCT and whitening forms. The patient signs on screen.</p>
+                        <Link href={`/for-dentists/dashboard/patients/${patientId}/consent`} style={{ padding: '8px 14px', background: TEAL, color: '#fff', borderRadius: 8, fontWeight: 700, fontSize: 13, textDecoration: 'none' }}>Open consent forms</Link>
+                      </div>
+                    )}
+                    {r.id === 'emr' && (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                        <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0 }}>Vitals, complaints, diagnosis, medicines, procedures and advice in one form.</p>
+                        <Link href={`/for-dentists/dashboard/patients/${patientId}/emr/new`} style={{ padding: '8px 14px', background: TEAL, color: '#fff', borderRadius: 8, fontWeight: 700, fontSize: 13, textDecoration: 'none' }}>+ New EMR record</Link>
+                      </div>
+                    )}
+                    {r.id === 'lab' && (
         <div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, gap: 10, flexWrap: 'wrap' }}>
             <p style={{ fontSize: 13, color: 'var(--muted)' }}>
@@ -1194,6 +1417,111 @@ export default function PatientDetailPage() {
               })}
             </div>
           )}
+        </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+        </section>
+      </div>
+
+      {/* Phone "⋯" menu */}
+      {menuOpen && (
+        <div role="dialog" aria-modal="true" aria-label="More options" onClick={() => setMenuOpen(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(15,23,42,.45)', display: 'flex', alignItems: 'flex-end' }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: '#fff', width: '100%', borderRadius: '20px 20px 0 0', padding: '10px 16px calc(20px + env(safe-area-inset-bottom))' }}>
+            <div style={{ width: 40, height: 4, background: '#CBD5E1', borderRadius: 9, margin: '0 auto 8px' }} />
+            {moreItems.map((m, i) => {
+              const inner = (
+                <>
+                  <span style={{ width: 34, display: 'flex', justifyContent: 'center', color: 'var(--muted)', fontSize: 17 }}>{m.icon}</span>
+                  <span style={{ flex: 1 }}>
+                    <span style={{ display: 'block', fontWeight: 600, fontSize: 15 }}>{m.label}</span>
+                    {m.sub && <span style={{ display: 'block', fontSize: 12, color: 'var(--muted)' }}>{m.sub}</span>}
+                  </span>
+                </>
+              )
+              const rowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '12px 4px', minHeight: 52, background: 'none', border: 'none', borderTop: i === 0 ? 'none' : '1px solid var(--border)', textDecoration: 'none', color: 'var(--text)', cursor: 'pointer', fontFamily: 'var(--font-body)', textAlign: 'left' }
+              return m.href
+                ? <a key={m.key} href={m.href} onClick={() => setMenuOpen(false)} style={rowStyle}>{inner}</a>
+                : <button key={m.key} type="button" onClick={m.onClick} style={rowStyle}>{inner}</button>
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Edit patient details */}
+      {editOpen && (
+        <div role="dialog" aria-modal="true" aria-label="Edit patient details"
+          style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(15,23,42,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 560, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
+              <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, margin: 0 }}>Edit patient details</h2>
+              <button type="button" aria-label="Close" onClick={() => !editSaving && setEditOpen(false)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--muted)' }}>✕</button>
+            </div>
+            <div style={{ padding: 20, overflowY: 'auto', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div style={{ gridColumn: '1/-1', background: RED_BG, border: `1px solid ${RED_LINE}`, borderRadius: 12, padding: 12, display: 'grid', gap: 10 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: RED_INK, letterSpacing: 0.5 }}>SAFETY. Write &quot;None&quot; if the patient has none.</div>
+                <div>
+                  <label style={labelStyle}>Allergies</label>
+                  <input value={editForm.allergies || ''} onChange={e => setEditForm(f => ({ ...f, allergies: e.target.value }))} placeholder="e.g. Penicillin, Latex, or None" style={inputStyle} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Medicines taken daily</label>
+                  <input value={editForm.current_medications || ''} onChange={e => setEditForm(f => ({ ...f, current_medications: e.target.value }))} placeholder="e.g. Ecosprin 75, Metformin 500, or None" style={inputStyle} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Conditions / medical history</label>
+                  <textarea value={editForm.medical_history || ''} onChange={e => setEditForm(f => ({ ...f, medical_history: e.target.value }))} placeholder="Diabetes, BP, heart problems, pregnancy, past surgery..." rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
+                </div>
+              </div>
+              {([
+                ['name', 'Name', 'text', true], ['phone', 'Phone', 'tel', false], ['age', 'Age', 'number', false], ['email', 'Email', 'email', false],
+              ] as [string, string, string, boolean][]).map(([k, label, type, full]) => (
+                <div key={k} style={full ? { gridColumn: '1/-1' } : undefined}>
+                  <label style={labelStyle}>{label}</label>
+                  <input type={type} value={editForm[k] || ''} onChange={e => setEditForm(f => ({ ...f, [k]: e.target.value }))} style={inputStyle} />
+                </div>
+              ))}
+              <div>
+                <label style={labelStyle}>Gender</label>
+                <select value={editForm.gender || ''} onChange={e => setEditForm(f => ({ ...f, gender: e.target.value }))} style={{ ...inputStyle, cursor: 'pointer' }}>
+                  <option value="">Select</option>
+                  {['Male', 'Female', 'Other'].map(g => <option key={g}>{g}</option>)}
+                  {editForm.gender && !['Male', 'Female', 'Other'].includes(editForm.gender) && <option>{editForm.gender}</option>}
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>Blood group</label>
+                <select value={editForm.blood_group || ''} onChange={e => setEditForm(f => ({ ...f, blood_group: e.target.value }))} style={{ ...inputStyle, cursor: 'pointer' }}>
+                  <option value="">Select</option>
+                  {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(b => <option key={b}>{b}</option>)}
+                  {editForm.blood_group && !['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].includes(editForm.blood_group) && <option>{editForm.blood_group}</option>}
+                </select>
+              </div>
+              <div style={{ gridColumn: '1/-1' }}>
+                <label style={labelStyle}>Address</label>
+                <input value={editForm.address || ''} onChange={e => setEditForm(f => ({ ...f, address: e.target.value }))} style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>Emergency contact</label>
+                <input value={editForm.emergency_contact_name || ''} onChange={e => setEditForm(f => ({ ...f, emergency_contact_name: e.target.value }))} placeholder="Name" style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>Emergency phone</label>
+                <input type="tel" value={editForm.emergency_contact_phone || ''} onChange={e => setEditForm(f => ({ ...f, emergency_contact_phone: e.target.value }))} style={inputStyle} />
+              </div>
+            </div>
+            {editError && <div style={{ margin: '0 20px 10px', background: '#FEE2E2', border: `1px solid ${RED_LINE}`, color: RED_INK, padding: '8px 12px', borderRadius: 8, fontSize: 13 }}>{editError}</div>}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '12px 20px', borderTop: '1px solid var(--border)' }}>
+              <button type="button" onClick={() => !editSaving && setEditOpen(false)} style={{ padding: '9px 18px', background: '#fff', border: '1px solid var(--border)', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>Cancel</button>
+              <button type="button" onClick={saveEdit} disabled={editSaving} style={{ padding: '9px 20px', background: TEAL, color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-body)', opacity: editSaving ? 0.7 : 1 }}>{editSaving ? 'Saving…' : 'Save'}</button>
+            </div>
+          </div>
         </div>
       )}
       </div>

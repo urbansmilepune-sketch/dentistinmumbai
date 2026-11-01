@@ -15,6 +15,11 @@ type Channel = 'sms' | 'whatsapp' | 'email'
 interface Props {
   patientId: string
   dentistId: string
+  // Optional: restyle the trigger button and replace its label, and hear
+  // about a saved recall (the patient page shows the next recall date).
+  buttonStyle?: React.CSSProperties
+  children?: React.ReactNode
+  onScheduled?: (dueDate: string) => void
 }
 
 const TYPE_OPTIONS: { value: ReminderType; label: string; months: number }[] = [
@@ -30,7 +35,7 @@ function isoDaysFromToday(months: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-export default function ScheduleRecallButton({ patientId, dentistId }: Props) {
+export default function ScheduleRecallButton({ patientId, dentistId, buttonStyle, children, onScheduled }: Props) {
   const [open, setOpen] = useState(false)
   const [reminderType, setReminderType] = useState<ReminderType>('6month_checkup')
   const [dueDate, setDueDate] = useState(isoDaysFromToday(6))
@@ -79,6 +84,7 @@ export default function ScheduleRecallButton({ patientId, dentistId }: Props) {
       return
     }
     setOpen(false)
+    onScheduled?.(dueDate)
     setToast(`Recall scheduled for ${new Date(dueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`)
     setTimeout(() => setToast(null), 4000)
     // Reset for next use
@@ -87,13 +93,13 @@ export default function ScheduleRecallButton({ patientId, dentistId }: Props) {
 
   return (
     <>
-      <button onClick={() => setOpen(true)}
-        style={{
+      <button type="button" onClick={() => setOpen(true)}
+        style={buttonStyle || {
           padding: '8px 14px', minHeight: 38, background: '#EDE9FE', color: '#5B21B6',
           border: '1px solid #DDD6FE', borderRadius: 8, fontSize: 12, fontWeight: 700,
           cursor: 'pointer', fontFamily: 'var(--font-body)',
         }}>
-        📅 Schedule Recall
+        {children || '📅 Schedule Recall'}
       </button>
 
       {toast && (
