@@ -6,7 +6,7 @@ import DashboardActivityTracker from './DashboardActivityTracker'
 import SupportButton from '@/components/SupportButton'
 import { completionPct } from '@/lib/profileCompletion'
 import { isDemoEmail } from '@/lib/demo'
-import { dentistAppMetadata, dentistAppViewport } from '@/lib/dentistApp'
+import { dentistAppMetadata, dentistAppViewport, INSTALL_PROMPT_CATCHER } from '@/lib/dentistApp'
 import InstallAppBanner from './InstallAppBanner'
 
 export const metadata = dentistAppMetadata
@@ -25,6 +25,9 @@ async function countPending(admin: any, dentistId: string): Promise<number> {
   if (error) return 0
   return count ?? 0
 }
+
+// Runs before React hydrates so Chrome's one-time install event isn't missed.
+const installCatcher = <script dangerouslySetInnerHTML={{ __html: INSTALL_PROMPT_CATCHER }} />
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -95,6 +98,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     }
     return (
       <>
+        {installCatcher}
         <DashboardShell dentist={dentist} completionPct={pct} staffRole={null} pendingCount={pendingCount}>
           <InstallAppBanner />
           {children}
@@ -141,6 +145,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <>
+      {installCatcher}
       <DashboardShell dentist={ownerDentist} completionPct={pct} staffRole={staffRow.role} pendingCount={pendingCount}>
         <InstallAppBanner />
         {children}

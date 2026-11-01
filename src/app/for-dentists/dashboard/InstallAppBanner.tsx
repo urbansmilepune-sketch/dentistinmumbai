@@ -5,9 +5,14 @@
 //   browser's own install dialog (beforeinstallprompt).
 // - iPhone / iPad: Apple has no install button, so we show the two steps
 //   (Share, then Add to Home Screen).
-// Shown from the 2nd dashboard session onwards, hidden once the app is
-// installed or running from the home screen, and "Not now" hides it for
-// 30 days. Everything is kept in localStorage; failures just hide the banner.
+// - Android, before Chrome is ready to install: "Tap ⋮ then Install app".
+// Shown on every dashboard visit until the app is installed or running from
+// the home screen; "×" hides it for 30 days. Kept in localStorage; failures
+// just hide the banner.
+//
+// Chrome fires beforeinstallprompt once, often before React has hydrated, so
+// the dashboard layout catches it early into window.__dinInstallPrompt
+// (see INSTALL_PROMPT_CATCHER in src/lib/dentistApp.ts) and this component picks it up from there.
 
 import { useEffect, useState } from 'react'
 
@@ -20,7 +25,13 @@ const VISITS_KEY = 'din_app_visits'
 const SESSION_KEY = 'din_app_visit_counted'
 const DISMISS_KEY = 'din_app_dismissed_at'
 const DISMISS_DAYS = 30
-const MIN_VISITS = 2
+const MIN_VISITS = 1
+
+type WindowWithPrompt = Window & { __dinInstallPrompt?: InstallPromptEvent | null }
+
+function isAndroid(): boolean {
+  return /Android/i.test(navigator.userAgent)
+}
 
 function isStandalone(): boolean {
   return window.matchMedia('(display-mode: standalone)').matches
@@ -75,27 +86,41 @@ function ShareIcon() {
 }
 
 export default function InstallAppBanner() {
-  const [mode, setMode] = useState<'hidden' | 'prompt' | 'ios'>('hidden')
+  const [mode, setMode] = useState<'hidden' | 'prompt' | 'ios' | 'android'>('hidden')
   const [promptEvent, setPromptEvent] = useState<InstallPromptEvent | null>(null)
 
   useEffect(() => {
     if (isStandalone()) return
     const ok = readyToShow()
+    const w = window as WindowWithPrompt
 
-    const onPrompt = (e: Event) => {
-      e.preventDefault()
-      setPromptEvent(e as InstallPromptEvent)
+    const pickUp = () => {
+      const ev = w.__dinInstallPrompt
+      if (!ev) return
+      setPromptEvent(ev)
       if (ok) setMode('prompt')
     }
-    const onInstalled = () => setMode('hidden')
+    // Fallback in case the layout script didn't run (it always should).
+    const onPrompt = (e: Event) => {
+      e.preventDefault()
+      w.__dinInstallPrompt = e as InstallPromptEvent
+      pickUp()
+    }
+    const onInstalled = () => { w.__dinInstallPrompt = null; setMode('hidden') }
+    window.addEventListener('din-install-ready', pickUp)
     window.addEventListener('beforeinstallprompt', onPrompt)
     window.addEventListener('appinstalled', onInstalled)
 
-    // Small delay so the banner doesn't flash in before the page settles.
-    const timer = window.setTimeout(() => { if (ok && isIOS()) setMode('ios') }, 1200)
+    // Short delay so the banner doesn't flash in before the page settles.
+    const timer = window.setTimeout(() => {
+      if (w.__dinInstallPrompt) pickUp()
+      else if (ok && isIOS()) setMode('ios')
+      else if (ok && isAndroid()) setMode(m => (m === 'hidden' ? 'android' : m))
+    }, 1200)
 
     return () => {
       window.clearTimeout(timer)
+      window.removeEventListener('din-install-ready', pickUp)
       window.removeEventListener('beforeinstallprompt', onPrompt)
       window.removeEventListener('appinstalled', onInstalled)
     }
@@ -113,6 +138,7 @@ export default function InstallAppBanner() {
     await promptEvent.prompt()
     const { outcome } = await promptEvent.userChoice
     setPromptEvent(null)
+    ;(window as WindowWithPrompt).__dinInstallPrompt = null
     if (outcome === 'accepted') setMode('hidden')
     else dismiss()
   }
@@ -125,6 +151,10 @@ export default function InstallAppBanner() {
         <div style={{ fontWeight: 800, fontSize: 14 }}>Install DentistIn</div>
         {mode === 'prompt' ? (
           <div style={{ fontSize: 12.5, color: '#CBD5E1' }}>Open today&apos;s patients in one tap, full screen.</div>
+        ) : mode === 'android' ? (
+          <div style={{ fontSize: 12.5, color: '#CBD5E1' }}>
+            Tap the <b style={{ color: '#fff' }}>⋮ menu</b> at the top, then <b style={{ color: '#fff' }}>Install app</b> or <b style={{ color: '#fff' }}>Add to Home screen</b>.
+          </div>
         ) : (
           <div style={{ fontSize: 12.5, color: '#CBD5E1' }}>
             Tap <b style={{ color: '#fff' }}>Share <ShareIcon /></b>, then <b style={{ color: '#fff' }}>Add to Home Screen</b>.

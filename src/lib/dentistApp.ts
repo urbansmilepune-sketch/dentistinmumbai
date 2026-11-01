@@ -16,3 +16,9 @@ export const dentistAppMetadata: Metadata = {
 export const dentistAppViewport: Viewport = {
   themeColor: '#0F172A',
 }
+
+// Inline script for the dashboard layout. Chrome fires beforeinstallprompt
+// once, often before React hydrates; this stores it on window so
+// InstallAppBanner can pick it up, and swaps Chrome's mini-bar for our banner.
+export const INSTALL_PROMPT_CATCHER =
+  "window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();window.__dinInstallPrompt=e;window.dispatchEvent(new Event('din-install-ready'))});"
