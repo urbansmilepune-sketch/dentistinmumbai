@@ -12,6 +12,7 @@ export interface PortalClinic {
   dentist_id: string | null
   dentist_name: string | null
   clinic_name: string | null
+  city?: string | null
 }
 
 export interface PortalSession {

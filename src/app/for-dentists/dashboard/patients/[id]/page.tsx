@@ -956,16 +956,17 @@ export default function PatientDetailPage() {
               <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: patient.portal_access ? '#CCFBF1' : 'var(--bg)', color: patient.portal_access ? '#0F766E' : 'var(--muted)' }}>
                 {patient.portal_access ? '● Enabled' : '○ Disabled'}
               </span>
-              {patient.portal_access && patient.uhid && (() => {
-                // Portal link on the clinic's own city domain (was hardcoded
-                // to dentistinpune.in, which sent Mumbai patients to Pune).
-                const portalUrl = `https://${getCityBySlug(dentistMeta?.city).domain}/patient/portal?id=${encodeURIComponent(patient.uhid)}`
-                const message = `Hi ${patient.name}, you can now see your dental records and reports online here: ${portalUrl} - Dr. ${dentistName}${dentistMeta?.clinic_name ? `, ${dentistMeta.clinic_name}` : ''}`
+              {patient.portal_access && (() => {
+                // Patient app link. The patient logs in with this mobile
+                // number (OTP) and sees every clinic that has the portal on
+                // for it, in any city. Clinic's own domain for branding.
+                const portalUrl = `https://${getCityBySlug(dentistMeta?.city).domain}/patient`
+                const message = `Hi ${patient.name}, you can now see your appointments, treatment plan, prescriptions and bills in the DentistIn app: ${portalUrl}\nLog in with this mobile number. You can add it to your home screen. - Dr. ${dentistName}${dentistMeta?.clinic_name ? `, ${dentistMeta.clinic_name}` : ''}`
                 const href = whatsappLink(patient.phone, message)
                 return href ? (
                   <a href={href} target="_blank" rel="noopener noreferrer"
                     style={{ padding: '9px 14px', borderRadius: 8, fontWeight: 700, fontSize: 13, background: '#25D366', color: '#fff', textDecoration: 'none' }}>
-                    Send portal link on WhatsApp
+                    Send app link on WhatsApp
                   </a>
                 ) : null
               })()}

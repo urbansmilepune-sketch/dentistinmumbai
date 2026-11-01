@@ -1,7 +1,8 @@
 // POST /api/patient/data — the patient portal's single read endpoint. Given a
 // valid 24h portal token (Authorization: Bearer …) and a patient_id, it
-// returns that clinic's records: patient + clinic profile, upcoming
-// appointments, prescriptions, invoices and past visits.
+// returns that clinic's records: patient + clinic profile (with working hours
+// for the reschedule screen), upcoming and past appointments, treatment plans,
+// prescriptions, invoices and past visits.
 //
 // Security: the token only proves phone ownership. We independently re-load the
 // requested patient row and confirm (a) its phone matches the token's phone and
@@ -11,19 +12,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifyPatientToken, phoneTail10, bearerFromRequest } from '@/lib/patientPortal'
+import { nowInIndia } from '@/lib/clinicSlots'
 
 function admin() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   )
-}
-
-function todayIsoLocal(): string {
-  // Server runs UTC; clinics are IST. Comparing date strings (YYYY-MM-DD) is
-  // good enough for "upcoming" and avoids dropping today's later slots.
-  const d = new Date()
-  return d.toISOString().slice(0, 10)
 }
 
 export async function POST(request: NextRequest) {
@@ -42,7 +37,7 @@ export async function POST(request: NextRequest) {
   // Load + authorise the requested patient against the token's phone.
   const { data: patient } = await db
     .from('patients')
-    .select('id, name, age, gender, phone, dentist_id, portal_access, portal_last_login, dentist:dentists(id, name, clinic_name, phone, whatsapp, address, city, degree, mci_number, areas(name))')
+    .select('id, name, age, gender, phone, dentist_id, portal_access, portal_last_login, dentist:dentists(id, slug, name, clinic_name, phone, whatsapp, address, city, degree, mci_number, working_hours, areas(name))')
     .eq('id', patientId)
     .maybeSingle()
 
@@ -54,15 +49,29 @@ export async function POST(request: NextRequest) {
   }
 
   const dentistId = (patient as any).dentist_id
-  const today = todayIsoLocal()
+  const today = nowInIndia().iso
 
-  const [{ data: appts }, { data: rx }, { data: inv }, { data: visits }, { data: allMine }] = await Promise.all([
+  const [{ data: appts }, { data: pastAppts }, plansRes, { data: rx }, { data: inv }, { data: visits }, { data: allMine }, { data: locations }] = await Promise.all([
     db.from('appointments')
-      .select('id, appt_date, time_slot, status, notes, reference_no, treatments(name, icon)')
+      .select('id, appt_date, time_slot, status, notes, reference_no, location_id, treatments(name, icon)')
       .eq('patient_id', patientId)
       .gte('appt_date', today)
       .in('status', ['pending', 'confirmed'])
       .order('appt_date', { ascending: true }),
+    db.from('appointments')
+      .select('id, appt_date, time_slot, status, reference_no, treatments(name)')
+      .eq('patient_id', patientId)
+      .or(`appt_date.lt.${today},status.in.(completed,cancelled,no_show)`)
+      .order('appt_date', { ascending: false })
+      .limit(20),
+    // Plans the dentist has shown the patient. Drafts (unfinished) and
+    // declined plans stay on the dentist side.
+    db.from('treatment_plans')
+      .select('id, title, status, total_estimated_cost, total_cost, notes, created_at, accepted_at, treatment_plan_steps(id, step_number, treatment_name, tooth_numbers, tooth_number, estimated_cost, status, completed_at)')
+      .eq('patient_id', patientId)
+      .eq('dentist_id', dentistId)
+      .in('status', ['presented', 'accepted', 'in_progress', 'completed'])
+      .order('created_at', { ascending: false }),
     db.from('prescriptions')
       .select('id, medicines, instructions, template_used, created_at')
       .eq('patient_id', patientId)
@@ -78,10 +87,20 @@ export async function POST(request: NextRequest) {
     // All portal-enabled clinics for this phone — powers the header switcher
     // without trusting anything in the browser.
     db.from('patients')
-      .select('id, name, dentist:dentists(id, name, clinic_name)')
+      .select('id, name, dentist:dentists(id, name, clinic_name, city)')
       .ilike('phone', `%${claims.phone}`)
       .eq('portal_access', true),
+    // Branch hours, so a reschedule at branch B uses branch B's timings.
+    db.from('clinic_locations')
+      .select('id, working_hours')
+      .eq('dentist_id', dentistId),
   ])
+  if (plansRes.error) console.error('[patient/data] treatment_plans failed', plansRes.error.message)
+
+  const plans = (plansRes.data || []).map((p: any) => ({
+    ...p,
+    treatment_plan_steps: [...(p.treatment_plan_steps || [])].sort((a: any, b: any) => (a.step_number || 0) - (b.step_number || 0)),
+  }))
 
   const d = (patient as any).dentist || {}
   const clinic = {
@@ -95,6 +114,9 @@ export async function POST(request: NextRequest) {
     degree: d.degree ?? null,
     mci_number: d.mci_number ?? null,
     area: d.areas?.name ?? null,
+    slug: d.slug ?? null,
+    working_hours: d.working_hours ?? null,
+    location_hours: Object.fromEntries((locations || []).map((l: any) => [l.id, l.working_hours ?? null])),
   }
 
   const clinics = (allMine || []).map((r: any) => ({
@@ -103,6 +125,7 @@ export async function POST(request: NextRequest) {
     dentist_id: r.dentist?.id ?? null,
     dentist_name: r.dentist?.name ?? null,
     clinic_name: r.dentist?.clinic_name ?? null,
+    city: r.dentist?.city ?? null,
   }))
 
   return NextResponse.json({
@@ -110,6 +133,8 @@ export async function POST(request: NextRequest) {
     clinic,
     clinics,
     appointments: appts || [],
+    past_appointments: pastAppts || [],
+    treatment_plans: plans,
     prescriptions: rx || [],
     invoices: inv || [],
     visits: visits || [],
