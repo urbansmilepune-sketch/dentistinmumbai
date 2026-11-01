@@ -1,6 +1,6 @@
 'use client'
 
-// "Waiting now": patients who checked in on the clinic tablet today, plus
+// "Waiting now": patients who checked in today (patient self check-in form), plus
 // today's booked appointments. One tap opens the one-screen visit.
 
 import { useEffect, useState } from 'react'
@@ -8,7 +8,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentDentist } from '@/lib/currentDentist'
-import { NAVY, TEAL, TEAL_DARK, WHATSAPP } from '@/app/dentist/[slug]/profileTheme'
+import { NAVY, TEAL_DARK, WHATSAPP } from '@/app/dentist/[slug]/profileTheme'
 import { complaintSummary, istTodayIso } from '@/lib/visitFlow'
 
 const LINE = '#E2E8F0'
@@ -85,22 +85,21 @@ export default function WaitingPage() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, margin: 0 }}>Today&apos;s visits</h1>
         <div style={{ display: 'flex', gap: 8 }}>
-          <Link href="/for-dentists/dashboard/tablet" style={{ background: TEAL, color: '#fff', borderRadius: 12, padding: '10px 14px', fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>Open tablet check-in</Link>
           <Link href="/for-dentists/dashboard/patients" style={{ border: `1px solid ${LINE}`, background: '#fff', color: NAVY, borderRadius: 12, padding: '10px 14px', fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>Find patient</Link>
         </div>
       </div>
-      <p style={{ margin: 0, color: MUTED, fontSize: 14 }}>Hand the tablet to the patient at reception. They show up here when they finish. Tap a name to start the visit.</p>
+      <p style={{ margin: 0, color: MUTED, fontSize: 14 }}>Patients waiting and booked for today. Tap a name to start the visit.</p>
 
       {setupMissing && (
         <div role="alert" style={{ background: '#FFFBEB', border: '1px solid #FCD34D', color: '#92400E', borderRadius: 12, padding: '10px 14px', fontSize: 14 }}>
-          The tablet check-in list is not switched on yet. The DentistIn team needs to run one database update. Visits from the patient file still work.
+          The check-in list is not switched on yet. The DentistIn team needs to run one database update. Visits from the patient file still work.
         </div>
       )}
 
       {loading ? <div style={{ color: MUTED }}>Loading…</div> : (
         <>
           {section(`Waiting now · ${waiting.length}`, waiting.length === 0
-            ? <div style={{ padding: 16, color: MUTED, fontSize: 14 }}>Nobody waiting. New tablet check-ins appear here.</div>
+            ? <div style={{ padding: 16, color: MUTED, fontSize: 14 }}>Nobody waiting right now.</div>
             : waiting.map(i => row(`/for-dentists/dashboard/visit/${i.patient_id}`, i.patients?.name || 'Patient',
               [complaintSummary(i.complaint), i.patients?.allergies ? `Allergic: ${i.patients.allergies}` : ''].filter(Boolean).join(' · ') || 'Checked in', WHATSAPP, timeOf(i.created_at))))}
           {booked.length > 0 && section(`Booked today · ${booked.length}`, booked.map(a => row(a.patient_id ? `/for-dentists/dashboard/visit/${a.patient_id}` : null,
