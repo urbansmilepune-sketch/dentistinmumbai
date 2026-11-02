@@ -144,6 +144,8 @@ export async function POST(request: NextRequest) {
         name,
         clinic_name,
         phone,
+        // WhatsApp defaults to the phone; the dentist can change it in the profile editor.
+        whatsapp: phone,
         qualifications: '',
         mci_number: '',
         area_id,

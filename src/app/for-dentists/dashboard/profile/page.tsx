@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation'
 import { getCityBySlug } from '@/config/cities'
 import { buildMapsIframe, classifyMapsInput, extractMapsIframeSrc, hasValidEmbedPb } from '@/lib/maps'
 import PhotoCropModal from './PhotoCropModal'
+import WhatsAppNumberPrompt, { resolveWhatsApp, sameIndianNumber } from '@/components/WhatsAppNumberPrompt'
 
 const HOURS_DAYS: { key: string; label: string }[] = [
   { key: 'mon', label: 'Monday' },
@@ -83,6 +84,8 @@ export default function EditProfilePage() {
   // hidden). The phone-edit-resets-verified UX is handled below in the
   // input onChange.
   const [phoneVerified, setPhoneVerified] = useState(false)
+  // true = WhatsApp is the same as the phone (default when WhatsApp is blank).
+  const [waSame, setWaSame] = useState(true)
   const [otpStage, setOtpStage] = useState<'idle' | 'sent'>('idle')
   const [otpInput, setOtpInput] = useState('')
   const [otpBusy, setOtpBusy] = useState(false)
@@ -107,6 +110,8 @@ export default function EditProfilePage() {
         setSiteBase(`https://${getCityBySlug((dentist as any).city).domain}`)
         setWorkingHours((dentist as any).working_hours || null)
         setPhoneVerified(!!(dentist as any).phone_verified)
+        // Blank WhatsApp used to show an empty box; treat it as "same as phone".
+        setWaSame(!dentist.whatsapp?.trim() || sameIndianNumber(dentist.whatsapp, dentist.phone))
         setProfilePhoto((dentist as any).profile_photo || null)
         setClinicLogo((dentist as any).clinic_logo_url || null)
         setSignature((dentist as any).signature_url || null)
@@ -480,7 +485,7 @@ export default function EditProfilePage() {
         gender: form.gender || null,
         bio: form.bio,
         phone: form.phone,
-        whatsapp: form.whatsapp,
+        whatsapp: resolveWhatsApp(form.phone, waSame, form.whatsapp),
         website: form.website,
         address: form.address,
         consultation_fee: form.consultation_fee ? parseInt(form.consultation_fee) : null,
@@ -520,7 +525,7 @@ export default function EditProfilePage() {
     (parseInt(form.experience_years) || 0) > 0,
     !!(form.bio && form.bio.length > 20),
     !!form.phone?.trim(),
-    !!form.whatsapp?.trim(),
+    !!resolveWhatsApp(form.phone, waSame, form.whatsapp),
     !!form.address?.trim(),
     (parseInt(form.consultation_fee) || 0) > 0,
     !!form.mci_number?.trim(),
@@ -710,9 +715,28 @@ export default function EditProfilePage() {
             </div>
             <div>
               <label style={labelStyle}>WhatsApp Number</label>
-              <input value={form.whatsapp} onChange={e => setForm(f => ({ ...f, whatsapp: e.target.value }))} placeholder="10-digit WhatsApp number" type="tel" style={inputStyle} />
-              <div style={{ fontSize: 11, color: 'var(--green)', marginTop: 4 }}>💬 Patients will message you directly</div>
+              <input
+                value={waSame ? form.phone : form.whatsapp}
+                onChange={e => setForm(f => ({ ...f, whatsapp: e.target.value }))}
+                readOnly={waSame}
+                placeholder="10-digit WhatsApp number"
+                type="tel"
+                style={waSame ? { ...inputStyle, background: '#F8FAFC', color: 'var(--muted)' } : inputStyle}
+              />
+              <div style={{ fontSize: 11, color: 'var(--green)', marginTop: 4 }}>
+                💬 {waSame ? 'Same as your phone number' : 'Patients will message you directly'}
+              </div>
             </div>
+          </div>
+          <div style={{ marginTop: -6 }}>
+            <WhatsAppNumberPrompt
+              phone={form.phone}
+              same={waSame}
+              whatsapp={form.whatsapp}
+              onChange={n => { setWaSame(n.same); setForm(f => ({ ...f, whatsapp: n.whatsapp })) }}
+              inputStyle={inputStyle}
+              showInput={false}
+            />
           </div>
           <div>
             <label style={labelStyle}>Website (optional)</label>
