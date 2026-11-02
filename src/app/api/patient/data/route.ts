@@ -1,5 +1,5 @@
 // POST /api/patient/data — the patient portal's single read endpoint. Given a
-// valid 24h portal token (Authorization: Bearer …) and a patient_id, it
+// valid portal session (httpOnly cookie, or a legacy Bearer token) and a patient_id, it
 // returns that clinic's records: patient + clinic profile (with working hours
 // for the reschedule screen), upcoming and past appointments, treatment plans,
 // prescriptions, invoices and past visits.
@@ -11,7 +11,7 @@
 // revokes access.
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { verifyPatientToken, phoneTail10, bearerFromRequest } from '@/lib/patientPortal'
+import { verifyPatientToken, phoneTail10, patientTokenFromRequest, setPatientSessionCookie } from '@/lib/patientPortal'
 import { nowInIndia } from '@/lib/clinicSlots'
 
 function admin() {
@@ -22,7 +22,7 @@ function admin() {
 }
 
 export async function POST(request: NextRequest) {
-  const token = bearerFromRequest(request)
+  const token = patientTokenFromRequest(request)
   if (!token) return NextResponse.json({ error: 'Not signed in' }, { status: 401 })
   const claims = await verifyPatientToken(token)
   if (!claims) return NextResponse.json({ error: 'Session expired — please log in again.' }, { status: 401 })
@@ -128,7 +128,7 @@ export async function POST(request: NextRequest) {
     city: r.dentist?.city ?? null,
   }))
 
-  return NextResponse.json({
+  const res = NextResponse.json({
     patient: { id: (patient as any).id, name: (patient as any).name, age: (patient as any).age, gender: (patient as any).gender },
     clinic,
     clinics,
@@ -139,4 +139,7 @@ export async function POST(request: NextRequest) {
     invoices: inv || [],
     visits: visits || [],
   })
+  // Using the app keeps the login alive for another 7 days.
+  await setPatientSessionCookie(res, claims.phone)
+  return res
 }
