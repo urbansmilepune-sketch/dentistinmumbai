@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { isNationalHost } from '@/config/cities'
+import { REMEMBER_COOKIE, rememberCookieOptions, issueRememberToken } from '@/lib/auth/rememberMe'
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
@@ -62,7 +63,13 @@ export async function GET(request: NextRequest) {
     .eq('email', userEmail)
     .maybeSingle()
   if (dentistRow) {
-    return NextResponse.redirect(`${origin}${dentistLanding}`)
+    // 30-day "remember me", same as the email-code and password logins. Google
+    // sign-in used to skip this, so Google dentists were logged out as soon as
+    // their Supabase session lapsed.
+    const response = NextResponse.redirect(`${origin}${dentistLanding}`)
+    const cookieValue = await issueRememberToken(admin, dentistRow.id)
+    if (cookieValue) response.cookies.set(REMEMBER_COOKIE, cookieValue, rememberCookieOptions())
+    return response
   }
 
   // No dentists row → could be a staff invite acceptance. Look up the

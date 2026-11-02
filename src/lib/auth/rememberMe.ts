@@ -7,13 +7,12 @@
 //
 // Security model:
 //   - httpOnly + Secure cookie → not readable by JS, so XSS can't steal it.
-//   - Cookie value is "<seriesId>.<validator>". seriesId is the DB row id
-//     (stable across rotations); validator is a 256-bit CSPRNG secret. Only the
-//     SHA-256 of the validator is stored, so a DB read can't reconstruct a
-//     usable cookie.
-//   - Rotation + reuse detection: every successful use rotates the validator.
-//     Presenting a stale validator for a known series means the old cookie was
-//     replayed (theft) → we revoke EVERY token for that dentist.
+//   - Cookie value is "<seriesId>.<validator>". seriesId is the DB row id;
+//     validator is a 256-bit CSPRNG secret. Only the SHA-256 of the validator
+//     is stored, so a DB read can't reconstruct a usable cookie.
+//   - 30-day sliding expiry: each silent re-login extends the token (and the
+//     cookie) by another 30 days. Not used for 30 days → back to /login.
+//   - Logout revokes the token row, so a copied cookie stops working too.
 //   - Table is service-role only (RLS on, no policies) — never touched by the
 //     anon/user clients.
 
@@ -61,7 +60,11 @@ export async function issueRememberToken(
     .insert({ dentist_id: dentistId, token_hash: sha256(validator), expires_at })
     .select('id')
     .single()
-  if (error || !data) return null
+  if (error || !data) {
+    // Loud on purpose: if this fails the dentist silently loses 30-day login.
+    console.error('[rememberMe] could not issue token', { message: error?.message })
+    return null
+  }
   return `${data.id}.${validator}`
 }
 
@@ -69,10 +72,18 @@ type ConsumeResult =
   | { ok: true; email: string; cookieValue: string }
   | { ok: false }
 
-// Validates a remember cookie and, on success, rotates the validator and returns
-// the dentist's email plus the fresh cookie value. Detects replay of a stale
-// validator (theft) and revokes the whole family. Returns { ok: false } for any
-// invalid / expired / theft case — the caller should clear the cookie.
+// Validates a remember cookie and, on success, slides its expiry forward another
+// 30 days and returns the dentist's email plus the cookie value to re-set.
+// Returns { ok: false } for any invalid / expired case — the caller should
+// clear the cookie.
+//
+// The validator is NOT rotated on use. It used to be, with "a stale validator
+// means theft → revoke every token for this dentist". In practice the stale
+// case was almost always innocent: two requests racing through re-auth at once
+// (two tabs, the installed app plus a browser tab, a double tap, or a response
+// the phone dropped while switching networks). The loser looked like a thief,
+// so every device got logged out long before 30 days. The cookie stays httpOnly
+// + Secure and only its hash is stored, and logout still revokes it.
 export async function consumeRememberToken(
   admin: SupabaseClient,
   cookieValue: string,
@@ -83,11 +94,15 @@ export async function consumeRememberToken(
   const validator = cookieValue.slice(dot + 1)
   if (!validator || !UUID_RE.test(seriesId)) return { ok: false }
 
-  const { data: row } = await admin
+  const { data: row, error: readErr } = await admin
     .from('dentist_remember_tokens')
     .select('id, dentist_id, token_hash, expires_at')
     .eq('id', seriesId)
     .maybeSingle()
+  if (readErr) {
+    console.error('[rememberMe] token lookup failed', { message: readErr.message })
+    return { ok: false }
+  }
   if (!row) return { ok: false }
 
   // Expired — clean up and reject.
@@ -96,13 +111,9 @@ export async function consumeRememberToken(
     return { ok: false }
   }
 
-  // Theft: the series exists but the validator doesn't match the stored hash, so
-  // an already-rotated (old) cookie is being replayed. Revoke every token for
-  // this dentist and reject.
-  if (sha256(validator) !== row.token_hash) {
-    await admin.from('dentist_remember_tokens').delete().eq('dentist_id', row.dentist_id)
-    return { ok: false }
-  }
+  // Wrong secret for this series: reject, but leave the dentist's other
+  // devices alone.
+  if (sha256(validator) !== row.token_hash) return { ok: false }
 
   const { data: dentist } = await admin
     .from('dentists')
@@ -114,16 +125,13 @@ export async function consumeRememberToken(
     return { ok: false }
   }
 
-  // Rotate: new validator, same series id and same absolute expiry (so the
-  // 30-day cap can't be extended indefinitely by using it).
-  const nextValidator = newValidator()
-  const { error: rotateErr } = await admin
-    .from('dentist_remember_tokens')
-    .update({ token_hash: sha256(nextValidator) })
-    .eq('id', row.id)
-  if (rotateErr) return { ok: false }
+  // Sliding expiry: every silent re-login pushes the cap out to 30 days from
+  // now, so a dentist who opens the app at least once a month stays signed in.
+  // Best-effort — a failed update just means the old expiry still applies.
+  const expires_at = new Date(Date.now() + REMEMBER_MAX_AGE * 1000).toISOString()
+  await admin.from('dentist_remember_tokens').update({ expires_at }).eq('id', row.id)
 
-  return { ok: true, email: dentist.email, cookieValue: `${row.id}.${nextValidator}` }
+  return { ok: true, email: dentist.email, cookieValue }
 }
 
 // Revokes a single series — used on explicit logout. Best-effort.
