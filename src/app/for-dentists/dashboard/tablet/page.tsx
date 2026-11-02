@@ -130,6 +130,7 @@ export default function TabletCheckInPage() {
     setError(null)
     const digits = phone.replace(/\D/g, '').slice(-10)
     if (digits.length !== 10) { setError(t('need_phone')); return }
+    if (!dentistId) { setError('Still loading the clinic. Please wait a second and tap again.'); return }
     const supabase = createClient()
     const { data } = await supabase
       .from('patients')
@@ -163,6 +164,8 @@ export default function TabletCheckInPage() {
   async function save(keepHealth: boolean) {
     setError(null)
     if (!consent && !existing) { setError(t('need_consent')); return }
+    if (saving) return
+    if (!dentistId) { setError('Still loading the clinic. Please wait a second and tap again.'); return }
     setSaving(true)
     try {
       const supabase = createClient()
@@ -192,6 +195,9 @@ export default function TabletCheckInPage() {
         }).select('id').single()
         if (insErr) throw new Error(insErr.message)
         patientId = created.id
+        // Remember the new row so a retry (e.g. after the waiting-list step
+        // fails) updates this patient instead of creating a duplicate.
+        setExisting({ id: created.id, name: name.trim(), age: age ? parseInt(age, 10) || null : null, gender: gender || null, allergies: allergyText, medical_history: historyText, current_medications: medsText })
       }
       const { error: inErr } = await supabase.from('patient_intakes').insert({
         dentist_id: dentistId,

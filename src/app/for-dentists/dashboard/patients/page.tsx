@@ -127,13 +127,17 @@ export default function PatientsPage() {
 
   async function handleAddPatient() {
     setSaveError(null)
-    if (!form.name || !form.phone) { setSaveError('Name and phone are required'); return }
+    if (!form.name.trim() || !form.phone.trim()) { setSaveError('Name and phone are required'); return }
+    if (saving) return
+    // The modal can open (?new=1) before the clinic has loaded; inserting
+    // with an empty dentist_id fails with a confusing uuid error.
+    if (!dentistId) { setSaveError('Still loading your clinic. Please wait a second and tap Add Patient again.'); return }
     setSaving(true)
     const supabase = createClient()
     const { data, error } = await supabase.from('patients').insert({
       dentist_id: dentistId,
-      name: form.name, phone: form.phone, email: form.email || null,
-      age: form.age ? parseInt(form.age) : null, gender: form.gender || null,
+      name: form.name.trim(), phone: form.phone.trim(), email: form.email.trim() || null,
+      age: form.age ? parseInt(form.age, 10) || null : null, gender: form.gender || null,
       // date_of_birth feeds the birthday-wishes cron — required for the
       // automatic greeting to fire. age stays alongside because some
       // dentists only know the age, not the exact DOB.
