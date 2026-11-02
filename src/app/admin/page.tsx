@@ -179,7 +179,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     // headroom and stays well under PostgREST's max-rows ceiling (≥2000 here;
     // see healthDentists below). Both tabs filter client-side, so a proper
     // pagination UI only becomes worthwhile if either list outgrows 500.
-    applyCity(adminClient.from('dentists').select('id, slug, name, clinic_name, email, qualifications, phone, tier, is_verified, is_active, city, areas(name, slug)').order('created_at', { ascending: false }).limit(500)),
+    applyCity(adminClient.from('dentists').select('id, slug, name, clinic_name, email, qualifications, mci_number, phone, tier, is_verified, is_active, city, areas(name, slug)').order('created_at', { ascending: false }).limit(500)),
     applyCity(adminClient.from('dentist_registrations').select('*').order('created_at', { ascending: false }).limit(500)),
     applyApptCity(adminClient.from('appointments').select('*, treatments(name)').order('created_at', { ascending: false }).limit(50)),
     applyCity(adminClient.from('enquiries').select('*, dentists!inner(name, city)').order('created_at', { ascending: false }).limit(50)),
@@ -773,11 +773,28 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     dentists: a.dentist_id ? dentistById.get(a.dentist_id) ?? null : null,
   }))
 
+  // The registrations audit row is written once at signup. Most signup forms
+  // don't ask for the State Dental Council number, so the dentist adds it
+  // later in their profile (dentists.mci_number) and the audit row stays
+  // blank. Show the live profile value when the audit row has none.
+  const dentistByEmail = new Map<string, { mci_number?: string | null; qualifications?: string | null }>()
+  for (const d of (dentists || []) as { email?: string | null; mci_number?: string | null; qualifications?: string | null }[]) {
+    if (d.email) dentistByEmail.set(d.email.toLowerCase(), d)
+  }
+  const registrationsForClient = (registrations || []).map((r: any) => {
+    const live = r.email ? dentistByEmail.get(String(r.email).toLowerCase()) : undefined
+    return {
+      ...r,
+      mci_registration: r.mci_registration || live?.mci_number || '',
+      qualification: r.qualification || live?.qualifications || '',
+    }
+  })
+
   return (
     <AdminPageClient
       stats={stats}
       dentists={dentists || []}
-      registrations={registrations || []}
+      registrations={registrationsForClient}
       appointments={appointmentsForClient}
       enquiries={enquiries || []}
       reviews={reviews || []}

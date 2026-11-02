@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import WhatsAppNumberPrompt, { resolveWhatsApp } from '@/components/WhatsAppNumberPrompt'
 
 interface RegistrationModalProps {
   isOpen: boolean
@@ -29,8 +30,10 @@ function generateRef(): string {
 export default function RegistrationModal({ isOpen, onClose, foundingNumber, areas, cityName = 'Mumbai', citySlug = 'mumbai' }: RegistrationModalProps) {
   const [form, setForm] = useState({
     name: '', phone: '', email: '', clinic_name: '',
-    area: '', qualification: '', mci_registration: '',
+    area: '', qualification: '', mci_registration: '', password: '',
   })
+  const [waSame, setWaSame] = useState(true)
+  const [whatsapp, setWhatsapp] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess] = useState(false)
   const [refNo, setRefNo] = useState('')
@@ -44,12 +47,18 @@ export default function RegistrationModal({ isOpen, onClose, foundingNumber, are
   }
 
   async function handleSubmit() {
-    const required = ['name', 'phone', 'email', 'clinic_name', 'area', 'qualification', 'mci_registration']
+    const required = ['name', 'phone', 'email', 'clinic_name', 'area', 'qualification', 'mci_registration', 'password']
     const missing = required.filter(k => !form[k as keyof typeof form])
     if (missing.length > 0) { setError('Please fill all required fields.'); return }
 
     if (!/^\d{10}$/.test(form.phone.replace(/\s/g, ''))) {
       setError('Please enter a valid 10-digit phone number.'); return
+    }
+    if (!waSame && !/^\d{10}$/.test(whatsapp.replace(/\s/g, ''))) {
+      setError('Please enter a valid 10-digit WhatsApp number, or tap "Yes, use this number".'); return
+    }
+    if (form.password.length < 8) {
+      setError('Password must be at least 8 characters.'); return
     }
 
     setSubmitting(true)
@@ -57,9 +66,20 @@ export default function RegistrationModal({ isOpen, onClose, foundingNumber, are
       const res = await fetch('/api/registrations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, founding_number: spotNumber, city: citySlug }),
+        body: JSON.stringify({
+          ...form,
+          whatsapp: resolveWhatsApp(form.phone, waSame, whatsapp),
+          founding_number: spotNumber,
+          city: citySlug,
+        }),
       })
       const data = await res.json()
+      // The API signs the dentist in and returns the dashboard URL — go there
+      // directly, same as the full /for-dentists/register page.
+      if (data.success && data.redirect) {
+        window.location.href = data.redirect
+        return
+      }
       if (data.ref_no) {
         setRefNo(data.ref_no)
         setSuccess(true)
@@ -73,7 +93,8 @@ export default function RegistrationModal({ isOpen, onClose, foundingNumber, are
   }
 
   function handleClose() {
-    setForm({ name: '', phone: '', email: '', clinic_name: '', area: '', qualification: '', mci_registration: '' })
+    setForm({ name: '', phone: '', email: '', clinic_name: '', area: '', qualification: '', mci_registration: '', password: '' })
+    setWaSame(true); setWhatsapp('')
     setSuccess(false); setRefNo(''); setError('')
     onClose()
   }
@@ -132,6 +153,13 @@ export default function RegistrationModal({ isOpen, onClose, foundingNumber, are
                   <input value={form.phone} onChange={e => update('phone', e.target.value)} placeholder="10-digit number" type="tel" style={inputStyle} />
                 </div>
               </div>
+              <WhatsAppNumberPrompt
+                phone={form.phone}
+                same={waSame}
+                whatsapp={whatsapp}
+                onChange={n => { setWaSame(n.same); setWhatsapp(n.whatsapp); setError('') }}
+                inputStyle={inputStyle}
+              />
 
               <div>
                 <label style={labelStyle}>Email Address *</label>
@@ -162,6 +190,12 @@ export default function RegistrationModal({ isOpen, onClose, foundingNumber, are
               <div>
                 <label style={labelStyle}>State Dental Council Registration No. *</label>
                 <input value={form.mci_registration} onChange={e => update('mci_registration', e.target.value)} placeholder="Your registration number" style={inputStyle} />
+              </div>
+
+              <div>
+                <label style={labelStyle}>Set Password *</label>
+                <input value={form.password} onChange={e => update('password', e.target.value)} placeholder="Min 8 characters" type="password" autoComplete="new-password" style={inputStyle} />
+                <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>You&apos;ll use this to log in to your dashboard.</p>
               </div>
 
               {error && (

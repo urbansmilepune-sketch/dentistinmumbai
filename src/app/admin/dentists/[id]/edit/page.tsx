@@ -31,7 +31,7 @@ export default async function AdminDentistEditPage({ params }: { params: Promise
 
   const { data: dentist } = await adminClient
     .from('dentists')
-    .select('id, slug, name, clinic_name, email, is_active, tier, bio, qualifications, specialties, registration_number, experience_years, gender, area_id, phone, whatsapp, address, maps_embed, lat, lng, profile_photo, cover_photo, website, linkedin_url, working_hours, consultation_fee, languages, city')
+    .select('id, slug, name, clinic_name, email, is_active, tier, bio, qualifications, specialties, mci_number, experience_years, gender, area_id, phone, whatsapp, address, maps_embed, lat, lng, profile_photo, cover_photo, website, linkedin_url, working_hours, consultation_fee, languages, city')
     .eq('id', id)
     .maybeSingle()
 
