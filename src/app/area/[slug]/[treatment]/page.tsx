@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { getCityBySlug } from '@/config/cities'
@@ -132,11 +132,16 @@ export default async function AreaTreatmentPage({ params, searchParams }: { para
   if (!area || !treatment) notFound()
 
   // Density gate: fewer than 3 complete-profile dentists offering this
-  // treatment in this area → 404. These thin matrix pages are exactly what GSC
-  // crawls and rejects; the sitemap drops them under the same rule. A fee on
-  // the treatment is not required — see getAreaTreatmentCompleteCounts. Gate
-  // runs before the heavy dentist query below.
-  if ((atCompleteCounts[`${area.id}:${treatment.id}`] ?? 0) < 3) notFound()
+  // treatment in this area → send the visitor to the area page instead. This
+  // used to 404, but the count moves as profiles fill or lapse, so pages
+  // Google had already found kept flipping to "Not found" (40 of the 61 404s
+  // in GSC, Nov 2026). A temporary (307) redirect keeps the URL alive: the
+  // patient still lands on that area's dentists, and the page comes back by
+  // itself once 3 complete dentists offer the treatment. The sitemap still
+  // omits it under the same rule. A fee on the treatment is not required —
+  // see getAreaTreatmentCompleteCounts. Gate runs before the heavy dentist
+  // query below.
+  if ((atCompleteCounts[`${area.id}:${treatment.id}`] ?? 0) < 3) redirect(`/area/${area.slug}`)
 
   // Dentists in this area AND offering this treatment. dentist_treatments!inner
   // + the treatment_id filter turns the embed into a join filter, so only

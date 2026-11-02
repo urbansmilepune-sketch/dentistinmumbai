@@ -88,6 +88,15 @@ const nextConfig: NextConfig = {
       { source: '/blog/dental-implants-pune-cost-types-success', destination: '/treatment/dental-implants', permanent: true },
       { source: '/blog/root-canal-treatment-pune-cost-procedure', destination: '/treatment/root-canal', permanent: true },
       { source: '/privacy-policy', destination: '/privacy', permanent: true },
+      // More dead URLs from the GSC "Not found (404)" export, Nov 2026. The
+      // privacy page covers cookies, so the old cookie/consent policy URLs
+      // land there.
+      { source: '/blog/teeth-whitening-pune-methods-costs', destination: '/treatment/teeth-whitening', permanent: true },
+      { source: '/cookie-policy', destination: '/privacy', permanent: true },
+      { source: '/consent-policy', destination: '/privacy', permanent: true },
+      { source: '/forgot-password', destination: '/for-dentists/forgot-password', permanent: true },
+      { source: '/dentist/register', destination: '/for-dentists/register', permanent: true },
+      { source: '/area', destination: '/dentists', permanent: true },
     ]
   },
 };
