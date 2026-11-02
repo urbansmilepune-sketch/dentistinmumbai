@@ -29,8 +29,11 @@ export async function generateMetadata(): Promise<Metadata> {
   const city = getCityBySlug(h.get('x-city-slug'))
   const C = city.cityName
   return {
-    title: `Root Canal Treatment (RCT) Cost in ${C} — Real Fees from Verified Dentists (2026)`,
-    description: `Root canal treatment (RCT) cost in ${C} ranges from ₹3,000 to ₹8,000 per tooth. Compare real fees from verified dentists across ${C}. Single-sitting RCT available.`,
+    // Price first: Google cuts titles at about 60 characters, and the old
+    // title hid the price behind that cut. GSC showed this page on page 1
+    // for "root canal treatment cost" with a 0.4% click rate (Nov 2026).
+    title: `Root Canal Cost in ${C}: ₹3,000–₹8,000 per Tooth (2026)`,
+    description: `RCT in ${C} costs ₹3,000–₹8,000 per tooth (front teeth ₹3,000–₹5,000, molars ₹5,000–₹8,000), plus ₹3,000–₹15,000 for a crown. Compare real fees from verified dentists and book.`,
     alternates: { canonical: `${cityOrigin(city)}/treatment/${SLUG}` },
     robots: { index: true, follow: true },
   }
