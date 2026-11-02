@@ -11,7 +11,7 @@
 // 'pending' so the clinic confirms the new time. The clinic gets an email.
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { verifyPatientToken, phoneTail10, bearerFromRequest } from '@/lib/patientPortal'
+import { verifyPatientToken, phoneTail10, patientTokenFromRequest, setPatientSessionCookie } from '@/lib/patientPortal'
 import { guardRequest } from '@/lib/apiGuards'
 import { addDaysIso, freeSlots, normaliseSlot, nowInIndia, RESCHEDULE_DAYS_AHEAD, slotLabel } from '@/lib/clinicSlots'
 import { sendPatientChangedAppointmentToDentist } from '@/lib/email'
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
   })
   if (limited) return limited
 
-  const token = bearerFromRequest(request)
+  const token = patientTokenFromRequest(request)
   if (!token) return NextResponse.json({ error: 'Not signed in' }, { status: 401 })
   const claims = await verifyPatientToken(token)
   if (!claims) return NextResponse.json({ error: 'Session expired — please log in again.' }, { status: 401 })
@@ -102,7 +102,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Could not cancel. Please call the clinic.' }, { status: 500 })
     }
     await notify({})
-    return NextResponse.json({ success: true })
+    const res = NextResponse.json({ success: true })
+    await setPatientSessionCookie(res, claims.phone)
+    return res
   }
 
   // Reschedule: re-check the new slot against the clinic's hours and bookings.
@@ -149,5 +151,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Could not move the appointment. Please call the clinic.' }, { status: 500 })
   }
   await notify({ new_date: newDate, new_time: newSlot })
-  return NextResponse.json({ success: true, appt_date: newDate, time_slot: newSlot })
+  const res = NextResponse.json({ success: true, appt_date: newDate, time_slot: newSlot })
+  await setPatientSessionCookie(res, claims.phone)
+  return res
 }

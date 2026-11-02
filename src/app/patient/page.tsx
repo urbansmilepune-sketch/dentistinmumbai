@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { getCityBySlug } from '@/config/cities'
-import { savePortalSession, loadPortalSession, type PortalClinic } from '@/lib/patientSession'
+import { savePortalSession, loadPortalSession, takeIdleLogoutNotice, type PortalClinic } from '@/lib/patientSession'
 
 // Patient app login. Same navy/teal as the dentist app.
 const NAVY = '#0F172A'
@@ -19,14 +19,17 @@ export default function PatientLoginPage() {
   const [phone, setPhone] = useState('')
   const [otp, setOtp] = useState('')
   const [clinics, setClinics] = useState<PortalClinic[]>([])
-  const [token, setToken] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
 
-  // Already logged in? Skip straight to the dashboard.
+  // Already logged in? Skip straight to the dashboard. If we just logged
+  // them out for being idle, say so.
   useEffect(() => {
-    if (loadPortalSession()) router.replace('/patient/dashboard')
+    if (loadPortalSession()) { router.replace('/patient/dashboard'); return }
+    if (!takeIdleLogoutNotice()) return
+    const t = window.setTimeout(() => setInfo('You were logged out after 7 days without using the app. Log in again with your mobile number.'), 0)
+    return () => window.clearTimeout(t)
   }, [router])
 
   const phoneDigits = phone.replace(/\D/g, '').slice(-10)
@@ -64,10 +67,9 @@ export default function PatientLoginPage() {
       if (!res.ok) { setError(data.error || 'Could not verify the code.'); return }
       const list: PortalClinic[] = data.clinics || []
       if (list.length === 0) { setError('No clinic has enabled portal access for this number yet.'); return }
-      setToken(data.token)
       setClinics(list)
       if (list.length === 1) {
-        finish(data.token, list, list[0].patient_id)
+        finish(list, list[0].patient_id)
       } else {
         setStep('clinic')
       }
@@ -78,8 +80,8 @@ export default function PatientLoginPage() {
     }
   }
 
-  function finish(tok: string, list: PortalClinic[], patientId: string) {
-    savePortalSession({ token: tok, phone: phoneDigits, clinics: list, selectedPatientId: patientId })
+  function finish(list: PortalClinic[], patientId: string) {
+    savePortalSession({ phone: phoneDigits, clinics: list, selectedPatientId: patientId })
     router.replace('/patient/dashboard')
   }
 
@@ -163,7 +165,7 @@ export default function PatientLoginPage() {
               <label style={{ fontSize: 15, fontWeight: 700, color: '#0F172A', display: 'block', marginBottom: 12 }}>Pick a clinic (you can switch later)</label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {clinics.map(c => (
-                  <button key={c.patient_id} onClick={() => finish(token, clinics, c.patient_id)}
+                  <button key={c.patient_id} onClick={() => finish(clinics, c.patient_id)}
                     style={{ textAlign: 'left', padding: '16px', borderRadius: 12, border: '2px solid #CBD5E1', background: '#fff', cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
                     <div style={{ fontWeight: 700, fontSize: 16, color: '#0F172A' }}>{c.clinic_name || c.dentist_name || 'Clinic'}</div>
                     <div style={{ fontSize: 13, color: '#64748B', marginTop: 2 }}>{[c.dentist_name ? `Dr. ${c.dentist_name.replace(/^dr\.?\s*/i, '')}` : '', c.city ? getCityBySlug(c.city).cityName : ''].filter(Boolean).join(' · ')}</div>
@@ -175,7 +177,7 @@ export default function PatientLoginPage() {
         </div>
 
         <p style={{ textAlign: 'center', fontSize: 13, color: '#94A3B8', marginTop: 20, lineHeight: 1.6 }}>
-          🔒 Your records are private. Use the mobile number you gave your clinic; we send a one-time code to it.
+          🔒 Your records are private. Use the mobile number you gave your clinic; we send a one-time code to it. You stay logged in on this phone until you log out or don&apos;t use the app for 7 days.
         </p>
       </div>
     </div>

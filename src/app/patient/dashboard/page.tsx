@@ -7,7 +7,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { loadPortalSession, setSelectedClinic, clearPortalSession, type PortalClinic } from '@/lib/patientSession'
+import { loadPortalSession, setSelectedClinic, clearPortalSession, touchPortalSession, markPortalRefreshed, portalHeaders, type PortalClinic } from '@/lib/patientSession'
 import { downloadInvoicePdf } from '@/lib/invoicePdf'
 import { addDaysIso, freeSlots, nowInIndia, RESCHEDULE_DAYS_AHEAD, slotLabel, slotsForDate, type WorkingHours } from '@/lib/clinicSlots'
 import InstallAppBanner from '@/components/InstallAppBanner'
@@ -219,18 +219,19 @@ export default function PatientAppPage() {
   const [sheet, setSheet] = useState<Sheet>(null)
   const [toast, setToast] = useState<string | null>(null)
 
-  const fetchData = useCallback(async (token: string, patientId: string, quiet = false) => {
+  const fetchData = useCallback(async (patientId: string, quiet = false) => {
     if (!quiet) setLoading(true)
     setError(null)
     try {
       const res = await fetch('/api/patient/data', {
         method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        headers: portalHeaders(),
         body: JSON.stringify({ patient_id: patientId }),
       })
       const body = await res.json().catch(() => ({}))
       if (res.status === 401) { clearPortalSession(); router.replace('/patient'); return }
       if (!res.ok) { setError(body.error || 'Could not load your records.'); return }
+      markPortalRefreshed()
       setData(body)
       if (Array.isArray(body.clinics) && body.clinics.length) setClinics(body.clinics)
     } catch {
@@ -245,8 +246,27 @@ export default function PatientAppPage() {
     if (!s) { router.replace('/patient'); return }
     setClinics(s.clinics || [])
     setSelectedId(s.selectedPatientId)
-    fetchData(s.token, s.selectedPatientId)
+    fetchData(s.selectedPatientId)
   }, [router, fetchData])
+
+  // Any tap or key press counts as using the app (resets the 7-day idle
+  // timer). Coming back to the app after 7+ days idle logs out.
+  useEffect(() => {
+    const onActivity = () => touchPortalSession()
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return
+      if (!loadPortalSession()) { router.replace('/patient'); return }
+      touchPortalSession()
+    }
+    window.addEventListener('pointerdown', onActivity, { passive: true })
+    window.addEventListener('keydown', onActivity)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      window.removeEventListener('pointerdown', onActivity)
+      window.removeEventListener('keydown', onActivity)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [router])
 
   useEffect(() => {
     if (!toast) return
@@ -257,7 +277,7 @@ export default function PatientAppPage() {
   const reload = useCallback(() => {
     const s = loadPortalSession()
     if (!s) { router.replace('/patient'); return }
-    fetchData(s.token, s.selectedPatientId, true)
+    fetchData(s.selectedPatientId, true)
   }, [fetchData, router])
 
   function switchClinic(patientId: string) {
@@ -267,7 +287,7 @@ export default function PatientAppPage() {
     setSelectedClinic(patientId)
     setSheet(null)
     setTab('home')
-    fetchData(s.token, patientId)
+    fetchData(patientId)
   }
 
   function logout() {
@@ -867,7 +887,7 @@ function RescheduleSheet({ appt, clinic, patientId, onClose, onCancel, onDone }:
     try {
       const res = await fetch('/api/patient/appointments', {
         method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${s.token}` },
+        headers: portalHeaders(),
         body: JSON.stringify({ patient_id: patientId, appointment_id: appt.id, action: 'reschedule', appt_date: date, time_slot: slot }),
       })
       const j = await res.json().catch(() => ({}))
@@ -956,7 +976,7 @@ function CancelSheet({ appt, patientId, onClose, onDone }: { appt: any; patientI
     try {
       const res = await fetch('/api/patient/appointments', {
         method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${s.token}` },
+        headers: portalHeaders(),
         body: JSON.stringify({ patient_id: patientId, appointment_id: appt.id, action: 'cancel' }),
       })
       const j = await res.json().catch(() => ({}))
