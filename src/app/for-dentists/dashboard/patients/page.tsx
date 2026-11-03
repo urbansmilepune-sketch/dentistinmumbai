@@ -5,16 +5,61 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { resolveCurrentDentist } from '@/lib/currentDentist'
-import { whatsappLink } from '@/lib/phone'
+import { TEAL, TEAL_DARK, TEAL_SOFT, NAVY } from '@/app/dentist/[slug]/profileTheme'
+import { SearchIcon, PlusIcon, ChevronIcon } from '../dashIcons'
+
+// PostgREST returns at most 1000 rows per request; walk the range so large
+// clinics still see every patient.
+async function fetchAll<T>(page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: any }>): Promise<T[]> {
+  const size = 1000
+  const out: T[] = []
+  for (let from = 0; ; from += size) {
+    const { data, error } = await page(from, from + size - 1)
+    if (error) { console.error('[patients] load failed', error.message); break }
+    out.push(...(data || []))
+    if (!data || data.length < size) break
+  }
+  return out
+}
+
+function istTodayIso(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+}
+
+function shortDate(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(`${String(iso).slice(0, 10)}T00:00:00`)
+  return isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+}
+
+function timeLabel(slot: string | null | undefined): string {
+  if (!slot) return ''
+  const [h, m] = slot.split(':').map(Number)
+  if (isNaN(h)) return slot
+  return `${((h + 11) % 12) + 1}:${String(m || 0).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`
+}
+
+function initialsOf(name: string | null | undefined): string {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '?'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+}
+
+type Filter = 'all' | 'today' | 'unpaid'
+type LastVisit = { date: string; what: string }
+type TodayInfo = { time: string; what: string }
 
 export default function PatientsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [loading, setLoading] = useState(true)
   const [dentistId, setDentistId] = useState('')
-  const [dentistName, setDentistName] = useState('')
-  const [clinicName, setClinicName] = useState('')
   const [patients, setPatients] = useState<any[]>([])
+  const [filter, setFilter] = useState<Filter>('all')
+  const [lastVisit, setLastVisit] = useState<Record<string, LastVisit>>({})
+  const [dueByPatient, setDueByPatient] = useState<Record<string, number>>({})
+  const [todayByPatient, setTodayByPatient] = useState<Record<string, TodayInfo>>({})
   const [search, setSearch] = useState('')
   const [showAdd, setShowAdd] = useState(() => searchParams.get('new') === '1')
   const [saving, setSaving] = useState(false)
@@ -31,13 +76,46 @@ export default function PatientsPage() {
         const supabase = createClient()
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) { router.push('/for-dentists/login'); return }
-        const dentist = await resolveCurrentDentist<{ id: string; name: string | null; clinic_name: string | null }>(supabase, 'id, name, clinic_name')
+        const dentist = await resolveCurrentDentist<{ id: string }>(supabase, 'id')
         if (!dentist) return
         setDentistId(dentist.id)
-        setDentistName(dentist.name || '')
-        setClinicName(dentist.clinic_name || '')
-        const { data } = await supabase.from('patients').select('*').eq('dentist_id', dentist.id).order('created_at', { ascending: false })
-        setPatients(data || [])
+        const todayIso = istTodayIso()
+        const [rows, visitRows, invoiceRows, todayRows] = await Promise.all([
+          fetchAll<any>((from, to) => supabase.from('patients').select('*').eq('dentist_id', dentist.id).order('created_at', { ascending: false }).range(from, to)),
+          fetchAll<any>((from, to) => supabase.from('visits').select('patient_id, visit_date, chief_complaint, treatment_done').eq('dentist_id', dentist.id).order('visit_date', { ascending: false }).range(from, to)),
+          fetchAll<any>((from, to) => supabase.from('invoices').select('patient_id, total').eq('dentist_id', dentist.id).in('payment_status', ['pending', 'overdue']).range(from, to)),
+          fetchAll<any>((from, to) => supabase.from('appointments').select('patient_id, patient_phone, time_slot, status, treatments(name)').eq('dentist_id', dentist.id).eq('appt_date', todayIso).order('time_slot', { ascending: true }).range(from, to)),
+        ])
+        setPatients(rows)
+
+        // Latest visit per patient (rows arrive newest first).
+        const lv: Record<string, LastVisit> = {}
+        for (const v of visitRows) {
+          if (!v.patient_id || lv[v.patient_id]) continue
+          const what = String(v.treatment_done || v.chief_complaint || '').split(/[.\n]/)[0].trim()
+          lv[v.patient_id] = { date: v.visit_date, what: what.length > 40 ? `${what.slice(0, 40)}…` : what }
+        }
+        setLastVisit(lv)
+
+        const due: Record<string, number> = {}
+        for (const inv of invoiceRows) {
+          if (!inv.patient_id) continue
+          due[inv.patient_id] = (due[inv.patient_id] || 0) + Number(inv.total || 0)
+        }
+        setDueByPatient(due)
+
+        // Today's appointments, matched by patient_id or (for walk-ins
+        // booked without one) by phone number.
+        const byPhone: Record<string, string> = {}
+        for (const p of rows) if (p.phone) byPhone[p.phone] = p.id
+        const td: Record<string, TodayInfo> = {}
+        for (const a of todayRows) {
+          if (a.status === 'cancelled') continue
+          const pid = a.patient_id || (a.patient_phone ? byPhone[a.patient_phone] : undefined)
+          if (!pid || td[pid]) continue
+          td[pid] = { time: timeLabel(a.time_slot), what: a.treatments?.name || '' }
+        }
+        setTodayByPatient(td)
       } finally {
         // Always release the spinner so RLS denial or a missing dentist row
         // doesn't strand the page on "Loading…".
@@ -49,13 +127,17 @@ export default function PatientsPage() {
 
   async function handleAddPatient() {
     setSaveError(null)
-    if (!form.name || !form.phone) { setSaveError('Name and phone are required'); return }
+    if (!form.name.trim() || !form.phone.trim()) { setSaveError('Name and phone are required'); return }
+    if (saving) return
+    // The modal can open (?new=1) before the clinic has loaded; inserting
+    // with an empty dentist_id fails with a confusing uuid error.
+    if (!dentistId) { setSaveError('Still loading your clinic. Please wait a second and tap Add Patient again.'); return }
     setSaving(true)
     const supabase = createClient()
     const { data, error } = await supabase.from('patients').insert({
       dentist_id: dentistId,
-      name: form.name, phone: form.phone, email: form.email || null,
-      age: form.age ? parseInt(form.age) : null, gender: form.gender || null,
+      name: form.name.trim(), phone: form.phone.trim(), email: form.email.trim() || null,
+      age: form.age ? parseInt(form.age, 10) || null : null, gender: form.gender || null,
       // date_of_birth feeds the birthday-wishes cron — required for the
       // automatic greeting to fire. age stays alongside because some
       // dentists only know the age, not the exact DOB.
@@ -80,8 +162,19 @@ export default function PatientsPage() {
     setForm({ name: '', phone: '', email: '', age: '', gender: '', date_of_birth: '', address: '', blood_group: '', allergies: '', current_medications: '', medical_history: '', emergency_contact_name: '', emergency_contact_phone: '' })
   }
 
+  const q = search.trim().toLowerCase()
+  const matchesSearch = (p: any) => !q
+    || p.name?.toLowerCase().includes(q)
+    || String(p.phone || '').replace(/\D/g, '').includes(q.replace(/\D/g, '') || '\u0000')
+    || String(p.uhid || '').toLowerCase().includes(q)
+  const counts = {
+    all: patients.length,
+    today: patients.filter(p => todayByPatient[p.id]).length,
+    unpaid: patients.filter(p => (dueByPatient[p.id] || 0) > 0).length,
+  }
   const filtered = patients.filter(p =>
-    !search || p.name?.toLowerCase().includes(search.toLowerCase()) || p.phone?.includes(search)
+    matchesSearch(p)
+    && (filter === 'all' || (filter === 'today' && todayByPatient[p.id]) || (filter === 'unpaid' && (dueByPatient[p.id] || 0) > 0))
   )
 
   const inputStyle = { width: '100%', padding: '10px 12px', borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 13, fontFamily: 'var(--font-body)', outline: 'none', boxSizing: 'border-box' as const }
@@ -91,14 +184,29 @@ export default function PatientsPage() {
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
-        <div>
-          <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginBottom: 4 }}>Patient Records</h1>
-          <p style={{ fontSize: 14, color: 'var(--muted)' }}>{patients.length} {patients.length === 1 ? 'patient' : 'patients'} total</p>
+      <div style={{ maxWidth: 760, margin: '0 auto', display: 'grid', gap: 12, marginBottom: 12 }}>
+        <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, margin: 0 }}>Patients</h1>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <label htmlFor="patient-search" style={{ flex: 1, height: 46, border: '1.5px solid var(--border)', borderRadius: 12, background: '#fff', display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', color: 'var(--muted)' }}>
+            <SearchIcon />
+            <input id="patient-search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Name, phone or patient ID"
+              style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', fontSize: 15, fontFamily: 'var(--font-body)', background: 'transparent', color: 'var(--text)' }} />
+          </label>
+          <button onClick={() => setShowAdd(true)} style={{ height: 46, padding: '0 16px', background: TEAL, color: '#fff', border: 'none', borderRadius: 12, fontWeight: 700, fontSize: 14, cursor: 'pointer', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <PlusIcon size={16} /> Add
+          </button>
         </div>
-        <div style={{ display: 'flex', gap: 10 }}>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or phone..." style={{ ...inputStyle, width: 220 }} />
-          <button onClick={() => setShowAdd(true)} style={{ padding: '10px 20px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 14, cursor: 'pointer', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap' }}>+ Add Patient</button>
+        <div style={{ display: 'flex', gap: 6, overflowX: 'auto', scrollbarWidth: 'none' as any }}>
+          {([
+            { key: 'all' as const, label: `All ${counts.all}` },
+            { key: 'today' as const, label: `Today ${counts.today}` },
+            { key: 'unpaid' as const, label: `Unpaid ${counts.unpaid}` },
+          ]).map(c => (
+            <button key={c.key} type="button" onClick={() => setFilter(c.key)} aria-pressed={filter === c.key}
+              style={{ fontSize: 13, fontWeight: 600, padding: '7px 14px', borderRadius: 999, whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: 'var(--font-body)', border: `1px solid ${filter === c.key ? NAVY : 'var(--border)'}`, background: filter === c.key ? NAVY : '#fff', color: filter === c.key ? '#fff' : 'var(--text)' }}>
+              {c.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -178,92 +286,53 @@ export default function PatientsPage() {
             )}
             <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
               <button onClick={() => { setShowAdd(false); setSaveError(null) }} style={{ padding: '10px 20px', background: 'var(--bg)', color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 10, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>Cancel</button>
-              <button onClick={handleAddPatient} disabled={saving} style={{ padding: '10px 24px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-body)' }}>{saving ? 'Saving...' : 'Add Patient'}</button>
+              <button onClick={handleAddPatient} disabled={saving} style={{ padding: '10px 24px', background: TEAL, color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-body)' }}>{saving ? 'Saving...' : 'Add Patient'}</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Patient list */}
+      {/* Patient list: one row per patient, tap to open the record. */}
       {filtered.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '60px', background: '#fff', borderRadius: 16, border: '1px solid var(--border)' }}>
-          <div style={{ fontSize: 48, marginBottom: 12 }}>👥</div>
-          <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18, marginBottom: 8 }}>
-            {search ? 'No patients found' : 'No patients yet'}
+        <div style={{ maxWidth: 760, margin: '0 auto', textAlign: 'center', padding: '40px 20px', background: '#fff', borderRadius: 16, border: '1px solid var(--border)' }}>
+          <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 17, marginBottom: 6 }}>
+            {search || filter !== 'all' ? 'No patients match' : 'No patients yet'}
           </h3>
-          <p style={{ color: 'var(--muted)', marginBottom: 20 }}>{search ? 'Try a different search' : 'Add your first patient to get started'}</p>
-          {!search && <button onClick={() => setShowAdd(true)} style={{ padding: '11px 24px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>+ Add First Patient</button>}
+          <p style={{ color: 'var(--muted)', marginBottom: 16, fontSize: 14 }}>
+            {search || filter !== 'all' ? 'Try a different search or filter.' : 'Add your first patient to get started.'}
+          </p>
+          {!search && filter === 'all' && <button onClick={() => setShowAdd(true)} style={{ padding: '11px 22px', background: TEAL, color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>Add first patient</button>}
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {filtered.map(p => (
-            <div key={p.id} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 16, transition: 'border-color 0.15s', flexWrap: 'wrap' }}>
-              {/* The avatar + identity strip stays a click-target for the
-                  full patient record. The right-hand action buttons are
-                  rendered as separate Links so they don't nest inside the
-                  outer Link (which broke hydration when this row was a
-                  single Link). */}
-              <Link href={`/for-dentists/dashboard/patients/${p.id}`}
-                style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 16, textDecoration: 'none', color: 'inherit', minWidth: 240 }}>
-                <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'var(--blue-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>
-                  {p.gender === 'Female' ? '👩' : '👨'}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-                    <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)' }}>{p.name}</span>
-                    {p.allergies && <span style={{ fontSize: 10, fontWeight: 700, color: '#991B1B', background: '#FEE2E2', padding: '1px 6px', borderRadius: 10 }}>⚠️ ALLERGY</span>}
-                    {p.age && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{p.age} yrs</span>}
-                    {p.blood_group && <span style={{ fontSize: 11, color: '#7C3AED', background: '#EDE9FE', padding: '1px 6px', borderRadius: 10 }}>{p.blood_group}</span>}
-                  </div>
-                  <div style={{ fontSize: 13, color: 'var(--muted)', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                    <span>📞 {p.phone}</span>
-                    {p.email && <span>✉️ {p.email}</span>}
-                    {p.medical_history && <span style={{ color: '#F59E0B' }}>📋 Medical history on file</span>}
-                  </div>
-                </div>
+        <div style={{ maxWidth: 760, margin: '0 auto', background: '#fff', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
+          {filtered.map((p, i) => {
+            const today = todayByPatient[p.id]
+            const lv = lastVisit[p.id]
+            const due = dueByPatient[p.id] || 0
+            const sub = [p.age ? `${p.age} yrs` : null, p.gender ? String(p.gender)[0] : null, p.phone].filter(Boolean).join(' · ')
+            const line = today
+              ? `Today ${today.time}${today.what ? ` · ${today.what}` : ''}`
+              : lv ? `Last visit ${shortDate(lv.date)}${lv.what ? ` · ${lv.what}` : ''}` : 'No visits yet'
+            return (
+              <Link key={p.id} href={`/for-dentists/dashboard/patients/${p.id}`}
+                style={{ borderTop: i === 0 ? 'none' : '1px solid var(--border)', padding: '12px 16px', display: 'flex', gap: 12, alignItems: 'center', textDecoration: 'none', color: 'inherit', minHeight: 64 }}>
+                <span style={{ width: 40, height: 40, borderRadius: '50%', background: TEAL_SOFT, color: TEAL_DARK, fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{initialsOf(p.name)}</span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <b style={{ fontSize: 15, color: 'var(--text)' }}>{p.name}</b>
+                    {p.allergies && <span title={`Allergy: ${p.allergies}`} style={{ fontSize: 11, fontWeight: 700, color: '#991B1B', background: '#FEE2E2', borderRadius: 999, padding: '1px 7px' }}>Allergy</span>}
+                    {!p.allergies && p.medical_history && <span title={p.medical_history} style={{ fontSize: 11, fontWeight: 700, color: '#92400E', background: '#FEF3C7', borderRadius: 999, padding: '1px 7px' }}>Medical history</span>}
+                  </span>
+                  {sub && <span style={{ display: 'block', fontSize: 12, color: 'var(--muted)' }}>{sub}</span>}
+                  <span style={{ display: 'block', fontSize: 12, color: today ? TEAL_DARK : 'var(--text)', fontWeight: today ? 700 : 400, marginTop: 1 }}>
+                    {line}
+                    {due > 0 && <span style={{ color: '#B45309', fontWeight: 700 }}> · ₹{due.toLocaleString('en-IN')} due</span>}
+                  </span>
+                </span>
+                <span style={{ color: '#94A3B8', display: 'flex', flexShrink: 0 }}><ChevronIcon /></span>
               </Link>
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                <Link href={`/for-dentists/dashboard/patients/${p.id}?tab=treatments`}
-                  title="Open the Visits/Treatments tab"
-                  style={{ padding: '7px 12px', background: '#DCFCE7', color: '#166534', borderRadius: 8, fontSize: 12, fontWeight: 600, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                  🩺 Start Consultation
-                </Link>
-                <Link href={`/for-dentists/dashboard/patients/${p.id}?tab=timeline`}
-                  title="Open patient timeline"
-                  style={{ padding: '7px 12px', background: 'var(--blue-light)', color: 'var(--blue)', border: '1px solid #BFDBFE', borderRadius: 8, fontSize: 12, fontWeight: 600, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                  📋 View History
-                </Link>
-                <Link href={`/for-dentists/dashboard/billing?patient_id=${p.id}`}
-                  title="New invoice for this patient"
-                  style={{ padding: '7px 12px', background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A', borderRadius: 8, fontSize: 12, fontWeight: 600, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                  🧾 New Invoice
-                </Link>
-                {/* Portal Access — sends the patient their portal link over
-                    WhatsApp. Disabled (no usable link) when the row has no
-                    phone number, since wa.me can't target a chat without one. */}
-                {(() => {
-                  const portalUrl = `https://dentistinpune.in/patient/portal?id=${p.uhid}`
-                  const message = `Hi ${p.name}, you can now access your dental records and reports online. Click here to view: ${portalUrl} - Dr. ${dentistName}, ${clinicName}`
-                  const href = whatsappLink(p.phone, message)
-                  if (!href) {
-                    return (
-                      <span title="No phone number saved"
-                        style={{ padding: '7px 12px', background: '#E5E7EB', color: '#9CA3AF', borderRadius: 8, fontSize: 12, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'not-allowed' }}>
-                        🔗 Portal Access
-                      </span>
-                    )
-                  }
-                  return (
-                    <a href={href} target="_blank" rel="noopener noreferrer"
-                      title="Send patient their portal link via WhatsApp"
-                      style={{ padding: '7px 12px', background: '#7C3AED', color: '#fff', borderRadius: 8, fontSize: 12, fontWeight: 600, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                      🔗 Portal Access
-                    </a>
-                  )
-                })()}
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>

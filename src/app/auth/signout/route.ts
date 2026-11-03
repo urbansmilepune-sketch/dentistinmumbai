@@ -13,6 +13,13 @@ export async function POST(request: NextRequest) {
 
   const response = NextResponse.redirect(new URL('/for-dentists/login', request.url))
 
+  // Belt and braces: expire the Supabase session cookies on this redirect too.
+  // The login page now skips the form for a signed-in dentist, so a session
+  // cookie that survived logout would send them straight back to the dashboard.
+  for (const c of request.cookies.getAll()) {
+    if (c.name.startsWith('sb-')) response.cookies.set(c.name, '', { path: '/', maxAge: 0 })
+  }
+
   const remember = request.cookies.get(REMEMBER_COOKIE)?.value
   if (remember) {
     const admin = createServiceClient(

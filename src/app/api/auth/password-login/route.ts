@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
   // its computed landing (the practice dashboard, honouring ?next=).
   const response = NextResponse.json({ success: true })
 
-  // "Remember me" (default on): issue a long-lived rotating token so an expired
+  // "Remember me" (default on): issue a 30-day remember token so an expired
   // session can be silently re-minted (free plan has no configurable timeout).
   // Owner dentists only — staff have no dentists row for the FK; they fall back
   // to the normal session.

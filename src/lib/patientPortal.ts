@@ -1,5 +1,7 @@
 // Patient-portal session token. After a patient verifies their phone via OTP
-// we mint a short-lived (24h) HS256 JWT bound to that phone. The portal's data
+// we mint an HS256 JWT bound to that phone and put it in an httpOnly cookie
+// (JS can't read it, so an XSS bug can't steal it). The token lasts 7 days and
+// is re-minted on every API call, so it only expires after 7 days of no use. The portal's data
 // API trusts this token to prove phone ownership, then re-checks that any
 // patient_id it's asked about actually belongs to that phone AND has
 // portal_access enabled — the token alone never grants access to a record.
@@ -9,8 +11,43 @@
 // keeps the portal working with zero extra config while allowing a dedicated
 // secret in production.
 import { SignJWT, jwtVerify } from 'jose'
+import type { NextRequest, NextResponse } from 'next/server'
 
-const TOKEN_TTL = '24h'
+// Logged out after this many days without using the app.
+export const PATIENT_IDLE_DAYS = 7
+const IDLE_SECONDS = PATIENT_IDLE_DAYS * 24 * 60 * 60
+const TOKEN_TTL = `${IDLE_SECONDS}s`
+
+export const PATIENT_SESSION_COOKIE = 'dentistin_patient_session'
+
+function cookieOptions(maxAge: number) {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax' as const,
+    // Only the patient APIs ever need it.
+    path: '/api/patient',
+    maxAge,
+  }
+}
+
+// Mint a fresh 7-day token for this phone and put it on the response. Called
+// at login and on every authenticated patient API call (sliding expiry).
+export async function setPatientSessionCookie(res: NextResponse, phone: string): Promise<void> {
+  const token = await mintPatientToken(phone)
+  res.cookies.set(PATIENT_SESSION_COOKIE, token, cookieOptions(IDLE_SECONDS))
+}
+
+export function clearPatientSessionCookie(res: NextResponse): void {
+  res.cookies.set(PATIENT_SESSION_COOKIE, '', cookieOptions(0))
+}
+
+// The session token: the httpOnly cookie, or (for sessions saved before the
+// cookie existed) an Authorization: Bearer header. The bearer path can be
+// removed once old 24h tokens have all expired.
+export function patientTokenFromRequest(request: NextRequest): string | null {
+  return request.cookies.get(PATIENT_SESSION_COOKIE)?.value || bearerFromRequest(request)
+}
 
 function getSecret(): Uint8Array {
   const secret = process.env.PATIENT_PORTAL_JWT_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY

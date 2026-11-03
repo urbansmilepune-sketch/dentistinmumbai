@@ -1,10 +1,10 @@
 // POST /api/patient/otp/verify — checks the 6-digit code, and on success
-// returns a 24h portal token plus the list of clinics (one per dentist) that
+// sets the 7-day httpOnly portal session cookie and returns the list of clinics (one per dentist) that
 // have enabled portal access for this phone. The patient picks a clinic and
 // the dashboard fetches that clinic's records with the token.
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { mintPatientToken, phoneTail10 } from '@/lib/patientPortal'
+import { setPatientSessionCookie, phoneTail10 } from '@/lib/patientPortal'
 import { guardRequest } from '@/lib/apiGuards'
 import { MAX_OTP_ATTEMPTS, failedAttemptsFor, recordFailedAttempt } from '@/lib/otpAttempts'
 
@@ -90,6 +90,8 @@ export async function POST(request: NextRequest) {
     city: r.dentist?.city ?? null,
   }))
 
-  const token = await mintPatientToken(phone)
-  return NextResponse.json({ success: true, token, clinics })
+  // The token lives only in the httpOnly cookie, never in the JSON body.
+  const res = NextResponse.json({ success: true, clinics })
+  await setPatientSessionCookie(res, phone)
+  return res
 }

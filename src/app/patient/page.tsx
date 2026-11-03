@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { savePortalSession, loadPortalSession, type PortalClinic } from '@/lib/patientSession'
+import { getCityBySlug } from '@/config/cities'
+import { savePortalSession, loadPortalSession, takeIdleLogoutNotice, type PortalClinic } from '@/lib/patientSession'
 
-// Consumer-facing teal palette — deliberately distinct from the clinical blue
-// of the dentist dashboard so the portal reads as a friendly patient space.
-const TEAL = '#0D9488'
+// Patient app login. Same navy/teal as the dentist app.
+const NAVY = '#0F172A'
+const TEAL = '#14B8A6'
 const TEAL_DARK = '#0F766E'
 const TEAL_LIGHT = '#CCFBF1'
 
@@ -18,14 +19,17 @@ export default function PatientLoginPage() {
   const [phone, setPhone] = useState('')
   const [otp, setOtp] = useState('')
   const [clinics, setClinics] = useState<PortalClinic[]>([])
-  const [token, setToken] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
 
-  // Already logged in? Skip straight to the dashboard.
+  // Already logged in? Skip straight to the dashboard. If we just logged
+  // them out for being idle, say so.
   useEffect(() => {
-    if (loadPortalSession()) router.replace('/patient/dashboard')
+    if (loadPortalSession()) { router.replace('/patient/dashboard'); return }
+    if (!takeIdleLogoutNotice()) return
+    const t = window.setTimeout(() => setInfo('You were logged out after 7 days without using the app. Log in again with your mobile number.'), 0)
+    return () => window.clearTimeout(t)
   }, [router])
 
   const phoneDigits = phone.replace(/\D/g, '').slice(-10)
@@ -63,10 +67,9 @@ export default function PatientLoginPage() {
       if (!res.ok) { setError(data.error || 'Could not verify the code.'); return }
       const list: PortalClinic[] = data.clinics || []
       if (list.length === 0) { setError('No clinic has enabled portal access for this number yet.'); return }
-      setToken(data.token)
       setClinics(list)
       if (list.length === 1) {
-        finish(data.token, list, list[0].patient_id)
+        finish(list, list[0].patient_id)
       } else {
         setStep('clinic')
       }
@@ -77,14 +80,14 @@ export default function PatientLoginPage() {
     }
   }
 
-  function finish(tok: string, list: PortalClinic[], patientId: string) {
-    savePortalSession({ token: tok, phone: phoneDigits, clinics: list, selectedPatientId: patientId })
+  function finish(list: PortalClinic[], patientId: string) {
+    savePortalSession({ phone: phoneDigits, clinics: list, selectedPatientId: patientId })
     router.replace('/patient/dashboard')
   }
 
   const card: React.CSSProperties = {
     background: '#fff', borderRadius: 20, padding: '28px 24px',
-    boxShadow: '0 10px 40px rgba(13,148,136,0.12)', border: '1px solid #E2E8F0',
+    boxShadow: '0 18px 40px rgba(15,23,42,0.18)', border: '1px solid #E2E8F0',
   }
   const input: React.CSSProperties = {
     width: '100%', padding: '16px 16px', fontSize: 18, borderRadius: 12,
@@ -99,19 +102,21 @@ export default function PatientLoginPage() {
   }
 
   return (
-    <div style={{ minHeight: '100dvh', background: `linear-gradient(160deg, ${TEAL_LIGHT} 0%, #F8FAFC 45%)`, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px 16px', fontFamily: 'var(--font-body)' }}>
+    <div style={{ minHeight: '100dvh', background: `linear-gradient(180deg, ${NAVY} 0%, ${NAVY} 260px, #F1F5F9 260px)`, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: 'calc(env(safe-area-inset-top) + 24px) 16px 24px', fontFamily: 'var(--font-body)' }}>
       <div style={{ width: '100%', maxWidth: 440 }}>
         {/* Brand */}
-        <div style={{ textAlign: 'center', marginTop: 24, marginBottom: 28 }}>
-          <img src="/logo-india.webp" alt="DentistIn" style={{ height: 44, objectFit: 'contain' }} />
+        <div style={{ textAlign: 'center', marginTop: 12, marginBottom: 24, color: '#fff' }}>
+          <img src="/icons/dentist-app-192.png" alt="" width={56} height={56} style={{ borderRadius: 14, display: 'block', margin: '0 auto 10px' }} />
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 20 }}>DentistIn</div>
+          <div style={{ fontSize: 13, color: '#5EEAD4', marginTop: 2 }}>For patients</div>
         </div>
 
         <div style={card}>
           <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 26, color: '#0F172A', marginBottom: 6, textAlign: 'center' }}>
-            Your Dental Records
+            Your dental records
           </h1>
           <p style={{ fontSize: 15, color: '#64748B', textAlign: 'center', marginBottom: 24, lineHeight: 1.5 }}>
-            Access your appointments, prescriptions and invoices
+            Appointments, treatment plan, prescriptions and bills from your dentist
           </p>
 
           {error && (
@@ -157,13 +162,13 @@ export default function PatientLoginPage() {
 
           {step === 'clinic' && (
             <>
-              <label style={{ fontSize: 15, fontWeight: 700, color: '#0F172A', display: 'block', marginBottom: 12 }}>Select your clinic</label>
+              <label style={{ fontSize: 15, fontWeight: 700, color: '#0F172A', display: 'block', marginBottom: 12 }}>Pick a clinic (you can switch later)</label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {clinics.map(c => (
-                  <button key={c.patient_id} onClick={() => finish(token, clinics, c.patient_id)}
+                  <button key={c.patient_id} onClick={() => finish(clinics, c.patient_id)}
                     style={{ textAlign: 'left', padding: '16px', borderRadius: 12, border: '2px solid #CBD5E1', background: '#fff', cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
                     <div style={{ fontWeight: 700, fontSize: 16, color: '#0F172A' }}>{c.clinic_name || c.dentist_name || 'Clinic'}</div>
-                    {c.dentist_name && <div style={{ fontSize: 13, color: '#64748B', marginTop: 2 }}>Dr. {c.dentist_name.replace(/^dr\.?\s*/i, '')}</div>}
+                    <div style={{ fontSize: 13, color: '#64748B', marginTop: 2 }}>{[c.dentist_name ? `Dr. ${c.dentist_name.replace(/^dr\.?\s*/i, '')}` : '', c.city ? getCityBySlug(c.city).cityName : ''].filter(Boolean).join(' · ')}</div>
                   </button>
                 ))}
               </div>
@@ -172,7 +177,7 @@ export default function PatientLoginPage() {
         </div>
 
         <p style={{ textAlign: 'center', fontSize: 13, color: '#94A3B8', marginTop: 20, lineHeight: 1.6 }}>
-          🔒 Your records are private and secured with a one-time password sent to your phone.
+          🔒 Your records are private. Use the mobile number you gave your clinic; we send a one-time code to it. You stay logged in on this phone until you log out or don&apos;t use the app for 7 days.
         </p>
       </div>
     </div>

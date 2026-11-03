@@ -2,13 +2,13 @@
 //
 // Silent re-auth for the free-plan "remember me" workaround. The proxy redirects
 // here (instead of letting the dashboard gate dump the dentist at /login) when
-// it sees no Supabase session but a remember cookie. We validate + rotate the
-// cookie, mint a fresh session, and bounce to `next`. Any failure clears the
+// it sees no Supabase session but a remember cookie. We validate the cookie
+// (sliding its 30-day expiry forward), mint a fresh session, and bounce to
+// `next`. Any failure clears the
 // cookie and falls back to /login, so there's no redirect loop.
 //
-// It's a GET (redirect-driven, like an OAuth callback) but it does rotate the
-// token — that's intentional and safe: the rotation is gated on possessing a
-// valid httpOnly cookie, and reuse detection covers replay.
+// It's a GET (redirect-driven, like an OAuth callback). The only write is the
+// expiry bump, gated on possessing a valid httpOnly cookie.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
@@ -79,7 +79,8 @@ export async function GET(request: NextRequest) {
   })
   if (sessionErr) return failToLogin()
 
-  // Session cookies are on `response`; add the rotated remember cookie too.
+  // Session cookies are on `response`; re-set the remember cookie so its
+  // 30-day browser expiry slides forward with the DB row.
   response.cookies.set(REMEMBER_COOKIE, consumed.cookieValue, rememberCookieOptions())
   return response
 }

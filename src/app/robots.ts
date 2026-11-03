@@ -36,10 +36,11 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
           // Patient portal — private, never indexable. No trailing slash so
           // it covers both /patient and /patient/*.
           '/patient',
-          '/login',
-          // Prefix (no trailing slash) so it covers both /book and /book/*
-          // — nothing under /book should ever be crawled or indexed.
-          '/book',
+          // /login and /book are deliberately NOT disallowed. /login 308s to
+          // /for-dentists/login and every /book page carries a noindex tag,
+          // but Google can only see a redirect or noindex on a page it is
+          // allowed to fetch. While they were blocked here, GSC kept /book and
+          // /login in the index ("Indexed, though blocked by robots.txt").
           '/api/',
         ],
       },

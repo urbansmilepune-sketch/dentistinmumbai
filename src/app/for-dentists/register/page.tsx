@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { HONEYPOT_FIELD } from '@/lib/registrationGuards'
+import WhatsAppNumberPrompt, { resolveWhatsApp } from '@/components/WhatsAppNumberPrompt'
 import { getCityByDomain, isNationalHost, CITY_CONFIGS, DEFAULT_CITY, type CitySlug, type CityConfig } from '@/config/cities'
 
 type AreaStatus = 'idle' | 'loading' | 'ready' | 'error'
@@ -28,6 +29,10 @@ export default function RegisterPage() {
     area: '', area_name_raw: '', password: '',
   })
   const [showPassword, setShowPassword] = useState(false)
+  // WhatsApp defaults to the phone number; the prompt under the phone field
+  // lets the dentist pick a different one.
+  const [waSame, setWaSame] = useState(true)
+  const [whatsapp, setWhatsapp] = useState('')
   const [submitting, setSubmitting] = useState(false)
   // Honeypot: read via ref at submit so a value set directly on the DOM is
   // still captured. Hidden from humans; a filled value flags a bot.
@@ -115,6 +120,9 @@ export default function RegisterPage() {
     const missing = required.filter(k => !form[k as keyof typeof form])
     if (missing.length > 0) { setError('Please fill all required fields.'); return }
     if (!/^\d{10}$/.test(form.phone.replace(/\s/g, ''))) { setError('Please enter a valid 10-digit phone number.'); return }
+    if (!waSame && !/^\d{10}$/.test(whatsapp.replace(/\s/g, ''))) {
+      setError('Please enter a valid 10-digit WhatsApp number, or tap "Yes, use this number".'); return
+    }
     if (form.area === '__other__' && !form.area_name_raw.trim()) {
       setError('Please type your area name.'); return
     }
@@ -134,6 +142,7 @@ export default function RegisterPage() {
           ...form,
           area: submittingArea,
           area_name_raw: submittingAreaRaw,
+          whatsapp: resolveWhatsApp(form.phone, waSame, whatsapp),
           city,
           ref: refCode,
           selected_plan: planFromUrl,
@@ -240,6 +249,13 @@ export default function RegisterPage() {
                       <input value={form.phone} onChange={e => update('phone', e.target.value)} placeholder="10-digit number" type="tel" style={inputStyle} />
                     </div>
                   </div>
+                  <WhatsAppNumberPrompt
+                    phone={form.phone}
+                    same={waSame}
+                    whatsapp={whatsapp}
+                    onChange={n => { setWaSame(n.same); setWhatsapp(n.whatsapp); setError('') }}
+                    inputStyle={inputStyle}
+                  />
 
                   <div>
                     <label style={labelStyle}>Email Address *</label>

@@ -15,9 +15,14 @@
 //   4. Writes a dentist_registrations row (status='approved',
 //      auto_approved=true) purely for the admin audit trail.
 //
-// State Dental Council / qualification fields are NOT collected here — the dentist fills
-// them in on the profile editor later, and an admin grants the verified
-// badge after credential review.
+// State Dental Council number + qualification are optional here: the
+// /for-dentists "Claim my spot" modal collects them, the /register page does
+// not (the dentist fills them in on the profile editor later). When sent they
+// are saved to dentists.mci_number / qualifications — they used to be dropped,
+// which is why dentists saw a blank registration number after signing up.
+// An admin still grants the verified badge after credential review.
+//
+// WhatsApp defaults to the phone number unless the form sends a different one.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
@@ -137,6 +142,11 @@ export async function POST(request: NextRequest) {
 
     const { name, clinic_name, area, selected_plan, city } = body
     const phone = normalizeIndianMobile(body.phone)
+    // Optional; falls back to the phone below. An invalid "different number"
+    // also falls back rather than failing the whole signup.
+    const whatsappInput = normalizeIndianMobile(body.whatsapp)
+    const qualificationInput = typeof body.qualification === 'string' ? body.qualification.trim().slice(0, 100) : ''
+    const mciInput = typeof body.mci_registration === 'string' ? body.mci_registration.trim().slice(0, 60) : ''
     const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
     emailForAlert = email || undefined
     const rawAreaName = typeof body.area_name_raw === 'string' ? body.area_name_raw.trim() : null
@@ -354,8 +364,9 @@ export async function POST(request: NextRequest) {
       name,
       clinic_name,
       phone,
-      qualifications: '',
-      mci_number: '',
+      whatsapp: whatsappInput || phone,
+      qualifications: qualificationInput,
+      mci_number: mciInput,
       area_id,
       slug,
       address: '',
@@ -425,8 +436,8 @@ export async function POST(request: NextRequest) {
       clinic_name,
       area,
       area_name_raw,
-      qualification: '',
-      mci_registration: '',
+      qualification: qualificationInput,
+      mci_registration: mciInput,
       founding_number,
       selected_plan: planValue,
       city: cityValue,

@@ -1,0 +1,18 @@
+{
+  "id": "/patient",
+  "name": "DentistIn – My dental records",
+  "short_name": "DentistIn",
+  "description": "Your appointments, treatment plan, prescriptions and bills from your dentist.",
+  "start_url": "/patient/dashboard?source=app",
+  "scope": "/patient",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0F172A",
+  "theme_color": "#0F172A",
+  "categories": ["medical", "health"],
+  "icons": [
+    { "src": "/icons/dentist-app-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/dentist-app-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/dentist-app-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

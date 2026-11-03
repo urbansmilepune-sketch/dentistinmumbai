@@ -275,15 +275,30 @@ export function getCityHomeStats(citySlug: string): Promise<CityHomeStats> {
   return unstable_cache(
     async (): Promise<CityHomeStats> => {
       const supabase = createAnonClient()
+      // One row per (dentist, treatment) link, filtered to active dentists in
+      // this city via the embedded !inner join. MUST paginate: PostgREST caps
+      // a read at 1000 rows with no error, and Pune has 1300+ links, so the
+      // homepage tiles showed ~110 dentists per treatment instead of ~186.
+      async function readAllLinks() {
+        const PAGE = 1000
+        const rows: any[] = []
+        for (let from = 0; ; from += PAGE) {
+          const { data, error } = await supabase
+            .from('dentist_treatments')
+            .select('treatment_id, dentist_id, fee_from, dentists!inner(city, is_active)')
+            .eq('dentists.city', citySlug)
+            .eq('dentists.is_active', true)
+            .order('id', { ascending: true })
+            .range(from, from + PAGE - 1)
+          if (error) throw error
+          const page = data ?? []
+          rows.push(...page)
+          if (page.length < PAGE) break
+        }
+        return { data: rows }
+      }
       const [{ data: links }, { data: dents }] = await Promise.all([
-        // One row per (dentist, treatment) link, filtered to active dentists in
-        // this city via the embedded !inner join. Aggregated in JS — the link
-        // set per city is small (hundreds of rows).
-        supabase
-          .from('dentist_treatments')
-          .select('treatment_id, dentist_id, fee_from, dentists!inner(city, is_active)')
-          .eq('dentists.city', citySlug)
-          .eq('dentists.is_active', true),
+        readAllLinks(),
         supabase
           .from('dentists')
           .select('area_id')

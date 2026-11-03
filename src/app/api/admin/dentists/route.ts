@@ -24,6 +24,8 @@ const ALLOWED_FIELDS = new Set([
   'qualifications',
   'specialties',
   'registration_number',
+  // State Dental Council number — the column every dentist-facing screen uses.
+  'mci_number',
   'experience_years',
   'gender',
   // contact & location

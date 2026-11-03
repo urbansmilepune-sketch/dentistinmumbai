@@ -107,8 +107,10 @@ function generatePrescriptionHTML(rx: any, opts: { autoPrint?: boolean } = {}) {
   const patient = rx.patients
   const dentist = rx.dentists
   const issuedAt = new Date(rx.created_at)
-  const date = issuedAt.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
-  const time = issuedAt.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true })
+  // The server runs on UTC, so the time zone must be explicit or the Rx
+  // prints 5h30m behind (and the date slips a day between 12 and 5:30 am).
+  const date = issuedAt.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' })
+  const time = issuedAt.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })
   const city = getCityBySlug(dentist?.city)
 
   const doctorName = dentist?.name ? (/^dr\.?\s/i.test(dentist.name) ? dentist.name : `Dr. ${dentist.name}`) : 'Dr.'

@@ -112,7 +112,11 @@ export default function EditProfileClient({ dentist, areas, allTreatments, denti
     bio: dentist.bio || '',
     qualifications: dentist.qualifications || '',
     specialties: arrToStr(dentist.specialties),
-    registration_number: dentist.registration_number || '',
+    // State Dental Council number. Lives in dentists.mci_number — the same
+    // column the dentist's own profile editor, /join and the public profile
+    // use. This form used to read a separate registration_number column, so
+    // numbers dentists had entered showed blank here.
+    mci_number: dentist.mci_number || '',
     experience_years: dentist.experience_years?.toString() ?? '',
     gender: dentist.gender || '',
     area_id: dentist.area_id || '',
@@ -221,7 +225,7 @@ export default function EditProfileClient({ dentist, areas, allTreatments, denti
         bio: form.bio,
         qualifications: form.qualifications.trim(),
         specialties: strToArr(form.specialties),
-        registration_number: form.registration_number.trim() || null,
+        mci_number: form.mci_number.trim(),
         experience_years: numOrNull(form.experience_years),
         gender: form.gender || null,
         area_id: form.area_id || null,
@@ -340,7 +344,7 @@ export default function EditProfileClient({ dentist, areas, allTreatments, denti
           <Grid>
             <Field label="Qualification(s)"><input value={form.qualifications} onChange={e => set('qualifications', e.target.value)} placeholder="BDS, MDS" style={inputStyle} /></Field>
             <Field label="Specialties" hint="Comma-separated"><input value={form.specialties} onChange={e => set('specialties', e.target.value)} placeholder="Orthodontics, Implantology" style={inputStyle} /></Field>
-            <Field label="Registration number"><input value={form.registration_number} onChange={e => set('registration_number', e.target.value)} style={inputStyle} /></Field>
+            <Field label="Registration number"><input value={form.mci_number} onChange={e => set('mci_number', e.target.value)} style={inputStyle} /></Field>
             <Field label="Experience (years)"><input type="number" min={0} value={form.experience_years} onChange={e => set('experience_years', e.target.value)} style={inputStyle} /></Field>
             <Field label="Gender">
               <select value={form.gender} onChange={e => set('gender', e.target.value)} style={selectStyle}>
