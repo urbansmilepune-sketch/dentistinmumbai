@@ -15,6 +15,7 @@ import { resolveCurrentDentist } from '@/lib/currentDentist'
 import MedicineNameInput from '@/components/MedicineNameInput'
 import { fetchMedicineHistory, type PastMedicine } from '@/lib/medicineHistory'
 import { whatsappLink } from '@/lib/phone'
+import { CheckIcon } from '../../dashIcons'
 import { NAVY, TEAL, TEAL_DARK, WHATSAPP } from '@/app/dentist/[slug]/profileTheme'
 import {
   CROWN_TYPES, DIAGNOSES, DIAGNOSIS_PLAIN, DIAGNOSIS_TO_CONDITION, LOWER_TEETH, RX_TEMPLATES, TIME_SLOTS,
@@ -54,8 +55,30 @@ function chipStyle(on: boolean, suggested = false): React.CSSProperties {
 
 const card: React.CSSProperties = { background: '#fff', border: `1px solid ${LINE}`, borderRadius: 14, padding: 16, display: 'grid', gap: 12, alignContent: 'start' }
 const smallMuted: React.CSSProperties = { fontSize: 12.5, color: MUTED }
+const sectionLabel: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.06em' }
 const fieldStyle: React.CSSProperties = { border: `1.5px solid ${LINE}`, borderRadius: 10, padding: '9px 10px', fontFamily: 'var(--font-body)', fontSize: 14, color: NAVY, background: '#fff', minHeight: 40, width: '100%', boxSizing: 'border-box', outline: 'none' }
 const NEW_RX = 'New prescription'
+
+// treatment_plan_steps.tooth_numbers is a text[] column. Older rows may hold a
+// plain string, so read it either way.
+function toothText(v: unknown): string {
+  return Array.isArray(v) ? v.join(', ') : v ? String(v) : ''
+}
+
+// A save error whose message is already written for staff.
+class SaveError extends Error {}
+
+// Staff see a plain sentence; the database message goes to the console only.
+function friendlyError(what: string, err?: { message?: string } | null): string {
+  const raw = String(err?.message || '')
+  if (raw) console.error(`[visit] ${what}:`, raw)
+  const m = raw.toLowerCase()
+  if (m.includes('jwt') || m.includes('not authenticated') || m.includes('permission denied') || m.includes('row-level security'))
+    return `${what}. Your login may have expired: refresh the page, log in again and press Save.`
+  if (m.includes('failed to fetch') || m.includes('network'))
+    return `${what}. The internet connection dropped. Check it and press Save again.`
+  return `${what}. Please press Save again. If it keeps happening, tap Report a problem.`
+}
 const EMPTY_DRAFT: Medicine = { name: '', dosage: '', frequency: '', duration: '', instructions: '' }
 
 function StepHead({ n, title, hint, done }: { n: number; title: string; hint?: string; done?: boolean }) {
@@ -111,6 +134,15 @@ export default function VisitPage() {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [result, setResult] = useState<{ rxId: string | null; message: string; warnings: string[] } | null>(null)
+  // Two columns side by side: keep the chart in view while the steps scroll.
+  const [wide, setWide] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 900px)')
+    const sync = () => setWide(mq.matches)
+    sync()
+    mq.addEventListener('change', sync)
+    return () => mq.removeEventListener('change', sync)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -165,7 +197,7 @@ export default function VisitPage() {
         for (const s of (steps.data || []) as any[]) {
           const nm = String(s.treatment_name || '')
           if (!nm || lp[nm] !== undefined) continue
-          const count = String(s.tooth_numbers || '').split(',').map(x => x.trim()).filter(Boolean).length || 1
+          const count = toothText(s.tooth_numbers).split(',').map(x => x.trim()).filter(Boolean).length || 1
           const cost = Number(s.estimated_cost || 0)
           if (cost > 0) lp[nm] = Math.round(cost / count)
         }
@@ -286,13 +318,15 @@ export default function VisitPage() {
           presented_at: now, accepted_at: answer === 'start' ? now : null,
           notes: `About ${planVisits} visit${planVisits > 1 ? 's' : ''}, ${planTime}.${findings ? ` Diagnosis: ${findings}.` : ''}`,
         }).select('id').single()
-        if (planErr) throw new Error(`Plan not saved: ${planErr.message}`)
+        if (planErr) throw new SaveError(friendlyError('The treatment plan could not be saved', planErr))
+        const toothList = [...teeth].sort((a, b) => a - b).map(String)
         const stepRows = planLines.map((l, i) => {
           const p = answer === 'start' ? (doneNew[l.name] || 'none') : 'none'
           if (p !== 'none') doneItems.push(`${l.label}${l.def.perTooth && toothLabel ? ` ${toothLabel}` : ''}${p === 'sitting' ? ' (sitting done)' : ''}`)
           return {
             plan_id: plan.id, step_number: i + 1, treatment_name: l.label,
-            tooth_number: l.def.perTooth ? toothLabel || null : null, tooth_numbers: l.def.perTooth ? toothLabel || null : null,
+            tooth_number: l.def.perTooth ? toothLabel || null : null,
+            tooth_numbers: l.def.perTooth && toothList.length ? toothList : null,
             estimated_cost: l.total,
             notes: `${l.def.sittings > 0 ? `${l.def.sittings} sitting${l.def.sittings > 1 ? 's' : ''}` : 'Same day'}${p === 'sitting' ? ` · sitting done ${today}` : ''}`,
             status: p === 'finished' ? 'completed' : p === 'sitting' ? 'scheduled' : 'pending',
@@ -300,7 +334,11 @@ export default function VisitPage() {
           }
         })
         const { error: stepErr } = await supabase.from('treatment_plan_steps').insert(stepRows)
-        if (stepErr) throw new Error(`Plan steps not saved: ${stepErr.message}`)
+        if (stepErr) {
+          // Don't leave an empty plan behind: a retry would create a duplicate.
+          await supabase.from('treatment_plans').delete().eq('id', plan.id)
+          throw new SaveError(friendlyError('The treatment plan could not be saved', stepErr))
+        }
       }
 
       // Existing open plans: acceptance + today's progress
@@ -311,13 +349,13 @@ export default function VisitPage() {
           const p = doneOld[s.id] || 'none'
           if (p === 'none') continue
           touched = true
-          doneItems.push(`${s.treatment_name}${s.tooth_numbers ? ` ${s.tooth_numbers}` : ''}${p === 'sitting' ? ' (sitting done)' : ''}`)
+          doneItems.push(`${s.treatment_name}${toothText(s.tooth_numbers) ? ` ${toothText(s.tooth_numbers)}` : ''}${p === 'sitting' ? ' (sitting done)' : ''}`)
           const { error: e } = await supabase.from('treatment_plan_steps').update({
             status: p === 'finished' ? 'completed' : 'scheduled',
             completed_at: p === 'finished' ? now : null,
             notes: `${s.notes ? `${s.notes} · ` : ''}${p === 'finished' ? 'finished' : 'sitting done'} ${today}`,
           }).eq('id', s.id)
-          if (e) warnings.push(`Could not update "${s.treatment_name}": ${e.message}`)
+          if (e) warnings.push(friendlyError(`Progress on "${s.treatment_name}" was not saved`, e))
         }
         const accepted = acceptOld[plan.id]
         if (touched || accepted) {
@@ -330,7 +368,7 @@ export default function VisitPage() {
           const { error: e } = await supabase.from('treatment_plans').update({
             status, ...(plan.status === 'presented' ? { accepted_at: now } : {}),
           }).eq('id', plan.id)
-          if (e) warnings.push(`Could not update plan status: ${e.message}`)
+          if (e) warnings.push(friendlyError('The plan status was not updated', e))
         }
       }
 
@@ -338,10 +376,10 @@ export default function VisitPage() {
       const cond = dx.map(d => DIAGNOSIS_TO_CONDITION[d]).find(Boolean)
       if (cond && teeth.length) {
         const { error: delErr } = await supabase.from('dental_chart_entries').delete().eq('patient_id', patient.id).eq('dentist_id', dentist.id).in('tooth_number', teeth)
-        if (delErr) warnings.push(`Chart not updated: ${delErr.message}`)
+        if (delErr) warnings.push(friendlyError('The dental chart was not updated', delErr))
         else {
           const { error: insErr } = await supabase.from('dental_chart_entries').insert(teeth.map(n => ({ patient_id: patient.id, dentist_id: dentist.id, tooth_number: n, condition: cond, notes: dx.join(', ') })))
-          if (insErr) warnings.push(`Chart not updated: ${insErr.message}`)
+          if (insErr) warnings.push(friendlyError('The dental chart was not updated', insErr))
         }
       }
 
@@ -352,7 +390,7 @@ export default function VisitPage() {
           patient_id: patient.id, dentist_id: dentist.id, medicines: meds,
           instructions: rxAdvice || null, template_used: rxName || 'Prescription',
         }).select('id').single()
-        if (rxErr) warnings.push(`Prescription not saved: ${rxErr.message}`)
+        if (rxErr) warnings.push(friendlyError('The prescription was not saved', rxErr))
         else rxId = rx.id
       }
 
@@ -365,14 +403,14 @@ export default function VisitPage() {
           appt_date: nextDate, time_slot: nextSlot, status: 'confirmed', notes: nextNote, reference_no: generateApptRef(),
         })
         if (apErr) {
-          warnings.push(apErr.code === '23505' ? `${prettyDate(nextDate)} ${nextSlot} is already booked. Book the next sitting from Appointments.` : `Appointment not booked: ${apErr.message}`)
+          warnings.push(apErr.code === '23505' ? `${prettyDate(nextDate)} ${nextSlot} is already booked. Book the next sitting from Appointments.` : friendlyError('The next sitting was not booked. Book it from Appointments', apErr))
         } else nextLine = `Next visit: ${prettyDate(nextDate)}, ${nextSlot}.`
       } else if (nextMode === 'remind') {
         const { error: rcErr } = await supabase.from('recall_reminders').insert({
           patient_id: patient.id, dentist_id: dentist.id, reminder_type: 'follow_up', due_date: nextDate,
           status: 'pending', message_channel: 'whatsapp', notes: `Pending plan: ${nextNote}`,
         })
-        if (rcErr) warnings.push(`Reminder not set: ${rcErr.message}`)
+        if (rcErr) warnings.push(friendlyError('The WhatsApp reminder was not set. Add it from Recalls', rcErr))
       }
 
       // Visit note
@@ -384,11 +422,11 @@ export default function VisitPage() {
         next_appointment_recommended: nextMode === 'none' ? null : nextDate,
         next_appointment_notes: nextMode === 'remind' ? `Reminder: ${nextNote}` : nextMode === 'book' ? nextNote : null,
       }).select('id').single()
-      if (vErr) warnings.push(`Visit note not saved: ${vErr.message}`)
+      if (vErr) warnings.push(friendlyError('The visit note was not saved', vErr))
 
       if (intake) {
         const { error: iErr } = await supabase.from('patient_intakes').update({ status: 'seen', seen_at: now, visit_id: visit?.id || null }).eq('id', intake.id)
-        if (iErr) warnings.push(`Waiting list not updated: ${iErr.message}`)
+        if (iErr) warnings.push(friendlyError('The waiting list was not updated', iErr))
       }
 
       // WhatsApp summary for the patient
@@ -403,7 +441,7 @@ export default function VisitPage() {
       if (nextLine) lines.push(nextLine)
       setResult({ rxId, message: lines.join('\n'), warnings })
     } catch (e: any) {
-      setSaveError(e?.message || 'Could not save. Please try again.')
+      setSaveError(e instanceof SaveError ? e.message : friendlyError('The visit could not be saved', e))
     } finally {
       setSaving(false)
     }
@@ -484,7 +522,7 @@ export default function VisitPage() {
   )
 
   return (
-    <div style={{ padding: '16px 12px 120px', maxWidth: 1180, margin: '0 auto', color: NAVY }}>
+    <div style={{ padding: '16px 12px 120px', maxWidth: 1280, margin: '0 auto', color: NAVY }}>
       {/* Waiting strip */}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', overflowX: 'auto', paddingBottom: 6, marginBottom: 12 }}>
         <Link href="/for-dentists/dashboard/visit" style={{ ...smallMuted, fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap' }}>‹ Waiting</Link>
@@ -495,9 +533,9 @@ export default function VisitPage() {
         ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 420px), 1fr))', gap: 14, alignItems: 'start' }}>
-        {/* LEFT: patient + chart */}
-        <div style={{ display: 'grid', gap: 14 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' }}>
+        {/* LEFT: patient + chart. Sticks while the steps scroll on wide screens. */}
+        <div style={{ flex: '1 1 400px', minWidth: 0, display: 'grid', gap: 14, ...(wide ? { position: 'sticky', top: 12, maxHeight: 'calc(100vh - 24px)', overflowY: 'auto' } : {}) }}>
           <div style={card}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
               <div>
@@ -562,7 +600,7 @@ export default function VisitPage() {
                   {(plan.treatment_plan_steps || []).sort((a: any, b: any) => a.step_number - b.step_number).map((s: any) => (
                     <div key={s.id} style={{ display: 'grid', gap: 6 }}>
                       <div style={{ fontSize: 13.5 }}>
-                        <b>{s.treatment_name}</b>{s.tooth_numbers ? ` · ${s.tooth_numbers}` : ''}
+                        <b>{s.treatment_name}</b>{toothText(s.tooth_numbers) ? ` · ${toothText(s.tooth_numbers)}` : ''}
                         <span style={smallMuted}> · {s.status === 'completed' ? 'finished' : s.status === 'scheduled' ? 'in progress' : 'not started'}{s.notes ? ` · ${s.notes}` : ''}</span>
                       </div>
                       {s.status !== 'completed' && s.status !== 'skipped' && (plan.status !== 'presented' || acceptOld[plan.id]) &&
@@ -588,7 +626,7 @@ export default function VisitPage() {
         </div>
 
         {/* RIGHT: six steps */}
-        <div style={{ display: 'grid', gap: 14 }}>
+        <div style={{ flex: '1.35 1 460px', minWidth: 0, display: 'grid', gap: 14 }}>
           <div style={card}>
             <StepHead n={1} title={`Diagnosis${toothLabel ? ` on ${toothLabel}` : ''}`} done={dx.length > 0} />
             {suggestedDx.length > 0 && <div style={smallMuted}><b style={{ color: AMBER_INK }}>Suggested</b> from what the patient told the tablet</div>}
@@ -665,8 +703,9 @@ export default function VisitPage() {
           )}
 
           <div style={card}>
-            <StepHead n={5} title="Prescription" hint="Your templates included" done={!!rxName} />
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <StepHead n={5} title="Prescription" done={!!rxName} />
+            <span style={sectionLabel}>Start from a template</span>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: -6 }}>
               <button type="button" onClick={startNewRx} style={chipStyle(rxName === NEW_RX)}>+ {NEW_RX}</button>
               {rxChoices.map(tpl => <button key={`${tpl.mine ? 'm' : 'd'}-${tpl.name}`} type="button" onClick={() => pickRx(tpl)} style={chipStyle(rxName === tpl.name)}>{tpl.name}</button>)}
             </div>
@@ -694,7 +733,8 @@ export default function VisitPage() {
               </div>
             )}
             {meds.length > 0 && (
-              <div style={{ border: `1px solid ${LINE}`, borderRadius: 12, padding: '8px 12px', display: 'grid', gap: 6, fontSize: 13.5 }}>
+              <div style={{ border: `1px solid ${LINE}`, borderRadius: 12, padding: '10px 12px', display: 'grid', gap: 8, fontSize: 13.5 }}>
+                <span style={sectionLabel}>On this prescription · {meds.length}</span>
                 {meds.map((m, i) => (
                   <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
                     <span><b>{m.name}</b> {m.dosage}</span>
@@ -712,32 +752,70 @@ export default function VisitPage() {
 
           <div style={card}>
             <StepHead n={6} title="Next visit" />
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              <button type="button" onClick={() => setNextMode('book')} style={chipStyle(nextMode === 'book')}>Book a sitting</button>
-              <button type="button" onClick={() => setNextMode('remind')} style={chipStyle(nextMode === 'remind')}>Remind on WhatsApp</button>
-              <button type="button" onClick={() => setNextMode('none')} style={chipStyle(nextMode === 'none')}>Nothing needed</button>
+            <div role="radiogroup" aria-label="Next visit" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
+              {([
+                { id: 'book', title: 'Book a sitting', sub: 'Pick a date and time now' },
+                { id: 'remind', title: 'Remind on WhatsApp', sub: 'Patient books when ready' },
+                { id: 'none', title: 'Nothing needed', sub: 'No follow-up' },
+              ] as { id: NextMode; title: string; sub: string }[]).map(o => {
+                const on = nextMode === o.id
+                return (
+                  <button key={o.id} type="button" role="radio" aria-checked={on} onClick={() => setNextMode(o.id)}
+                    style={{ display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', padding: '11px 12px', borderRadius: 12, cursor: 'pointer', fontFamily: 'var(--font-body)', color: NAVY, border: `1.5px solid ${on ? TEAL : LINE}`, background: on ? '#F0FDFA' : '#fff', boxShadow: on ? `0 0 0 3px ${TINT}` : 'none' }}>
+                    <span aria-hidden style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0, marginTop: 1, border: `2px solid ${on ? TEAL : '#CBD5E1'}`, display: 'grid', placeItems: 'center' }}>
+                      {on && <span style={{ width: 8, height: 8, borderRadius: '50%', background: TEAL }} />}
+                    </span>
+                    <span style={{ display: 'grid', gap: 2 }}>
+                      <span style={{ fontWeight: 700, fontSize: 14, color: on ? TEAL_DARK : NAVY }}>{o.title}</span>
+                      <span style={{ fontSize: 12.5, color: MUTED }}>{o.sub}</span>
+                    </span>
+                  </button>
+                )
+              })}
             </div>
             {nextMode !== 'none' && (
-              <div style={{ display: 'grid', gap: 8 }}>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {[3, 7, 14, 30].map(d => (
-                    <button key={d} type="button" onClick={() => setNextDate(addDaysIso(today, d))} style={chipStyle(nextDate === addDaysIso(today, d))}>
-                      {d === 7 ? '1 week' : d === 14 ? '2 weeks' : d === 30 ? '1 month' : `${d} days`}
-                    </button>
-                  ))}
-                  <input type="date" value={nextDate} min={today} onChange={e => setNextDate(e.target.value)} aria-label="Pick date" style={{ border: `1.5px solid ${LINE}`, borderRadius: 10, padding: '6px 8px', fontFamily: 'var(--font-body)', fontSize: 14 }} />
+              <div style={{ display: 'grid', gap: 10, background: '#F8FAFC', border: `1px solid ${LINE}`, borderRadius: 12, padding: 12 }}>
+                <div style={{ display: 'grid', gap: 6 }}>
+                  <span style={sectionLabel}>{nextMode === 'book' ? 'When' : 'Remind after'}</span>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {[3, 7, 14, 30].map(d => (
+                      <button key={d} type="button" onClick={() => setNextDate(addDaysIso(today, d))} style={chipStyle(nextDate === addDaysIso(today, d))}>
+                        {d === 7 ? '1 week' : d === 14 ? '2 weeks' : d === 30 ? '1 month' : `${d} days`}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                {nextMode === 'book' && (
-                  <select value={nextSlot} onChange={e => setNextSlot(e.target.value)} aria-label="Time" style={{ border: `1.5px solid ${LINE}`, borderRadius: 10, padding: '8px 10px', fontFamily: 'var(--font-body)', fontSize: 14, background: '#fff' }}>
-                    {TIME_SLOTS.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                )}
-                <div style={smallMuted}>{nextMode === 'book' ? `Booking ${prettyDate(nextDate)}, ${nextSlot}.` : `Reminder goes out on ${prettyDate(nextDate)} and shows in Recalls.`}</div>
+                <div style={{ display: 'grid', gridTemplateColumns: nextMode === 'book' ? 'repeat(auto-fit, minmax(150px, 1fr))' : 'minmax(0, 240px)', gap: 8 }}>
+                  <label style={{ display: 'grid', gap: 4 }}>
+                    <span style={sectionLabel}>Date</span>
+                    <input type="date" value={nextDate} min={today} onChange={e => setNextDate(e.target.value)} style={fieldStyle} />
+                  </label>
+                  {nextMode === 'book' && (
+                    <label style={{ display: 'grid', gap: 4 }}>
+                      <span style={sectionLabel}>Time</span>
+                      <select value={nextSlot} onChange={e => setNextSlot(e.target.value)} style={fieldStyle}>
+                        {TIME_SLOTS.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </label>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', background: '#fff', border: `1px solid ${TINT}`, borderRadius: 10, padding: '8px 10px', fontSize: 13.5, fontWeight: 600, color: TEAL_DARK }}>
+                  <CheckIcon size={14} />
+                  {nextMode === 'book' ? `Sitting on ${prettyDate(nextDate)}, ${nextSlot}` : `WhatsApp reminder on ${prettyDate(nextDate)}. It also shows in Recalls.`}
+                </div>
               </div>
             )}
           </div>
 
-          {saveError && <div role="alert" style={{ background: '#FEE2E2', color: '#991B1B', borderRadius: 12, padding: '10px 14px', fontWeight: 600, fontSize: 14 }}>{saveError}</div>}
+          {saveError && (
+            <div role="alert" style={{ display: 'flex', gap: 10, alignItems: 'flex-start', background: '#FEF2F2', border: '1px solid #FECACA', color: '#991B1B', borderRadius: 12, padding: '12px 14px', fontSize: 14 }}>
+              <span aria-hidden style={{ width: 20, height: 20, borderRadius: '50%', background: '#DC2626', color: '#fff', fontWeight: 800, fontSize: 13, display: 'grid', placeItems: 'center', flexShrink: 0 }}>!</span>
+              <span style={{ display: 'grid', gap: 2 }}>
+                <b>Not saved yet</b>
+                <span style={{ fontWeight: 500 }}>{saveError} Nothing you entered is lost.</span>
+              </span>
+            </div>
+          )}
           <button type="button" onClick={handleSave} disabled={saving} style={{ background: TEAL, color: '#fff', border: 0, borderRadius: 14, padding: 16, fontSize: 16, fontWeight: 700, cursor: saving ? 'wait' : 'pointer', fontFamily: 'var(--font-heading)', opacity: saving ? 0.7 : 1 }}>
             {saving ? 'Saving…' : 'Save visit'}
           </button>
