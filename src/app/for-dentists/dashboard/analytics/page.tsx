@@ -40,7 +40,6 @@ export default async function AnalyticsPage() {
     { count: totalAppts },
     { count: pendingAppts },
     { count: completedAppts },
-    { count: totalEnquiries },
     { count: totalReviews },
     { data: recentAppts },
     { data: recentEvents },
@@ -48,7 +47,6 @@ export default async function AnalyticsPage() {
     supabase.from('appointments').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id),
     supabase.from('appointments').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id).eq('status', 'pending'),
     supabase.from('appointments').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id).eq('status', 'completed'),
-    supabase.from('enquiries').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id),
     supabase.from('reviews').select('*', { count: 'exact', head: true }).eq('dentist_id', dentist.id).eq('status', 'approved'),
     supabase.from('appointments').select('appt_date, status').eq('dentist_id', dentist.id).order('appt_date', { ascending: false }).limit(30),
     adminClient.from('analytics_events').select('event_type, created_at').eq('dentist_id', dentist.id).gte('created_at', sevenDaysAgoIso),
@@ -89,7 +87,9 @@ export default async function AnalyticsPage() {
   // the free tier sees so the page never feels empty even on the free plan.
   const FREE_STATS = [
     { icon: '👁️', label: 'Profile Views', value: dentist.profile_views || 0, color: 'var(--blue)' },
-    { icon: '💬', label: 'Total Enquiries', value: totalEnquiries || 0, color: 'var(--orange)' },
+    // Book + WhatsApp + Call taps on the public profile. Replaces "Total
+    // Enquiries", which counted a table nothing writes to (always 0).
+    { icon: '🙋', label: 'Patient Actions', value: (dentist.booking_clicks || 0) + (dentist.whatsapp_clicks || 0) + (dentist.call_clicks || 0), color: 'var(--orange)' },
     { icon: '💚', label: 'WhatsApp Clicks', value: dentist.whatsapp_clicks || 0, color: '#25D366' },
   ]
 

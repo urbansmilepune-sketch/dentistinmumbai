@@ -13,8 +13,17 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { REMEMBER_COOKIE, rememberCookieOptions, issueRememberToken } from '@/lib/auth/rememberMe'
 import bcrypt from 'bcryptjs'
+import { guardRequest } from '@/lib/apiGuards'
+import { MAX_OTP_ATTEMPTS, failedAttemptsFor, recordFailedAttempt } from '@/lib/otpAttempts'
 
 export async function POST(request: NextRequest) {
+  // Per-IP cap on guesses, on top of the per-code lockout below.
+  const limited = guardRequest(request, 'email-otp-verify', {
+    max: 20, windowMs: 10 * 60 * 1000, retryAfterSeconds: 300,
+    message: 'Too many attempts. Please wait a few minutes and try again.',
+  })
+  if (limited) return limited
+
   let body: any
   try { body = await request.json() } catch { return NextResponse.json({ error: 'Invalid request' }, { status: 400 }) }
 
@@ -37,7 +46,7 @@ export async function POST(request: NextRequest) {
   const nowIso = new Date().toISOString()
   const { data: row } = await admin
     .from('email_otps')
-    .select('id, otp_hash, expires_at, used_at')
+    .select('*')
     .eq('email', email)
     .is('used_at', null)
     .gt('expires_at', nowIso)
@@ -49,8 +58,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'That code has expired or was already used — request a new one.' }, { status: 400 })
   }
 
+  if (failedAttemptsFor(row) >= MAX_OTP_ATTEMPTS) {
+    return NextResponse.json({ error: 'Too many wrong codes — request a new one.' }, { status: 429 })
+  }
   const matches = await bcrypt.compare(otp, row.otp_hash)
   if (!matches) {
+    const fails = await recordFailedAttempt(admin, 'email_otps', row)
+    if (fails >= MAX_OTP_ATTEMPTS) {
+      await admin.from('email_otps').update({ used_at: new Date().toISOString() }).eq('id', row.id)
+      return NextResponse.json({ error: 'Too many wrong codes — request a new one.' }, { status: 429 })
+    }
     return NextResponse.json({ error: 'Incorrect code. Check your email and try again.' }, { status: 400 })
   }
 

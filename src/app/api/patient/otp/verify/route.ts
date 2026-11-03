@@ -5,6 +5,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { setPatientSessionCookie, phoneTail10 } from '@/lib/patientPortal'
+import { guardRequest } from '@/lib/apiGuards'
+import { MAX_OTP_ATTEMPTS, failedAttemptsFor, recordFailedAttempt } from '@/lib/otpAttempts'
 
 function admin() {
   return createClient(
@@ -14,6 +16,13 @@ function admin() {
 }
 
 export async function POST(request: NextRequest) {
+  // Per-IP cap on guesses, on top of the per-code lockout below.
+  const limited = guardRequest(request, 'patient-otp-verify', {
+    max: 20, windowMs: 10 * 60 * 1000, retryAfterSeconds: 300,
+    message: 'Too many attempts. Please wait a few minutes and try again.',
+  })
+  if (limited) return limited
+
   let body: any
   try { body = await request.json() } catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }) }
 
@@ -30,7 +39,7 @@ export async function POST(request: NextRequest) {
 
   const { data: row } = await db
     .from('patient_portal_otps')
-    .select('id, otp, expires_at, used')
+    .select('*')
     .eq('phone', phone)
     .maybeSingle()
 
@@ -39,7 +48,15 @@ export async function POST(request: NextRequest) {
   if (new Date(row.expires_at).getTime() < Date.now()) {
     return NextResponse.json({ error: 'That code has expired — request a new one.' }, { status: 400 })
   }
+  if (failedAttemptsFor(row) >= MAX_OTP_ATTEMPTS) {
+    return NextResponse.json({ error: 'Too many wrong codes — request a new one.' }, { status: 429 })
+  }
   if (row.otp !== otp) {
+    const fails = await recordFailedAttempt(db, 'patient_portal_otps', row)
+    if (fails >= MAX_OTP_ATTEMPTS) {
+      await db.from('patient_portal_otps').update({ used: true }).eq('id', row.id)
+      return NextResponse.json({ error: 'Too many wrong codes — request a new one.' }, { status: 429 })
+    }
     return NextResponse.json({ error: 'Incorrect code. Check the SMS and try again.' }, { status: 400 })
   }
 

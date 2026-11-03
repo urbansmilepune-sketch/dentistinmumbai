@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { guardRequest } from '@/lib/apiGuards'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -7,6 +8,16 @@ const supabase = createClient(
 )
 
 export async function POST(request: NextRequest) {
+  // These events feed the counters dentists see ("Patient Actions",
+  // views, clicks), so stop one visitor from inflating them. A real patient
+  // browsing several profiles stays far below this. Over the limit we answer
+  // 200 and record nothing, so the page never shows an error.
+  const limited = guardRequest(request, 'analytics-track', { max: 60, windowMs: 10 * 60 * 1000 })
+  if (limited) {
+    if (limited.status === 403) return limited
+    return NextResponse.json({ success: true, skipped: true })
+  }
+
   try {
     const forwarded = request.headers.get('x-forwarded-for')
     const ip = forwarded ? forwarded.split(',')[0].trim() : null
