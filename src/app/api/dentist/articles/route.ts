@@ -55,6 +55,11 @@ export async function POST(request: NextRequest) {
   if (!title) return NextResponse.json({ error: 'A title is required.' }, { status: 400 })
   if (!content || content === '<p></p>') return NextResponse.json({ error: 'The article content is empty.' }, { status: 400 })
   if (!isTopicType(topicType)) return NextResponse.json({ error: 'Invalid topic type.' }, { status: 400 })
+  // Case stories are about a real patient: the dentist must confirm consent.
+  // Not stored (no column for it); the editor won't submit without the tick.
+  if (topicType === 'case_story' && body?.patient_consent !== true) {
+    return NextResponse.json({ error: 'Please confirm the patient agreed to share this case.' }, { status: 400 })
+  }
 
   // Slug uniqueness comes from the 4-char random suffix (spec). A collision is
   // astronomically unlikely, but the .select() below surfaces a unique-index

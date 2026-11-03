@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getCityByDomain, cityOrigin, CITY_CONFIGS, isNationalHost, NATIONAL_ORIGIN } from '@/config/cities'
 import { getAreaCompleteDentistCounts, getAreaTreatmentCompleteCounts } from '@/lib/cache/public-pages'
 import { completionPct } from '@/lib/profileCompletion'
+import { getCityArticles } from '@/lib/publicArticles'
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const h = await headers()
@@ -68,7 +69,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // (shared helpers, so route and sitemap can't drift), and a dentist profile
   // only when it's ≥60% complete. Area×treatment is queried dynamically from
   // live counts — never statically enumerated.
-  const [{ data: areas, error: areasErr }, { data: dentists }, { data: treatments }, areaCompleteCounts, atCompleteCounts] = await Promise.all([
+  const [{ data: areas, error: areasErr }, { data: dentists }, { data: treatments }, areaCompleteCounts, atCompleteCounts, cityArticles] = await Promise.all([
     // No updated_at / created_at column on `areas` — selecting one 42703s, and
     // PostgREST returns data: null for the whole query, which silently emptied
     // BOTH areaPages and areaTreatmentPages from every city sitemap. Select
@@ -82,6 +83,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     supabase.from('treatments').select('id, slug'),
     getAreaCompleteDentistCounts(city.citySlug),
     getAreaTreatmentCompleteCounts(city.citySlug),
+    // Published dentist articles (admin-approved). Their canonical is the
+    // city-domain page under the dentist's profile.
+    getCityArticles(city.citySlug).catch(() => []),
   ])
 
   // A failed areas read drops the entire programmatic layer from the sitemap
@@ -98,6 +102,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${BASE}/about`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.5 },
     { url: `${BASE}/contact`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.5 },
     { url: `${BASE}/blog`, lastModified: new Date(), changeFrequency: 'weekly', priority: 0.7 },
+    { url: `${BASE}/articles`, lastModified: new Date(), changeFrequency: 'daily', priority: 0.7 },
   ]
 
   // Only areas with ≥3 complete-profile dentists (the indexable tier). Ones
@@ -154,6 +159,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.8,
     }))
 
+  const articlePages: MetadataRoute.Sitemap = cityArticles
+    .filter(a => a.slug && a.dentist.slug)
+    .map(a => ({
+      url: `${BASE}/dentist/${a.dentist.slug}/articles/${a.slug}`,
+      lastModified: a.published_at ? new Date(a.published_at) : new Date(),
+      changeFrequency: 'monthly' as const,
+      priority: 0.6,
+    }))
+
   // Cluster landing pages — currently just Pune's Pimpri-Chinchwad (PCMC)
   // umbrella at /pcmc, which only exists on the Pune domain.
   const clusterPages: MetadataRoute.Sitemap = city.citySlug === 'pune'
@@ -170,5 +184,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...treatmentPages,
     ...areaTreatmentPages,
     ...dentistPages,
+    ...articlePages,
   ]
 }

@@ -12,7 +12,7 @@ import { getCityBySlug } from '@/config/cities'
 import { completionPct } from '@/lib/profileCompletion'
 import { NAVY, TEAL, TEAL_DARK, TEAL_SOFT, BRAND_GRADIENT } from '@/app/dentist/[slug]/profileTheme'
 import GrowthTools from './GrowthTools'
-import { PlusIcon, CalendarIcon, QrIcon, StarIcon, PenIcon, BadgeIcon, ChevronIcon } from './dashIcons'
+import { PlusIcon, CalendarIcon, QrIcon, StarIcon, BadgeIcon, ChevronIcon, SearchIcon, CheckIcon } from './dashIcons'
 
 export const dynamic = 'force-dynamic'
 
@@ -121,6 +121,8 @@ export default async function DashboardPage() {
     { count: monthCalls },
     { count: monthBookTaps },
     { count: articleCount },
+    { count: articlePendingCount },
+    { data: recentArticleRows },
   ] = await Promise.all([
     supabase.from('reviews').select('id', { count: 'exact', head: true }).eq('dentist_id', dentist.id).eq('status', 'approved'),
     supabase
@@ -150,6 +152,14 @@ export default async function DashboardPage() {
     countEvent('call_click'),
     countEvent('booking_click'),
     supabase.from('dentist_articles').select('id', { count: 'exact', head: true }).eq('dentist_id', dentist.id).eq('status', 'published'),
+    supabase.from('dentist_articles').select('id', { count: 'exact', head: true }).eq('dentist_id', dentist.id).eq('status', 'pending'),
+    // Latest two posts for the "Get found on Google" card.
+    supabase
+      .from('dentist_articles')
+      .select('id, title, status')
+      .eq('dentist_id', dentist.id)
+      .order('created_at', { ascending: false })
+      .limit(2),
   ])
 
   const todayList = ((todayAppts ?? []) as unknown) as Appt[]
@@ -392,6 +402,91 @@ export default async function DashboardPage() {
     </section>
   )
 
+  // "Get found on Google": asks the dentist to publish a patient case or an
+  // article. Both go through the article system (admin approval, shown on the
+  // public profile). Shorter once they have posted. Hidden for reception
+  // staff, who can't open Articles.
+  const recentArticles = ((recentArticleRows ?? []) as Array<{ id: string; title: string; status: string }>)
+  const hasPosts = recentArticles.length > 0
+  const ARTICLE_PILL: Record<string, { bg: string; text: string; label: string }> = {
+    published: { bg: '#DCFCE7', text: '#166534', label: 'Live' },
+    pending:   { bg: '#FEF3C7', text: '#92400E', label: 'In review' },
+    rejected:  { bg: '#FEE2E2', text: '#991B1B', label: 'Needs changes' },
+  }
+  const pubBtn: React.CSSProperties = {
+    minHeight: 50, borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+    fontWeight: 700, fontSize: 13.5, textAlign: 'center', padding: '6px 8px', gap: 1, textDecoration: 'none', lineHeight: 1.25,
+  }
+  const whyRow = (head: string, rest: string) => (
+    <li style={{ display: 'flex', gap: 8, fontSize: 13, lineHeight: 1.4, color: '#334155' }}>
+      <span style={{ color: TEAL_DARK, display: 'flex', marginTop: 1, flexShrink: 0 }}><CheckIcon /></span>
+      <span><b>{head}</b> {rest}</span>
+    </li>
+  )
+  const publishCard = dentist.__staffRole !== 'reception' && (
+    <section style={{ background: '#fff', border: '1.5px solid #99E6DA', borderRadius: 16, overflow: 'hidden' }}>
+      <div style={{ background: 'linear-gradient(160deg, #F0FDFA 0%, #FFFFFF 70%)', padding: '14px 16px 12px', display: 'grid', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: TEAL_DARK }}>
+          <SearchIcon size={14} /> {hasPosts ? 'Your pages on Google' : 'Get found on Google'}
+        </div>
+        {hasPosts ? (
+          <>
+            <div style={{ display: 'flex', gap: 14, fontSize: 12.5, color: 'var(--muted)' }}>
+              <span><b style={{ color: 'var(--text)', fontSize: 16 }}>{articleCount ?? 0}</b> live</span>
+              {(articlePendingCount ?? 0) > 0 && <span><b style={{ color: 'var(--text)', fontSize: 16 }}>{articlePendingCount}</b> waiting for approval</span>}
+            </div>
+            <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: '#334155' }}>
+              Keep going. One new case a month keeps your profile fresh for Google and for patients.
+            </p>
+          </>
+        ) : (
+          <>
+            <h3 style={{ margin: 0, fontFamily: 'var(--font-heading)', fontSize: 17, lineHeight: 1.25, fontWeight: 800 }}>
+              Patients Google a dentist before they book. Show them your work.
+            </h3>
+            <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: '#334155' }}>
+              Every case or article you publish becomes its own page on Google, with your name, your clinic and a link to book you.
+            </p>
+            <ul style={{ display: 'grid', gap: 6, margin: '2px 0 0', padding: 0, listStyle: 'none' }}>
+              {whyRow('Ranks you higher.', 'More useful pages about you means more searches you can show up in.')}
+              {whyRow('Builds your brand.', `It shows on your DentistIn ${dentistCity.cityName} profile and DentistIn India.`)}
+              {whyRow('Patients trust real results.', 'A before and after case does more than any ad.')}
+            </ul>
+          </>
+        )}
+      </div>
+      {hasPosts && (
+        <div style={{ borderTop: '1px solid var(--border)' }}>
+          {recentArticles.map(a => {
+            const pill = ARTICLE_PILL[a.status] || { bg: '#F1F5F9', text: '#475569', label: a.status }
+            return (
+              <Link key={a.id} href={`${D}/articles`} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '10px 16px', borderBottom: '1px solid var(--border)', fontSize: 13, textDecoration: 'none', color: 'var(--text)' }}>
+                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 }}>{a.title}</span>
+                <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 8px', borderRadius: 99, whiteSpace: 'nowrap', background: pill.bg, color: pill.text }}>{pill.label}</span>
+              </Link>
+            )
+          })}
+          <Link href={`${D}/articles`} style={{ display: 'block', padding: '10px 16px', fontSize: 12.5, fontWeight: 700, color: TEAL_DARK, textDecoration: 'none' }}>See all your posts →</Link>
+        </div>
+      )}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, padding: 12, borderTop: hasPosts ? '1px solid var(--border)' : 'none' }}>
+        <Link href={`${D}/articles/new?topic=case_story`} style={{ ...pubBtn, background: TEAL, color: '#fff' }}>
+          Publish a patient case
+          {!hasPosts && <span style={{ fontWeight: 500, fontSize: 11, opacity: 0.85 }}>with patient consent</span>}
+        </Link>
+        <Link href={`${D}/articles/new`} style={{ ...pubBtn, background: '#fff', color: 'var(--text)', border: '1.5px solid var(--border)' }}>
+          Write an article
+          {!hasPosts && <span style={{ fontWeight: 500, fontSize: 11, color: 'var(--muted)' }}>tips, FAQs, treatments</span>}
+        </Link>
+      </div>
+      {!hasPosts && (
+        <div style={{ borderTop: '1px solid var(--border)', padding: '9px 16px', fontSize: 12, color: 'var(--muted)' }}>
+          About 10 minutes. AI writes the first draft for you. Our team checks it before it goes live.
+        </div>
+      )}
+    </section>
+  )
+
   const monthCard = (
     <section style={card}>
       <div style={cardHead}>
@@ -446,9 +541,6 @@ export default async function DashboardPage() {
           <div style={{ padding: '0 12px 4px' }}><RequestReviewCard profileUrl={profileUrl} clinicName={clinicName} dentistName={dentist.name || ''} /></div>
         </details>
       )}
-      <Link href={articleCount ? `${D}/articles` : `${D}/articles/new`} style={rowStyle}>
-        {growRow(<PenIcon />, articleCount ? `Your articles (${articleCount} published)` : 'Write an article', `Shows on DentistIn ${dentistCity.cityName} and DentistIn India`)}
-      </Link>
       {profileUrl && (
         <details className="dh-grow">
           <summary style={rowStyle}>{growRow(<BadgeIcon />, 'Website badge and Google link', 'Get bookings from your own website')}</summary>
@@ -466,10 +558,12 @@ export default async function DashboardPage() {
         <div style={{ display: 'grid', gap: 16 }}>
           {setupBar}
           {todayCard}
+          <div className="dh-pub-left">{publishCard}</div>
           {needsReply}
           {todayListCard}
         </div>
         <div style={{ display: 'grid', gap: 16 }}>
+          <div className="dh-pub-right">{publishCard}</div>
           {monthCard}
           {growCard}
         </div>
@@ -481,8 +575,12 @@ export default async function DashboardPage() {
         .dh-grow section { margin-bottom: 12px !important; box-shadow: none !important; }
         .dh-reqs { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
         .dh-minis { grid-template-columns: 1fr 1fr 1fr !important; }
+        .dh-pub-left { display: none; }
+        .dh-pub-left:empty, .dh-pub-right:empty { display: none !important; }
         @media (max-width: 900px) {
           .dh-cols { grid-template-columns: minmax(0, 1fr) !important; }
+          .dh-pub-left { display: block; }
+          .dh-pub-right { display: none; }
         }
         @media (max-width: 768px) {
           .dh-desktop-actions { display: none !important; }
