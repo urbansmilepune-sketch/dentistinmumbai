@@ -4,7 +4,7 @@
 //   MSG91_AUTH_KEY                 — MSG91 auth key (see src/lib/sms.ts)
 //   MSG91_SENDER_ID                — DLT-registered 6-char header (e.g. DNTPRM)
 //   MSG91_TEMPLATE_ID_BOOKING_PATIENT, MSG91_TEMPLATE_ID_BOOKING_DENTIST
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getCityBySlug } from '@/config/cities'
 import {
@@ -15,6 +15,7 @@ import {
 import { sendSMS } from '@/lib/sms'
 import { isDemoEmail } from '@/lib/demo'
 import { guardRequest } from '@/lib/apiGuards'
+import { notifyClinic, shortName, whenLabel } from '@/lib/push'
 
 function generateRef(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
@@ -244,6 +245,15 @@ export async function POST(request: NextRequest) {
         code: error.code, message: error.message, details: error.details, hint: error.hint,
       }, { status: 500 })
     }
+
+    // Phone alert to the clinic (owner + reception) — runs after the
+    // response, never blocks or fails the booking.
+    after(() => notifyClinic(dentist_id, 'booking', {
+      title: 'New booking request',
+      body: `${shortName(patient_name)} · ${whenLabel(appt_date, time_slot)}. Tap to confirm.`,
+      url: '/for-dentists/dashboard/appointments',
+      tag: `booking-${data?.id ?? reference_no}`,
+    }))
 
     // Admin email alert — best-effort. Fired here (right after the row is
     // committed) rather than inside the `if (dentist)` block below so the

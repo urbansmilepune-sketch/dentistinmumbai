@@ -9,12 +9,13 @@
 // still on) and the appointment (must belong to that patient and clinic, be
 // pending/confirmed and not in the past). A moved appointment goes back to
 // 'pending' so the clinic confirms the new time. The clinic gets an email.
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifyPatientToken, phoneTail10, patientTokenFromRequest, setPatientSessionCookie } from '@/lib/patientPortal'
 import { guardRequest } from '@/lib/apiGuards'
 import { addDaysIso, freeSlots, normaliseSlot, nowInIndia, RESCHEDULE_DAYS_AHEAD, slotLabel } from '@/lib/clinicSlots'
 import { sendPatientChangedAppointmentToDentist } from '@/lib/email'
+import { notifyClinic, shortName, whenLabel } from '@/lib/push'
 
 function admin() {
   return createClient(
@@ -75,6 +76,21 @@ export async function POST(request: NextRequest) {
 
   const dentist = (patient as any).dentist || {}
   const notify = async (extra: { new_date?: string; new_time?: string }) => {
+    // Phone alert to the clinic, after the response is sent.
+    const who = shortName((patient as any).name)
+    after(() => notifyClinic(dentistId, 'change', action === 'cancel'
+      ? {
+          title: 'Appointment cancelled',
+          body: `${who} cancelled ${whenLabel(appt.appt_date, appt.time_slot)}.`,
+          url: '/for-dentists/dashboard/appointments',
+          tag: `appt-${appt.id}`,
+        }
+      : {
+          title: 'Appointment moved',
+          body: `${who} asked to move to ${whenLabel(extra.new_date, extra.new_time)}. Tap to confirm.`,
+          url: '/for-dentists/dashboard/appointments',
+          tag: `appt-${appt.id}`,
+        }))
     if (!dentist.email) return
     try {
       await sendPatientChangedAppointmentToDentist({

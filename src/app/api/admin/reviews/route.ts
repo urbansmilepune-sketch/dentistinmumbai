@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
+import { notifyClinic, shortName } from '@/lib/push'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { createClient as createUserClient } from '@/lib/supabase/server'
 
@@ -30,13 +31,24 @@ export async function POST(request: NextRequest) {
   // review (pending→approved) or removes one (approved→rejected).
   const { data: review, error: fetchErr } = await admin_db
     .from('reviews')
-    .select('dentist_id')
+    .select('dentist_id, status, rating, patient_name')
     .eq('id', id)
     .single()
   if (fetchErr || !review) return NextResponse.json({ error: 'Review not found' }, { status: 404 })
 
   const { error } = await admin_db.from('reviews').update({ status }).eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // Phone alert to the clinic owner when a review goes live (first approval only).
+  if (status === 'approved' && review.status !== 'approved') {
+    const stars = Number(review.rating) > 0 ? `${Math.round(Number(review.rating))}★ ` : ''
+    after(() => notifyClinic(review.dentist_id, 'review', {
+      title: `New ${stars}review`,
+      body: `${shortName(review.patient_name)} left a review on your profile.`,
+      url: '/for-dentists/dashboard',
+      tag: `review-${id}`,
+    }, { staffToo: false }))
+  }
 
   // Recompute avg_rating + review_count from the source of truth (approved
   // reviews for this dentist) and write them back to the dentists row.
