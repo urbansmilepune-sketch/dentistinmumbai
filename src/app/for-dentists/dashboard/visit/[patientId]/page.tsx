@@ -521,6 +521,56 @@ export default function VisitPage() {
     </div>
   )
 
+  // Save button + error. On wide screens it sits in the left column so it is always in view.
+  const saveBlock = (
+    <>
+      {saveError && (
+        <div role="alert" style={{ display: 'flex', gap: 10, alignItems: 'flex-start', background: '#FEF2F2', border: '1px solid #FECACA', color: '#991B1B', borderRadius: 12, padding: '12px 14px', fontSize: 14 }}>
+          <span aria-hidden style={{ width: 20, height: 20, borderRadius: '50%', background: '#DC2626', color: '#fff', fontWeight: 800, fontSize: 13, display: 'grid', placeItems: 'center', flexShrink: 0 }}>!</span>
+          <span style={{ display: 'grid', gap: 2 }}>
+            <b>Not saved yet</b>
+            <span style={{ fontWeight: 500 }}>{saveError} Nothing you entered is lost.</span>
+          </span>
+        </div>
+      )}
+      <button type="button" onClick={handleSave} disabled={saving} style={{ background: TEAL, color: '#fff', border: 0, borderRadius: 14, padding: 16, fontSize: 16, fontWeight: 700, cursor: saving ? 'wait' : 'pointer', fontFamily: 'var(--font-heading)', opacity: saving ? 0.7 : 1 }}>
+        {saving ? 'Saving…' : 'Save visit'}
+      </button>
+      <div style={{ ...smallMuted, textAlign: 'center' }}>Nothing is saved until you press Save. After saving you can send everything on WhatsApp.</div>
+    </>
+  )
+
+  // Live recap of the six steps for the left column on wide screens. Tap a row to jump to that step.
+  const nextText = nextMode === 'book' ? `${prettyDate(nextDate)}, ${nextSlot}` : nextMode === 'remind' ? `WhatsApp reminder ${prettyDate(nextDate)}` : 'Nothing needed'
+  const recapRows: { id: string; n: number; label: string; value: string; done: boolean }[] = [
+    { id: 'step-dx', n: 1, label: 'Diagnosis', value: dx.length ? `${dx.join(', ')}${toothLabel ? ` · ${toothLabel}` : ''}` : toothLabel ? `Tooth ${toothLabel}` : 'Not picked yet', done: dx.length > 0 },
+    { id: 'step-plan', n: 2, label: 'Treatment plan', value: planLines.length ? `${planLines.map(l => l.label).join(' + ')} · ${rupees(planTotal)}` : 'Not picked yet', done: planLines.length > 0 },
+    ...(picked.length ? [{ id: 'step-answer', n: 3, label: "Patient's answer", value: answer === 'start' ? 'Starting today' : answer === 'later' ? 'Later, plan saved' : 'Waiting', done: !!answer }] : []),
+    ...(answer === 'start' && planLines.length ? [{ id: 'step-done', n: 4, label: 'Done today', value: planLines.filter(l => (doneNew[l.name] || 'none') !== 'none').map(l => l.label).join(', ') || 'Nothing ticked', done: planLines.some(l => (doneNew[l.name] || 'none') !== 'none') }] : []),
+    { id: 'step-rx', n: 5, label: 'Prescription', value: rxName ? `${rxName}${meds.length ? ` · ${meds.length} medicine${meds.length > 1 ? 's' : ''}` : ''}` : 'Not picked yet', done: !!rxName },
+    { id: 'step-next', n: 6, label: 'Next visit', value: nextText, done: true },
+  ]
+  const recapCard = (
+    <div style={card}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <span style={{ fontWeight: 700 }}>This visit</span>
+        <span style={smallMuted}>{pastVisits.length ? `Last visit ${prettyDate(pastVisits[0].visit_date)}` : 'First visit here'}</span>
+      </div>
+      <div style={{ display: 'grid' }}>
+        {recapRows.map(r => (
+          <button key={r.id} type="button" onClick={() => document.getElementById(r.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            style={{ display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', background: 'none', border: 0, borderBottom: `1px dashed ${LINE}`, padding: '8px 0', cursor: 'pointer', fontFamily: 'var(--font-body)', color: NAVY }}>
+            <span aria-hidden style={{ width: 20, height: 20, borderRadius: '50%', flexShrink: 0, background: r.done ? TEAL : '#fff', border: `1.5px solid ${r.done ? TEAL : '#CBD5E1'}`, color: r.done ? '#fff' : MUTED, fontSize: 11, fontWeight: 700, display: 'grid', placeItems: 'center' }}>{r.n}</span>
+            <span style={{ display: 'grid', gap: 1, minWidth: 0 }}>
+              <span style={sectionLabel}>{r.label}</span>
+              <span style={{ fontSize: 13.5, fontWeight: 600, color: r.done ? NAVY : MUTED }}>{r.value}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+
   return (
     <div style={{ padding: '16px 12px 120px', maxWidth: 1280, margin: '0 auto', color: NAVY }}>
       {/* Waiting strip */}
@@ -574,7 +624,7 @@ export default function VisitPage() {
               <span><i style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: '#DBEAFE', border: '1.5px solid #60A5FA', marginRight: 4 }} />Treated</span>
               {hintTeeth.length > 0 && <span><i style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, border: '1.5px solid #F59E0B', marginRight: 4 }} />Where it hurts</span>}
             </div>
-            {(teeth.length > 0 || dx.length > 0) && (
+            {!wide && (teeth.length > 0 || dx.length > 0) && (
               <div style={{ background: '#F8FAFC', border: `1px solid ${LINE}`, borderRadius: 12, padding: '10px 12px', fontSize: 14 }}>
                 <b>{toothLabel ? `Tooth ${toothLabel}` : 'No tooth picked'}</b>{dx.length ? ` · ${dx.join(', ')}` : ''}
                 {planLines.length > 0 && <> → {planLines.map(l => l.label).join(' + ')}</>}
@@ -623,11 +673,14 @@ export default function VisitPage() {
               ))}
             </div>
           )}
+
+          {wide && recapCard}
+          {wide && saveBlock}
         </div>
 
         {/* RIGHT: six steps */}
         <div style={{ flex: '1.35 1 460px', minWidth: 0, display: 'grid', gap: 14 }}>
-          <div style={card}>
+          <div id="step-dx" style={{ ...card, scrollMarginTop: 12 }}>
             <StepHead n={1} title={`Diagnosis${toothLabel ? ` on ${toothLabel}` : ''}`} done={dx.length > 0} />
             {suggestedDx.length > 0 && <div style={smallMuted}><b style={{ color: AMBER_INK }}>Suggested</b> from what the patient told the tablet</div>}
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -636,7 +689,7 @@ export default function VisitPage() {
             </div>
           </div>
 
-          <div style={card}>
+          <div id="step-plan" style={{ ...card, scrollMarginTop: 12 }}>
             <StepHead n={2} title="Treatment plan" hint="Prices remember your last entry" done={picked.length > 0} />
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {TREATMENTS.map(t => <button key={t.name} type="button" onClick={() => togglePick(t.name)} style={chipStyle(picked.includes(t.name), suggestedTx.includes(t.name))}>{t.name}</button>)}
@@ -679,7 +732,7 @@ export default function VisitPage() {
           </div>
 
           {picked.length > 0 && (
-            <div style={card}>
+            <div id="step-answer" style={{ ...card, scrollMarginTop: 12 }}>
               <StepHead n={3} title="Patient's answer" done={!!answer} />
               <button type="button" onClick={() => setShowPatientView(true)} style={{ border: `1px solid ${LINE}`, background: '#F8FAFC', borderRadius: 12, padding: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)', color: NAVY }}>Show plan to patient</button>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -691,7 +744,7 @@ export default function VisitPage() {
           )}
 
           {answer === 'start' && planLines.length > 0 && (
-            <div style={card}>
+            <div id="step-done" style={{ ...card, scrollMarginTop: 12 }}>
               <StepHead n={4} title="Done today" hint="Tick what you did" />
               {planLines.map(l => (
                 <div key={l.name} style={{ display: 'grid', gap: 6 }}>
@@ -702,7 +755,7 @@ export default function VisitPage() {
             </div>
           )}
 
-          <div style={card}>
+          <div id="step-rx" style={{ ...card, scrollMarginTop: 12 }}>
             <StepHead n={5} title="Prescription" done={!!rxName} />
             <span style={sectionLabel}>Start from a template</span>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: -6 }}>
@@ -750,7 +803,7 @@ export default function VisitPage() {
             )}
           </div>
 
-          <div style={card}>
+          <div id="step-next" style={{ ...card, scrollMarginTop: 12 }}>
             <StepHead n={6} title="Next visit" />
             <div role="radiogroup" aria-label="Next visit" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
               {([
@@ -807,19 +860,7 @@ export default function VisitPage() {
             )}
           </div>
 
-          {saveError && (
-            <div role="alert" style={{ display: 'flex', gap: 10, alignItems: 'flex-start', background: '#FEF2F2', border: '1px solid #FECACA', color: '#991B1B', borderRadius: 12, padding: '12px 14px', fontSize: 14 }}>
-              <span aria-hidden style={{ width: 20, height: 20, borderRadius: '50%', background: '#DC2626', color: '#fff', fontWeight: 800, fontSize: 13, display: 'grid', placeItems: 'center', flexShrink: 0 }}>!</span>
-              <span style={{ display: 'grid', gap: 2 }}>
-                <b>Not saved yet</b>
-                <span style={{ fontWeight: 500 }}>{saveError} Nothing you entered is lost.</span>
-              </span>
-            </div>
-          )}
-          <button type="button" onClick={handleSave} disabled={saving} style={{ background: TEAL, color: '#fff', border: 0, borderRadius: 14, padding: 16, fontSize: 16, fontWeight: 700, cursor: saving ? 'wait' : 'pointer', fontFamily: 'var(--font-heading)', opacity: saving ? 0.7 : 1 }}>
-            {saving ? 'Saving…' : 'Save visit'}
-          </button>
-          <div style={{ ...smallMuted, textAlign: 'center' }}>Nothing is saved until you press Save. After saving you can send everything on WhatsApp.</div>
+          {!wide && saveBlock}
         </div>
       </div>
 
