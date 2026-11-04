@@ -335,3 +335,29 @@ export function generateApptRef(): string {
   for (let i = 0; i < 6; i++) ref += chars[Math.floor(Math.random() * chars.length)]
   return ref
 }
+
+// ---- Today's bill -----------------------------------------------------------
+
+// How many sittings a saved plan step takes. The visit page writes
+// "3 sittings" / "1 sitting" / "Same day" at the start of the step's notes.
+export function sittingsFromNotes(notes: unknown): number {
+  const m = String(notes || '').match(/(\d+)\s+sittings?/i)
+  return m ? Math.max(1, Number(m[1])) : 1
+}
+
+// What to charge today for one plan step. Multi-sitting work is split evenly
+// per sitting; the last sitting (or "Finished") bills whatever is left, so the
+// bills always add up to the plan price.
+export function chargeForToday(opts: {
+  total: number; sittings: number; billedBefore: number; billedCount: number; progress: 'sitting' | 'finished'
+}): { amount: number; note: string } {
+  const total = Math.max(0, Math.round(opts.total || 0))
+  const n = Math.max(1, opts.sittings || 1)
+  const left = Math.max(0, total - Math.round(opts.billedBefore || 0))
+  const sittingNo = opts.billedCount + 1
+  const before = opts.billedBefore > 0 ? ` · ${rupees(opts.billedBefore)} billed before` : ''
+  if (opts.progress === 'finished' || n === 1 || sittingNo >= n) {
+    return { amount: left, note: n > 1 ? `Finished · plan ${rupees(total)}${before}` : 'Done today' }
+  }
+  return { amount: Math.min(left, Math.round(total / n)), note: `Sitting ${sittingNo} of ${n} · plan ${rupees(total)}${before}` }
+}
