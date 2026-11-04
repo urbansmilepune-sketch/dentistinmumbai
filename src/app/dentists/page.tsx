@@ -518,7 +518,7 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
                   <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
                     {/* Point at the dedicated, indexable /area/[slug] page
                         rather than a ?area= filtered view (Section 4). */}
-                    {(allAreas || []).slice(0, 4).map(area => (
+                    {(allAreas || []).filter(a => a.dentist_count > 0).slice(0, 4).map(area => (
                       <Link key={area.slug} href={`/area/${area.slug}`} style={{
                         padding: '8px 20px', background: 'var(--blue-light)', color: 'var(--blue)',
                         border: '1px solid #BFDBFE', borderRadius: 20, fontSize: 13, fontWeight: 600,

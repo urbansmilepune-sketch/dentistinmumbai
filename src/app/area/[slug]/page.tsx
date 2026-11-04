@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { getCityAreaDentistCounts, getAreaCompleteDentistCounts } from '@/lib/cache/public-pages'
@@ -48,7 +48,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     ? `${liveCount} verified dentists in ${area.name}, ${city.cityName}.`
     : `Verified dentists in ${area.name}, ${city.cityName}.`
   // Density gate: index only when ≥3 complete-profile dentists back this area.
-  // 1–2 → noindex (thin); 0 → the page body 404s. Kept in lockstep with the
+  // 1–2 → noindex (thin); 0 → the page redirects to /dentists. Kept in lockstep with the
   // sitemap, which emits this URL under the same ≥3 rule.
   const completeCount = (await getAreaCompleteDentistCounts(city.citySlug))[String(area.id)] ?? 0
   const indexable = completeCount >= 3
@@ -158,7 +158,11 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
   // generateMetadata and dropped from the sitemap, so it stops earning GSC
   // "crawled – not indexed" rejections. ≥3 complete → indexed + in sitemap.
   // "Complete" = 80%+ profile completion.
-  if (areaCountOf(area.id) === 0) notFound()
+  // An area with no dentists used to 404. Old links and Google still reach
+  // these URLs (61 "Not found" in GSC, Nov 2026), so send the visitor to the
+  // city's dentist list instead. 307 (temporary): the area page comes back
+  // by itself once a dentist registers there.
+  if (areaCountOf(area.id) === 0) redirect('/dentists')
 
   // Fetch dentists in this area (belt-and-suspenders city filter — area_id
   // already encodes city, but explicit filter guards against any cross-city

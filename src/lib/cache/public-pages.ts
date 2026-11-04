@@ -522,15 +522,28 @@ export type CityAreaLink = {
 export const getCityAreas = unstable_cache(
   async (citySlug: string): Promise<CityAreaLink[]> => {
     const supabase = createAnonClient()
-    const { data } = await supabase
-      .from('areas')
-      .select('id, name, slug, dentist_count')
-      .eq('city', citySlug)
-      .order('dentist_count', { ascending: false })
-    return (data ?? []) as unknown as CityAreaLink[]
+    // areas.dentist_count is unmaintained (0 across the board), so ordering by
+    // it returned an effectively random list — and many of those areas have no
+    // dentists, so every profile linked to empty /area pages that 404. That
+    // was the biggest source of the GSC "Not found (404)" report. Count live
+    // active dentists instead and only return areas that have at least one.
+    const [{ data: areas }, { data: rows }] = await Promise.all([
+      supabase.from('areas').select('id, name, slug').eq('city', citySlug),
+      supabase.from('dentists').select('area_id').eq('is_active', true).eq('city', citySlug),
+    ])
+    const counts = new Map<string, number>()
+    for (const r of (rows ?? []) as { area_id: string | number | null }[]) {
+      if (r.area_id === null || r.area_id === undefined) continue
+      const k = String(r.area_id)
+      counts.set(k, (counts.get(k) ?? 0) + 1)
+    }
+    return ((areas ?? []) as { id: string | number; name: string; slug: string }[])
+      .map(a => ({ id: a.id, name: a.name, slug: a.slug, dentist_count: counts.get(String(a.id)) ?? 0 }))
+      .filter(a => a.dentist_count > 0)
+      .sort((a, b) => b.dentist_count - a.dentist_count)
   },
-  ['city-areas'],
-  { revalidate: 300, tags: ['areas'] },
+  ['city-areas-live'],
+  { revalidate: 300, tags: ['areas', 'dentists'] },
 )
 
 // Homepage "Open now" row. A pool of active dentists in the city that have a

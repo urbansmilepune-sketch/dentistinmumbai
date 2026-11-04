@@ -156,7 +156,11 @@ export default async function HomePage() {
 
   // Order areas by their LIVE dentist count so populated areas surface first
   // (areas.dentist_count is unmaintained, so the cached order can't be trusted).
-  const areasByCount = [...areas].sort((a, b) => areaCount(b.id) - areaCount(a.id))
+  // Empty areas are left out: their /area page 404s, so linking them from the
+  // homepage handed Google dead links.
+  const areasByCount = [...areas]
+    .filter(a => areaCount(a.id) > 0)
+    .sort((a, b) => areaCount(b.id) - areaCount(a.id))
 
   // Mumbai groups areas by suburban-rail line; every other city renders one
   // chip list (their `zone` column doesn't carry the Western/Central split).
