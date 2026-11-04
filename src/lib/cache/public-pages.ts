@@ -268,6 +268,10 @@ export async function resolveCurrentSlug(oldSlug: string): Promise<string | null
 export type CityHomeStats = {
   treatmentDentistCount: Record<string, number>
   treatmentMinFee: Record<string, number>
+  // Every positive fee_from per treatment (keyed by treatment id). Lets the
+  // homepage price list drop implausible entries (e.g. a consult fee typed
+  // into Braces) before picking the "from" price. See plausibleFromFee().
+  treatmentFees: Record<string, number[]>
   areaDentistCount: Record<string, number>
 }
 
@@ -312,6 +316,7 @@ export function getCityHomeStats(citySlug: string): Promise<CityHomeStats> {
       // immune to any duplicate dentist_treatments rows.
       const treatmentDentists: Record<string, Set<string>> = {}
       const treatmentMinFee: Record<string, number> = {}
+      const treatmentFees: Record<string, number[]> = {}
       for (const row of (links ?? []) as any[]) {
         const tid = row.treatment_id as string | null
         const did = row.dentist_id as string | null
@@ -320,6 +325,7 @@ export function getCityHomeStats(citySlug: string): Promise<CityHomeStats> {
         const fee = typeof row.fee_from === 'number' ? row.fee_from : null
         if (fee !== null && fee > 0) {
           treatmentMinFee[tid] = treatmentMinFee[tid] === undefined ? fee : Math.min(treatmentMinFee[tid], fee)
+          ;(treatmentFees[tid] ??= []).push(fee)
         }
       }
       const treatmentDentistCount: Record<string, number> = {}
@@ -333,9 +339,10 @@ export function getCityHomeStats(citySlug: string): Promise<CityHomeStats> {
         areaDentistCount[key] = (areaDentistCount[key] ?? 0) + 1
       }
 
-      return { treatmentDentistCount, treatmentMinFee, areaDentistCount }
+      return { treatmentDentistCount, treatmentMinFee, treatmentFees, areaDentistCount }
     },
-    ['city-home-stats', citySlug],
+    // v2: shape gained treatmentFees — new key so no stale v1 entry is served.
+    ['city-home-stats-v2', citySlug],
     { revalidate: 300, tags: ['city-home', 'dentists', 'areas', 'treatments'] },
   )()
 }
@@ -507,3 +514,46 @@ export const getCityAreas = unstable_cache(
   ['city-areas'],
   { revalidate: 300, tags: ['areas'] },
 )
+
+// Homepage "Open now" row. A pool of active dentists in the city that have a
+// photo and a consultation fee (so every card looks complete), ranked by
+// rank_score. Open/closed is computed per request on the page, since it
+// changes by the minute while this list only needs a 5-minute refresh.
+export type HomeSpotlightDentist = {
+  id: string
+  slug: string
+  name: string
+  clinic_name: string | null
+  qualifications: string | null
+  experience_years: number
+  gender: string | null
+  consultation_fee: number
+  is_verified: boolean
+  profile_photo: string | null
+  working_hours: any
+  areas: { name: string; slug: string } | null
+}
+
+export function getHomeSpotlightDentists(citySlug: string): Promise<HomeSpotlightDentist[]> {
+  return unstable_cache(
+    async (): Promise<HomeSpotlightDentist[]> => {
+      const supabase = createAnonClient()
+      const { data, error } = await supabase
+        .from('dentists')
+        .select('id, slug, name, clinic_name, qualifications, experience_years, gender, consultation_fee, is_verified, profile_photo, working_hours, areas(name, slug)')
+        .eq('is_active', true)
+        .eq('city', citySlug)
+        .not('profile_photo', 'is', null)
+        .gt('consultation_fee', 0)
+        .order('rank_score', { ascending: false })
+        .limit(60)
+      if (error) {
+        console.error('[getHomeSpotlightDentists]', error.message)
+        return []
+      }
+      return ((data ?? []) as unknown as HomeSpotlightDentist[]).filter(d => !!d.profile_photo && d.profile_photo.trim() !== '')
+    },
+    ['home-spotlight', citySlug],
+    { revalidate: 300, tags: ['city-home', 'dentists'] },
+  )()
+}

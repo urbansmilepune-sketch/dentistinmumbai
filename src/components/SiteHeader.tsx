@@ -17,22 +17,26 @@ interface Props {
   city: CityConfig
   /** Pre-fills the search box — passed by /search so the header mirrors ?q=. */
   initialQuery?: string
+  /** Homepage only: its hero carries the search box, so the header skips it. */
+  hideSearch?: boolean
 }
 
-export default function SiteHeader({ city, initialQuery }: Props) {
+export default function SiteHeader({ city, initialQuery, hideSearch = false }: Props) {
   return (
-    <header className="sh-header">
+    <header className={`sh-header${hideSearch ? ' sh-nosearch' : ''}`}>
       <div className="sh-inner container">
         <Link href="/" className="sh-brand" aria-label={`${city.domain} home`}>
           <img className="sh-logo" src={city.logoPath} alt={city.domain} />
         </Link>
 
-        <div className="sh-search">
-          <HeaderSearch initialQuery={initialQuery} />
-        </div>
+        {!hideSearch && (
+          <div className="sh-search">
+            <HeaderSearch initialQuery={initialQuery} />
+          </div>
+        )}
 
         <div className="sh-actions">
-          <Link href="/articles" style={{ padding: '8px 12px', fontWeight: 600, fontSize: 14, color: 'var(--blue)', whiteSpace: 'nowrap', textDecoration: 'none' }}>
+          <Link href="/articles" className="sh-advice" style={{ padding: '8px 12px', fontWeight: 600, fontSize: 14, color: 'var(--blue)', whiteSpace: 'nowrap', textDecoration: 'none' }}>
             Expert Advice
           </Link>
           <Link href="/for-dentists/login" className="sh-login">
@@ -80,6 +84,11 @@ export default function SiteHeader({ city, initialQuery }: Props) {
              "Dentist " prefix so it stays compact next to the button. */
           .sh-login-pre { display: none; }
           .sh-login { padding: 8px 6px; }
+        }
+        /* Homepage (no search row): keep logo + actions on one row on phones. */
+        @media (max-width: 480px) {
+          .sh-nosearch .sh-advice { display: none !important; }
+          .sh-nosearch .sh-inner { flex-wrap: nowrap; }
         }
         /* Narrowest phones: shrink the logo a touch so the List button fits. */
         @media (max-width: 400px) {
