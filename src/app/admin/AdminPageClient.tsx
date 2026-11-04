@@ -1892,7 +1892,7 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
                       // appointment, a link the dentist sent by hand, or the
                       // open OTP form on the profile.
                       const src = (r as any).verified_visit
-                        ? { label: 'Verified visit (appointment link)', color: '#0F766E' }
+                        ? { label: 'Verified visit (appointment or saved visit)', color: '#0F766E' }
                         : (r as any).review_request_id
                           ? { label: 'Link sent by the dentist, no appointment', color: '#B45309' }
                           : { label: 'Phone OTP on profile, no booking found', color: '#B45309' }

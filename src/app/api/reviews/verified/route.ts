@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
 
   const { data: req, error: reqErr } = await db
     .from('review_requests')
-    .select('id, dentist_id, appointment_id, patient_name, patient_phone, treatment, used_at, expires_at')
+    .select('id, dentist_id, appointment_id, source, patient_name, patient_phone, treatment, used_at, expires_at')
     .eq('token', token)
     .maybeSingle()
   if (reqErr) {
@@ -61,9 +61,10 @@ export async function POST(request: NextRequest) {
       treatment: req.treatment || null,
       tags,
       status: 'pending',
-      // "Verified visit" means a real appointment on DentistIn. A link a
-      // dentist typed a number into by hand is not one.
-      verified_visit: !!req.appointment_id,
+      // "Verified visit" means the link came from a recorded visit: an
+      // appointment marked Done or a visit saved in the clinic software. A
+      // link a dentist typed a number into by hand is not one.
+      verified_visit: !!req.appointment_id || req.source === 'visit',
       appointment_id: req.appointment_id,
       review_request_id: req.id,
     })
