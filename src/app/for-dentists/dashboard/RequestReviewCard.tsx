@@ -14,18 +14,16 @@ interface Props {
 export default function RequestReviewCard({ clinicName, profileUrl, dentistName }: Props) {
   const [patientName, setPatientName] = useState('')
   const [patientPhone, setPatientPhone] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
 
-  // Reviews live as an anchored section on the public profile
-  // (<section id="reviews"> in /dentist/[slug]), not a /reviews route — so we
-  // deep-link to the hash, which scrolls the patient straight to it.
+  // Fallback only: if the review-link API fails we still send the patient to
+  // the profile's reviews section, as this card did before review links.
   const reviewUrl = `${profileUrl}#reviews`
-
-  // Names are stored inconsistently (some rows already start with "Dr."), so
-  // strip any leading "Dr"/"Dr." before re-prefixing to avoid "Dr. Dr. …".
   const cleanName = dentistName.replace(/^\s*dr\.?\s*/i, '').trim()
   const signoff = cleanName ? `Dr. ${cleanName}` : 'your dentist'
 
-  function buildMessage(): string {
+  function fallbackMessage(): string {
     const who = patientName.trim() || 'there'
     return (
       `Hi ${who}, thank you for visiting ${clinicName}. We'd love your feedback! ` +
@@ -34,16 +32,31 @@ export default function RequestReviewCard({ clinicName, profileUrl, dentistName 
     )
   }
 
-  function handleSend() {
-    const text = buildMessage()
-    // If a usable Indian mobile is entered, open the chat with that patient
-    // directly; otherwise fall back to wa.me's contact picker.
-    const url = whatsappLink(patientPhone, text)
-      ?? `https://wa.me/?text=${encodeURIComponent(text)}`
-    window.open(url, '_blank', 'noopener,noreferrer')
+  async function handleSend() {
+    if (busy) return
+    setBusy(true); setError('')
+    // A one-time review link: the patient taps stars, no OTP.
+    try {
+      const res = await fetch('/api/dentist/review-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ patient_name: patientName.trim(), patient_phone: patientPhone.trim() }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok && data.waUrl) {
+        window.location.href = data.waUrl
+        setBusy(false)
+        return
+      }
+      if (res.status === 400 && data.error) { setError(data.error); setBusy(false); return }
+    } catch { /* fall through to the old profile link */ }
+    const text = fallbackMessage()
+    const url = whatsappLink(patientPhone, text) ?? `https://wa.me/?text=${encodeURIComponent(text)}`
+    window.location.href = url
+    setBusy(false)
   }
 
-  const canSend = patientName.trim().length > 0
+  const canSend = patientName.trim().length > 0 && !busy
   const inputStyle: React.CSSProperties = {
     width: '100%', padding: '10px 12px', minHeight: 44,
     border: '1px solid var(--border)', borderRadius: 10,
@@ -65,7 +78,7 @@ export default function RequestReviewCard({ clinicName, profileUrl, dentistName 
       </div>
       <p style={{ fontSize: 14, color: 'var(--muted)', marginBottom: 16 }}>
         Ask a patient you&apos;ve treated to leave a quick review. Enter their name (and
-        WhatsApp number, if you have it) and we&apos;ll open WhatsApp with the message ready to send.
+        WhatsApp number, if you have it) and we&apos;ll open WhatsApp with a one-tap review link ready to send.
       </p>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 16 }}>
@@ -107,8 +120,9 @@ export default function RequestReviewCard({ clinicName, profileUrl, dentistName 
           fontWeight: 700, fontSize: 15, fontFamily: 'var(--font-body)',
           cursor: canSend ? 'pointer' : 'not-allowed',
         }}>
-        📲 Send Review Request on WhatsApp
+        {busy ? 'Opening WhatsApp…' : '📲 Send Review Request on WhatsApp'}
       </button>
+      {error && <p role="alert" style={{ marginTop: 8, fontSize: 13, color: '#B91C1C' }}>{error}</p>}
     </section>
   )
 }

@@ -15,9 +15,8 @@ interface Props {
 const labelStyle: React.CSSProperties = { fontSize: 11.5, color: 'var(--muted)', fontWeight: 600, marginTop: 3, letterSpacing: '0.01em' }
 const valueStyle: React.CSSProperties = { fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 19, color: NAVY, lineHeight: 1.15, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, minHeight: 24 }
 
-// Reviews UI is globally disabled for now. Flip to true to restore the
-// rating / "New" column on the profile proof strip.
-const REVIEWS_ENABLED = false
+// Rating / "New" column on the proof strip. Set false to hide reviews again.
+const REVIEWS_ENABLED = true
 
 export default function ProofStrip({ avgRating, reviewCount, experienceYears, topSpecialty, qualifications }: Props) {
   const specialty = topSpecialty || (qualifications && qualifications.trim()) || 'MDS'
@@ -32,10 +31,10 @@ export default function ProofStrip({ avgRating, reviewCount, experienceYears, to
       {REVIEWS_ENABLED && (
         <div style={{ padding: '14px 8px', textAlign: 'center' }}>
           {reviewCount > 0 ? (
-            <>
+            <a href="#reviews" style={{ display: 'block', textDecoration: 'none' }}>
               <div style={valueStyle}><StarIcon size={17} color="#F59E0B" />{avgRating}</div>
-              <div style={labelStyle}>{reviewCount} {reviewCount === 1 ? 'review' : 'reviews'}</div>
-            </>
+              <div style={{ ...labelStyle, color: '#0F766E', textDecoration: 'underline' }}>{reviewCount} {reviewCount === 1 ? 'review' : 'reviews'}</div>
+            </a>
           ) : (
             <>
               <div style={valueStyle}>

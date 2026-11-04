@@ -48,9 +48,8 @@ interface Props {
   treatmentNote?: string | null
 }
 
-// Reviews UI is globally disabled for now. Flip to true to restore star
-// ratings / review counts on this card.
-const REVIEWS_ENABLED = false
+// Star rating / "New" on this card. Set false to hide reviews again.
+const REVIEWS_ENABLED = true
 
 export default function DentistResultCard({ dentist: d, highlight = null, treatmentNote = null }: Props) {
   const name = normalizeDrName(d.name)

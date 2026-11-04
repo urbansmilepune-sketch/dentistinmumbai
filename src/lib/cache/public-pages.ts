@@ -66,6 +66,9 @@ export type DentistProfileReview = {
   review_text: string | null
   treatment: string | null
   created_at: string
+  tags?: string[] | null
+  verified_visit?: boolean | null
+  dentist_reply?: string | null
 }
 
 export type DentistProfileLocation = {
@@ -171,6 +174,26 @@ export function getCityHomeData(citySlug: string): Promise<CityHomeData> {
   )()
 }
 
+// Approved reviews for a profile. Tries the v1 review columns (tags,
+// verified visit, dentist reply) and falls back to the original columns if
+// the 20261104170000_review_requests.sql migration hasn't been run yet.
+async function fetchApprovedReviews(supabase: ReturnType<typeof createAnonClient>, dentistId: string) {
+  const base = 'id, patient_name, rating, review_text, treatment, created_at'
+  const full = await supabase
+    .from('reviews')
+    .select(`${base}, tags, verified_visit, dentist_reply`)
+    .eq('dentist_id', dentistId)
+    .eq('status', 'approved')
+    .order('created_at', { ascending: false })
+  if (!full.error) return full
+  return supabase
+    .from('reviews')
+    .select(base)
+    .eq('dentist_id', dentistId)
+    .eq('status', 'approved')
+    .order('created_at', { ascending: false })
+}
+
 export const getDentistProfileData = unstable_cache(
   async (slug: string): Promise<DentistProfileData | null> => {
     const supabase = createAnonClient()
@@ -191,12 +214,7 @@ export const getDentistProfileData = unstable_cache(
     // city, ranked by rank_score — surfaced in the "More Dentists in {area}"
     // section at the bottom of the profile.
     const [{ data: approvedReviews }, { data: locations }, { data: similarDentists }] = await Promise.all([
-      supabase
-        .from('reviews')
-        .select('id, patient_name, rating, review_text, treatment, created_at')
-        .eq('dentist_id', (dentist as any).id)
-        .eq('status', 'approved')
-        .order('created_at', { ascending: false }),
+      fetchApprovedReviews(supabase, (dentist as any).id),
       supabase
         .from('clinic_locations')
         .select('id, name:clinic_name, address, phone, working_hours, is_primary, areas(name)')

@@ -13,6 +13,9 @@
 //                               {{1}} clinic, {{2}} date
 //   appointment_reminder      → patient + dentist, 3 h and 30 min before
 //                               {{1}}..{{5}}, see sendReminderWhatsApp
+//   review_request            → patient, about 2 h after the visit is Done
+//                               {{1}} first name, {{2}} clinic, {{3}} link
+//                               (also needs REVIEW_REQUESTS_ENABLED=true)
 //
 // Env:
 //   WHATSAPP_ENABLED        — must be "true" or nothing is sent (master switch)
@@ -32,6 +35,7 @@ export type WhatsAppTemplate =
   | 'appointment_confirmation'
   | 'appointment_cancellation'
   | 'appointment_reminder'
+  | 'review_request'
 
 /** Number of {{n}} values each template expects. */
 export const TEMPLATE_VALUE_COUNT: Record<WhatsAppTemplate, number> = {
@@ -40,6 +44,7 @@ export const TEMPLATE_VALUE_COUNT: Record<WhatsAppTemplate, number> = {
   appointment_confirmation: 3,
   appointment_cancellation: 2,
   appointment_reminder: 5,
+  review_request: 3,
 }
 
 export type WhatsAppResult =
@@ -193,4 +198,9 @@ export function sendReminderWhatsApp(p: { patientPhone: string; patientName: str
   return sendWhatsAppTemplate(p.patientPhone, 'appointment_reminder', [
     p.patientName, p.clinicName, formatApptDate(p.apptDate), formatApptTime(p.timeSlot), p.clinicPhone,
   ])
+}
+
+/** review_request: {{1}} patient first name, {{2}} clinic, {{3}} review link. */
+export function sendReviewRequestWhatsApp(p: { patientPhone: string; firstName: string; clinicName: string; link: string }) {
+  return sendWhatsAppTemplate(p.patientPhone, 'review_request', [p.firstName, p.clinicName, p.link])
 }

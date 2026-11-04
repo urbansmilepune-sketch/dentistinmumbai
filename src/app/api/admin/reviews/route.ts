@@ -24,6 +24,7 @@ export async function POST(request: NextRequest) {
 
   const { id, status } = await request.json()
   if (!id || !status) return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
+  if (!['approved', 'rejected', 'pending'].includes(status)) return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
 
   // Look up the dentist before flipping status so we can recompute their
   // rating aggregates regardless of whether this transition adds an approved
