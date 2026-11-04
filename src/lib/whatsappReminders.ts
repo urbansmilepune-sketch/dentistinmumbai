@@ -14,7 +14,7 @@
 // means "no reminder", never "a reminder every 5 minutes".
 
 import { createClient as createServiceClient } from '@supabase/supabase-js'
-import { sendReminderWhatsApp, whatsAppEnabled } from '@/lib/whatsapp'
+import { sendReminderWhatsApp, whatsAppEnabled, withDrPrefix } from '@/lib/whatsapp'
 
 const IST_OFFSET_MIN = 330
 
@@ -100,12 +100,14 @@ export async function runWhatsAppReminders(): Promise<WhatsAppReminderResult> {
     result.checked++
 
     const clinicName = a.clinic_locations?.clinic_name || a.dentists?.clinic_name || a.dentists?.name || 'our clinic'
-    const clinicPhone = a.clinic_locations?.phone || a.dentists?.phone || a.dentists?.whatsapp || ''
     const dentistPhone = a.dentists?.whatsapp || a.dentists?.phone || null
-    // Same template, same values, to the patient and to the dentist.
-    const recipients: { who: 'patient' | 'dentist'; phone: string | null }[] = [
-      { who: 'patient', phone: a.patient_phone },
-      { who: 'dentist', phone: dentistPhone },
+    const patientName = (a.patient_name || '').trim() || 'there'
+    const dentistName = withDrPrefix(a.dentists?.name)
+    // Same template to both. Patient: "Hi <patient> ... with Dr. <dentist>".
+    // Dentist: "Hi Dr. <dentist> ... with <patient>".
+    const recipients: { who: 'patient' | 'dentist'; phone: string | null; greetName: string; withName: string }[] = [
+      { who: 'patient', phone: a.patient_phone, greetName: patientName.split(/\s+/)[0], withName: dentistName },
+      { who: 'dentist', phone: dentistPhone, greetName: dentistName, withName: patientName },
     ]
 
     for (const rcpt of recipients) {
@@ -134,12 +136,12 @@ export async function runWhatsAppReminders(): Promise<WhatsAppReminderResult> {
       }
 
       const r = await sendReminderWhatsApp({
-        patientPhone: rcpt.phone,
-        patientName: (a.patient_name || 'there').split(/\s+/)[0],
+        phone: rcpt.phone,
+        greetName: rcpt.greetName,
+        withName: rcpt.withName,
         clinicName,
         apptDate: a.appt_date,
         timeSlot: a.time_slot || '',
-        clinicPhone,
       })
       if (r.success) result.sent++
       else { result.failed++; console.error('[wa-reminders] send failed', { appt_id: a.id, to: rcpt.who, kind: kind.type, error: r.error }) }

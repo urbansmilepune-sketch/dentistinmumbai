@@ -24,8 +24,8 @@ const TEMPLATES: Tpl[] = [
     text: 'Your Appointment at {{1}} on {{2}} is canceled. Kindly Rebook with us.',
     samples: ['Urban Smile Dental Clinic', '5 Nov 2026'] },
   { name: 'appointment_reminder', who: 'Patient', when: '3 hours and 30 min before (patient + dentist)',
-    text: '5 values: patient name, clinic, date, time, clinic phone',
-    samples: ['Rahul', 'Urban Smile Dental Clinic', '5 Nov 2026', '11:00 AM', '7719903232'] },
+    text: 'Hi {{1}}, your appointment with {{2}} at {{3}} is scheduled for {{4}} at {{5}}. Please reply "Yes" to confirm or call us if you need to reschedule. Thank you!',
+    samples: ['Rahul', 'Dr. Manish Dighade', 'Urban Smile Dental Clinic', '5 Nov 2026', '11:00 AM'] },
 ]
 
 export default function WhatsAppTestClient({ enabled }: { enabled: boolean }) {

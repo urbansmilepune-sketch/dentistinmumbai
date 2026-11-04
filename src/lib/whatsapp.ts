@@ -12,7 +12,7 @@
 //   appointment_cancellation  → patient, when the dentist cancels
 //                               {{1}} clinic, {{2}} date
 //   appointment_reminder      → patient + dentist, 3 h and 30 min before
-//                               {{1}}..{{5}}, see sendReminderWhatsApp
+//                               {{1}} name, {{2}} with whom, {{3}} clinic, {{4}} date, {{5}} time
 //
 // Env:
 //   WHATSAPP_ENABLED        — must be "true" or nothing is sent (master switch)
@@ -184,13 +184,23 @@ export function sendCancellationWhatsApp(p: { patientPhone: string; clinicName: 
   ])
 }
 
+/** "Manish Dighade" → "Dr. Manish Dighade"; leaves names already starting with Dr alone. */
+export function withDrPrefix(name: string | null | undefined): string {
+  const n = (name || '').trim()
+  if (!n) return 'your dentist'
+  return /^dr\.?\s/i.test(n) ? n : `Dr. ${n}`
+}
+
 /**
- * appointment_reminder has 5 values. ASSUMED order (matches the existing
- * day-before SMS): {{1}} patient first name, {{2}} clinic, {{3}} date,
- * {{4}} time, {{5}} clinic phone. Change here if the template text differs.
+ * appointment_reminder text:
+ *   "Hi {{1}}, your appointment with {{2}} at {{3}} is scheduled for {{4}} at {{5}}. ..."
+ * {{1}} greeting name, {{2}} who the appointment is with, {{3}} clinic,
+ * {{4}} date, {{5}} time.
+ * To the patient: Hi <patient>, ... with Dr. <dentist> ...
+ * To the dentist: Hi Dr. <dentist>, ... with <patient> ...
  */
-export function sendReminderWhatsApp(p: { patientPhone: string; patientName: string; clinicName: string; apptDate: string; timeSlot: string; clinicPhone: string }) {
-  return sendWhatsAppTemplate(p.patientPhone, 'appointment_reminder', [
-    p.patientName, p.clinicName, formatApptDate(p.apptDate), formatApptTime(p.timeSlot), p.clinicPhone,
+export function sendReminderWhatsApp(p: { phone: string; greetName: string; withName: string; clinicName: string; apptDate: string; timeSlot: string }) {
+  return sendWhatsAppTemplate(p.phone, 'appointment_reminder', [
+    p.greetName, p.withName, p.clinicName, formatApptDate(p.apptDate), formatApptTime(p.timeSlot),
   ])
 }
