@@ -1,10 +1,12 @@
-// POST /api/patient/otp/verify — checks the 6-digit code, and on success
+// POST /api/patient/otp/verify — checks the 6-digit code (body { phone, otp }
+// or { email, otp }), and on success
 // sets the 7-day httpOnly portal session cookie and returns the list of clinics (one per dentist) where
-// this phone is a patient. The patient picks a clinic and
+// this phone or email is a patient. The patient picks a clinic and
 // the dashboard fetches that clinic's records with the token.
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { setPatientSessionCookie, phoneTail10 } from '@/lib/patientPortal'
+import { setPatientSessionCookie, phoneTail10, normEmail, isEmail, byPhone, byEmail, otpKeyFor } from '@/lib/patientPortal'
+import { loadClinicsFor } from '@/lib/patientClinics'
 import { guardRequest } from '@/lib/apiGuards'
 import { MAX_OTP_ATTEMPTS, failedAttemptsFor, recordFailedAttempt } from '@/lib/otpAttempts'
 
@@ -26,21 +28,24 @@ export async function POST(request: NextRequest) {
   let body: any
   try { body = await request.json() } catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }) }
 
+  const viaEmail = typeof body?.email === 'string'
+  const email = normEmail(body?.email)
   const phone = phoneTail10(body?.phone)
   const otp = typeof body?.otp === 'string' ? body.otp.trim() : ''
-  if (!/^\d{10}$/.test(phone)) {
-    return NextResponse.json({ error: 'Enter a valid 10-digit mobile number.' }, { status: 400 })
+  if (viaEmail ? !isEmail(email) : !/^\d{10}$/.test(phone)) {
+    return NextResponse.json({ error: viaEmail ? 'Enter a valid email address.' : 'Enter a valid 10-digit mobile number.' }, { status: 400 })
   }
   if (!/^\d{6}$/.test(otp)) {
-    return NextResponse.json({ error: 'Enter the 6-digit code from your SMS.' }, { status: 400 })
+    return NextResponse.json({ error: `Enter the 6-digit code from your ${viaEmail ? 'email' : 'SMS'}.` }, { status: 400 })
   }
+  const who = viaEmail ? byEmail(email) : byPhone(phone)
 
   const db = admin()
 
   const { data: row } = await db
     .from('patient_portal_otps')
     .select('*')
-    .eq('phone', phone)
+    .eq('phone', otpKeyFor(who))
     .maybeSingle()
 
   if (!row) return NextResponse.json({ error: 'No active code — request a new one.' }, { status: 400 })
@@ -57,40 +62,24 @@ export async function POST(request: NextRequest) {
       await db.from('patient_portal_otps').update({ used: true }).eq('id', row.id)
       return NextResponse.json({ error: 'Too many wrong codes — request a new one.' }, { status: 429 })
     }
-    return NextResponse.json({ error: 'Incorrect code. Check the SMS and try again.' }, { status: 400 })
+    return NextResponse.json({ error: `Incorrect code. Check the ${viaEmail ? 'email' : 'SMS'} and try again.` }, { status: 400 })
   }
 
   // Burn the OTP before issuing the token so a replayed request can't re-verify.
   await db.from('patient_portal_otps').update({ used: true }).eq('id', row.id)
 
-  // Every clinic this number is a patient at.
-  const { data: patientRows, error: pErr } = await db
-    .from('patients')
-    .select('id, name, dentist:dentists(id, name, clinic_name, city)')
-    .ilike('phone', `%${phone}`)
+  // Every clinic this phone or email is a patient at.
+  const { clinics, error: pErr } = await loadClinicsFor(db, who)
   if (pErr) {
     console.error('[patient/otp/verify] patients lookup failed', pErr)
     return NextResponse.json({ error: 'Could not load your records' }, { status: 500 })
   }
-  if (!patientRows || patientRows.length === 0) {
-    return NextResponse.json({ error: 'We could not find any dental records for this number.' }, { status: 404 })
+  if (clinics.length === 0) {
+    return NextResponse.json({ error: 'We could not find any dental records for this login.' }, { status: 404 })
   }
-
-  // Stamp last-login on all matched rows (best-effort; non-blocking semantics).
-  const ids = patientRows.map((r: any) => r.id)
-  await db.from('patients').update({ portal_last_login: new Date().toISOString() }).in('id', ids)
-
-  const clinics = patientRows.map((r: any) => ({
-    patient_id: r.id,
-    patient_name: r.name,
-    dentist_id: r.dentist?.id ?? null,
-    dentist_name: r.dentist?.name ?? null,
-    clinic_name: r.dentist?.clinic_name ?? null,
-    city: r.dentist?.city ?? null,
-  }))
 
   // The token lives only in the httpOnly cookie, never in the JSON body.
   const res = NextResponse.json({ success: true, clinics })
-  await setPatientSessionCookie(res, phone)
+  await setPatientSessionCookie(res, who)
   return res
 }

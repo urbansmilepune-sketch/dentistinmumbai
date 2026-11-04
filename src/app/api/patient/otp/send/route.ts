@@ -1,18 +1,22 @@
-// POST /api/patient/otp/send — issues a 6-digit login OTP to a patient's
-// phone for the patient app. The patient owns their records: any clinic on
-// DentistIn that has this number on file shows up after login, with no
-// switch for the dentist to turn on. We only send if the number is on file
-// at some clinic, so random numbers can't have codes texted out.
+// POST /api/patient/otp/send — issues a 6-digit login code for the patient
+// app, by SMS (body { phone }) or by email (body { email }). The patient owns
+// their records: any clinic on DentistIn that has this phone or email on file
+// shows up after login, with no switch for the dentist to turn on. We only
+// send if the phone or email is on file at some clinic, so random numbers or
+// addresses can't have codes sent to them.
 //
 // SMS template, first one set wins. The dentist login OTP template is the
 // one already live, so patients reuse it unless a patient-only one is added:
 //   MSG91_TEMPLATE_ID_PATIENT_OTP
 //   MSG91_TEMPLATE_ID_DENTIST_OTP
 //   MSG91_TEMPLATE_ID_REVIEW_OTP
+// Email uses the same login-code email as dentists (Resend).
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendSMS } from '@/lib/sms'
-import { phoneTail10 } from '@/lib/patientPortal'
+import { sendLoginOtpEmail } from '@/lib/email'
+import { getCityByDomain } from '@/config/cities'
+import { phoneTail10, normEmail, isEmail, byPhone, byEmail, patientMatch, otpKeyFor } from '@/lib/patientPortal'
 import { isMissingColumnError } from '@/lib/otpAttempts'
 
 function admin() {
@@ -26,10 +30,13 @@ export async function POST(request: NextRequest) {
   let body: any
   try { body = await request.json() } catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }) }
 
+  const viaEmail = typeof body?.email === 'string'
+  const email = normEmail(body?.email)
   const phone = phoneTail10(body?.phone)
-  if (!/^\d{10}$/.test(phone)) {
-    return NextResponse.json({ error: 'Enter a valid 10-digit mobile number.' }, { status: 400 })
+  if (viaEmail ? !isEmail(email) : !/^\d{10}$/.test(phone)) {
+    return NextResponse.json({ error: viaEmail ? 'Enter a valid email address.' : 'Enter a valid 10-digit mobile number.' }, { status: 400 })
   }
+  const who = viaEmail ? byEmail(email) : byPhone(phone)
 
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     console.error('[patient/otp/send] missing supabase env vars')
@@ -38,11 +45,12 @@ export async function POST(request: NextRequest) {
 
   const db = admin()
 
-  // Gate: the number must be on file at one clinic at least.
+  // Gate: the phone or email must be on file at one clinic at least.
+  const match = patientMatch(who)
   const { data: matches, error: lookupErr } = await db
     .from('patients')
     .select('id')
-    .ilike('phone', `%${phone}`)
+    .ilike(match.column, match.pattern)
     .limit(1)
   if (lookupErr) {
     console.error('[patient/otp/send] lookup failed', lookupErr)
@@ -50,33 +58,46 @@ export async function POST(request: NextRequest) {
   }
   if (!matches || matches.length === 0) {
     return NextResponse.json({
-      error: 'We could not find any dental records for this number. Use the mobile number you gave at the clinic, or book a visit first.',
+      error: viaEmail
+        ? 'We could not find any dental records for this email. Use the email you gave at the clinic, or log in with your mobile number.'
+        : 'We could not find any dental records for this number. Use the mobile number you gave at the clinic, or book a visit first.',
     }, { status: 404 })
   }
 
-  // Rate limit: patient_portal_otps is one-row-per-phone (upsert below), so we
-  // throttle by minimum interval rather than counting rows — reject if this
-  // number was sent a code in the last 3 minutes. Caps ~3 sends per 10 min and
-  // stops SMS-bombing a victim's phone. Relies on the upsert refreshing
-  // created_at.
+  // One row per login in patient_portal_otps. Its `phone` column holds the
+  // 10-digit phone, or "email:<address>" for email logins (see otpKeyFor).
+  const key = otpKeyFor(who)
+
+  // Rate limit: the row is upserted on every send, so reject if this phone or
+  // email was sent a code in the last 3 minutes. Stops SMS/email bombing.
   const { data: lastOtp } = await db
     .from('patient_portal_otps')
     .select('created_at')
-    .eq('phone', phone)
+    .eq('phone', key)
     .maybeSingle()
   if (lastOtp?.created_at && Date.now() - new Date(lastOtp.created_at).getTime() < 3 * 60 * 1000) {
     return NextResponse.json(
-      { error: 'Too many requests. Please wait a few minutes before requesting another OTP.' },
+      { error: 'Too many requests. Please wait a few minutes before requesting another code.' },
       { status: 429 },
     )
+  }
+
+  const tpl = process.env.MSG91_TEMPLATE_ID_PATIENT_OTP
+    || process.env.MSG91_TEMPLATE_ID_DENTIST_OTP
+    || process.env.MSG91_TEMPLATE_ID_REVIEW_OTP
+  // In production a missing template means no SMS goes out. Saying "sent"
+  // there left patients waiting for a code that never came, so fail loudly.
+  if (!viaEmail && !tpl && process.env.VERCEL_ENV === 'production') {
+    console.error('[patient/otp/send] no MSG91 OTP template set (PATIENT / DENTIST / REVIEW); login SMS cannot be sent')
+    return NextResponse.json({ error: 'Login by SMS is not set up yet. Please log in with email or Google.' }, { status: 503 })
   }
 
   const otp = Math.floor(100000 + Math.random() * 900000).toString()
   const expires_at = new Date(Date.now() + 10 * 60 * 1000).toISOString()
 
-  // A re-send reuses the phone's row, so reset the wrong-guess counter too.
+  // A re-send reuses the row, so reset the wrong-guess counter too.
   // If the failed_attempts column hasn't been added yet, retry without it.
-  const otpRow = { phone, otp, expires_at, used: false, created_at: new Date().toISOString() }
+  const otpRow = { phone: key, otp, expires_at, used: false, created_at: new Date().toISOString() }
   let { error: upsertErr } = await db
     .from('patient_portal_otps')
     .upsert({ ...otpRow, failed_attempts: 0 }, { onConflict: 'phone' })
@@ -87,20 +108,22 @@ export async function POST(request: NextRequest) {
   }
   if (upsertErr) {
     console.error('[patient/otp/send] upsert failed', upsertErr)
-    return NextResponse.json({ error: 'Could not issue OTP' }, { status: 500 })
+    return NextResponse.json({ error: 'Could not issue a code' }, { status: 500 })
   }
 
-  const tpl = process.env.MSG91_TEMPLATE_ID_PATIENT_OTP
-    || process.env.MSG91_TEMPLATE_ID_DENTIST_OTP
-    || process.env.MSG91_TEMPLATE_ID_REVIEW_OTP
-  if (!tpl) {
-    // In production a missing template means no SMS goes out. Saying "sent"
-    // there left patients waiting for a code that never came, so fail
-    // loudly instead. Local dev still logs the code and carries on.
-    if (process.env.VERCEL_ENV === 'production') {
-      console.error('[patient/otp/send] no MSG91 OTP template set (PATIENT / DENTIST / REVIEW); login SMS cannot be sent')
-      return NextResponse.json({ error: 'Login by SMS is not set up yet. Please ask your clinic.' }, { status: 503 })
+  if (viaEmail) {
+    try {
+      const city = getCityByDomain(request.headers.get('host'))
+      await sendLoginOtpEmail({ to_email: email, otp, city: city.citySlug })
+    } catch (err) {
+      console.error('[patient/otp/send] email send failed', err)
+      return NextResponse.json({ error: 'Could not send the code. Please try again.' }, { status: 502 })
     }
+    return NextResponse.json({ success: true })
+  }
+
+  if (!tpl) {
+    // Local dev without a DLT template: log the code and carry on.
     console.log('[patient/otp/send] no template id; OTP for', phone, ':', otp)
     return NextResponse.json({ success: true })
   }

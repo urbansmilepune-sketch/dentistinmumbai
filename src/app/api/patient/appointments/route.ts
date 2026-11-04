@@ -4,14 +4,14 @@
 // Body: { patient_id, appointment_id, action: 'cancel' | 'reschedule',
 //         appt_date?: 'YYYY-MM-DD', time_slot?: 'HH:MM' }
 //
-// Security mirrors /api/patient/data: the portal token proves phone
-// ownership, then we re-load the patient row (phone must match, portal access
-// still on) and the appointment (must belong to that patient and clinic, be
+// Security mirrors /api/patient/data: the session proves the patient owns a
+// phone or email, then we re-load the patient row (that phone or email must
+// match) and the appointment (must belong to that patient and clinic, be
 // pending/confirmed and not in the past). A moved appointment goes back to
 // 'pending' so the clinic confirms the new time. The clinic gets an email.
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { verifyPatientToken, phoneTail10, patientTokenFromRequest, setPatientSessionCookie } from '@/lib/patientPortal'
+import { verifyPatientToken, patientTokenFromRequest, setPatientSessionCookie, ownsPatientRow } from '@/lib/patientPortal'
 import { guardRequest } from '@/lib/apiGuards'
 import { addDaysIso, freeSlots, normaliseSlot, nowInIndia, RESCHEDULE_DAYS_AHEAD, slotLabel } from '@/lib/clinicSlots'
 import { sendPatientChangedAppointmentToDentist } from '@/lib/email'
@@ -49,10 +49,10 @@ export async function POST(request: NextRequest) {
 
   const { data: patient } = await db
     .from('patients')
-    .select('id, name, phone, dentist_id, portal_access, dentist:dentists(id, name, email, city, working_hours)')
+    .select('id, name, phone, email, dentist_id, portal_access, dentist:dentists(id, name, email, city, working_hours)')
     .eq('id', patientId)
     .maybeSingle()
-  if (!patient || phoneTail10((patient as any).phone) !== claims.phone) {
+  if (!patient || !ownsPatientRow(patient as any, claims)) {
     return NextResponse.json({ error: 'Record not found' }, { status: 404 })
   }
   const dentistId = (patient as any).dentist_id
@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
     }
     await notify({})
     const res = NextResponse.json({ success: true })
-    await setPatientSessionCookie(res, claims.phone)
+    await setPatientSessionCookie(res, claims)
     return res
   }
 
@@ -149,6 +149,6 @@ export async function POST(request: NextRequest) {
   }
   await notify({ new_date: newDate, new_time: newSlot })
   const res = NextResponse.json({ success: true, appt_date: newDate, time_slot: newSlot })
-  await setPatientSessionCookie(res, claims.phone)
+  await setPatientSessionCookie(res, claims)
   return res
 }

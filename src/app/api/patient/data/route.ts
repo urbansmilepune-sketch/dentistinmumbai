@@ -11,7 +11,7 @@
 // their records and needs no switch from the dentist.
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { verifyPatientToken, phoneTail10, patientTokenFromRequest, setPatientSessionCookie } from '@/lib/patientPortal'
+import { verifyPatientToken, patientTokenFromRequest, setPatientSessionCookie, ownsPatientRow, patientMatch } from '@/lib/patientPortal'
 import { nowInIndia } from '@/lib/clinicSlots'
 
 function admin() {
@@ -37,11 +37,11 @@ export async function POST(request: NextRequest) {
   // Load + authorise the requested patient against the token's phone.
   const { data: patient } = await db
     .from('patients')
-    .select('id, name, age, gender, phone, dentist_id, portal_access, portal_last_login, dentist:dentists(id, slug, name, clinic_name, phone, whatsapp, address, city, degree, mci_number, working_hours, areas(name))')
+    .select('id, name, age, gender, phone, email, dentist_id, portal_access, portal_last_login, dentist:dentists(id, slug, name, clinic_name, phone, whatsapp, address, city, degree, mci_number, working_hours, areas(name))')
     .eq('id', patientId)
     .maybeSingle()
 
-  if (!patient || phoneTail10((patient as any).phone) !== claims.phone) {
+  if (!patient || !ownsPatientRow(patient as any, claims)) {
     return NextResponse.json({ error: 'Record not found' }, { status: 404 })
   }
 
@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
     // without trusting anything in the browser.
     db.from('patients')
       .select('id, name, dentist:dentists(id, name, clinic_name, city)')
-      .ilike('phone', `%${claims.phone}`),
+      .ilike(patientMatch(claims).column, patientMatch(claims).pattern),
     // Branch hours, so a reschedule at branch B uses branch B's timings.
     db.from('clinic_locations')
       .select('id, working_hours')
@@ -136,6 +136,6 @@ export async function POST(request: NextRequest) {
     visits: visits || [],
   })
   // Using the app keeps the login alive for another 7 days.
-  await setPatientSessionCookie(res, claims.phone)
+  await setPatientSessionCookie(res, claims)
   return res
 }
