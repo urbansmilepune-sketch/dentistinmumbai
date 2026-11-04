@@ -1,32 +1,48 @@
 'use client'
 
-// First-run onboarding wizard. Mobile-first, full-screen, 7 steps, NO sidebar
-// or dashboard chrome (this route lives OUTSIDE dashboard/layout.tsx, so it
-// renders standalone). The dashboard layout redirects owners with a bare
-// profile here until they finish or skip — both set dentists.onboarding_completed.
+// First-run setup wizard. Mobile-first, full-screen, NO dashboard chrome (this
+// route lives outside dashboard/layout.tsx).
 //
-// Each step persists to the dentists row BEFORE advancing, via the RLS-scoped
-// client (email = jwt email), the same write path the profile/hours editors
-// use. Photo reuses /api/cloudinary/upload (writes profile_photo server-side);
-// the map step reuses /api/dentist/maps-embed (clinic name → embed).
+// 5 steps, 20% each (src/lib/setupSteps.ts):
+//   1 Photo · 2 Registration number · 3 Clinic on Google Maps · 4 Fee + treatments
+//   → live at 80% → 5 About you + hours (100%).
+// A navy preview strip on top shows what patients will see as each step fills.
+//
+// Each step saves to the dentists row BEFORE advancing, via the RLS-scoped
+// client (email = jwt email). Photo uses /api/cloudinary/upload (writes
+// profile_photo / cover_photo server-side); the map step uses
+// /api/dentist/maps-embed (clinic name or pasted Google link → embed).
+//
+// There is no "skip setup". "Finish later" saves progress, marks the wizard as
+// seen and sets a 12-hour cookie so the dashboard lets them in for the day.
+// The dashboard gate brings them back here until steps 1–4 are done.
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { getCityBySlug, CITY_CONFIGS, type CitySlug } from '@/config/cities'
+import { getCityBySlug, type CitySlug } from '@/config/cities'
+import {
+  setupSteps, setupPct, isSetupLive, firstMissingLiveStep, draftBio,
+  DEFAULT_SETUP_HOURS, SETUP_LATER_COOKIE, SETUP_LATER_SECONDS, BIO_MIN,
+} from '@/lib/setupSteps'
 
 const NAVY = '#0F172A'
 const TEAL = '#14B8A6'
-const TOTAL = 7
+const TEAL_DARK = '#0D9488'
+const TINT = '#CCFBF1'
+const MUTED = '#64748B'
+const LINE = '#E2E8F0'
 
-// Qualification options for the credentials step.
+// Screens: 0 intro, 1–5 steps, 6 "you're live", 7 "100% done".
+const INTRO = 0
+const LIVE = 6
+const DONE = 7
+
 const QUALIFICATIONS = ['BDS', 'MDS', 'BDS + MDS', 'BDS + Fellowship', 'BDS + PG Diploma', 'Other']
+const FEE_CHIPS = [300, 500, 700]
 
-// The treatments offered in the wizard's quick-pick grid, keyed by their
-// `treatments` table UUID (verified live via PostgREST). dentist_treatments
-// links to treatments by treatment_id, so the id is inserted directly — no
-// catalogue lookup needed. Insert order is left→right, top→bottom in the
-// 2-column grid.
+// Quick-pick treatments, keyed by their `treatments` table UUID.
+// dentist_treatments links by treatment_id, so the id is inserted directly.
 const TREATMENTS: { id: string; name: string }[] = [
   { id: '3e5cba66-a58e-468d-8525-3a59677ce879', name: 'Root Canal' },
   { id: '83d2b3b3-9d9f-46a7-b741-fb77336ddbf8', name: 'Dental Implants' },
@@ -40,35 +56,61 @@ const TREATMENTS: { id: string; name: string }[] = [
   { id: 'be059965-88d5-4f62-b0dd-15709aa23f44', name: 'Kids Dentistry' },
 ]
 
+function initials(name: string): string {
+  const clean = name.replace(/^dr\.?\s*/i, '').trim()
+  const p = clean.split(/\s+/).filter(Boolean)
+  return ((p[0]?.[0] || '') + (p[1]?.[0] || '')).toUpperCase() || 'Dr'
+}
+
+function setLaterCookie() {
+  try {
+    document.cookie = `${SETUP_LATER_COOKIE}=1; max-age=${SETUP_LATER_SECONDS}; path=/; samesite=lax`
+  } catch { /* cookie blocked: the gate will just ask again */ }
+}
+
 export default function OnboardWizard() {
   const router = useRouter()
   const supabase = createClient()
 
-  const [step, setStep] = useState(1)
+  const [step, setStep] = useState(INTRO)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const [copied, setCopied] = useState(false)
 
   const [dentistId, setDentistId] = useState('')
   const [slug, setSlug] = useState('')
   const [siteBase, setSiteBase] = useState('https://dentistinmumbai.in')
   const [area, setArea] = useState('')
+  const [cityName, setCityName] = useState('')
+  const [isVerified, setIsVerified] = useState(false)
+  const [hadHours, setHadHours] = useState(false)
   const [form, setForm] = useState({
     name: '',
     clinic_name: '',
     city: 'mumbai' as CitySlug,
-    consultation_fee: '',
-    mapsName: '',
-    profile_photo: '' as string | null,
-    maps_embed: '',
+    whatsapp: '',
+    profile_photo: '',
+    cover_photo: '',
+    mci_number: '',
     qualification: '',
     experience_years: '',
     gender: '',
+    maps_embed: '',
+    consultation_fee: '',
+    bio: '',
   })
 
-  // Treatments step: the set of treatment_ids the dentist already has (so we
-  // don't re-insert on a return visit) and the currently-ticked treatment_ids.
-  // Pre-selected from existing links in load().
+  // Saved values (what's actually in the DB) drive the score + preview strip.
+  const [saved, setSaved] = useState({ profile_photo: '', mci_number: '', maps_embed: '', consultation_fee: '', bio: '' })
+
+  // Step 3: candidate map from the automatic search or a pasted link, shown
+  // for the dentist to confirm before it's saved.
+  const [mapCandidate, setMapCandidate] = useState('')
+  const [mapQuery, setMapQuery] = useState('')
+  const [mapLink, setMapLink] = useState('')
+  const [showPaste, setShowPaste] = useState(false)
+
   const [existingTreatmentIds, setExistingTreatmentIds] = useState<Set<string>>(new Set())
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
@@ -77,59 +119,84 @@ export default function OnboardWizard() {
     async function load() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/for-dentists/login'); return }
-      // Deliberately NOT selecting onboarding_completed here — that column is
-      // added out-of-band and may not exist yet; selecting it would 400.
+      // onboarding_completed is NOT selected here (added out-of-band; selecting
+      // it on an env without the column would 400).
       const { data: d } = await supabase
         .from('dentists')
-        .select('id, slug, name, clinic_name, city, consultation_fee, profile_photo, maps_embed, sub_area, qualifications, experience_years, gender')
+        .select('id, slug, name, clinic_name, city, whatsapp, consultation_fee, profile_photo, cover_photo, maps_embed, sub_area, qualifications, experience_years, gender, mci_number, bio, working_hours, is_verified, areas(name)')
         .eq('email', user.email)
         .single()
       if (cancelled) return
       if (!d) { router.push('/for-dentists/register'); return }
-      setDentistId(d.id)
+      const row = d as any
+      setDentistId(row.id)
 
-      // Treatments step: this dentist's existing links, to pre-tick the grid
-      // and to avoid re-inserting on a return visit. Treatment UUIDs are
-      // hardcoded in TREATMENTS, so no catalogue lookup is needed.
       const { data: myLinks } = await supabase
-        .from('dentist_treatments').select('treatment_id').eq('dentist_id', d.id)
+        .from('dentist_treatments').select('treatment_id').eq('dentist_id', row.id)
       if (cancelled) return
       const have = new Set((myLinks ?? []).map(r => (r as any).treatment_id as string))
       setExistingTreatmentIds(have)
-      // Pre-select any wizard treatments the dentist already offers.
       setSelectedIds(new Set(TREATMENTS.filter(t => have.has(t.id)).map(t => t.id)))
-      setSlug(d.slug || '')
-      setSiteBase(`https://${getCityBySlug(d.city).domain}`)
-      // Area label for the "patients searching in <area>" copy. sub_area is
-      // free-text on the dentist row; fall back to the city name when it's
-      // blank (common) so the sentence always reads naturally.
-      setArea((d as any).sub_area || getCityBySlug(d.city).cityName)
-      setForm(f => ({
-        ...f,
-        name: d.name || '',
-        clinic_name: d.clinic_name || '',
-        city: (d.city || 'mumbai') as CitySlug,
-        consultation_fee: d.consultation_fee ? String(d.consultation_fee) : '',
-        profile_photo: d.profile_photo || '',
-        maps_embed: (d as any).maps_embed || '',
-        qualification: (d as any).qualifications || '',
-        experience_years: (d as any).experience_years ? String((d as any).experience_years) : '',
-        gender: (d as any).gender || '',
-      }))
-      // Deep-link support: the dashboard gate sends data-inconsistent profiles
-      // (onboarding_completed = true but missing a mandatory field) straight to
-      // the step they still need, via ?step=. Read it directly from the URL
-      // (same pattern as the login page) to avoid a Suspense boundary.
+
+      const city = getCityBySlug(row.city)
+      setSlug(row.slug || '')
+      setSiteBase(`https://${city.domain}`)
+      setCityName(city.cityName)
+      const areaName = (Array.isArray(row.areas) ? row.areas[0]?.name : row.areas?.name) || row.sub_area || ''
+      setArea(areaName)
+      setIsVerified(!!row.is_verified)
+      setHadHours(!!row.working_hours)
+      setMapQuery([row.clinic_name, areaName, city.cityName].filter(Boolean).join(', '))
+
+      const f = {
+        name: row.name || '',
+        clinic_name: row.clinic_name || '',
+        city: (row.city || 'mumbai') as CitySlug,
+        whatsapp: row.whatsapp || '',
+        profile_photo: row.profile_photo || '',
+        cover_photo: row.cover_photo || '',
+        mci_number: row.mci_number || '',
+        qualification: row.qualifications || '',
+        experience_years: row.experience_years ? String(row.experience_years) : '',
+        gender: row.gender || '',
+        maps_embed: row.maps_embed || '',
+        consultation_fee: row.consultation_fee ? String(row.consultation_fee) : '',
+        bio: row.bio || '',
+      }
+      setForm(f)
+      setSaved({ profile_photo: f.profile_photo, mci_number: f.mci_number, maps_embed: f.maps_embed, consultation_fee: f.consultation_fee, bio: f.bio })
+
+      // ?step=N deep link (dashboard gate + setup card). Without it, start on
+      // the intro screen.
       const wanted = Number(new URLSearchParams(window.location.search).get('step'))
-      if (wanted >= 1 && wanted <= TOTAL) setStep(wanted)
+      if (wanted >= 1 && wanted <= 5) setStep(wanted)
       setLoading(false)
     }
     load()
     return () => { cancelled = true }
   }, [])
 
-  // Persist a patch to the dentists row; throws on RLS denial / zero rows so
-  // callers can surface it. Same observability trick as the hours editor.
+  // Step 3: look the clinic up on Google Maps automatically on arrival.
+  useEffect(() => {
+    if (step === 3 && !form.maps_embed && !mapCandidate && mapQuery && !busy) findOnMaps('', mapQuery)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step])
+
+  // Step 5: pre-fill the about text with a draft when it's empty.
+  useEffect(() => {
+    if (step === 5 && !form.bio.trim()) {
+      setForm(f => ({
+        ...f,
+        bio: draftBio({
+          name: f.name, qualifications: f.qualification, experience_years: f.experience_years,
+          clinic_name: f.clinic_name, area, city: cityName, mci_number: f.mci_number,
+          treatments: TREATMENTS.filter(t => selectedIds.has(t.id)).map(t => t.name.toLowerCase()),
+        }),
+      }))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step])
+
   async function save(patch: Record<string, unknown>) {
     const { data, error } = await supabase
       .from('dentists')
@@ -137,120 +204,129 @@ export default function OnboardWizard() {
       .eq('id', dentistId)
       .select('id')
     if (error || !data || data.length === 0) {
-      throw new Error(error?.message || 'Save failed — please try again.')
+      throw new Error(error?.message || 'Save failed. Please try again.')
     }
   }
 
-  // Advance after persisting an optional patch.
-  async function next(patch: Record<string, unknown>) {
-    setBusy(true); setErr('')
-    try {
-      if (Object.keys(patch).length) await save(patch)
-      setStep(s => s + 1)
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Something went wrong.')
+  // Where to go after finishing step `from`. Steps 1–3 go forward. After the
+  // last go-live step, show the "You're live" screen, or send them to the
+  // first go-live step still missing.
+  function after(from: number, s = saved) {
+    if (from < 4) return from + 1
+    if (from === 4) {
+      const missing = firstMissingLiveStep(s)
+      return missing ?? LIVE
     }
-    setBusy(false)
+    const missing = firstMissingLiveStep(s)
+    return missing ?? DONE
   }
 
-  // Step 5 "Go to dashboard" + every "Skip setup" link. Hits the dedicated
-  // API route (service role) to persist onboarding_completed = true so the
-  // dashboard gate stops routing them here. Best-effort: if the flag write
-  // fails (e.g. column not live yet) we still navigate — the gate defensively
-  // treats an unreadable flag as "done", so there's no redirect loop.
-  async function finish() {
+  function go(n: number) { setErr(''); setStep(n); window.scrollTo(0, 0) }
+
+  async function finishLater() {
+    setLaterCookie()
     try { await fetch('/api/onboard/complete', { method: 'POST' }) } catch { /* best-effort */ }
     router.refresh()
     router.push('/for-dentists/dashboard')
   }
 
-  async function uploadPhoto(file: File) {
-    // Guard Vercel's ~4.5MB request-body limit: a larger file is rejected with a
-    // plain-text 413 before our route runs, so res.json() below would throw an
-    // opaque parse error. Block it up front with an actionable tip — most
-    // dentists' phone photos are 4-8MB, and WhatsApp compresses to ~200KB.
+  async function uploadPhoto(file: File, type: 'profile' | 'cover') {
+    // Vercel rejects bodies over ~4.5MB before our route runs.
     if (file.size > 4 * 1024 * 1024) {
-      setErr('Photo too large. Please use a photo under 4MB. Tip: use WhatsApp to send the photo to yourself first — it compresses it automatically.')
+      setErr('Photo too large. Please use a photo under 4MB. Tip: send it to yourself on WhatsApp first, it compresses automatically.')
       return
     }
     setBusy(true); setErr('')
     try {
       const fd = new FormData()
       fd.append('file', file)
-      fd.append('type', 'profile')
+      fd.append('type', type)
       const res = await fetch('/api/cloudinary/upload', { method: 'POST', body: fd })
-      // Read as text first: an over-limit upload returns plain text, so
-      // res.json() would throw "Unexpected token 'R'..." instead of surfacing it.
       const text = await res.text()
       let data: { success?: boolean; url?: string; error?: string }
-      try { data = JSON.parse(text) }
-      catch { throw new Error('Upload failed — photo may be too large') }
+      try { data = JSON.parse(text) } catch { throw new Error('Upload failed. The photo may be too large.') }
       if (!data.success) throw new Error(data.error || 'Upload failed.')
-      // The upload route writes dentists.profile_photo server-side.
-      setForm(f => ({ ...f, profile_photo: data.url || '' }))
-      setStep(s => s + 1)
+      const url = data.url || ''
+      if (type === 'profile') {
+        setForm(f => ({ ...f, profile_photo: url }))
+        setSaved(s => ({ ...s, profile_photo: url }))
+      } else {
+        setForm(f => ({ ...f, cover_photo: url }))
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Upload failed. Please try again.')
     }
     setBusy(false)
   }
 
-  // Step 6 — resolve the clinic name to a Google Maps iframe and PERSIST it to
-  // dentists.maps_embed. Save-only: it does NOT advance the wizard. The Continue
-  // button on step 6 unlocks off form.maps_embed, which is set here only after
-  // the DB write succeeds — so Next can never enable on typing alone.
-  async function saveMaps() {
-    if (!form.mapsName.trim()) {
-      setErr('Please enter your clinic name so patients can find you.')
-      return
+  // Step 2
+  async function saveRegistration() {
+    const reg = form.mci_number.trim()
+    if (reg.length < 3) { setErr('Please enter your registration number.'); return }
+    setBusy(true); setErr('')
+    try {
+      const patch: Record<string, unknown> = { mci_number: reg.slice(0, 60) }
+      if (form.qualification) patch.qualifications = form.qualification
+      if (form.experience_years !== '') patch.experience_years = Number(form.experience_years)
+      if (form.gender) patch.gender = form.gender.toLowerCase()
+      await save(patch)
+      const s = { ...saved, mci_number: reg }
+      setSaved(s)
+      go(after(2, s))
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not save.')
     }
+    setBusy(false)
+  }
+
+  // Step 3: resolve a clinic name or pasted Google link into a map to confirm.
+  async function findOnMaps(link: string, name: string) {
     setBusy(true); setErr('')
     try {
       const res = await fetch('/api/dentist/maps-embed', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: '', name: form.mapsName, clinic_name: form.clinic_name }),
+        body: JSON.stringify({ input: link, name, clinic_name: form.clinic_name }),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error || 'Could not process the map.')
-      // An empty embed means we couldn't find the clinic — surface it and keep
-      // Continue locked (and never wipe an existing embed with '').
-      if (!data.maps_embed) {
-        throw new Error("Couldn't find your clinic on Google Maps. Please check the name and try again.")
-      }
-      await save({ maps_embed: data.maps_embed })
-      // Only now — after the DB write resolved — does the embed enter state and
-      // unlock Continue.
-      setForm(f => ({ ...f, maps_embed: data.maps_embed }))
+      if (!res.ok) throw new Error(data.error || 'Could not load the map.')
+      if (!data.maps_embed) throw new Error("Couldn't find that on Google Maps. Check the name, or paste your Google Maps link.")
+      setMapCandidate(data.maps_embed)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not load the map.')
+    }
+    setBusy(false)
+  }
+
+  async function confirmMap() {
+    const embed = mapCandidate || form.maps_embed
+    if (!embed) return
+    setBusy(true); setErr('')
+    try {
+      await save({ maps_embed: embed })
+      setForm(f => ({ ...f, maps_embed: embed }))
+      const s = { ...saved, maps_embed: embed }
+      setSaved(s)
+      setMapCandidate('')
+      go(after(3, s))
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not save your location.')
     }
     setBusy(false)
   }
 
-  // Step 2 — Credentials. Only patch fields the dentist actually filled, so a
-  // partial answer (or Skip) never nulls out an existing value. Reuses the
-  // same RLS-scoped save()/next() path as the other steps.
-  function saveCredentials() {
-    const patch: Record<string, unknown> = {}
-    if (form.qualification) patch.qualifications = form.qualification
-    if (form.experience_years !== '') patch.experience_years = Number(form.experience_years)
-    if (form.gender) patch.gender = form.gender.toLowerCase()
-    next(patch) // next() no-ops the save when patch is empty, then advances 2→3
-  }
-
-  // Step 5 — Treatments. Insert only the ticked treatments the dentist doesn't
-  // already have, mirroring src/lib/seedTreatments.ts (link by treatment_id,
-  // fee_from/fee_to null). Idempotent, so returning to the wizard is safe.
-  async function saveTreatments() {
+  // Step 4
+  async function saveFeeAndTreatments() {
+    const fee = Number(form.consultation_fee)
+    if (!fee || fee <= 0) { setErr('Please set your consultation fee.'); return }
     setBusy(true); setErr('')
     try {
+      await save({ consultation_fee: fee })
       const toInsert = [...selectedIds]
         .filter(id => !existingTreatmentIds.has(id))
         .map(treatment_id => ({ dentist_id: dentistId, treatment_id, fee_from: null, fee_to: null }))
       if (toInsert.length) {
-        const { data, error } = await supabase
-          .from('dentist_treatments').insert(toInsert).select('treatment_id')
+        const { data, error } = await supabase.from('dentist_treatments').insert(toInsert).select('treatment_id')
         if (error) throw new Error(error.message)
         setExistingTreatmentIds(prev => {
           const n = new Set(prev)
@@ -258,11 +334,42 @@ export default function OnboardWizard() {
           return n
         })
       }
-      setStep(6)
+      const s = { ...saved, consultation_fee: String(fee) }
+      setSaved(s)
+      if (isSetupLive(s)) {
+        // Reached 80%: mark the wizard as seen so the gate stops firing.
+        try { await fetch('/api/onboard/complete', { method: 'POST' }) } catch { /* best-effort */ }
+      }
+      go(after(4, s))
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Could not save your treatments.')
+      setErr(e instanceof Error ? e.message : 'Could not save.')
     }
     setBusy(false)
+  }
+
+  // Step 5
+  async function saveAbout() {
+    const bio = form.bio.trim()
+    if (bio.length < BIO_MIN) { setErr(`Please write at least ${BIO_MIN} characters about yourself.`); return }
+    setBusy(true); setErr('')
+    try {
+      const patch: Record<string, unknown> = { bio }
+      if (!hadHours) patch.working_hours = DEFAULT_SETUP_HOURS
+      await save(patch)
+      if (!hadHours) setHadHours(true)
+      const s = { ...saved, bio }
+      setSaved(s)
+      go(after(5, s))
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not save.')
+    }
+    setBusy(false)
+  }
+
+  async function goDashboard() {
+    try { await fetch('/api/onboard/complete', { method: 'POST' }) } catch { /* best-effort */ }
+    router.refresh()
+    router.push('/for-dentists/dashboard')
   }
 
   function toggleTreatment(id: string) {
@@ -273,345 +380,412 @@ export default function OnboardWizard() {
     })
   }
 
+  const profileUrl = slug ? `${siteBase}/dentist/${slug}` : ''
+  const profileUrlShort = profileUrl.replace(/^https?:\/\//, '')
+  async function copyLink() {
+    try { await navigator.clipboard.writeText(profileUrl); setCopied(true); setTimeout(() => setCopied(false), 2000) } catch { /* ignore */ }
+  }
+
   // ---- styles (inline only, navy/teal brand) ----
   const btn: React.CSSProperties = {
-    minHeight: 56, width: '100%', border: 'none', borderRadius: 14,
+    minHeight: 54, width: '100%', border: 'none', borderRadius: 14,
     background: TEAL, color: '#fff', fontWeight: 700, fontSize: 16,
     cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1,
-    fontFamily: 'var(--font-body)',
+    fontFamily: 'var(--font-body)', display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none',
   }
-  const btnNavy: React.CSSProperties = {
-    ...btn, background: NAVY, display: 'flex', alignItems: 'center',
-    justifyContent: 'center', textDecoration: 'none', marginBottom: 12,
-  }
-  const skipLink: React.CSSProperties = {
-    display: 'block', width: '100%', textAlign: 'center', marginTop: 16,
-    color: '#64748B', background: 'none', border: 'none', fontSize: 14,
-    cursor: 'pointer', fontFamily: 'var(--font-body)',
+  const btnOff: React.CSSProperties = { ...btn, opacity: 0.5, cursor: 'not-allowed' }
+  const btnGhost: React.CSSProperties = { ...btn, background: '#fff', color: NAVY, border: `1.5px solid ${LINE}` }
+  const btnWa: React.CSSProperties = { ...btn, background: '#25D366' }
+  const textLink: React.CSSProperties = {
+    background: 'none', border: 'none', color: MUTED, fontSize: 14, fontWeight: 600,
+    cursor: 'pointer', fontFamily: 'var(--font-body)', padding: 0,
   }
   const input: React.CSSProperties = {
     width: '100%', minHeight: 52, padding: '0 16px', borderRadius: 12,
     border: '1.5px solid #CBD5E1', fontSize: 16, outline: 'none',
-    boxSizing: 'border-box', fontFamily: 'var(--font-body)', background: '#fff',
+    boxSizing: 'border-box', fontFamily: 'var(--font-body)', background: '#fff', color: NAVY,
   }
-  const fieldLabel: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: NAVY }
-  const h1: React.CSSProperties = { fontSize: 26, fontWeight: 800, color: NAVY, lineHeight: 1.2 }
-  const sub: React.CSSProperties = { color: '#64748B', fontSize: 15, lineHeight: 1.5 }
+  const fieldLabel: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: NAVY, display: 'block', marginBottom: 6 }
+  const h1: React.CSSProperties = { fontSize: 24, fontWeight: 800, color: NAVY, lineHeight: 1.2, margin: 0, fontFamily: 'var(--font-heading)' }
+  const sub: React.CSSProperties = { color: MUTED, fontSize: 15, lineHeight: 1.5, margin: 0 }
+  const col: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 16 }
+  const card: React.CSSProperties = { background: '#fff', border: `1px solid ${LINE}`, borderRadius: 14, padding: 14 }
+  const chip = (on: boolean): React.CSSProperties => ({
+    minHeight: 44, padding: '8px 14px', borderRadius: 12, fontSize: 14, fontWeight: 600,
+    cursor: 'pointer', fontFamily: 'var(--font-body)',
+    background: on ? TINT : '#fff', color: on ? TEAL_DARK : NAVY,
+    border: `1.5px solid ${on ? TEAL : '#CBD5E1'}`,
+  })
+  const timePill: React.CSSProperties = { fontSize: 12, fontWeight: 700, color: TEAL_DARK, background: TINT, borderRadius: 99, padding: '2px 10px', whiteSpace: 'nowrap' }
+  const badge = (on: boolean, blue = false): React.CSSProperties => ({
+    fontSize: 11, fontWeight: 700, borderRadius: 99, padding: '2px 8px',
+    background: on ? (blue ? '#DBEAFE' : TINT) : '#F8FAFC',
+    color: on ? (blue ? '#1D4ED8' : TEAL_DARK) : '#94A3B8',
+    border: on ? '1px solid transparent' : '1px dashed #CBD5E1',
+  })
 
-  // The three MANDATORY fields (photo, fee, map) and their steps. A profile
-  // can't be published until all three are done; the Done screen blocks and
-  // the dashboard gate redirects back here if any is missing.
+  const steps = setupSteps(saved)
+  const pct = setupPct(saved)
+  const live = isSetupLive(saved)
   const feeValid = !!form.consultation_fee && Number(form.consultation_fee) > 0
-  const mandatory = [
-    { ok: !!form.profile_photo, label: 'Add your photo', step: 3 },
-    { ok: feeValid, label: 'Set your consultation fee', step: 4 },
-    { ok: !!form.maps_embed, label: 'Add your clinic location', step: 6 },
-  ]
-  const missingMandatory = mandatory.filter(m => !m.ok)
-  const allMandatoryDone = missingMandatory.length === 0
+  const where = area || cityName
+  const subtitle = [form.qualification, form.experience_years ? `${form.experience_years} yrs` : '', where].filter(Boolean).join(' · ')
 
-  // Step-7 completion mirrors the wizard's three key fields (photo, fee, map).
-  const doneChecks = mandatory.map(m => m.ok)
-  const donePct = Math.round((doneChecks.filter(Boolean).length / doneChecks.length) * 100)
-  const missingLabel = !form.profile_photo
-    ? 'a profile photo'
-    : (!form.consultation_fee || Number(form.consultation_fee) <= 0)
-    ? 'your consultation fee'
-    : !form.maps_embed
-    ? 'your clinic location'
-    : ''
-  const areaLabel = area || getCityBySlug(form.city).cityName
+  const stepBars = (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 4 }}>
+      {steps.map(s => (
+        <i key={s.step} style={{ display: 'block', height: 6, borderRadius: 99, background: s.done ? TEAL : (s.step === step ? '#99F6E4' : LINE) }} />
+      ))}
+    </div>
+  )
+
+  // Live preview: the result card a patient sees, filling in as steps save.
+  const preview = (
+    <div style={{ background: NAVY, color: '#fff', padding: '12px 16px 14px', display: 'grid', gap: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#5EEAD4' }}>
+        <span>Patients see</span>
+        <span style={{ color: '#94A3B8', textTransform: 'none', letterSpacing: 0, fontWeight: 500 }}>live preview</span>
+      </div>
+      <div style={{ background: '#fff', color: NAVY, borderRadius: 12, padding: 10, display: 'grid', gridTemplateColumns: '52px 1fr', gap: 10, alignItems: 'center' }}>
+        <div style={{
+          width: 52, height: 52, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: saved.profile_photo ? `center/cover no-repeat url(${saved.profile_photo})` : LINE,
+          color: '#94A3B8', fontSize: 10, fontWeight: 700, textAlign: 'center', lineHeight: 1.1,
+        }}>
+          {!saved.profile_photo && 'No photo'}
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 800, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{form.name || 'Your name'}</div>
+          <div style={{ fontSize: 12, color: MUTED, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {subtitle || form.clinic_name}
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+            <span style={badge(!!saved.mci_number, true)}>{saved.mci_number ? `Reg. ${saved.mci_number}` : 'Reg. no. missing'}</span>
+            <span style={badge(!!saved.consultation_fee)}>{saved.consultation_fee ? `₹${saved.consultation_fee} consult` : 'Fee?'}</span>
+            <span style={badge(!!saved.maps_embed)}>{saved.maps_embed ? 'Directions' : 'Map'}</span>
+          </div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#CBD5E1' }}>
+        <div style={{ flex: 1, height: 6, borderRadius: 99, background: 'rgba(255,255,255,0.15)', overflow: 'hidden' }}>
+          <div style={{ height: '100%', width: `${pct}%`, background: TEAL, borderRadius: 99, transition: 'width 0.4s' }} />
+        </div>
+        <b style={{ color: '#fff' }}>{pct}%{live ? ' · live' : ''}</b>
+      </div>
+    </div>
+  )
+
+  const isStep = step >= 1 && step <= 5
 
   return (
-    <div style={{ minHeight: '100svh', background: '#fff', display: 'flex', justifyContent: 'center' }}>
-      <div style={{ width: '100%', maxWidth: 480, padding: '20px 20px 40px', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ minHeight: '100svh', background: '#F8FAFC', display: 'flex', justifyContent: 'center' }}>
+      <div style={{ width: '100%', maxWidth: 480, background: '#fff', minHeight: '100svh', display: 'flex', flexDirection: 'column' }}>
         {/* Logo */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 20px' }}>
           <div style={{ width: 32, height: 32, background: NAVY, borderRadius: 8, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontFamily: 'var(--font-heading)' }}>D</div>
           <span style={{ fontWeight: 700, color: NAVY, fontFamily: 'var(--font-heading)' }}>DentistIn</span>
         </div>
 
-        {/* Progress */}
-        <div style={{ fontSize: 12, fontWeight: 600, color: TEAL, marginBottom: 6 }}>Step {step} of {TOTAL}</div>
-        <div style={{ height: 6, background: '#E2E8F0', borderRadius: 99, marginBottom: 28, overflow: 'hidden' }}>
-          <div style={{ height: '100%', width: `${(step / TOTAL) * 100}%`, background: TEAL, borderRadius: 99, transition: 'width 0.3s' }} />
-        </div>
-
         {loading ? (
-          <p style={{ color: '#64748B' }}>Loading…</p>
+          <p style={{ color: MUTED, padding: '0 20px' }}>Loading…</p>
         ) : (
           <>
-            {err && (
-              <div style={{ background: '#FEE2E2', color: '#991B1B', padding: '10px 14px', borderRadius: 10, marginBottom: 16, fontSize: 13 }}>⚠️ {err}</div>
-            )}
-
-            {/* STEP 1 — Confirm basics */}
-            {step === 1 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <h1 style={h1}>Confirm your basics</h1>
-                <div>
-                  <label style={fieldLabel}>Your name</label>
-                  <input style={{ ...input, marginTop: 6 }} value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+            {isStep && preview}
+            {isStep && (
+              <div style={{ padding: '12px 20px 10px', borderBottom: `1px solid ${LINE}`, display: 'grid', gap: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, fontWeight: 700 }}>
+                  <span style={{ color: TEAL_DARK }}>Step {step} of 5</span>
+                  <button type="button" style={textLink} onClick={finishLater}>Finish later</button>
                 </div>
-                <div>
-                  <label style={fieldLabel}>Clinic name</label>
-                  <input style={{ ...input, marginTop: 6 }} value={form.clinic_name} onChange={e => setForm(f => ({ ...f, clinic_name: e.target.value }))} />
-                </div>
-                <div>
-                  <label style={fieldLabel}>City</label>
-                  <select style={{ ...input, marginTop: 6, cursor: 'pointer' }} value={form.city} onChange={e => setForm(f => ({ ...f, city: e.target.value as CitySlug }))}>
-                    {Object.values(CITY_CONFIGS).map(c => <option key={c.citySlug} value={c.citySlug}>{c.cityName}</option>)}
-                  </select>
-                </div>
-                <button style={{ ...btn, marginTop: 12 }} disabled={busy}
-                  onClick={() => next({ name: form.name.trim(), clinic_name: form.clinic_name.trim(), city: form.city })}>
-                  {busy ? 'Saving…' : 'Confirm & Continue →'}
-                </button>
+                {stepBars}
               </div>
             )}
 
-            {/* STEP 2 — Credentials */}
-            {step === 2 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-                <div>
-                  <h1 style={{ ...h1, marginBottom: 8 }}>Your Credentials</h1>
-                  <p style={sub}>Patients choose dentists based on qualifications and experience</p>
+            <div style={{ padding: '20px 20px 40px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {err && (
+                <div role="alert" style={{ background: '#FEE2E2', color: '#991B1B', padding: '10px 14px', borderRadius: 10, fontSize: 14 }}>{err}</div>
+              )}
+
+              {/* INTRO: what we already did for them */}
+              {step === INTRO && (
+                <div style={col}>
+                  <div style={{ ...card, background: '#F0FDF4', borderColor: '#86EFAC' }}>
+                    <h1 style={{ ...h1, fontSize: 20 }}>Your profile page is ready</h1>
+                    {profileUrlShort && <div style={{ fontSize: 14, fontWeight: 700, color: TEAL_DARK, marginTop: 6, wordBreak: 'break-all' }}>{profileUrlShort}</div>}
+                  </div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Done for you</div>
+                  {[
+                    form.whatsapp ? [`WhatsApp button set to ${form.whatsapp}`, 'Change it any time in your profile'] : null,
+                    ['We\'ll find your clinic on Google Maps', 'You confirm it in step 3'],
+                    ['Common treatments added', 'Add more in step 4'],
+                    ['Clinic hours and "About you" text drafted', 'You check them in step 5'],
+                  ].filter(Boolean).map(item => (
+                    <div key={item![0]} style={{ display: 'grid', gridTemplateColumns: '24px 1fr', gap: 10, alignItems: 'start', fontSize: 14 }}>
+                      <span style={{ width: 24, height: 24, borderRadius: '50%', background: TEAL, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800 }}>✓</span>
+                      <span style={{ color: NAVY }}>{item![0]}<span style={{ display: 'block', color: MUTED, fontSize: 13 }}>{item![1]}</span></span>
+                    </div>
+                  ))}
+                  <div style={{ ...card, display: 'grid', gap: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                      <b style={{ color: NAVY }}>{live ? 'You\'re live. One step to 100%' : '5 quick steps to go live'}</b>
+                      <span style={timePill}>{live ? '~1 min' : '~4 min'}</span>
+                    </div>
+                    {stepBars}
+                    <p style={{ ...sub, fontSize: 13 }}>Steps 1 to 4 are needed to go live (80%). Step 5 takes you to 100%.</p>
+                  </div>
+                  <button type="button" style={btn} onClick={() => go(steps.find(s => !s.done)?.step ?? DONE)}>
+                    {(() => { const n = steps.find(s => !s.done)?.step; return n ? `Start step ${n} of 5` : 'See my profile' })()}
+                  </button>
+                  <button type="button" style={{ ...textLink, alignSelf: 'center' }} onClick={finishLater}>Finish later</button>
                 </div>
-                <div>
-                  <label style={fieldLabel}>Qualification</label>
-                  <select style={{ ...input, marginTop: 6, cursor: 'pointer' }} value={form.qualification}
-                    onChange={e => setForm(f => ({ ...f, qualification: e.target.value }))}>
-                    <option value="">Select qualification…</option>
-                    {QUALIFICATIONS.map(q => <option key={q} value={q}>{q}</option>)}
-                  </select>
+              )}
+
+              {/* STEP 1: Photo */}
+              {step === 1 && (
+                <div style={col}>
+                  <h1 style={h1}>Add your photo</h1>
+                  <p style={sub}>A clear photo of your face. Patients pick a dentist they can see.</p>
+                  <label style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    minHeight: 200, border: `2px ${form.profile_photo ? 'solid' : 'dashed'} ${TEAL}`, borderRadius: 16, cursor: 'pointer',
+                    background: form.profile_photo ? `center/cover no-repeat url(${form.profile_photo})` : '#F0FDFA',
+                  }}>
+                    {!form.profile_photo && <span style={{ color: TEAL_DARK, fontWeight: 700 }}>{busy ? 'Uploading…' : 'Tap to upload or take a photo'}</span>}
+                    <input type="file" accept="image/*" style={{ display: 'none' }}
+                      onChange={e => { const file = e.target.files?.[0]; if (file) uploadPhoto(file, 'profile') }} />
+                  </label>
+                  {form.profile_photo && <p style={{ ...sub, fontSize: 13, textAlign: 'center' }}>Tap the photo to change it.</p>}
+                  <p style={{ ...sub, fontSize: 13 }}>Tip: send the photo to yourself on WhatsApp first. It compresses automatically.</p>
+                  <button type="button" style={form.profile_photo && !busy ? btn : btnOff} disabled={busy || !form.profile_photo}
+                    onClick={() => go(after(1))}>
+                    {form.profile_photo ? 'Next: registration number' : 'Upload a photo to continue'}
+                  </button>
                 </div>
-                <div>
-                  <label style={fieldLabel}>Years of experience</label>
-                  <input style={{ ...input, marginTop: 6 }} inputMode="numeric" min={0} max={60} placeholder="e.g. 8"
-                    value={form.experience_years}
-                    onChange={e => {
-                      const v = e.target.value.replace(/\D/g, '')
-                      setForm(f => ({ ...f, experience_years: v === '' ? '' : String(Math.min(60, Number(v))) }))
-                    }} />
+              )}
+
+              {/* STEP 2: Registration number (required, no skip) */}
+              {step === 2 && (
+                <div style={col}>
+                  <h1 style={h1}>Your registration number</h1>
+                  <div style={{ ...card, background: '#EFF6FF', borderColor: '#BFDBFE', color: '#1E3A8A', display: 'grid', gap: 6 }}>
+                    <b>Why we ask</b>
+                    <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5 }}>
+                      Patients check that a dentist is registered before they book. Your number shows on your profile, and once our team checks it you get the blue <b>Verified</b> badge. Verified dentists appear first in search.
+                    </p>
+                  </div>
+                  <div>
+                    <label style={fieldLabel} htmlFor="ob-reg">State Dental Council registration number</label>
+                    <input id="ob-reg" style={input} placeholder="e.g. A-23817" value={form.mci_number} autoComplete="off"
+                      onChange={e => setForm(f => ({ ...f, mci_number: e.target.value }))} />
+                  </div>
+                  <div>
+                    <span style={fieldLabel}>Degree</span>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {QUALIFICATIONS.map(q => (
+                        <button key={q} type="button" style={chip(form.qualification === q)} onClick={() => setForm(f => ({ ...f, qualification: q }))}>{q}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label style={fieldLabel} htmlFor="ob-exp">Years in practice</label>
+                    <input id="ob-exp" style={input} inputMode="numeric" placeholder="e.g. 8" value={form.experience_years}
+                      onChange={e => {
+                        const v = e.target.value.replace(/\D/g, '')
+                        setForm(f => ({ ...f, experience_years: v === '' ? '' : String(Math.min(60, Number(v))) }))
+                      }} />
+                  </div>
+                  <div>
+                    <span style={fieldLabel}>Gender <span style={{ color: MUTED, fontWeight: 500 }}>(some patients filter by this)</span></span>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      {['Male', 'Female', 'Other'].map(g => (
+                        <button key={g} type="button" style={{ ...chip(form.gender.toLowerCase() === g.toLowerCase()), flex: 1 }}
+                          onClick={() => setForm(f => ({ ...f, gender: g }))}>{g}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <button type="button" style={form.mci_number.trim().length >= 3 && !busy ? btn : btnOff}
+                    disabled={busy || form.mci_number.trim().length < 3} onClick={saveRegistration}>
+                    {busy ? 'Saving…' : 'Next: clinic location'}
+                  </button>
+                  <p style={{ ...sub, fontSize: 13, textAlign: 'center' }}>Needed to go live. &quot;Finish later&quot; saves your progress.</p>
                 </div>
-                <div>
-                  <label style={fieldLabel}>Gender</label>
-                  <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
-                    {['Male', 'Female', 'Other'].map(g => {
-                      const active = form.gender.toLowerCase() === g.toLowerCase()
+              )}
+
+              {/* STEP 3: Clinic on Google Maps */}
+              {step === 3 && (
+                <div style={col}>
+                  {form.maps_embed && !mapCandidate ? (
+                    <>
+                      <h1 style={h1}>Your clinic on Google Maps</h1>
+                      <div style={{ borderRadius: 12, overflow: 'hidden', border: `1.5px solid ${LINE}` }} dangerouslySetInnerHTML={{ __html: form.maps_embed }} />
+                      <button type="button" style={btn} onClick={() => go(after(3))}>Looks right, next</button>
+                      <button type="button" style={btnGhost} onClick={() => setShowPaste(true)}>Change location</button>
+                    </>
+                  ) : (
+                    <>
+                      <h1 style={h1}>Is this your clinic?</h1>
+                      <p style={sub}>We searched Google Maps for &quot;{mapQuery}&quot;.</p>
+                      {mapCandidate ? (
+                        <div style={{ borderRadius: 12, overflow: 'hidden', border: `1.5px solid ${LINE}` }} dangerouslySetInnerHTML={{ __html: mapCandidate }} />
+                      ) : (
+                        <div style={{ ...card, minHeight: 160, display: 'flex', alignItems: 'center', justifyContent: 'center', color: MUTED }}>
+                          {busy ? 'Searching Google Maps…' : 'No map yet'}
+                        </div>
+                      )}
+                      <button type="button" style={mapCandidate && !busy ? btn : btnOff} disabled={busy || !mapCandidate} onClick={confirmMap}>
+                        {busy ? 'Saving…' : 'Yes, this is my clinic'}
+                      </button>
+                      {!showPaste && (
+                        <button type="button" style={btnGhost} onClick={() => setShowPaste(true)}>Not right? Fix it</button>
+                      )}
+                    </>
+                  )}
+                  {showPaste && (
+                    <div style={{ ...card, display: 'grid', gap: 10 }}>
+                      <label style={{ ...fieldLabel, marginBottom: 0 }} htmlFor="ob-maplink">Paste your Google Maps or Google Business Profile link</label>
+                      <input id="ob-maplink" style={input} placeholder="maps.app.goo.gl/…" value={mapLink}
+                        onChange={e => setMapLink(e.target.value)} />
+                      <p style={{ ...sub, fontSize: 13 }}>On Google Maps, open your clinic, tap Share, then Copy link.</p>
+                      <div style={{ fontSize: 12, color: MUTED, textAlign: 'center' }}>or search a different name</div>
+                      <input id="ob-mapname" style={input} placeholder="Clinic name, area" value={mapQuery}
+                        onChange={e => setMapQuery(e.target.value)} />
+                      <button type="button" style={(mapLink.trim() || mapQuery.trim()) && !busy ? { ...btn, background: NAVY } : { ...btnOff, background: NAVY }}
+                        disabled={busy || !(mapLink.trim() || mapQuery.trim())}
+                        onClick={() => findOnMaps(mapLink.trim(), mapQuery.trim())}>
+                        {busy ? 'Finding…' : 'Show on map'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* STEP 4: Fee + treatments */}
+              {step === 4 && (
+                <div style={col}>
+                  <h1 style={h1}>Consultation fee</h1>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {FEE_CHIPS.map(v => (
+                      <button key={v} type="button" style={chip(form.consultation_fee === String(v))}
+                        onClick={() => setForm(f => ({ ...f, consultation_fee: String(v) }))}>₹{v}</button>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontSize: 22, fontWeight: 700, color: NAVY }}>₹</span>
+                    <input id="ob-fee" style={input} inputMode="numeric" placeholder="Other amount" value={form.consultation_fee}
+                      onChange={e => setForm(f => ({ ...f, consultation_fee: e.target.value.replace(/\D/g, '') }))} />
+                  </div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: 4 }}>Treatments you offer</div>
+                  <p style={{ ...sub, fontSize: 14 }}>Patients search by treatment. Tick all you offer.</p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {TREATMENTS.map(t => {
+                      const on = selectedIds.has(t.id)
                       return (
-                        <button key={g} type="button" onClick={() => setForm(f => ({ ...f, gender: g }))}
-                          style={{
-                            flex: 1, minHeight: 52, borderRadius: 12, fontSize: 15, fontWeight: 600,
-                            cursor: 'pointer', fontFamily: 'var(--font-body)',
-                            background: active ? TEAL : '#fff',
-                            color: active ? '#fff' : NAVY,
-                            border: `1.5px solid ${active ? TEAL : NAVY}`,
-                          }}>
-                          {g}
+                        <button key={t.id} type="button" style={chip(on)} onClick={() => toggleTreatment(t.id)}>
+                          {on ? '✓ ' : '+ '}{t.name}
                         </button>
                       )
                     })}
                   </div>
-                </div>
-                <button style={{ ...btn, marginTop: 8 }} disabled={busy} onClick={saveCredentials}>
-                  {busy ? 'Saving…' : 'Continue →'}
-                </button>
-                <button style={skipLink} onClick={() => setStep(3)}>Skip for now →</button>
-              </div>
-            )}
-
-            {/* STEP 3 — Photo */}
-            {step === 3 && (
-              <div>
-                <h1 style={{ ...h1, marginBottom: 8 }}>Add your photo</h1>
-                <p style={{ ...sub, marginBottom: 24 }}>A photo is required to publish your profile. Patients are 3x more likely to book dentists with photos.</p>
-                <label style={{
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                  minHeight: 220, border: `2px dashed ${TEAL}`, borderRadius: 16, cursor: 'pointer', marginBottom: 8,
-                  background: form.profile_photo ? `center/cover no-repeat url(${form.profile_photo})` : '#F0FDFA',
-                }}>
-                  {!form.profile_photo && <span style={{ color: TEAL, fontWeight: 600 }}>{busy ? 'Uploading…' : '📷 Tap to upload'}</span>}
-                  <input type="file" accept="image/*" style={{ display: 'none' }}
-                    onChange={e => { const file = e.target.files?.[0]; if (file) uploadPhoto(file) }} />
-                </label>
-                <p style={{ ...sub, fontSize: 13, marginTop: 12, marginBottom: 12 }}>
-                  Tip: Send your photo to yourself on WhatsApp first — it compresses automatically, then upload here.
-                </p>
-                <button
-                  style={{ ...btn, opacity: (busy || !form.profile_photo) ? 0.5 : 1, cursor: (busy || !form.profile_photo) ? 'not-allowed' : 'pointer' }}
-                  disabled={busy || !form.profile_photo}
-                  onClick={() => setStep(4)}>
-                  {form.profile_photo ? 'Looks good, Continue →' : 'Upload a photo to continue'}
-                </button>
-              </div>
-            )}
-
-            {/* STEP 4 — Fee */}
-            {step === 4 && (
-              <div>
-                <h1 style={{ ...h1, marginBottom: 8 }}>What&apos;s your consultation fee?</h1>
-                <p style={{ ...sub, marginBottom: 24 }}>You can change this anytime</p>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 28 }}>
-                  <span style={{ fontSize: 24, fontWeight: 700, color: NAVY }}>₹</span>
-                  <input style={input} inputMode="numeric" placeholder="500" value={form.consultation_fee}
-                    onChange={e => setForm(f => ({ ...f, consultation_fee: e.target.value.replace(/\D/g, '') }))} />
-                </div>
-                <button
-                  style={{ ...btn, opacity: (busy || !feeValid) ? 0.5 : 1, cursor: (busy || !feeValid) ? 'not-allowed' : 'pointer' }}
-                  disabled={busy || !feeValid}
-                  onClick={() => next({ consultation_fee: Number(form.consultation_fee) })}>
-                  {busy ? 'Saving…' : 'Continue →'}
-                </button>
-                <p style={{ ...sub, fontSize: 13, textAlign: 'center', marginTop: 16 }}>
-                  Your consultation fee is required — patients need to know your pricing before booking.
-                </p>
-              </div>
-            )}
-
-            {/* STEP 5 — Treatments */}
-            {step === 5 && (
-              <div>
-                <h1 style={{ ...h1, marginBottom: 8 }}>Treatments you offer</h1>
-                <p style={{ ...sub, marginBottom: 24 }}>Patients search by treatment — select all that apply</p>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 24 }}>
-                  {TREATMENTS.map(t => {
-                    const selected = selectedIds.has(t.id)
-                    return (
-                      <button key={t.id} type="button" onClick={() => toggleTreatment(t.id)}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left',
-                          minHeight: 52, padding: '10px 12px', borderRadius: 12, cursor: 'pointer',
-                          fontFamily: 'var(--font-body)', fontSize: 14, fontWeight: 600,
-                          color: NAVY,
-                          background: selected ? '#F0FDFA' : '#fff',
-                          border: `1.5px solid ${selected ? TEAL : '#CBD5E1'}`,
-                        }}>
-                        <span style={{
-                          flexShrink: 0, width: 20, height: 20, borderRadius: 6,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          background: selected ? TEAL : 'transparent',
-                          border: `1.5px solid ${selected ? TEAL : '#CBD5E1'}`,
-                          color: '#fff', fontSize: 13, fontWeight: 800,
-                        }}>{selected ? '✓' : ''}</span>
-                        {t.name}
-                      </button>
-                    )
-                  })}
-                </div>
-                <button style={btn} disabled={busy} onClick={saveTreatments}>{busy ? 'Saving…' : 'Continue →'}</button>
-                <button style={skipLink} onClick={() => setStep(6)}>Skip for now →</button>
-              </div>
-            )}
-
-            {/* STEP 6 — Location */}
-            {step === 6 && (
-              <div>
-                <h1 style={{ ...h1, marginBottom: 8 }}>Help patients find you</h1>
-                <p style={{ ...sub, marginBottom: 24 }}>Your clinic name on Google Maps</p>
-                {/* Editing the name invalidates any previously-saved embed, so
-                    Continue re-locks until the new name is saved again. */}
-                <input style={{ ...input, marginBottom: 16 }} placeholder="e.g. Sambhav Dental Clinic, Wakad"
-                  value={form.mapsName}
-                  onChange={e => setForm(f => ({ ...f, mapsName: e.target.value, maps_embed: '' }))} />
-                {/* Save = resolve the name to an iframe + write dentists.maps_embed.
-                    This is the ONLY thing that sets form.maps_embed, so Continue
-                    below can't unlock until the DB write has succeeded. */}
-                <button
-                  style={{ ...btnNavy, marginBottom: 16, opacity: (busy || !form.mapsName.trim()) ? 0.5 : 1, cursor: (busy || !form.mapsName.trim()) ? 'not-allowed' : 'pointer' }}
-                  disabled={busy || !form.mapsName.trim()}
-                  onClick={saveMaps}>
-                  {busy ? 'Saving…' : form.maps_embed ? 'Update location' : 'Save location'}
-                </button>
-                {form.maps_embed && (
-                  <>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: '#0F766E', marginBottom: 10 }}>✅ Location saved to your profile</div>
-                    <div style={{ borderRadius: 12, overflow: 'hidden', border: '1.5px solid #CBD5E1', marginBottom: 20 }}
-                      dangerouslySetInnerHTML={{ __html: form.maps_embed }} />
-                  </>
-                )}
-                <button
-                  style={{ ...btn, opacity: (busy || !form.maps_embed) ? 0.5 : 1, cursor: (busy || !form.maps_embed) ? 'not-allowed' : 'pointer' }}
-                  disabled={busy || !form.maps_embed}
-                  onClick={() => setStep(7)}>
-                  Continue →
-                </button>
-                <p style={{ ...sub, fontSize: 13, textAlign: 'center', marginTop: 16 }}>
-                  Your clinic location is required so patients can find you.
-                </p>
-              </div>
-            )}
-
-            {/* STEP 7 — Blocking gate: a profile can't be published until photo,
-                fee and map are all set. This only shows on the edge case where a
-                dentist reaches Done without them (e.g. a state we didn't force). */}
-            {step === 7 && !allMandatoryDone && (
-              <div>
-                <h1 style={{ ...h1, marginBottom: 8 }}>Complete these to publish your profile</h1>
-                <p style={{ ...sub, marginBottom: 24 }}>Your profile can&apos;t go live until these are done:</p>
-                {missingMandatory.map(m => (
-                  <button key={m.step} style={{ ...btnNavy, justifyContent: 'space-between', padding: '0 18px' }} onClick={() => setStep(m.step)}>
-                    <span>{m.label}</span>
-                    <span>→</span>
+                  <button type="button" style={feeValid && !busy ? btn : btnOff} disabled={busy || !feeValid} onClick={saveFeeAndTreatments}>
+                    {busy ? 'Saving…' : isSetupLive({ ...saved, consultation_fee: form.consultation_fee }) ? 'Save, I\'m live!' : 'Save and continue'}
                   </button>
-                ))}
-              </div>
-            )}
-
-            {/* STEP 7 — Done: value-revelation moment */}
-            {step === 7 && allMandatoryDone && (
-              <div>
-                <div style={{ textAlign: 'center', marginBottom: 20 }}>
-                  <h1 style={{ ...h1, marginBottom: 8 }}>You&apos;re live on DentistIn! 🎉</h1>
-                  <p style={sub}>Here&apos;s what you get — completely free, for life:</p>
                 </div>
+              )}
 
-                {/* Value cards — teal left border on navy */}
-                {[
-                  { icon: '🦷', title: 'Complete Practice Management', body: 'Appointments, patient records, prescriptions, treatment plans, billing and invoicing — everything to run your clinic digitally.' },
-                  { icon: '👥', title: 'Patient Referrals', body: `Patients searching for dentists in ${areaLabel} will find your profile. Complete profiles get 3x more bookings. Yours is now complete.` },
-                  { icon: '🆓', title: 'Free Forever', body: 'No subscription. No commission on bookings. No credit card ever. Founding member pricing — locked in for life.' },
-                ].map(card => (
-                  <div key={card.title} style={{ background: NAVY, borderLeft: `4px solid ${TEAL}`, borderRadius: 12, padding: '16px 18px', marginBottom: 12, color: '#fff' }}>
-                    <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 6 }}>{card.icon} {card.title}</div>
-                    <div style={{ fontSize: 13, lineHeight: 1.55, color: 'rgba(255,255,255,0.85)' }}>{card.body}</div>
-                  </div>
-                ))}
-
-                {/* Actual profile completion (photo / fee / map) */}
-                <div style={{ marginTop: 20, marginBottom: 24 }}>
-                  <div style={{ height: 8, background: '#E2E8F0', borderRadius: 99, overflow: 'hidden', marginBottom: 8 }}>
-                    <div style={{ height: '100%', width: `${donePct}%`, background: TEAL, borderRadius: 99, transition: 'width 0.4s' }} />
-                  </div>
-                  {donePct === 100 ? (
-                    <div style={{ fontSize: 13, fontWeight: 600, color: '#0F766E' }}>✅ Profile 100% complete — you&apos;re getting maximum visibility</div>
-                  ) : (
-                    <div style={{ fontSize: 13, color: '#64748B' }}>
-                      Your profile is {donePct}% complete.{' '}
-                      <a href="/for-dentists/dashboard/profile" style={{ color: TEAL, fontWeight: 600, textDecoration: 'none' }}>
-                        Add {missingLabel} to get more bookings →
-                      </a>
+              {/* LIVE at 80% */}
+              {step === LIVE && (
+                <div style={col}>
+                  <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 44, color: TEAL_DARK, textAlign: 'center' }}>{pct}%</div>
+                  <h1 style={{ ...h1, textAlign: 'center' }}>You&apos;re live{where ? ` in ${where}` : ''}</h1>
+                  <p style={{ ...sub, textAlign: 'center' }}>Patients searching for a dentist{where ? ` in ${where}` : ''} can now find and book you.</p>
+                  {profileUrl && (
+                    <div style={{ ...card, display: 'grid', gap: 10 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: TEAL_DARK, wordBreak: 'break-all' }}>{profileUrlShort}</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                        <a style={btnWa} target="_blank" rel="noopener noreferrer"
+                          href={`https://wa.me/?text=${encodeURIComponent(`You can now book an appointment with me on DentistIn: ${profileUrl}`)}`}>Share on WhatsApp</a>
+                        <button type="button" style={btnGhost} onClick={copyLink}>{copied ? 'Copied' : 'Copy link'}</button>
+                      </div>
                     </div>
                   )}
+                  {!isVerified && (
+                    <div style={{ ...card, background: '#FFFBEB', borderColor: '#FCD34D', color: '#92400E' }}>
+                      <b>Verified badge: being checked</b>
+                      <p style={{ margin: '4px 0 0', fontSize: 14 }}>Our team checks your registration number within 2 working days.</p>
+                    </div>
+                  )}
+                  {pct < 100 && (
+                    <div style={{ ...card, display: 'grid', gap: 10 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                        <b style={{ color: NAVY }}>Last step: 100%</b><span style={timePill}>~1 min</span>
+                      </div>
+                      <p style={{ ...sub, fontSize: 14 }}>Check your about text and hours, and add a clinic photo. Complete profiles rank higher.</p>
+                      <button type="button" style={btn} onClick={() => go(5)}>Finish step 5</button>
+                    </div>
+                  )}
+                  {profileUrl && <a href={profileUrl} target="_blank" rel="noopener noreferrer" style={btnGhost}>View my profile</a>}
+                  <button type="button" style={btnGhost} onClick={goDashboard}>Go to dashboard</button>
                 </div>
+              )}
 
-                {/* Actions */}
-                {slug && (
-                  <a href={`${siteBase}/professional/${slug}`} target="_blank" rel="noopener noreferrer" style={btnNavy}>
-                    View my live profile →
-                  </a>
-                )}
-                <button style={btn} onClick={finish}>Go to dashboard →</button>
-              </div>
-            )}
+              {/* STEP 5: About + hours + cover */}
+              {step === 5 && (
+                <div style={col}>
+                  <h1 style={h1}>Check your about text</h1>
+                  <p style={sub}>We wrote this from your details. Edit anything.</p>
+                  <textarea id="ob-bio" rows={6} value={form.bio}
+                    onChange={e => setForm(f => ({ ...f, bio: e.target.value }))}
+                    style={{ ...input, minHeight: 140, padding: 12, lineHeight: 1.5, resize: 'vertical' }} />
+                  <div style={{ fontSize: 12, color: form.bio.trim().length >= BIO_MIN ? TEAL_DARK : MUTED }}>
+                    {form.bio.trim().length} characters{form.bio.trim().length < BIO_MIN ? ` (at least ${BIO_MIN})` : ''}
+                  </div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Clinic hours</div>
+                  {hadHours ? (
+                    <p style={{ ...sub, fontSize: 14 }}>Your hours are already set. <a href="/for-dentists/dashboard/hours" style={{ color: TEAL_DARK, fontWeight: 700 }}>Edit hours</a></p>
+                  ) : (
+                    <div style={{ ...card, display: 'grid', gap: 6, fontSize: 14 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 12px' }}>
+                        <b>Mon–Sat</b><span>10:00–2:00 · 5:00–9:00</span>
+                        <b>Sunday</b><span>Closed</span>
+                      </div>
+                      <p style={{ ...sub, fontSize: 13 }}>Saved with this step. Different hours? Change them any time from Dashboard → Hours.</p>
+                    </div>
+                  )}
+                  <div style={{ fontSize: 12, fontWeight: 700, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Clinic photo (optional)</div>
+                  <label style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 100,
+                    border: `2px ${form.cover_photo ? 'solid' : 'dashed'} ${TEAL}`, borderRadius: 14, cursor: 'pointer',
+                    background: form.cover_photo ? `center/cover no-repeat url(${form.cover_photo})` : '#F0FDFA',
+                  }}>
+                    {!form.cover_photo && <span style={{ color: TEAL_DARK, fontWeight: 700 }}>{busy ? 'Uploading…' : '+ Add a photo of your clinic'}</span>}
+                    <input type="file" accept="image/*" style={{ display: 'none' }}
+                      onChange={e => { const file = e.target.files?.[0]; if (file) uploadPhoto(file, 'cover') }} />
+                  </label>
+                  <button type="button" style={form.bio.trim().length >= BIO_MIN && !busy ? btn : btnOff}
+                    disabled={busy || form.bio.trim().length < BIO_MIN} onClick={saveAbout}>
+                    {busy ? 'Saving…' : 'Done'}
+                  </button>
+                </div>
+              )}
 
-            {/* Global "skip setup" — steps 1–6 only; sets the flag so the gate
-                won't route them back here. */}
-            {step < 7 && (
-              <button style={{ ...skipLink, marginTop: 24, fontSize: 13 }} onClick={finish}>
-                Skip setup, take me to the dashboard
-              </button>
-            )}
+              {/* DONE: 100% */}
+              {step === DONE && (
+                <div style={col}>
+                  <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 44, color: TEAL_DARK, textAlign: 'center' }}>{pct}%</div>
+                  <h1 style={{ ...h1, textAlign: 'center' }}>{pct === 100 ? 'Your profile is complete' : 'Almost there'}</h1>
+                  <p style={{ ...sub, textAlign: 'center' }}>
+                    {pct === 100 ? 'Complete profiles rank higher and get more bookings.' : 'Finish the remaining steps to go live.'}
+                  </p>
+                  {steps.filter(s => !s.done).map(s => (
+                    <button key={s.step} type="button" style={{ ...btnGhost, justifyContent: 'space-between', padding: '0 18px' }} onClick={() => go(s.step)}>
+                      <span>{s.label}</span><span>→</span>
+                    </button>
+                  ))}
+                  {profileUrl && <a href={profileUrl} target="_blank" rel="noopener noreferrer" style={btnGhost}>View my profile</a>}
+                  <button type="button" style={btn} onClick={goDashboard}>Go to dashboard</button>
+                </div>
+              )}
+            </div>
           </>
         )}
       </div>

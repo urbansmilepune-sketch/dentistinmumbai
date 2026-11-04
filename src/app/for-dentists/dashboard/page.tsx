@@ -10,7 +10,7 @@ import RequestReviewCard from './RequestReviewCard'
 import AskReviewButton from './AskReviewButton'
 import { resolveCurrentDentist } from '@/lib/currentDentist'
 import { getCityBySlug } from '@/config/cities'
-import { completionPct } from '@/lib/profileCompletion'
+import { setupSteps, setupPct, isSetupLive } from '@/lib/setupSteps'
 import { NAVY, TEAL, TEAL_DARK, TEAL_SOFT, BRAND_GRADIENT } from '@/app/dentist/[slug]/profileTheme'
 import GrowthTools from './GrowthTools'
 import { PlusIcon, CalendarIcon, QrIcon, StarIcon, BadgeIcon, ChevronIcon, SearchIcon, CheckIcon } from './dashIcons'
@@ -77,7 +77,7 @@ export default async function DashboardPage() {
 
   const dentist = await resolveCurrentDentist<any>(
     supabase,
-    'id, name, clinic_name, slug, city, tier, is_verified, profile_photo, cover_photo, bio, phone, whatsapp, working_hours, maps_embed, consultation_fee, created_at, avg_rating, review_count',
+    'id, name, clinic_name, slug, city, tier, is_verified, profile_photo, cover_photo, bio, phone, whatsapp, working_hours, maps_embed, consultation_fee, mci_number, created_at, avg_rating, review_count',
   )
 
   if (!dentist) redirect('/for-dentists/login')
@@ -239,16 +239,11 @@ export default async function DashboardPage() {
     status: a.status,
   }))
 
-  // Profile completeness: same scoring as the sidebar / admin (profileCompletion.ts).
-  // The "next step" link points at the first missing basic.
-  const pct = completionPct(dentist as any)
-  const nextStep =
-    !dentist.profile_photo ? { label: 'Add your photo', href: `${D}/photos` }
-    : !dentist.cover_photo ? { label: 'Add clinic photos', href: `${D}/photos` }
-    : !(dentist.bio && dentist.bio.length >= 50) ? { label: 'Write a longer bio', href: `${D}/profile` }
-    : !dentist.whatsapp ? { label: 'Add your WhatsApp number', href: `${D}/profile` }
-    : !dentist.maps_embed ? { label: 'Add your Google Maps location', href: `${D}/profile` }
-    : { label: 'Finish your profile', href: `${D}/profile` }
+  // Setup progress: the same 5 steps as the setup wizard (setupSteps.ts).
+  // Steps 1–4 = live (80%), step 5 = 100%. Each row opens that wizard step.
+  const steps = setupSteps(dentist as any)
+  const pct = setupPct(dentist as any)
+  const live = isSetupLive(dentist as any)
 
   const badgeHtml = `<!-- DentistIn Verified Badge -->
 <a href="${profileUrl}"
@@ -321,13 +316,26 @@ export default async function DashboardPage() {
   }
 
   const setupBar = pct < 100 && (
-    <div style={{ ...card, padding: '12px 16px', display: 'grid', gap: 8 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, gap: 8 }}>
-        <b>Profile {pct}% complete</b>
-        <Link href={nextStep.href} style={headLink}>{nextStep.label}</Link>
+    <div style={{ ...card, padding: '14px 16px', display: 'grid', gap: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 14, gap: 8 }}>
+        <b>{live ? `You're live · ${pct}% complete` : `Go live: ${steps.filter(s => s.neededToGoLive && s.done).length} of 4 done`}</b>
+        <span style={{ fontSize: 12, fontWeight: 700, color: TEAL_DARK, background: TEAL_SOFT, borderRadius: 99, padding: '2px 10px', whiteSpace: 'nowrap' }}>{pct}%</span>
       </div>
-      <div style={{ height: 6, background: 'var(--border)', borderRadius: 3, overflow: 'hidden' }}>
-        <div style={{ height: '100%', width: `${pct}%`, background: TEAL, borderRadius: 3 }} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 4 }}>
+        {steps.map(s => <i key={s.step} style={{ display: 'block', height: 6, borderRadius: 99, background: s.done ? TEAL : 'var(--border)' }} />)}
+      </div>
+      <div style={{ display: 'grid' }}>
+        {steps.filter(s => !s.done).map(s => (
+          <Link key={s.step} href={`/for-dentists/onboard?step=${s.step}`}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderTop: '1px dashed var(--border)', fontSize: 13, color: 'inherit', textDecoration: 'none' }}>
+            <span style={{ width: 20, height: 20, borderRadius: '50%', border: '2px solid var(--border)', flexShrink: 0 }} />
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <b>{s.label}</b>
+              {s.neededToGoLive && !live && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#92400E', background: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: 99, padding: '1px 6px' }}>to go live</span>}
+            </span>
+            <span style={headLink}>Add</span>
+          </Link>
+        ))}
       </div>
     </div>
   )
