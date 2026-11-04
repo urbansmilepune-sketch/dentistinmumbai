@@ -318,7 +318,7 @@ export default async function DashboardPage() {
   const setupBar = pct < 100 && (
     <div style={{ ...card, padding: '14px 16px', display: 'grid', gap: 10 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 14, gap: 8 }}>
-        <b>{live ? `You're live · ${pct}% complete` : `Go live: ${steps.filter(s => s.neededToGoLive && s.done).length} of 4 done`}</b>
+        <b>{live ? `Profile ${pct}% complete` : `Profile essentials: ${steps.filter(s => s.neededToGoLive && s.done).length} of 4 done`}</b>
         <span style={{ fontSize: 12, fontWeight: 700, color: TEAL_DARK, background: TEAL_SOFT, borderRadius: 99, padding: '2px 10px', whiteSpace: 'nowrap' }}>{pct}%</span>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 4 }}>
@@ -331,7 +331,7 @@ export default async function DashboardPage() {
             <span style={{ width: 20, height: 20, borderRadius: '50%', border: '2px solid var(--border)', flexShrink: 0 }} />
             <span style={{ flex: 1, minWidth: 0 }}>
               <b>{s.label}</b>
-              {s.neededToGoLive && !live && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#92400E', background: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: 99, padding: '1px 6px' }}>to go live</span>}
+              {s.neededToGoLive && !live && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#92400E', background: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: 99, padding: '1px 6px' }}>essential</span>}
             </span>
             <span style={headLink}>Add</span>
           </Link>

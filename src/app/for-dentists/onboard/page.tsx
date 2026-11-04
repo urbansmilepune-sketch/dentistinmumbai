@@ -209,7 +209,7 @@ export default function OnboardWizard() {
   }
 
   // Where to go after finishing step `from`. Steps 1–3 go forward. After the
-  // last go-live step, show the "You're live" screen, or send them to the
+  // last go-live step, show the "essentials done" screen, or send them to the
   // first go-live step still missing.
   function after(from: number, s = saved) {
     if (from < 4) return from + 1
@@ -470,7 +470,7 @@ export default function OnboardWizard() {
         <div style={{ flex: 1, height: 6, borderRadius: 99, background: 'rgba(255,255,255,0.15)', overflow: 'hidden' }}>
           <div style={{ height: '100%', width: `${pct}%`, background: TEAL, borderRadius: 99, transition: 'width 0.4s' }} />
         </div>
-        <b style={{ color: '#fff' }}>{pct}%{live ? ' · live' : ''}</b>
+        <b style={{ color: '#fff' }}>{pct}%</b>
       </div>
     </div>
   )
@@ -527,11 +527,11 @@ export default function OnboardWizard() {
                   ))}
                   <div style={{ ...card, display: 'grid', gap: 10 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                      <b style={{ color: NAVY }}>{live ? 'You\'re live. One step to 100%' : '5 quick steps to go live'}</b>
+                      <b style={{ color: NAVY }}>{live ? 'Essentials done. One step to 100%' : '5 quick steps to complete your profile'}</b>
                       <span style={timePill}>{live ? '~1 min' : '~4 min'}</span>
                     </div>
                     {stepBars}
-                    <p style={{ ...sub, fontSize: 13 }}>Steps 1 to 4 are needed to go live (80%). Step 5 takes you to 100%.</p>
+                    <p style={{ ...sub, fontSize: 13 }}>Steps 1 to 4 are the essentials patients look for (80%). Step 5 takes you to 100%.</p>
                   </div>
                   <button type="button" style={btn} onClick={() => go(steps.find(s => !s.done)?.step ?? DONE)}>
                     {(() => { const n = steps.find(s => !s.done)?.step; return n ? `Start step ${n} of 5` : 'See my profile' })()}
@@ -607,7 +607,7 @@ export default function OnboardWizard() {
                     disabled={busy || form.mci_number.trim().length < 3} onClick={saveRegistration}>
                     {busy ? 'Saving…' : 'Next: clinic location'}
                   </button>
-                  <p style={{ ...sub, fontSize: 13, textAlign: 'center' }}>Needed to go live. &quot;Finish later&quot; saves your progress.</p>
+                  <p style={{ ...sub, fontSize: 13, textAlign: 'center' }}>Needed for the Verified badge. &quot;Finish later&quot; saves your progress.</p>
                 </div>
               )}
 
@@ -687,7 +687,7 @@ export default function OnboardWizard() {
                     })}
                   </div>
                   <button type="button" style={feeValid && !busy ? btn : btnOff} disabled={busy || !feeValid} onClick={saveFeeAndTreatments}>
-                    {busy ? 'Saving…' : isSetupLive({ ...saved, consultation_fee: form.consultation_fee }) ? 'Save, I\'m live!' : 'Save and continue'}
+                    {busy ? 'Saving…' : isSetupLive({ ...saved, consultation_fee: form.consultation_fee }) ? 'Save, essentials done!' : 'Save and continue'}
                   </button>
                 </div>
               )}
@@ -696,8 +696,8 @@ export default function OnboardWizard() {
               {step === LIVE && (
                 <div style={col}>
                   <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 44, color: TEAL_DARK, textAlign: 'center' }}>{pct}%</div>
-                  <h1 style={{ ...h1, textAlign: 'center' }}>You&apos;re live{where ? ` in ${where}` : ''}</h1>
-                  <p style={{ ...sub, textAlign: 'center' }}>Patients searching for a dentist{where ? ` in ${where}` : ''} can now find and book you.</p>
+                  <h1 style={{ ...h1, textAlign: 'center' }}>Your profile is ready for patients</h1>
+                  <p style={{ ...sub, textAlign: 'center' }}>Patients searching for a dentist{where ? ` in ${where}` : ''} now see your photo, registration number, fee and location.</p>
                   {profileUrl && (
                     <div style={{ ...card, display: 'grid', gap: 10 }}>
                       <div style={{ fontSize: 14, fontWeight: 700, color: TEAL_DARK, wordBreak: 'break-all' }}>{profileUrlShort}</div>
@@ -774,7 +774,7 @@ export default function OnboardWizard() {
                   <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 44, color: TEAL_DARK, textAlign: 'center' }}>{pct}%</div>
                   <h1 style={{ ...h1, textAlign: 'center' }}>{pct === 100 ? 'Your profile is complete' : 'Almost there'}</h1>
                   <p style={{ ...sub, textAlign: 'center' }}>
-                    {pct === 100 ? 'Complete profiles rank higher and get more bookings.' : 'Finish the remaining steps to go live.'}
+                    {pct === 100 ? 'Complete profiles rank higher and get more bookings.' : 'Finish the remaining steps so patients see your full details.'}
                   </p>
                   {steps.filter(s => !s.done).map(s => (
                     <button key={s.step} type="button" style={{ ...btnGhost, justifyContent: 'space-between', padding: '0 18px' }} onClick={() => go(s.step)}>

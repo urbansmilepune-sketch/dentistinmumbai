@@ -1,11 +1,11 @@
 // The 5 setup steps a new dentist goes through (wizard at /for-dentists/onboard).
-// Each step is worth 20%. Steps 1–4 are needed to "go live" (80%); step 5 takes
+// Each step is worth 20%. Steps 1–4 are the essentials (80%); step 5 takes
 // the profile to 100%. The wizard, the dashboard gate, the dashboard setup card
 // and the sidebar all use this one list so a dentist sees the same number
 // everywhere.
 //
-// Note: the SEO/sitemap gate still uses profileCompletion.ts. Moving the
-// directory listing onto this score is a separate change.
+// This score does NOT decide directory listing: dentists stay listed whatever
+// their score (Ashish, 4 Nov 2026). The SEO/sitemap gate uses profileCompletion.ts.
 
 export interface SetupFields {
   profile_photo?: string | null
