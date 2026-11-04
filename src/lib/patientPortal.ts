@@ -3,8 +3,9 @@
 // (JS can't read it, so an XSS bug can't steal it). The token lasts 7 days and
 // is re-minted on every API call, so it only expires after 7 days of no use. The portal's data
 // API trusts this token to prove phone ownership, then re-checks that any
-// patient_id it's asked about actually belongs to that phone AND has
-// portal_access enabled — the token alone never grants access to a record.
+// patient_id it's asked about actually belongs to that phone — the token alone
+// never grants access to a record. There is no per-clinic switch: a patient
+// sees every clinic that has their number on file.
 //
 // Signing secret: a dedicated PATIENT_PORTAL_JWT_SECRET if set, otherwise the
 // server-only SUPABASE_SERVICE_ROLE_KEY (never exposed to the browser). This
@@ -31,10 +32,10 @@ function cookieOptions(maxAge: number) {
   }
 }
 
-// Mint a fresh 7-day token for this phone and put it on the response. Called
+// Mint a fresh 7-day token for this login and put it on the response. Called
 // at login and on every authenticated patient API call (sliding expiry).
-export async function setPatientSessionCookie(res: NextResponse, phone: string): Promise<void> {
-  const token = await mintPatientToken(phone)
+export async function setPatientSessionCookie(res: NextResponse, who: PatientPortalClaims): Promise<void> {
+  const token = await mintPatientToken(who)
   res.cookies.set(PATIENT_SESSION_COOKIE, token, cookieOptions(IDLE_SECONDS))
 }
 
@@ -57,14 +58,21 @@ function getSecret(): Uint8Array {
   return new TextEncoder().encode(secret)
 }
 
+// Who logged in. Exactly one is set: a phone (SMS code) or an email (email
+// code or Google). Records are matched on that same field of the patient row.
 export interface PatientPortalClaims {
   // Always the last-10-digits form so it matches regardless of how the phone
   // was stored on the patient row ("+91 98…", "098…", etc.).
-  phone: string
+  phone: string | null
+  // Lower-case.
+  email: string | null
 }
 
-export async function mintPatientToken(phone: string): Promise<string> {
-  return await new SignJWT({ phone })
+export const byPhone = (phone: string): PatientPortalClaims => ({ phone, email: null })
+export const byEmail = (email: string): PatientPortalClaims => ({ phone: null, email })
+
+export async function mintPatientToken(who: PatientPortalClaims): Promise<string> {
+  return await new SignJWT(who.phone ? { phone: who.phone } : { email: who.email })
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject('patient_portal')
     .setIssuedAt()
@@ -76,11 +84,41 @@ export async function verifyPatientToken(token: string): Promise<PatientPortalCl
   try {
     const { payload } = await jwtVerify(token, getSecret(), { subject: 'patient_portal' })
     const phone = typeof payload.phone === 'string' ? payload.phone : ''
-    if (!/^\d{10}$/.test(phone)) return null
-    return { phone }
+    if (/^\d{10}$/.test(phone)) return byPhone(phone)
+    const email = typeof payload.email === 'string' ? normEmail(payload.email) : ''
+    if (isEmail(email)) return byEmail(email)
+    return null
   } catch {
     return null
   }
+}
+
+export function normEmail(raw: unknown): string {
+  return String(raw ?? '').trim().toLowerCase()
+}
+
+export function isEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+}
+
+// The patients-table filter for this login: { column, ilike pattern }. Phone
+// matches on the last 10 digits; email matches exactly, ignoring case (the
+// LIKE wildcards % and _ are escaped, since _ is common in emails).
+export function patientMatch(who: PatientPortalClaims): { column: 'phone' | 'email'; pattern: string } {
+  if (who.phone) return { column: 'phone', pattern: `%${who.phone}` }
+  return { column: 'email', pattern: String(who.email).replace(/[\\%_]/g, '\\$&') }
+}
+
+// Row key in patient_portal_otps (its unique `phone` column): the 10-digit
+// phone, or "email:<address>" so email codes share the table without DDL.
+export function otpKeyFor(who: PatientPortalClaims): string {
+  return who.phone ? who.phone : `email:${who.email}`
+}
+
+// Does this patient row belong to whoever holds the session?
+export function ownsPatientRow(row: { phone?: unknown; email?: unknown }, who: PatientPortalClaims): boolean {
+  if (who.phone) return phoneTail10(row.phone) === who.phone
+  return !!who.email && normEmail(row.email) === who.email
 }
 
 // Normalise any stored/typed phone to the 10-digit subscriber number so login

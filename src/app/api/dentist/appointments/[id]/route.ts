@@ -18,6 +18,7 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { getDentistOwner } from '@/lib/dentistSession'
 import { sendAppointmentConfirmedToPatient, sendAppointmentCancelledToPatient } from '@/lib/email'
 import { sendSMS } from '@/lib/sms'
+import { sendConfirmationWhatsApp, sendCancellationWhatsApp } from '@/lib/whatsapp'
 import { autoCreateRecallForCompletedVisit } from '@/lib/recall'
 
 const VALID_STATUSES = ['pending', 'confirmed', 'completed', 'cancelled', 'no_show'] as const
@@ -174,8 +175,19 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
         console.log('[appointments PATCH] no patient_email on appointment — skipping confirmation email', { ref: updated.reference_no })
       }
 
+      // WhatsApp first; SMS only if WhatsApp didn't go out.
+      let confirmWhatsAppSent = false
+      if (patientPhone) {
+        try {
+          const w = await sendConfirmationWhatsApp({ patientPhone, clinicName, apptDate: updated.appt_date, timeSlot: updated.time_slot })
+          confirmWhatsAppSent = w.success
+        } catch (err) {
+          console.error('[appointments PATCH] confirmation WhatsApp threw', err)
+        }
+      }
+
       const confirmTpl = process.env.MSG91_TEMPLATE_ID_APPOINTMENT_CONFIRMED
-      if (confirmTpl && patientPhone) {
+      if (!confirmWhatsAppSent && confirmTpl && patientPhone) {
         try {
           // DLT template: "Your Appointment confirmed at {clinic} on {date time} ..."
           const r = await sendSMS(patientPhone, confirmTpl, [
@@ -210,8 +222,18 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
         }
       }
 
+      let cancelWhatsAppSent = false
+      if (patientPhone) {
+        try {
+          const w = await sendCancellationWhatsApp({ patientPhone, clinicName, apptDate: updated.appt_date })
+          cancelWhatsAppSent = w.success
+        } catch (err) {
+          console.error('[appointments PATCH] cancellation WhatsApp threw', err)
+        }
+      }
+
       const cancelTpl = process.env.MSG91_TEMPLATE_ID_APPOINTMENT_CANCELLED
-      if (cancelTpl && patientPhone) {
+      if (!cancelWhatsAppSent && cancelTpl && patientPhone) {
         try {
           // DLT template body has a typo ("on cancelled") and only renders the
           // clinic name — there is no {date time} placeholder, so we send a

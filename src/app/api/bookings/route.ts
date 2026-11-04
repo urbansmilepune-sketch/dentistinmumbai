@@ -13,6 +13,7 @@ import {
   sendAdminAppointmentAlert,
 } from '@/lib/email'
 import { sendSMS } from '@/lib/sms'
+import { sendBookingReceivedWhatsApp, sendNewAppointmentWhatsApp } from '@/lib/whatsapp'
 import { isDemoEmail } from '@/lib/demo'
 import { guardRequest } from '@/lib/apiGuards'
 import { notifyClinic, shortName, whenLabel } from '@/lib/push'
@@ -344,8 +345,31 @@ export async function POST(request: NextRequest) {
       // take two vars: a label (clinic or patient name) and a single
       // "{date time}" string, so the date and slot are concatenated.
       const dateTime = `${formattedDate} ${time_slot}`
+
+      // WhatsApp first (booking_received to the patient, new_appointment to
+      // the dentist). SMS only goes out when the WhatsApp send didn't, so
+      // nobody gets the same message twice. When WHATSAPP_ENABLED is off the
+      // WhatsApp helpers return a failure and SMS behaves exactly as before.
+      let patientWhatsAppSent = false
+      try {
+        const w = await sendBookingReceivedWhatsApp({ patientPhone: patient_phone, clinicName, apptDate: appt_date, timeSlot: time_slot })
+        patientWhatsAppSent = w.success
+      } catch (err: any) {
+        console.error('[bookings] patient WhatsApp threw', { message: err?.message })
+      }
+      let dentistWhatsAppSent = false
+      const dentistWaPhone = dentist.whatsapp || dentist.phone
+      if (dentistWaPhone) {
+        try {
+          const w = await sendNewAppointmentWhatsApp({ dentistPhone: dentistWaPhone, patientName: patient_name, apptDate: appt_date, timeSlot: time_slot })
+          dentistWhatsAppSent = w.success
+        } catch (err: any) {
+          console.error('[bookings] dentist WhatsApp threw', { message: err?.message })
+        }
+      }
+
       const patientTpl = process.env.MSG91_TEMPLATE_ID_BOOKING_PATIENT
-      if (patientTpl && patient_phone) {
+      if (!patientWhatsAppSent && patientTpl && patient_phone) {
         console.log('[bookings] patient SMS attempt', {
           phone: patient_phone,
           templateId: patientTpl,
@@ -361,7 +385,7 @@ export async function POST(request: NextRequest) {
 
       const dentistTpl = process.env.MSG91_TEMPLATE_ID_BOOKING_DENTIST
       const dentistSmsPhone = dentist.phone || dentist.whatsapp
-      if (dentistTpl && dentistSmsPhone) {
+      if (!dentistWhatsAppSent && dentistTpl && dentistSmsPhone) {
         console.log('[bookings] dentist SMS attempt', {
           phone: dentistSmsPhone,
           templateId: process.env.MSG91_TEMPLATE_ID_BOOKING_DENTIST,

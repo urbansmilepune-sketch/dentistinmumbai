@@ -9,7 +9,7 @@
 // Built for speed and simplicity, not for bloggers: one linear path, big taps,
 // plain language. The AI is optional — the dentist can always type by hand.
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { TOPIC_TYPES, topicConfig, type ArticleTopicType } from '@/lib/articles'
@@ -42,7 +42,19 @@ export default function NewArticlePage() {
   // whether there's content, without lifting the whole HTML into React state.
   const [, setContentTick] = useState(0)
 
+  // Patient consent tick box, required for case stories only.
+  const [consent, setConsent] = useState(false)
+
+  // The dashboard "Publish a patient case" button links here with
+  // ?topic=case_story, so the topic step is skipped. Read from the URL in an
+  // effect rather than useSearchParams so the page needs no Suspense boundary.
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get('topic')
+    if (t && topicConfig(t)) setTopicType(t as ArticleTopicType)
+  }, [])
+
   const topic = topicType ? topicConfig(topicType) : null
+  const needsConsent = topicType === 'case_story'
 
   async function getAiDraft() {
     if (!title.trim()) { setError('Add a title first — it guides the draft.'); return }
@@ -83,12 +95,13 @@ export default function NewArticlePage() {
     const content = editorRef.current?.getHTML() ?? ''
     if (!title.trim()) { setError('Please add a title.'); return }
     if (editorRef.current?.isEmpty()) { setError('Please write or generate the article first.'); return }
+    if (needsConsent && !consent) { setError('Please confirm the patient agreed to share this case.'); return }
     setError(null); setSubmitting(true)
     try {
       const res = await fetch('/api/dentist/articles', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: title.trim(), content, topic_type: topicType }),
+        body: JSON.stringify({ title: title.trim(), content, topic_type: topicType, patient_consent: needsConsent ? consent : undefined }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data.success) {
@@ -103,7 +116,7 @@ export default function NewArticlePage() {
     }
   }
 
-  const canSubmit = !!title.trim() && !editorRef.current?.isEmpty?.() && !submitting
+  const canSubmit = !!title.trim() && !editorRef.current?.isEmpty?.() && !submitting && (!needsConsent || consent)
 
   // ── Success screen ───────────────────────────────────────────────────────
   if (submitted) {
@@ -130,7 +143,7 @@ export default function NewArticlePage() {
       {/* Header */}
       <div style={{ marginBottom: 20 }}>
         <Link href="/for-dentists/dashboard/articles" style={{ fontSize: 13, color: 'var(--blue)', textDecoration: 'none', fontWeight: 600 }}>← My Articles</Link>
-        <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginTop: 8 }}>Write an Article</h1>
+        <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, marginTop: 8 }}>{needsConsent ? 'Publish a patient case' : 'Write an Article'}</h1>
         <p style={{ fontSize: 14, color: 'var(--muted)', marginTop: 2 }}>Share your expertise. Patients searching for a dentist read these — and they help your profile rank.</p>
       </div>
 
@@ -172,7 +185,7 @@ export default function NewArticlePage() {
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 14px', background: 'var(--blue-light)', color: 'var(--blue)', borderRadius: 999, fontSize: 13, fontWeight: 700 }}>
               <span>{topic?.emoji}</span> {topic?.label}
             </span>
-            <button onClick={() => { setTopicType(null); setDraftReady(false) }} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-body)', textDecoration: 'underline' }}>Change</button>
+            <button onClick={() => { setTopicType(null); setDraftReady(false); setConsent(false) }} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-body)', textDecoration: 'underline' }}>Change</button>
           </div>
 
           {/* STEP 2 — Title + Get AI Draft */}
@@ -205,6 +218,25 @@ export default function NewArticlePage() {
 
           {/* STEP 3 — Editor */}
           <ArticleEditor ref={editorRef} onChange={() => setContentTick(t => t + 1)} />
+
+          {needsConsent && (
+            <>
+              <p style={{ fontSize: 12, color: 'var(--muted)', margin: '8px 0 0' }}>
+                Photo tip: show the teeth only and crop out the patient&apos;s face.
+              </p>
+              <label style={{ marginTop: 14, display: 'flex', gap: 10, alignItems: 'flex-start', padding: '12px 14px', borderRadius: 12, border: '1.5px solid #F59E0B', background: '#FFFBEB', color: '#78350F', fontSize: 13, lineHeight: 1.45, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={consent}
+                  onChange={e => setConsent(e.target.checked)}
+                  style={{ width: 18, height: 18, marginTop: 1, flexShrink: 0, accentColor: '#14B8A6' }}
+                />
+                <span>
+                  <b>The patient agreed to share this case.</b> I have not used their name, face, phone number or anything else that identifies them.
+                </span>
+              </label>
+            </>
+          )}
 
           {/* STEP 4 — Submit */}
           <div style={{ marginTop: 20, display: 'flex', justifyContent: 'flex-end' }}>

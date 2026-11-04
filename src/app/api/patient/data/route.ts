@@ -5,13 +5,13 @@
 // prescriptions, invoices and past visits.
 //
 // Security: the token only proves phone ownership. We independently re-load the
-// requested patient row and confirm (a) its phone matches the token's phone and
-// (b) portal_access is still enabled — so a token can never read a record that
-// isn't the holder's, even if a patient_id is guessed or a dentist later
-// revokes access.
+// requested patient row and confirm its phone matches the token's phone, so a
+// token can never read a record that isn't the holder's, even if a patient_id
+// is guessed. patients.portal_access is no longer checked: the patient owns
+// their records and needs no switch from the dentist.
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { verifyPatientToken, phoneTail10, patientTokenFromRequest, setPatientSessionCookie } from '@/lib/patientPortal'
+import { verifyPatientToken, patientTokenFromRequest, setPatientSessionCookie, ownsPatientRow, patientMatch } from '@/lib/patientPortal'
 import { nowInIndia } from '@/lib/clinicSlots'
 
 function admin() {
@@ -37,15 +37,12 @@ export async function POST(request: NextRequest) {
   // Load + authorise the requested patient against the token's phone.
   const { data: patient } = await db
     .from('patients')
-    .select('id, name, age, gender, phone, dentist_id, portal_access, portal_last_login, dentist:dentists(id, slug, name, clinic_name, phone, whatsapp, address, city, degree, mci_number, working_hours, areas(name))')
+    .select('id, name, age, gender, phone, email, dentist_id, portal_access, portal_last_login, dentist:dentists(id, slug, name, clinic_name, phone, whatsapp, address, city, degree, mci_number, working_hours, areas(name))')
     .eq('id', patientId)
     .maybeSingle()
 
-  if (!patient || phoneTail10((patient as any).phone) !== claims.phone) {
+  if (!patient || !ownsPatientRow(patient as any, claims)) {
     return NextResponse.json({ error: 'Record not found' }, { status: 404 })
-  }
-  if (!(patient as any).portal_access) {
-    return NextResponse.json({ error: 'Portal access for this record has been turned off by your clinic.' }, { status: 403 })
   }
 
   const dentistId = (patient as any).dentist_id
@@ -84,12 +81,11 @@ export async function POST(request: NextRequest) {
       .select('id, visit_date, chief_complaint, treatment_done, clinical_findings')
       .eq('patient_id', patientId)
       .order('visit_date', { ascending: false }),
-    // All portal-enabled clinics for this phone — powers the header switcher
+    // Every clinic this phone is a patient at — powers the header switcher
     // without trusting anything in the browser.
     db.from('patients')
       .select('id, name, dentist:dentists(id, name, clinic_name, city)')
-      .ilike('phone', `%${claims.phone}`)
-      .eq('portal_access', true),
+      .ilike(patientMatch(claims).column, patientMatch(claims).pattern),
     // Branch hours, so a reschedule at branch B uses branch B's timings.
     db.from('clinic_locations')
       .select('id, working_hours')
@@ -140,6 +136,6 @@ export async function POST(request: NextRequest) {
     visits: visits || [],
   })
   // Using the app keeps the login alive for another 7 days.
-  await setPatientSessionCookie(res, claims.phone)
+  await setPatientSessionCookie(res, claims)
   return res
 }
