@@ -398,10 +398,12 @@ export default function VisitPage() {
       let nextLine = ''
       const nextNote = picked.length ? newPlanTitle : openPlans[0]?.title || 'Follow-up'
       if (nextMode === 'book') {
-        const { error: apErr } = await supabase.from('appointments').insert({
+        const { data: newAppt, error: apErr } = await supabase.from('appointments').insert({
           dentist_id: dentist.id, patient_id: patient.id, patient_name: patient.name, patient_phone: patient.phone,
           appt_date: nextDate, time_slot: nextSlot, status: 'confirmed', notes: nextNote, reference_no: generateApptRef(),
-        })
+        }).select('id').single()
+        // WhatsApp the patient that the next sitting is booked (best-effort).
+        if (!apErr && newAppt?.id) fetch(`/api/dentist/appointments/${newAppt.id}/notify`, { method: 'POST' }).catch(() => {})
         if (apErr) {
           warnings.push(apErr.code === '23505' ? `${prettyDate(nextDate)} ${nextSlot} is already booked. Book the next sitting from Appointments.` : friendlyError('The next sitting was not booked. Book it from Appointments', apErr))
         } else nextLine = `Next visit: ${prettyDate(nextDate)}, ${nextSlot}.`

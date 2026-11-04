@@ -277,6 +277,9 @@ export default function AppointmentsPage() {
       .single()
     setSaving(false)
     if (error) { setAddError(error.message); return }
+    // WhatsApp the patient that the appointment is booked. Best-effort:
+    // a failed send never blocks the dashboard.
+    fetch(`/api/dentist/appointments/${data.id}/notify`, { method: 'POST' }).catch(() => {})
     setAppointments(prev => [data, ...prev])
     // Keep the phone→patient map in sync so the Open Patient File buttons
     // on the just-added row (and any future row with this phone) resolve
