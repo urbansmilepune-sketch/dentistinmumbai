@@ -23,7 +23,10 @@ export async function POST(request: NextRequest) {
     const ip = forwarded ? forwarded.split(',')[0].trim() : null
 
     const { dentist_id, event_type } = await request.json()
-    // event_type: 'profile_view' | 'whatsapp_click' | 'call_click' | 'booking_click' | 'case_share'
+    // event_type: 'profile_view' | 'whatsapp_click' | 'call_click' | 'booking_click' | 'case_share' | 'google_book_visit'
+    // google_book_visit = booking page opened from the dentist's Google
+    // listing (link carries ?src=google). No counter column; the dashboard
+    // counts the rows.
     // case_share is attributed to the case's *author* — the sharer can be
     // anyone, but the signal we care about is "this dentist's work got
     // amplified". No per-channel counter on the dentists table yet, so
@@ -33,7 +36,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
     }
 
-    const validEvents = ['profile_view', 'whatsapp_click', 'call_click', 'booking_click', 'case_share']
+    const validEvents = ['profile_view', 'whatsapp_click', 'call_click', 'booking_click', 'case_share', 'google_book_visit']
     if (!validEvents.includes(event_type)) {
       return NextResponse.json({ error: 'Invalid event type' }, { status: 400 })
     }

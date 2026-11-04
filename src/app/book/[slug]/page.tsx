@@ -5,12 +5,13 @@ import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { getCityBySlug, cityOrigin } from '@/config/cities'
 import BookingFlow from './BookingFlow'
+import GoogleVisitTracker from './GoogleVisitTracker'
 
 export const dynamic = 'force-dynamic'
 
 interface Props {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ treatment?: string | string[] }>
+  searchParams: Promise<{ treatment?: string | string[]; src?: string | string[] }>
 }
 
 function firstQueryValue(v: string | string[] | undefined): string {
@@ -65,6 +66,7 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
 export default async function PublicBookingPage({ params, searchParams }: Props) {
   const { slug } = await params
   const sp = await searchParams
+  const fromGoogle = firstQueryValue(sp?.src).toLowerCase() === 'google'
   const treatmentParam = firstQueryValue(sp?.treatment)
   const supabase = await createClient()
   const h = await headers()
@@ -112,6 +114,7 @@ export default async function PublicBookingPage({ params, searchParams }: Props)
 
   return (
     <main style={{ background: 'var(--bg)', minHeight: '100vh' }}>
+      {fromGoogle && <GoogleVisitTracker dentistId={dentist.id} />}
       {/* Slim top nav */}
       <header style={{ background: '#fff', borderBottom: '1px solid var(--border)' }}>
         <div className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 56 }}>

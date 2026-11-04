@@ -12,6 +12,7 @@ import { getCityBySlug } from '@/config/cities'
 import { completionPct } from '@/lib/profileCompletion'
 import { NAVY, TEAL, TEAL_DARK, TEAL_SOFT, BRAND_GRADIENT } from '@/app/dentist/[slug]/profileTheme'
 import GrowthTools from './GrowthTools'
+import { GBP_ADDED_EVENT, GOOGLE_VISIT_EVENT } from '@/lib/googleBooking'
 import { PlusIcon, CalendarIcon, QrIcon, StarIcon, BadgeIcon, ChevronIcon, SearchIcon, CheckIcon } from './dashIcons'
 
 export const dynamic = 'force-dynamic'
@@ -123,6 +124,8 @@ export default async function DashboardPage() {
     { count: articleCount },
     { count: articlePendingCount },
     { data: recentArticleRows },
+    { count: gbpAddedCount },
+    { count: monthGoogleVisits },
   ] = await Promise.all([
     supabase.from('reviews').select('id', { count: 'exact', head: true }).eq('dentist_id', dentist.id).eq('status', 'approved'),
     supabase
@@ -160,6 +163,9 @@ export default async function DashboardPage() {
       .eq('dentist_id', dentist.id)
       .order('created_at', { ascending: false })
       .limit(2),
+    // Google Maps Book button: has the dentist ticked "I've added it"?
+    adminClient.from('analytics_events').select('id', { count: 'exact', head: true }).eq('dentist_id', dentist.id).eq('event_type', GBP_ADDED_EVENT),
+    countEvent(GOOGLE_VISIT_EVENT),
   ])
 
   const todayList = ((todayAppts ?? []) as unknown) as Appt[]
@@ -487,6 +493,24 @@ export default async function DashboardPage() {
     </section>
   )
 
+  // "Get bookings from Google Maps": shown until the dentist ticks that the
+  // link is on their Google listing; after that it becomes a row in
+  // "Get more patients" with the month's visits from Google.
+  const gbpAdded = (gbpAddedCount ?? 0) > 0
+  const googleCard = !gbpAdded && dentist.slug && (
+    <section style={{ background: '#fff', border: `1.5px solid ${TEAL}`, borderRadius: 16, padding: 16, display: 'grid', gap: 10 }}>
+      <span style={{ justifySelf: 'start', background: '#CCFBF1', color: TEAL_DARK, fontWeight: 800, fontSize: 11, letterSpacing: '0.05em', textTransform: 'uppercase', padding: '3px 8px', borderRadius: 6 }}>New</span>
+      <h3 style={{ margin: 0, fontFamily: 'var(--font-heading)', fontSize: 17, lineHeight: 1.25, fontWeight: 800 }}>Get bookings from Google Maps</h3>
+      <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: '#334155' }}>
+        Add a <b>Book</b> button to your clinic on Google. Patients who find you on Maps can book you straight away.
+      </p>
+      <Link href={`${D}/google-booking`} style={{ height: 46, borderRadius: 12, background: TEAL, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
+        Add it now
+      </Link>
+      <div style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center' }}>Takes about 2 minutes. Copy one link, paste it on Google.</div>
+    </section>
+  )
+
   const monthCard = (
     <section style={card}>
       <div style={cardHead}>
@@ -541,10 +565,15 @@ export default async function DashboardPage() {
           <div style={{ padding: '0 12px 4px' }}><RequestReviewCard profileUrl={profileUrl} clinicName={clinicName} dentistName={dentist.name || ''} /></div>
         </details>
       )}
+      {gbpAdded && dentist.slug && (
+        <Link href={`${D}/google-booking`} style={rowStyle}>
+          {growRow(<CalendarIcon size={18} />, 'Book button on Google', `${(monthGoogleVisits ?? 0).toLocaleString('en-IN')} ${(monthGoogleVisits ?? 0) === 1 ? 'visit' : 'visits'} from Google this month`)}
+        </Link>
+      )}
       {profileUrl && (
         <details className="dh-grow">
-          <summary style={rowStyle}>{growRow(<BadgeIcon />, 'Website badge and Google link', 'Get bookings from your own website')}</summary>
-          <div style={{ padding: '0 16px 16px' }}><GrowthTools badgeHtml={badgeHtml} profileUrl={profileUrl} cityName={dentistCity.cityName} /></div>
+          <summary style={rowStyle}>{growRow(<BadgeIcon />, 'Website badge', 'Get bookings from your own website')}</summary>
+          <div style={{ padding: '0 16px 16px' }}><GrowthTools badgeHtml={badgeHtml} cityName={dentistCity.cityName} /></div>
         </details>
       )}
     </section>
@@ -558,6 +587,7 @@ export default async function DashboardPage() {
         <div style={{ display: 'grid', gap: 16 }}>
           {setupBar}
           {todayCard}
+          {googleCard}
           <div className="dh-pub-left">{publishCard}</div>
           {needsReply}
           {todayListCard}
