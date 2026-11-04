@@ -39,8 +39,18 @@ export default function SiteHeader({ city, initialQuery, hideSearch = false }: P
           <Link href="/articles" className="sh-advice" style={{ padding: '8px 12px', fontWeight: 600, fontSize: 14, color: 'var(--blue)', whiteSpace: 'nowrap', textDecoration: 'none' }}>
             Expert Advice
           </Link>
+          {/* Patients log in to see their visits, prescriptions and bills
+              (the patient app at /patient). Outlined so it reads as the
+              patient's door, next to the quieter dentist link. */}
+          <Link href="/patient" className="sh-patient">
+            <svg className="sh-patient-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="12" cy="8" r="4" />
+              <path d="M4 21c0-4 4-6 8-6s8 2 8 6" />
+            </svg>
+            Patient Login
+          </Link>
           <Link href="/for-dentists/login" className="sh-login">
-            <span className="sh-login-pre">Dentist </span>Login
+            Dentist<span className="sh-login-post"> Login</span>
           </Link>
           <Link href="/for-dentists/register" className="sh-list btn btn-primary btn-sm">List your clinic</Link>
         </div>
@@ -67,6 +77,13 @@ export default function SiteHeader({ city, initialQuery, hideSearch = false }: P
            subordinate to the filled "List your clinic" acquisition button. */
         .sh-login { padding: 8px 12px; font-weight: 600; font-size: 14px; color: var(--blue); white-space: nowrap; }
         .sh-login:hover { text-decoration: underline; }
+        .sh-patient {
+          display: inline-flex; align-items: center; gap: 6px;
+          padding: 7px 12px; border: 1.5px solid var(--blue); border-radius: 999px;
+          font-weight: 600; font-size: 14px; color: var(--blue);
+          white-space: nowrap; text-decoration: none; background: #fff;
+        }
+        .sh-patient:hover { background: var(--blue-light); }
 
         /* Tablet/mobile: logo + actions on row 1, full-width search on row 2.
            The search bar stays visible — it's the whole point of the header. */
@@ -80,15 +97,18 @@ export default function SiteHeader({ city, initialQuery, hideSearch = false }: P
           .sh-brand { order: 1; }
           .sh-actions { order: 2; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
           .sh-search { order: 3; flex-basis: 100%; max-width: none; }
-          /* Keep Login visible on mobile (discoverability), but drop the
-             "Dentist " prefix so it stays compact next to the button. */
-          .sh-login-pre { display: none; }
+          /* Keep both logins visible on mobile, but shorten the dentist one
+             to "Dentist" so the row still fits. */
+          .sh-login-post { display: none; }
           .sh-login { padding: 8px 6px; }
+          .sh-patient { padding: 6px 10px; font-size: 13px; }
         }
-        /* Homepage (no search row): keep logo + actions on one row on phones. */
+        /* Phones: Expert Advice drops out to make room for the two logins.
+           The buttons sit beside the logo when they fit, and move to their
+           own row under it when they don't (never off the screen). */
         @media (max-width: 480px) {
-          .sh-nosearch .sh-advice { display: none !important; }
-          .sh-nosearch .sh-inner { flex-wrap: nowrap; }
+          .sh-advice { display: none !important; }
+          .sh-actions { flex-wrap: nowrap; gap: 4px; }
         }
         /* Narrowest phones: shrink the logo a touch so the List button fits. */
         @media (max-width: 400px) {
