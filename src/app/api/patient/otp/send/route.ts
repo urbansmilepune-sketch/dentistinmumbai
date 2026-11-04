@@ -4,8 +4,10 @@
 // switch for the dentist to turn on. We only send if the number is on file
 // at some clinic, so random numbers can't have codes texted out.
 //
-// Optional env (falls back to the review-OTP template, same recipient type):
+// SMS template, first one set wins. The dentist login OTP template is the
+// one already live, so patients reuse it unless a patient-only one is added:
 //   MSG91_TEMPLATE_ID_PATIENT_OTP
+//   MSG91_TEMPLATE_ID_DENTIST_OTP
 //   MSG91_TEMPLATE_ID_REVIEW_OTP
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
@@ -88,13 +90,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Could not issue OTP' }, { status: 500 })
   }
 
-  const tpl = process.env.MSG91_TEMPLATE_ID_PATIENT_OTP || process.env.MSG91_TEMPLATE_ID_REVIEW_OTP
+  const tpl = process.env.MSG91_TEMPLATE_ID_PATIENT_OTP
+    || process.env.MSG91_TEMPLATE_ID_DENTIST_OTP
+    || process.env.MSG91_TEMPLATE_ID_REVIEW_OTP
   if (!tpl) {
     // In production a missing template means no SMS goes out. Saying "sent"
     // there left patients waiting for a code that never came, so fail
     // loudly instead. Local dev still logs the code and carries on.
     if (process.env.VERCEL_ENV === 'production') {
-      console.error('[patient/otp/send] MSG91_TEMPLATE_ID_PATIENT_OTP / MSG91_TEMPLATE_ID_REVIEW_OTP not set; login SMS cannot be sent')
+      console.error('[patient/otp/send] no MSG91 OTP template set (PATIENT / DENTIST / REVIEW); login SMS cannot be sent')
       return NextResponse.json({ error: 'Login by SMS is not set up yet. Please ask your clinic.' }, { status: 503 })
     }
     console.log('[patient/otp/send] no template id; OTP for', phone, ':', otp)
