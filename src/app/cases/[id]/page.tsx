@@ -112,6 +112,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   return {
     title: `${data.row.title} | Dentist In India`,
     description: ogDescription,
+    alternates: { canonical: ogUrl },
     openGraph: {
       title: ogTitle,
       description: ogDescription,

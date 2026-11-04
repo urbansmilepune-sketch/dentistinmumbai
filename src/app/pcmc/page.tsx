@@ -187,7 +187,7 @@ export default async function PcmcPage() {
               Areas in PCMC
             </h2>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {subAreas.map(a => (
+              {subAreas.filter(a => a.count > 0).map(a => (
                 <Link key={a.slug} href={`/area/${a.slug}`} style={{
                   display: 'inline-flex', alignItems: 'center', gap: 6,
                   padding: '8px 14px', background: '#fff', color: NAVY,

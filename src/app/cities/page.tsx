@@ -1,13 +1,14 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
-import { CITY_CONFIGS } from '@/config/cities'
+import { CITY_CONFIGS, NATIONAL_ORIGIN } from '@/config/cities'
 import { COMING_SOON_CITIES } from '@/config/citiesNational'
 import CitiesGrid from './CitiesGrid'
 
 export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
+  alternates: { canonical: `${NATIONAL_ORIGIN}/cities` },
   title: 'All Cities | Dentist In India',
   description: 'Find verified dentists across 13 live Indian cities, with 50 more launching soon. Browse the full network by state.',
 }

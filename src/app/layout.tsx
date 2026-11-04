@@ -59,7 +59,6 @@ export async function generateMetadata(): Promise<Metadata> {
       verification: { google: '1T1WaA-nRtq8w-GycybOoricYbjTqql3D-au0VzFm98' },
       keywords: ['dentist in india', 'verified dentists india', 'dental clinic india', 'dental tourism india', 'state dental council registered dentist'],
       metadataBase: new URL(NATIONAL_ORIGIN),
-      alternates: { canonical: NATIONAL_ORIGIN },
       openGraph: {
         type: 'website', locale: 'en_IN',
         url: NATIONAL_ORIGIN, siteName: NATIONAL_HOST,
@@ -97,7 +96,11 @@ export async function generateMetadata(): Promise<Metadata> {
       `teeth whitening ${cityLower}`,
     ],
     metadataBase: new URL(origin),
-    alternates: { canonical: origin },
+    // No site-wide canonical here. Next.js copies a layout's canonical onto
+    // every page that doesn't set its own, so pages like /cities and
+    // /dental-tourism told Google they were duplicates of the homepage
+    // ("Alternate page with proper canonical tag" in GSC). Each page sets its
+    // own canonical; the homepage sets it in app/page.tsx.
     openGraph: {
       type: 'website',
       locale: 'en_IN',
