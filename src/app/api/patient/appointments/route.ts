@@ -55,9 +55,6 @@ export async function POST(request: NextRequest) {
   if (!patient || phoneTail10((patient as any).phone) !== claims.phone) {
     return NextResponse.json({ error: 'Record not found' }, { status: 404 })
   }
-  if (!(patient as any).portal_access) {
-    return NextResponse.json({ error: 'Portal access for this record has been turned off by your clinic.' }, { status: 403 })
-  }
   const dentistId = (patient as any).dentist_id
 
   const { data: appt } = await db

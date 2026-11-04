@@ -1,7 +1,8 @@
 // POST /api/patient/otp/send — issues a 6-digit login OTP to a patient's
-// phone for the public patient portal. We only send if at least one patient
-// record on that number has portal_access enabled, so a dentist who hasn't
-// switched the portal on for a patient can't have codes texted out.
+// phone for the patient app. The patient owns their records: any clinic on
+// DentistIn that has this number on file shows up after login, with no
+// switch for the dentist to turn on. We only send if the number is on file
+// at some clinic, so random numbers can't have codes texted out.
 //
 // Optional env (falls back to the review-OTP template, same recipient type):
 //   MSG91_TEMPLATE_ID_PATIENT_OTP
@@ -35,12 +36,11 @@ export async function POST(request: NextRequest) {
 
   const db = admin()
 
-  // Gate: the number must map to at least one patient row with portal access.
+  // Gate: the number must be on file at one clinic at least.
   const { data: matches, error: lookupErr } = await db
     .from('patients')
-    .select('id, portal_access')
+    .select('id')
     .ilike('phone', `%${phone}`)
-    .eq('portal_access', true)
     .limit(1)
   if (lookupErr) {
     console.error('[patient/otp/send] lookup failed', lookupErr)
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
   }
   if (!matches || matches.length === 0) {
     return NextResponse.json({
-      error: 'No clinic has enabled portal access for this number yet. Please ask your dentist to enable it.',
+      error: 'We could not find any dental records for this number. Use the mobile number you gave at the clinic, or book a visit first.',
     }, { status: 404 })
   }
 
@@ -90,8 +90,13 @@ export async function POST(request: NextRequest) {
 
   const tpl = process.env.MSG91_TEMPLATE_ID_PATIENT_OTP || process.env.MSG91_TEMPLATE_ID_REVIEW_OTP
   if (!tpl) {
-    // Dev/staging without a DLT template wired — log and report success so the
-    // UI can advance to the OTP-entry step.
+    // In production a missing template means no SMS goes out. Saying "sent"
+    // there left patients waiting for a code that never came, so fail
+    // loudly instead. Local dev still logs the code and carries on.
+    if (process.env.VERCEL_ENV === 'production') {
+      console.error('[patient/otp/send] MSG91_TEMPLATE_ID_PATIENT_OTP / MSG91_TEMPLATE_ID_REVIEW_OTP not set; login SMS cannot be sent')
+      return NextResponse.json({ error: 'Login by SMS is not set up yet. Please ask your clinic.' }, { status: 503 })
+    }
     console.log('[patient/otp/send] no template id; OTP for', phone, ':', otp)
     return NextResponse.json({ success: true })
   }

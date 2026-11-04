@@ -66,7 +66,7 @@ export default function PatientLoginPage() {
       const data = await res.json().catch(() => ({}))
       if (!res.ok) { setError(data.error || 'Could not verify the code.'); return }
       const list: PortalClinic[] = data.clinics || []
-      if (list.length === 0) { setError('No clinic has enabled portal access for this number yet.'); return }
+      if (list.length === 0) { setError('We could not find any dental records for this number.'); return }
       setClinics(list)
       if (list.length === 1) {
         finish(list, list[0].patient_id)

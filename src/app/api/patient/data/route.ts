@@ -5,10 +5,10 @@
 // prescriptions, invoices and past visits.
 //
 // Security: the token only proves phone ownership. We independently re-load the
-// requested patient row and confirm (a) its phone matches the token's phone and
-// (b) portal_access is still enabled — so a token can never read a record that
-// isn't the holder's, even if a patient_id is guessed or a dentist later
-// revokes access.
+// requested patient row and confirm its phone matches the token's phone, so a
+// token can never read a record that isn't the holder's, even if a patient_id
+// is guessed. patients.portal_access is no longer checked: the patient owns
+// their records and needs no switch from the dentist.
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifyPatientToken, phoneTail10, patientTokenFromRequest, setPatientSessionCookie } from '@/lib/patientPortal'
@@ -43,9 +43,6 @@ export async function POST(request: NextRequest) {
 
   if (!patient || phoneTail10((patient as any).phone) !== claims.phone) {
     return NextResponse.json({ error: 'Record not found' }, { status: 404 })
-  }
-  if (!(patient as any).portal_access) {
-    return NextResponse.json({ error: 'Portal access for this record has been turned off by your clinic.' }, { status: 403 })
   }
 
   const dentistId = (patient as any).dentist_id
@@ -84,12 +81,11 @@ export async function POST(request: NextRequest) {
       .select('id, visit_date, chief_complaint, treatment_done, clinical_findings')
       .eq('patient_id', patientId)
       .order('visit_date', { ascending: false }),
-    // All portal-enabled clinics for this phone — powers the header switcher
+    // Every clinic this phone is a patient at — powers the header switcher
     // without trusting anything in the browser.
     db.from('patients')
       .select('id, name, dentist:dentists(id, name, clinic_name, city)')
-      .ilike('phone', `%${claims.phone}`)
-      .eq('portal_access', true),
+      .ilike('phone', `%${claims.phone}`),
     // Branch hours, so a reschedule at branch B uses branch B's timings.
     db.from('clinic_locations')
       .select('id, working_hours')

@@ -3,8 +3,9 @@
 // (JS can't read it, so an XSS bug can't steal it). The token lasts 7 days and
 // is re-minted on every API call, so it only expires after 7 days of no use. The portal's data
 // API trusts this token to prove phone ownership, then re-checks that any
-// patient_id it's asked about actually belongs to that phone AND has
-// portal_access enabled — the token alone never grants access to a record.
+// patient_id it's asked about actually belongs to that phone — the token alone
+// never grants access to a record. There is no per-clinic switch: a patient
+// sees every clinic that has their number on file.
 //
 // Signing secret: a dedicated PATIENT_PORTAL_JWT_SECRET if set, otherwise the
 // server-only SUPABASE_SERVICE_ROLE_KEY (never exposed to the browser). This

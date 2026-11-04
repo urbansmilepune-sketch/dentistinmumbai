@@ -1,6 +1,6 @@
 // POST /api/patient/otp/verify — checks the 6-digit code, and on success
-// sets the 7-day httpOnly portal session cookie and returns the list of clinics (one per dentist) that
-// have enabled portal access for this phone. The patient picks a clinic and
+// sets the 7-day httpOnly portal session cookie and returns the list of clinics (one per dentist) where
+// this phone is a patient. The patient picks a clinic and
 // the dashboard fetches that clinic's records with the token.
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
@@ -63,18 +63,17 @@ export async function POST(request: NextRequest) {
   // Burn the OTP before issuing the token so a replayed request can't re-verify.
   await db.from('patient_portal_otps').update({ used: true }).eq('id', row.id)
 
-  // Every portal-enabled clinic this number belongs to.
+  // Every clinic this number is a patient at.
   const { data: patientRows, error: pErr } = await db
     .from('patients')
     .select('id, name, dentist:dentists(id, name, clinic_name, city)')
     .ilike('phone', `%${phone}`)
-    .eq('portal_access', true)
   if (pErr) {
     console.error('[patient/otp/verify] patients lookup failed', pErr)
     return NextResponse.json({ error: 'Could not load your records' }, { status: 500 })
   }
   if (!patientRows || patientRows.length === 0) {
-    return NextResponse.json({ error: 'No clinic has enabled portal access for this number yet.' }, { status: 404 })
+    return NextResponse.json({ error: 'We could not find any dental records for this number.' }, { status: 404 })
   }
 
   // Stamp last-login on all matched rows (best-effort; non-blocking semantics).

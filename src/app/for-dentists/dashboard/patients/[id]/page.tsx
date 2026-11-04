@@ -174,8 +174,6 @@ export default function PatientDetailPage() {
   const [rxLang, setRxLang] = useState<RxLang>('en')
 
   // Patient portal access toggle (Overview tab).
-  const [portalSaving, setPortalSaving] = useState(false)
-  const [portalError, setPortalError] = useState<string | null>(null)
 
   // AI: smart drug suggestions for the prescription writer.
   const [diagnosis, setDiagnosis] = useState('')
@@ -408,21 +406,6 @@ export default function PatientDetailPage() {
     // Start with one empty line so the dentist can type a medicine straight away.
     setRxForm(f => f.medicines.length ? f : { ...f, medicines: [{ name: '', dosage: '', duration: '', instructions: '' }] })
     setShowAddRx(true)
-  }
-
-  async function togglePortalAccess() {
-    if (!patient) return
-    setPortalSaving(true)
-    setPortalError(null)
-    const supabase = createClient()
-    const next = !patient.portal_access
-    // .select() so an RLS denial surfaces instead of a silent no-op.
-    const { data, error } = await supabase
-      .from('patients').update({ portal_access: next }).eq('id', patientId).select('id, portal_access')
-    setPortalSaving(false)
-    if (error) { setPortalError(error.message); return }
-    if (!data || data.length === 0) { setPortalError('Update rejected — you may not have permission to edit this patient.'); return }
-    setPatient((p: any) => ({ ...p, portal_access: next }))
   }
 
   // Reset the AI-suggestion sub-state. Called when the Rx form opens/closes so
@@ -679,7 +662,7 @@ export default function PatientDetailPage() {
   const moreItems: { key: string; label: string; sub?: string; icon: React.ReactNode; href?: string; onClick?: () => void }[] = [
     ...(telHref ? [{ key: 'call', label: 'Call patient', sub: String(patient.phone), icon: <PhoneIcon size={18} />, href: telHref }] : []),
     { key: 'edit', label: 'Edit patient details', icon: <span style={{ fontWeight: 800 }}>✎</span>, onClick: openEdit },
-    { key: 'portal', label: 'Patient portal', sub: patient.portal_access ? 'On. Send login link on WhatsApp' : 'Off. Let the patient see records online', icon: <span style={{ fontWeight: 800 }}>↗</span>, onClick: goToPortal },
+    { key: 'portal', label: 'Patient portal', sub: 'Send the app link on WhatsApp', icon: <span style={{ fontWeight: 800 }}>↗</span>, onClick: goToPortal },
     { key: 'history', label: 'Full history', sub: 'Every visit, bill, X-ray and appointment', icon: <RecallIcon size={18} />, href: `/for-dentists/dashboard/patients/${patientId}/timeline` },
   ]
 
@@ -935,42 +918,26 @@ export default function PatientDetailPage() {
               </div>
             )}
             {!wide && <div style={card}>{contact}</div>}
-          {/* PATIENT PORTAL — enable/disable the patient's self-service portal
-              (dentistinmumbai.in/patient) where they log in with their own
-              mobile number to view appointments, prescriptions and invoices. */}
+          {/* PATIENT APP — the patient logs in at /patient with their own
+              mobile number (OTP) and sees their records from every clinic
+              that has them on file. Nothing for the dentist to switch on;
+              this card just helps share the link. */}
           <div id="patient-portal" style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 14, padding: '16px', scrollMarginTop: 70 }}>
-            <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, marginBottom: 12 }}>🔐 Patient Portal</h3>
-            <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 14, lineHeight: 1.6 }}>
-              {patient.portal_access
-                ? 'This patient can log in at /patient with their mobile number to view their own records.'
-                : 'Enable to let this patient view their appointments, prescriptions and invoices online.'}
+            <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15, marginBottom: 8 }}>📱 Patient app</h3>
+            <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 12, lineHeight: 1.6 }}>
+              {patient.name} can log in with {patient.phone ? 'this mobile number' : 'their mobile number'} to see appointments, treatment plans, prescriptions and bills.
             </p>
-            {portalError && (
-              <div style={{ background: '#FEE2E2', border: '1px solid #FECACA', color: '#991B1B', padding: '8px 12px', borderRadius: 8, fontSize: 12, marginBottom: 12 }}>{portalError}</div>
-            )}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <button onClick={togglePortalAccess} disabled={portalSaving}
-                style={{ padding: '9px 18px', borderRadius: 8, border: 'none', fontWeight: 700, fontSize: 13, cursor: portalSaving ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-body)', background: patient.portal_access ? '#FEE2E2' : '#CCFBF1', color: patient.portal_access ? '#991B1B' : '#0F766E' }}>
-                {portalSaving ? 'Saving…' : patient.portal_access ? 'Disable Portal Access' : 'Enable Portal Access'}
-              </button>
-              <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: patient.portal_access ? '#CCFBF1' : 'var(--bg)', color: patient.portal_access ? '#0F766E' : 'var(--muted)' }}>
-                {patient.portal_access ? '● Enabled' : '○ Disabled'}
-              </span>
-              {patient.portal_access && (() => {
-                // Patient app link. The patient logs in with this mobile
-                // number (OTP) and sees every clinic that has the portal on
-                // for it, in any city. Clinic's own domain for branding.
-                const portalUrl = `https://${getCityBySlug(dentistMeta?.city).domain}/patient`
-                const message = `Hi ${patient.name}, you can now see your appointments, treatment plan, prescriptions and bills in the DentistIn app: ${portalUrl}\nLog in with this mobile number. You can add it to your home screen. - Dr. ${dentistName}${dentistMeta?.clinic_name ? `, ${dentistMeta.clinic_name}` : ''}`
-                const href = whatsappLink(patient.phone, message)
-                return href ? (
-                  <a href={href} target="_blank" rel="noopener noreferrer"
-                    style={{ padding: '9px 14px', borderRadius: 8, fontWeight: 700, fontSize: 13, background: '#25D366', color: '#fff', textDecoration: 'none' }}>
-                    Send app link on WhatsApp
-                  </a>
-                ) : null
-              })()}
-            </div>
+            {(() => {
+              const portalUrl = `https://${getCityBySlug(dentistMeta?.city).domain}/patient`
+              const message = `Hi ${patient.name}, you can see your appointments, treatment plan, prescriptions and bills in the DentistIn app: ${portalUrl}\nLog in with this mobile number. You can add it to your home screen. - Dr. ${dentistName}${dentistMeta?.clinic_name ? `, ${dentistMeta.clinic_name}` : ''}`
+              const href = whatsappLink(patient.phone, message)
+              return href ? (
+                <a href={href} target="_blank" rel="noopener noreferrer"
+                  style={{ display: 'inline-block', padding: '9px 14px', borderRadius: 8, fontWeight: 700, fontSize: 13, background: '#25D366', color: '#fff', textDecoration: 'none' }}>
+                  Send app link on WhatsApp
+                </a>
+              ) : null
+            })()}
             {patient.portal_last_login && (
               <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 12 }}>
                 Last portal login: {new Date(patient.portal_last_login).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })}
