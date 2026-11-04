@@ -1,10 +1,11 @@
 import { redirect } from 'next/navigation'
+import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import DashboardShell from './DashboardShell'
 import DashboardActivityTracker from './DashboardActivityTracker'
 import SupportButton from '@/components/SupportButton'
-import { completionPct } from '@/lib/profileCompletion'
+import { setupPct, firstMissingLiveStep, SETUP_LATER_COOKIE } from '@/lib/setupSteps'
 import { isDemoEmail } from '@/lib/demo'
 import { dentistAppMetadata, dentistAppViewport, INSTALL_PROMPT_CATCHER } from '@/lib/dentistApp'
 import InstallAppBanner from '@/components/InstallAppBanner'
@@ -12,7 +13,7 @@ import InstallAppBanner from '@/components/InstallAppBanner'
 export const metadata = dentistAppMetadata
 export const viewport = dentistAppViewport
 
-const DENTIST_FIELDS = 'id, slug, name, clinic_name, tier, trial_started_at, is_active, profile_photo, cover_photo, bio, whatsapp, maps_embed, city, consultation_fee, onboarding_completed'
+const DENTIST_FIELDS = 'id, slug, name, clinic_name, tier, trial_started_at, is_active, profile_photo, cover_photo, bio, whatsapp, maps_embed, city, consultation_fee, mci_number, onboarding_completed'
 
 // Booking requests still waiting for the clinic to confirm or decline. Drives
 // the red count on the Appointments tab. Scoped to the signed-in clinic's id.
@@ -70,28 +71,21 @@ export default async function DashboardLayout({ children }: { children: React.Re
     // prospect walkthroughs. The /api/bookings rejection in tandem keeps
     // the row write-locked so the demo can't accrue real patient data.
     if (!dentist.is_active && !isDemoEmail(user.email)) redirect('/for-dentists/pending')
-    const pct = completionPct(dentist)
+    const pct = setupPct(dentist)
     const pendingCount = await countPending(admin, dentist.id)
 
-    // Onboarding gate. Photo / fee / map are MANDATORY to publish a profile.
-    // A profile missing any of them is routed to /onboard, whatever its
-    // onboarding_completed flag says:
-    //   • never finished the wizard → run it from the top (step 1).
-    //   • onboarding_completed = true but still missing a mandatory field
-    //     (a data inconsistency from before these were required) → jump
-    //     straight to the specific missing step via ?step=.
-    // Finishing the wizard only sets onboarding_completed once all three are
-    // present, so a complete profile falls through and this stops firing. This
-    // layout does NOT wrap /onboard (sibling route), so no loop is possible.
-    //
-    // NOTE: uses profile_photo (the column the app actually writes), NOT
-    // profile_photo_url (exists but is never populated).
-    const missingStep =
-      !dentist.profile_photo ? 3
-      : (!dentist.consultation_fee || Number(dentist.consultation_fee) <= 0) ? 4
-      : !dentist.maps_embed ? 6
-      : null
-    if (missingStep !== null && !isDemoEmail(user.email)) {
+    // Setup gate (src/lib/setupSteps.ts). Photo, registration number, map and
+    // fee are needed to go live. Until all four are done the dentist is sent to
+    // the setup wizard, at the first missing step:
+    //   • never opened the wizard → the intro screen.
+    //   • otherwise → ?step=N.
+    // "Finish later" in the wizard sets a 12-hour cookie, so they can use the
+    // dashboard for the day and get asked again next time. This layout does NOT
+    // wrap /onboard (sibling route), so no loop is possible.
+    const missingStep = firstMissingLiveStep(dentist)
+    const cookieStore = await cookies()
+    const later = cookieStore.get(SETUP_LATER_COOKIE)?.value === '1'
+    if (missingStep !== null && !later && !isDemoEmail(user.email)) {
       redirect(dentist.onboarding_completed
         ? `/for-dentists/onboard?step=${missingStep}`
         : '/for-dentists/onboard')
@@ -140,7 +134,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   }
   if (!ownerDentist.is_active) redirect('/for-dentists/pending')
 
-  const pct = completionPct(ownerDentist)
+  const pct = setupPct(ownerDentist)
   const pendingCount = await countPending(admin, ownerDentist.id)
 
   return (

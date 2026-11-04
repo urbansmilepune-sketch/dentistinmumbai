@@ -1,7 +1,8 @@
 // POST /api/onboard/complete — marks the signed-in dentist's onboarding as
-// done (dentists.onboarding_completed = true). Called by the wizard's final
-// "Go to dashboard" button and every "Skip setup" link so the dashboard
-// layout stops redirecting them to /onboard on the next visit.
+// seen (dentists.onboarding_completed = true). Called by the setup wizard's
+// "Finish later" link, on reaching 80%, and by "Go to dashboard". The dashboard
+// gate then sends an unfinished dentist straight to the step they still need
+// instead of the intro screen.
 //
 // Service role so the write doesn't depend on the dentists UPDATE RLS policy.
 // We match the row by the SESSION email (never the request body) so a stale
