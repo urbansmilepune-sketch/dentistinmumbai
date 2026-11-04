@@ -11,7 +11,7 @@
 //                               {{1}} clinic, {{2}} date, {{3}} time
 //   appointment_cancellation  → patient, when the dentist cancels
 //                               {{1}} clinic, {{2}} date
-//   appointment_reminder      → patient, day-before reminder cron
+//   appointment_reminder      → patient + dentist, 3 h and 30 min before
 //                               {{1}}..{{5}}, see sendReminderWhatsApp
 //
 // Env:

@@ -14,6 +14,10 @@
       "schedule": "30 12 * * *"
     },
     {
+      "path": "/api/cron/whatsapp-reminders",
+      "schedule": "*/5 * * * *"
+    },
+    {
       "path": "/api/cron/appointment-reminders-morning",
       "schedule": "30 2 * * *"
     },

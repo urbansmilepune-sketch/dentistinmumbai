@@ -23,7 +23,7 @@ const TEMPLATES: Tpl[] = [
   { name: 'appointment_cancellation', who: 'Patient', when: 'Dentist cancels',
     text: 'Your Appointment at {{1}} on {{2}} is canceled. Kindly Rebook with us.',
     samples: ['Urban Smile Dental Clinic', '5 Nov 2026'] },
-  { name: 'appointment_reminder', who: 'Patient', when: '6 PM the day before',
+  { name: 'appointment_reminder', who: 'Patient', when: '3 hours and 30 min before (patient + dentist)',
     text: '5 values: patient name, clinic, date, time, clinic phone',
     samples: ['Rahul', 'Urban Smile Dental Clinic', '5 Nov 2026', '11:00 AM', '7719903232'] },
 ]

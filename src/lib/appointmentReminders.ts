@@ -23,7 +23,6 @@
 
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { sendSMS } from '@/lib/sms'
-import { sendReminderWhatsApp, whatsAppEnabled } from '@/lib/whatsapp'
 
 const IST_TZ = 'Asia/Kolkata'
 
@@ -100,10 +99,7 @@ export async function runAppointmentReminders(kind: ReminderKind): Promise<Remin
     addSkip('supabase env vars missing')
     return result
   }
-  // WhatsApp reminder goes out on the day-before run only (one WhatsApp per
-  // appointment). The morning-of run stays SMS-only.
-  const useWhatsApp = kind === 'day_before' && whatsAppEnabled()
-  if (!templateId && !useWhatsApp) {
+  if (!templateId) {
     addSkip(`MSG91_TEMPLATE_ID_REMINDER_${kind.toUpperCase()} env var not set`)
     return result
   }
@@ -152,20 +148,6 @@ export async function runAppointmentReminders(kind: ReminderKind): Promise<Remin
     const variables: string[] = kind === 'day_before'
       ? [patientFirstName, clinicName, timeLabel, a.reference_no || '', clinicPhone]
       : [patientFirstName, clinicName, timeLabel]
-
-    if (useWhatsApp) {
-      try {
-        const w = await sendReminderWhatsApp({
-          patientPhone: a.patient_phone, patientName: patientFirstName, clinicName,
-          apptDate: a.appt_date, timeSlot: a.time_slot || '', clinicPhone,
-        })
-        if (w.success) { result.sent++; continue }
-        console.error('[reminders] WhatsApp failed, trying SMS', { kind, appt_id: a.id, error: w.error })
-      } catch (err: any) {
-        console.error('[reminders] WhatsApp threw, trying SMS', { kind, appt_id: a.id, message: err?.message })
-      }
-    }
-    if (!templateId) { result.failures++; continue }
 
     try {
       const r = await sendSMS(a.patient_phone, templateId, variables)
