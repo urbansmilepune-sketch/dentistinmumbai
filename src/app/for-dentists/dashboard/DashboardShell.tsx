@@ -65,6 +65,9 @@ const GROUPS: NavGroup[] = [
     { href: `${D}/articles`,  label: 'Articles', staffRoles: ['owner', 'associate_dentist'] },
     { href: `${D}/badge`,     label: 'Website badge', staffRoles: ['owner'] },
   ] },
+  { label: 'Settings', items: [
+    { href: `${D}/notifications`, label: 'Notifications', hint: 'Phone alerts for bookings', staffRoles: ALL },
+  ] },
 ]
 
 const PRIMARY_ICONS: Record<string, React.ReactNode> = {
