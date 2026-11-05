@@ -19,9 +19,11 @@ interface Props {
   initialQuery?: string
   /** Homepage only: its hero carries the search box, so the header skips it. */
   hideSearch?: boolean
+  /** Patient-only header (homepage): hides Expert Advice and List your clinic. */
+  patientOnly?: boolean
 }
 
-export default function SiteHeader({ city, initialQuery, hideSearch = false }: Props) {
+export default function SiteHeader({ city, initialQuery, hideSearch = false, patientOnly = false }: Props) {
   return (
     <header className={`sh-header${hideSearch ? ' sh-nosearch' : ''}`}>
       <div className="sh-inner container">
@@ -36,9 +38,11 @@ export default function SiteHeader({ city, initialQuery, hideSearch = false }: P
         )}
 
         <div className="sh-actions">
+          {!patientOnly && (
           <Link href="/articles" className="sh-advice" style={{ padding: '8px 12px', fontWeight: 600, fontSize: 14, color: 'var(--blue)', whiteSpace: 'nowrap', textDecoration: 'none' }}>
             Expert Advice
           </Link>
+          )}
           {/* Patients log in to see their visits, prescriptions and bills
               (the patient app at /patient). Outlined so it reads as the
               patient's door, next to the quieter dentist link. */}
@@ -52,7 +56,7 @@ export default function SiteHeader({ city, initialQuery, hideSearch = false }: P
           <Link href="/for-dentists/login" className="sh-login">
             Dentist<span className="sh-login-post"> Login</span>
           </Link>
-          <Link href="/for-dentists/register" className="sh-list btn btn-primary btn-sm">List your clinic</Link>
+          {!patientOnly && <Link href="/for-dentists/register" className="sh-list btn btn-primary btn-sm">List your clinic</Link>}
         </div>
       </div>
 

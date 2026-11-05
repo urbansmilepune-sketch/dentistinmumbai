@@ -563,6 +563,9 @@ export type HomeSpotlightDentist = {
   profile_photo: string | null
   working_hours: any
   areas: { name: string; slug: string } | null
+  avg_rating: number | null
+  review_count: number | null
+  dentist_treatments: { treatment_id: number | string }[] | null
 }
 
 export function getHomeSpotlightDentists(citySlug: string): Promise<HomeSpotlightDentist[]> {
@@ -571,7 +574,7 @@ export function getHomeSpotlightDentists(citySlug: string): Promise<HomeSpotligh
       const supabase = createAnonClient()
       const { data, error } = await supabase
         .from('dentists')
-        .select('id, slug, name, clinic_name, qualifications, experience_years, gender, consultation_fee, is_verified, profile_photo, working_hours, areas(name, slug)')
+        .select('id, slug, name, clinic_name, qualifications, experience_years, gender, consultation_fee, is_verified, profile_photo, working_hours, avg_rating, review_count, areas(name, slug), dentist_treatments(treatment_id)')
         .eq('is_active', true)
         .eq('city', citySlug)
         .not('profile_photo', 'is', null)
@@ -584,7 +587,63 @@ export function getHomeSpotlightDentists(citySlug: string): Promise<HomeSpotligh
       }
       return ((data ?? []) as unknown as HomeSpotlightDentist[]).filter(d => !!d.profile_photo && d.profile_photo.trim() !== '')
     },
-    ['home-spotlight', citySlug],
+    ['home-spotlight-v2', citySlug],
     { revalidate: 300, tags: ['city-home', 'dentists'] },
+  )()
+}
+
+// Homepage "What patients say": approved reviews for dentists in this city.
+// Returns the total count, the average, and the latest few with text, so the
+// page can show real reviews once there are enough and an explainer before.
+export interface HomeReview {
+  id: string
+  patient_name: string | null
+  rating: number
+  review_text: string | null
+  treatment: string | null
+  dentist: { name: string; slug: string }
+}
+
+export function getHomeReviews(citySlug: string): Promise<{ total: number; average: number | null; latest: HomeReview[] }> {
+  return unstable_cache(
+    async () => {
+      const supabase = createAnonClient()
+      type Row = { id: string | number; patient_name: string | null; rating: number | null; review_text: string | null; treatment: string | null; dentists: { name: string; slug: string } | null }
+      const PAGE = 1000
+      const rows: Row[] = []
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await supabase
+          .from('reviews')
+          .select('id, patient_name, rating, review_text, treatment, created_at, dentists!inner(name, slug, city, is_active)')
+          .eq('status', 'approved')
+          .eq('dentists.city', citySlug)
+          .eq('dentists.is_active', true)
+          .order('created_at', { ascending: false })
+          .range(from, from + PAGE - 1)
+        if (error) {
+          console.error('[getHomeReviews]', error.message)
+          return { total: 0, average: null, latest: [] }
+        }
+        const page = (data ?? []) as unknown as Row[]
+        rows.push(...page)
+        if (page.length < PAGE) break
+      }
+      const rated = rows.filter((r): r is Row & { rating: number } => typeof r.rating === 'number' && r.rating > 0)
+      const average = rated.length > 0 ? rated.reduce((sum, r) => sum + r.rating, 0) / rated.length : null
+      const latest: HomeReview[] = rated
+        .filter(r => (r.review_text ?? '').trim().length >= 20)
+        .slice(0, 6)
+        .map(r => ({
+          id: String(r.id),
+          patient_name: r.patient_name ?? null,
+          rating: r.rating,
+          review_text: r.review_text,
+          treatment: r.treatment ?? null,
+          dentist: { name: r.dentists?.name ?? '', slug: r.dentists?.slug ?? '' },
+        }))
+      return { total: rated.length, average, latest }
+    },
+    ['home-reviews', citySlug],
+    { revalidate: 300, tags: ['city-home', 'reviews'] },
   )()
 }
