@@ -26,6 +26,9 @@ const TEMPLATES: Tpl[] = [
   { name: 'appointment_reminder', who: 'Patient', when: '3 hours and 30 min before (patient + dentist)',
     text: '5 values: patient name, clinic, date, time, clinic phone',
     samples: ['Rahul', 'Urban Smile Dental Clinic', '5 Nov 2026', '11:00 AM', '7719903232'] },
+  { name: 'review_request', who: 'Patient', when: 'Within 5 minutes of the visit being marked Done or saved (9 AM to 8 PM IST)',
+    text: 'Hi {{1}}, thank you for visiting {{2}}. How was your visit? Please rate it here: {{3}} It takes 30 seconds.',
+    samples: ['Rahul', 'Urban Smile Dental Clinic', 'https://dentistinpune.in/review/test'] },
 ]
 
 export default function WhatsAppTestClient({ enabled }: { enabled: boolean }) {

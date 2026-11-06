@@ -1,10 +1,12 @@
 import type { Metadata } from 'next'
+import { NATIONAL_ORIGIN } from '@/config/cities'
 import NationalShell from '@/components/national/NationalShell'
 import JoinForm from './JoinForm'
 
 export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
+  alternates: { canonical: `${NATIONAL_ORIGIN}/join` },
   title: 'Claim Your Verified Dentist Profile | Dentist In India',
   description: 'Create your verified profile in 5 minutes. Publish clinical cases, get peer review from verified colleagues, and get listed on your city directory.',
 }

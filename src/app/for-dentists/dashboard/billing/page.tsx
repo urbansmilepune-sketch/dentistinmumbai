@@ -22,6 +22,8 @@ type DentistMeta = {
   signature_url?: string | null
 }
 
+type FormItem = { treatment_name: string; quantity: string; unit_price: string; plan_step_id?: string }
+
 // Next.js 16 requires useSearchParams() to be inside a Suspense boundary;
 // the inner component is where the hook lives so build doesn't bail to the
 // "missing-suspense-with-csr-bailout" error.
@@ -59,7 +61,10 @@ function BillingPageInner() {
   // same totals, but the submit handler does an UPDATE instead of an INSERT
   // and the headline / CTA copy switch to "Edit / Update Invoice".
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<{
+    patient_id: string; date: string; items: FormItem[]; discount: string; gst_enabled: boolean
+    notes: string; payment_status: string; payment_method: string; location_id: string
+  }>({
     patient_id: initialPatientId, date: new Date().toISOString().split('T')[0],
     items: [{ treatment_name: '', quantity: '1', unit_price: '' }],
     discount: '', gst_enabled: false, notes: '', payment_status: 'pending',
@@ -130,6 +135,7 @@ function BillingPageInner() {
           treatment_name: String(i.treatment_name || i.description || ''),
           quantity: i.quantity != null ? String(i.quantity) : '1',
           unit_price: i.unit_price != null ? String(i.unit_price) : '',
+          ...(i.plan_step_id ? { plan_step_id: String(i.plan_step_id) } : {}),
         }))
       : [{ treatment_name: '', quantity: '1', unit_price: '' }]
     setForm({
@@ -163,6 +169,9 @@ function BillingPageInner() {
         quantity: c.qty,
         unit_price: c.unit,
         amount: c.line,
+        // Bills made after a visit remember which plan item they charge for,
+        // so the next sitting doesn't bill it twice. Keep it through edits.
+        ...(i.plan_step_id ? { plan_step_id: i.plan_step_id } : {}),
       }
     })
 

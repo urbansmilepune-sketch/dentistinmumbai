@@ -34,9 +34,9 @@ import OwnerBanner, { type ChecklistItem } from './OwnerBanner'
 import { NAVY, TEAL, TEAL_DARK, WHATSAPP, normalizeDrName } from './profileTheme'
 import { ShieldCheckIcon, MapPinIcon, PhoneIcon, WhatsAppIcon, CalendarIcon } from './profileIcons'
 
-// Reviews UI is globally disabled for now. Flip to true to restore the
-// Reviews section and the aggregateRating in JSON-LD.
-const REVIEWS_ENABLED = false
+// Reviews section + aggregateRating in JSON-LD. Switched on 4 Nov 2026 with
+// review links (src/lib/reviewRequests.ts). Set false to hide reviews again.
+const REVIEWS_ENABLED = true
 
 interface Props { params: Promise<{ slug: string }> }
 

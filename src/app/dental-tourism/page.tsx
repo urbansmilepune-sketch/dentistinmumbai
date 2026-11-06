@@ -1,10 +1,12 @@
 import type { Metadata } from 'next'
+import { NATIONAL_ORIGIN } from '@/config/cities'
 import NationalShell from '@/components/national/NationalShell'
 import TourismEnquiryForm from './TourismEnquiryForm'
 
 export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
+  alternates: { canonical: `${NATIONAL_ORIGIN}/dental-tourism` },
   title: 'Dental Tourism in India | Save 70-80% on World-Class Treatment',
   description: 'NRI and international patients save up to 80% on dental implants, veneers, crowns and full-mouth restorations in India. State Dental Council-registered dentists, transparent pricing, English-speaking clinics.',
 }

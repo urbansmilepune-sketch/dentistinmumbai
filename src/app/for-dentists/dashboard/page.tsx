@@ -7,9 +7,10 @@ import AutoRefresh from '@/components/AutoRefresh'
 import RecentApptActions from './RecentApptActions'
 import ProfileQRCard from './ProfileQRCard'
 import RequestReviewCard from './RequestReviewCard'
+import AskReviewButton from './AskReviewButton'
 import { resolveCurrentDentist } from '@/lib/currentDentist'
 import { getCityBySlug } from '@/config/cities'
-import { completionPct } from '@/lib/profileCompletion'
+import { setupSteps, setupPct, isSetupLive } from '@/lib/setupSteps'
 import { NAVY, TEAL, TEAL_DARK, TEAL_SOFT, BRAND_GRADIENT } from '@/app/dentist/[slug]/profileTheme'
 import GrowthTools from './GrowthTools'
 import { GBP_ADDED_EVENT, GOOGLE_VISIT_EVENT } from '@/lib/googleBooking'
@@ -77,7 +78,7 @@ export default async function DashboardPage() {
 
   const dentist = await resolveCurrentDentist<any>(
     supabase,
-    'id, name, clinic_name, slug, city, tier, is_verified, profile_photo, cover_photo, bio, phone, whatsapp, working_hours, maps_embed, consultation_fee, created_at',
+    'id, name, clinic_name, slug, city, tier, is_verified, profile_photo, cover_photo, bio, phone, whatsapp, working_hours, maps_embed, consultation_fee, mci_number, created_at, avg_rating, review_count',
   )
 
   if (!dentist) redirect('/for-dentists/login')
@@ -111,8 +112,12 @@ export default async function DashboardPage() {
     .eq('event_type', eventType)
     .gte('created_at', monthStartIso)
 
+  const weekAgoIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+
   const [
     { count: reviewCount },
+    { count: weekReviewCount },
+    { data: latestReviewRows },
     { data: todayAppts },
     { data: pendingAppts },
     { count: pendingTotal },
@@ -128,6 +133,15 @@ export default async function DashboardPage() {
     { count: monthGoogleVisits },
   ] = await Promise.all([
     supabase.from('reviews').select('id', { count: 'exact', head: true }).eq('dentist_id', dentist.id).eq('status', 'approved'),
+    supabase.from('reviews').select('id', { count: 'exact', head: true }).eq('dentist_id', dentist.id).eq('status', 'approved').gte('created_at', weekAgoIso),
+    // Newest live review, for the "New review" card (last 14 days only).
+    supabase
+      .from('reviews')
+      .select('id, patient_name, rating, review_text, treatment, created_at')
+      .eq('dentist_id', dentist.id)
+      .eq('status', 'approved')
+      .order('created_at', { ascending: false })
+      .limit(1),
     supabase
       .from('appointments')
       .select('id, patient_name, patient_phone, appt_date, time_slot, status, treatments(name)')
@@ -169,6 +183,23 @@ export default async function DashboardPage() {
   ])
 
   const todayList = ((todayAppts ?? []) as unknown) as Appt[]
+
+  // Review link status for today's visits marked Done: asked / reviewed.
+  const doneIds = todayList.filter(a => a.status === 'completed').map(a => a.id)
+  const reviewAsk = new Map<string, 'asked' | 'reviewed'>()
+  if (doneIds.length > 0) {
+    const { data: asks } = await adminClient
+      .from('review_requests')
+      .select('appointment_id, used_at')
+      .in('appointment_id', doneIds)
+    for (const r of (asks ?? []) as Array<{ appointment_id: string; used_at: string | null }>) {
+      reviewAsk.set(r.appointment_id, r.used_at ? 'reviewed' : 'asked')
+    }
+  }
+
+  const latestReview = ((latestReviewRows ?? []) as Array<{ id: string; patient_name: string | null; rating: number; review_text: string | null; treatment: string | null; created_at: string }>)[0]
+  const freshReview = latestReview && Date.now() - Date.parse(latestReview.created_at) < 14 * 24 * 60 * 60 * 1000 ? latestReview : null
+  const avgRating = Number((dentist as any).avg_rating) || 0
   const pendingList = ((pendingAppts ?? []) as unknown) as Appt[]
   const totalToday = todayList.filter(a => a.status !== 'cancelled').length
 
@@ -214,16 +245,11 @@ export default async function DashboardPage() {
     status: a.status,
   }))
 
-  // Profile completeness: same scoring as the sidebar / admin (profileCompletion.ts).
-  // The "next step" link points at the first missing basic.
-  const pct = completionPct(dentist as any)
-  const nextStep =
-    !dentist.profile_photo ? { label: 'Add your photo', href: `${D}/photos` }
-    : !dentist.cover_photo ? { label: 'Add clinic photos', href: `${D}/photos` }
-    : !(dentist.bio && dentist.bio.length >= 50) ? { label: 'Write a longer bio', href: `${D}/profile` }
-    : !dentist.whatsapp ? { label: 'Add your WhatsApp number', href: `${D}/profile` }
-    : !dentist.maps_embed ? { label: 'Add your Google Maps location', href: `${D}/profile` }
-    : { label: 'Finish your profile', href: `${D}/profile` }
+  // Setup progress: the same 5 steps as the setup wizard (setupSteps.ts).
+  // Steps 1–4 = live (80%), step 5 = 100%. Each row opens that wizard step.
+  const steps = setupSteps(dentist as any)
+  const pct = setupPct(dentist as any)
+  const live = isSetupLive(dentist as any)
 
   const badgeHtml = `<!-- DentistIn Verified Badge -->
 <a href="${profileUrl}"
@@ -296,13 +322,26 @@ export default async function DashboardPage() {
   }
 
   const setupBar = pct < 100 && (
-    <div style={{ ...card, padding: '12px 16px', display: 'grid', gap: 8 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, gap: 8 }}>
-        <b>Profile {pct}% complete</b>
-        <Link href={nextStep.href} style={headLink}>{nextStep.label}</Link>
+    <div style={{ ...card, padding: '14px 16px', display: 'grid', gap: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 14, gap: 8 }}>
+        <b>{live ? `Profile ${pct}% complete` : `Profile essentials: ${steps.filter(s => s.neededToGoLive && s.done).length} of 4 done`}</b>
+        <span style={{ fontSize: 12, fontWeight: 700, color: TEAL_DARK, background: TEAL_SOFT, borderRadius: 99, padding: '2px 10px', whiteSpace: 'nowrap' }}>{pct}%</span>
       </div>
-      <div style={{ height: 6, background: 'var(--border)', borderRadius: 3, overflow: 'hidden' }}>
-        <div style={{ height: '100%', width: `${pct}%`, background: TEAL, borderRadius: 3 }} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 4 }}>
+        {steps.map(s => <i key={s.step} style={{ display: 'block', height: 6, borderRadius: 99, background: s.done ? TEAL : 'var(--border)' }} />)}
+      </div>
+      <div style={{ display: 'grid' }}>
+        {steps.filter(s => !s.done).map(s => (
+          <Link key={s.step} href={`/for-dentists/onboard?step=${s.step}`}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderTop: '1px dashed var(--border)', fontSize: 13, color: 'inherit', textDecoration: 'none' }}>
+            <span style={{ width: 20, height: 20, borderRadius: '50%', border: '2px solid var(--border)', flexShrink: 0 }} />
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <b>{s.label}</b>
+              {s.neededToGoLive && !live && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#92400E', background: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: 99, padding: '1px 6px' }}>essential</span>}
+            </span>
+            <span style={headLink}>Add</span>
+          </Link>
+        ))}
       </div>
     </div>
   )
@@ -394,15 +433,25 @@ export default async function DashboardPage() {
       ) : todayList.map(a => {
         const pill = STATUS_PILL[a.status] || { bg: '#F1F5F9', text: '#475569', label: a.status }
         const faded = CLOSED_STATUSES.has(a.status)
+        const ask = a.status === 'completed' ? (reviewAsk.get(a.id) ?? 'none') : null
         return (
-          <Link key={a.id} href={`${D}/appointments`} style={{ borderTop: '1px solid var(--border)', padding: '11px 16px', display: 'grid', gridTemplateColumns: '74px 1fr auto', gap: 10, alignItems: 'center', textDecoration: 'none', color: 'var(--text)', opacity: faded ? 0.55 : 1 }}>
-            <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{formatTimeLabel(a.time_slot)}</span>
-            <span style={{ minWidth: 0 }}>
-              <b style={{ display: 'block', fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.patient_name || 'Patient'}</b>
-              {a.treatments?.name && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{a.treatments.name}</span>}
-            </span>
-            <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999, background: pill.bg, color: pill.text, whiteSpace: 'nowrap' }}>{pill.label}</span>
-          </Link>
+          <div key={a.id} style={{ borderTop: '1px solid var(--border)', padding: '11px 16px', display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'center' }}>
+            <Link href={`${D}/appointments`} style={{ display: 'grid', gridTemplateColumns: '74px 1fr auto', gap: 10, alignItems: 'center', textDecoration: 'none', color: 'var(--text)', opacity: faded && !ask ? 0.55 : 1, minWidth: 0 }}>
+              <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{formatTimeLabel(a.time_slot)}</span>
+              <span style={{ minWidth: 0 }}>
+                <b style={{ display: 'block', fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.patient_name || 'Patient'}</b>
+                {a.treatments?.name && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{a.treatments.name}</span>}
+              </span>
+              <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999, background: pill.bg, color: pill.text, whiteSpace: 'nowrap' }}>{pill.label}</span>
+            </Link>
+            {ask === 'reviewed' ? (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, fontWeight: 700, color: TEAL_DARK, whiteSpace: 'nowrap' }}><StarIcon /> Reviewed</span>
+            ) : ask === 'asked' ? (
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', whiteSpace: 'nowrap' }}>Review asked</span>
+            ) : ask === 'none' ? (
+              <AskReviewButton appointmentId={a.id} compact />
+            ) : <span />}
+          </div>
         )
       })}
     </section>
@@ -511,6 +560,48 @@ export default async function DashboardPage() {
     </section>
   )
 
+  const stars = (n: number) => (
+    <span role="img" aria-label={`${n} out of 5 stars`} style={{ display: 'inline-flex', gap: 1 }}>
+      {[1, 2, 3, 4, 5].map(i => (
+        <svg key={i} width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z" fill={i <= n ? '#F59E0B' : '#475569'} /></svg>
+      ))}
+    </span>
+  )
+  const reviewsCard = (reviewCount ?? 0) > 0 && (
+    <section style={{ ...card, background: freshReview ? NAVY : '#fff', color: freshReview ? '#fff' : 'var(--text)', border: freshReview ? 'none' : card.border }}>
+      {freshReview && (
+        <div style={{ padding: '14px 16px 4px', display: 'grid', gap: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#5EEAD4' }}>Latest review</span>
+            <span style={{ fontSize: 12, color: '#CBD5E1' }}>{formatDateLabel(freshReview.created_at.slice(0, 10))}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {stars(freshReview.rating)}
+            <b style={{ fontSize: 14 }}>{freshReview.patient_name || 'Verified patient'}{freshReview.treatment ? ` · ${freshReview.treatment}` : ''}</b>
+          </div>
+          {freshReview.review_text && <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.5, color: '#E2E8F0' }}>&ldquo;{freshReview.review_text}&rdquo;</p>}
+        </div>
+      )}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', padding: '10px 8px' }}>
+        {[
+          { value: avgRating ? avgRating.toFixed(1) : '–', label: 'your rating' },
+          { value: String(reviewCount ?? 0), label: (reviewCount ?? 0) === 1 ? 'review' : 'reviews' },
+          { value: `+${weekReviewCount ?? 0}`, label: 'this week' },
+        ].map(s => (
+          <div key={s.label} style={{ textAlign: 'center' }}>
+            <b style={{ display: 'block', fontFamily: 'var(--font-heading)', fontSize: 20, fontWeight: 800 }}>{s.value}</b>
+            <span style={{ fontSize: 12, color: freshReview ? '#CBD5E1' : 'var(--muted)' }}>{s.label}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ padding: '0 12px 12px' }}>
+        <Link href={`${D}/reviews`} style={{ minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 12, fontWeight: 700, fontSize: 14, textDecoration: 'none', background: freshReview ? TEAL : '#fff', color: freshReview ? '#04211D' : 'var(--text)', border: freshReview ? 'none' : '1.5px solid var(--border)' }}>
+          See and reply to reviews
+        </Link>
+      </div>
+    </section>
+  )
+
   const monthCard = (
     <section style={card}>
       <div style={cardHead}>
@@ -559,9 +650,9 @@ export default async function DashboardPage() {
           <div style={{ padding: '0 12px 4px' }}><ProfileQRCard profileUrl={profileUrl} clinicName={clinicName} /></div>
         </details>
       )}
-      {!reviewCount && profileUrl && (
+      {profileUrl && (
         <details className="dh-grow">
-          <summary style={rowStyle}>{growRow(<StarIcon />, 'Ask for your first review', 'Send a WhatsApp to a happy patient')}</summary>
+          <summary style={rowStyle}>{growRow(<StarIcon />, reviewCount ? 'Ask a patient for a review' : 'Ask for your first review', 'Send a WhatsApp with a one-tap review link')}</summary>
           <div style={{ padding: '0 12px 4px' }}><RequestReviewCard profileUrl={profileUrl} clinicName={clinicName} dentistName={dentist.name || ''} /></div>
         </details>
       )}
@@ -593,6 +684,7 @@ export default async function DashboardPage() {
           {todayListCard}
         </div>
         <div style={{ display: 'grid', gap: 16 }}>
+          {reviewsCard}
           <div className="dh-pub-right">{publishCard}</div>
           {monthCard}
           {growCard}

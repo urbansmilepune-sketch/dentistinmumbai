@@ -97,6 +97,10 @@ const nextConfig: NextConfig = {
       { source: '/forgot-password', destination: '/for-dentists/forgot-password', permanent: true },
       { source: '/dentist/register', destination: '/for-dentists/register', permanent: true },
       { source: '/area', destination: '/dentists', permanent: true },
+      // /blog was an empty "coming soon" page with noindex, yet it sat in the
+      // sitemap (one of the GSC "Excluded by noindex" URLs). Articles live at
+      // /articles now.
+      { source: '/blog', destination: '/articles', permanent: true },
     ]
   },
 };

@@ -61,6 +61,7 @@ const GROUPS: NavGroup[] = [
     { href: `${D}/staff`,     label: 'Staff', staffRoles: ['owner'] },
   ] },
   { label: 'Grow', items: [
+    { href: `${D}/reviews`,   label: 'Patient reviews', hint: 'Your rating, replies, ask for reviews', staffRoles: ALL },
     { href: `${D}/analytics`, label: 'Analytics', hint: 'Views and clicks over time', staffRoles: ['owner'] },
     { href: `${D}/articles`,  label: 'Articles', staffRoles: ['owner', 'associate_dentist'] },
     { href: `${D}/badge`,     label: 'Website badge', staffRoles: ['owner'] },

@@ -1887,7 +1887,21 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
                         {(r as any).dentists.city && <span style={{ marginLeft: 6 }}><CityBadge slug={(r as any).dentists.city} /></span>}
                       </div>
                     )}
-                    <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 6 }}>{r.review_text}</p>
+                    {(() => {
+                      // Where the review came from: a link sent for a real
+                      // appointment, a link the dentist sent by hand, or the
+                      // open OTP form on the profile.
+                      const src = (r as any).verified_visit
+                        ? { label: 'Verified visit (appointment or saved visit)', color: '#0F766E' }
+                        : (r as any).review_request_id
+                          ? { label: 'Link sent by the dentist, no appointment', color: '#B45309' }
+                          : { label: 'Phone OTP on profile, no booking found', color: '#B45309' }
+                      return <div style={{ fontSize: 12, fontWeight: 700, color: src.color, marginBottom: 6 }}>{src.label}</div>
+                    })()}
+                    {r.review_text && <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 6 }}>{r.review_text}</p>}
+                    {Array.isArray((r as any).tags) && (r as any).tags.length > 0 && (
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>Tags: {(r as any).tags.join(' · ')}</div>
+                    )}
                     <div style={{ fontSize: 12, color: 'var(--muted)' }}>
                       {r.treatment && <span>Treatment: {r.treatment} · </span>}
                       {new Date(r.created_at).toLocaleDateString('en-IN')}
@@ -1898,6 +1912,12 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
                       <button onClick={() => reviewAction(r.id, 'approved')} disabled={actionLoading === r.id} style={{ padding: '7px 16px', background: '#DCFCE7', color: '#166534', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>✓ Approve</button>
                       <button onClick={() => reviewAction(r.id, 'rejected')} disabled={actionLoading === r.id} style={{ padding: '7px 16px', background: '#FEE2E2', color: '#991B1B', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>✕ Reject</button>
                     </div>
+                  )}
+                  {r.status === 'approved' && (
+                    <button onClick={() => reviewAction(r.id, 'rejected')} disabled={actionLoading === r.id} style={{ padding: '7px 16px', background: '#fff', color: '#991B1B', border: '1px solid #FECACA', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)', flexShrink: 0 }}>Hide</button>
+                  )}
+                  {r.status === 'rejected' && (
+                    <button onClick={() => reviewAction(r.id, 'approved')} disabled={actionLoading === r.id} style={{ padding: '7px 16px', background: '#fff', color: '#166534', border: '1px solid #BBF7D0', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-body)', flexShrink: 0 }}>Publish</button>
                   )}
                 </div>
               ))}

@@ -20,6 +20,7 @@ import { sendAppointmentConfirmedToPatient, sendAppointmentCancelledToPatient } 
 import { sendSMS } from '@/lib/sms'
 import { sendConfirmationWhatsApp, sendCancellationWhatsApp } from '@/lib/whatsapp'
 import { autoCreateRecallForCompletedVisit } from '@/lib/recall'
+import { queueReviewRequestForCompletedVisit } from '@/lib/reviewRequests'
 
 const VALID_STATUSES = ['pending', 'confirmed', 'completed', 'cancelled', 'no_show'] as const
 type Status = typeof VALID_STATUSES[number]
@@ -256,6 +257,23 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
   // button on the patient profile is still available as a manual escape
   // hatch. The recall helper itself dedupes on (patient_id, type) so a
   // re-completion or back-to-back visits don't stack duplicate recalls.
+  // Side effect: a visit newly marked Done queues the "rate your visit"
+  // WhatsApp (sent by the next 5-minute cron run, 9 AM-8 PM IST). Never throws.
+  if (status === 'completed' && appt.status !== 'completed') {
+    try {
+      await queueReviewRequestForCompletedVisit(db, {
+        id: updated.id,
+        dentist_id: owner.id,
+        patient_name: updated.patient_name ?? null,
+        patient_phone: updated.patient_phone ?? null,
+        appt_date: updated.appt_date ?? null,
+        treatment: (updated as any).treatments?.name ?? null,
+      })
+    } catch (err) {
+      console.error('[appointments PATCH] review request queue failed', err)
+    }
+  }
+
   let recall: { id: string; due_date: string } | null = null
   if (status === 'completed') {
     // appt is the pre-update row from the ownership lookup; patient_id is

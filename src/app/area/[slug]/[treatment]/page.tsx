@@ -40,44 +40,143 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     // No `| ${city.domain}` suffix — the root layout's title template
     // (`%s | <domain>`) appends it. Adding it here rendered it twice.
     title: `Best ${treatment.name} Dentists in ${area.name}, ${city.cityName}`,
-    description: `Find top-rated, verified dentists for ${treatment.name} in ${area.name}, ${city.cityName}. Compare ${treatment.name} fees, read reviews, and book appointments instantly.`,
+    // Live count leads so each page's snippet differs from its neighbours'.
+    description: `${cnt > 0 ? `${cnt} dentist${cnt === 1 ? '' : 's'}` : 'Dentists'} in ${area.name}, ${city.cityName} offer ${treatment.name.toLowerCase()}. Compare their published fees, Sunday hours and EMI, then book or WhatsApp the clinic.`,
     alternates: { canonical: `https://${city.domain}/area/${slug}/${treatmentSlug}` },
     robots: { index: indexable, follow: true, googleBot: { index: indexable, follow: true } },
   }
 }
 
-// Treatment-specific FAQs — these are the three questions requested plus a
-// couple of area/treatment combos to keep the FAQPage schema rich.
-function getTreatmentFAQs(treatmentName: string, areaName: string, dentistCount: number) {
+const inr = (n: number) => `₹${n.toLocaleString('en-IN')}`
+
+// Live facts about the dentists listed on THIS area + treatment page. Every
+// page used to open with the same template sentences with only the area and
+// treatment names swapped, which Google reads as near-duplicate pages ("Crawled,
+// currently not indexed" in GSC, Nov 2026). These facts make each page's text
+// its own and keep every claim true for that page.
+type FactDentist = {
+  slug: string
+  name: string
+  clinic_name?: string | null
+  experience_years?: number | null
+  gender?: string | null
+  emi_available?: boolean | null
+  is_verified?: boolean | null
+  avg_rating?: number | null
+  review_count?: number | null
+  working_hours?: { sun?: { is_open?: boolean } | null } | null
+  _feeFrom: number | null
+  dentist_treatments?: { fee_from: number | null; fee_to: number | null }[]
+}
+
+type AreaTreatmentFacts = {
+  total: number
+  feeCount: number
+  feeMin: number | null
+  feeMax: number | null
+  sundayCount: number
+  emiCount: number
+  femaleCount: number
+  verifiedCount: number
+  maxExperience: number | null
+  experienced: FactDentist[]
+  named: FactDentist[]
+}
+
+function buildFacts(list: FactDentist[]): AreaTreatmentFacts {
+  const froms: number[] = []
+  const tos: number[] = []
+  for (const d of list) {
+    const row = d.dentist_treatments?.[0]
+    if (typeof row?.fee_from === 'number' && row.fee_from > 0) froms.push(row.fee_from)
+    if (typeof row?.fee_to === 'number' && row.fee_to > 0) tos.push(row.fee_to)
+  }
+  const feeMin = froms.length ? Math.min(...froms) : null
+  const maxCandidate = [...froms, ...tos]
+  const feeMax = maxCandidate.length ? Math.max(...maxCandidate) : null
+  const exps = list.map(d => d.experience_years).filter((n): n is number => typeof n === 'number' && n > 0)
+  return {
+    total: list.length,
+    feeCount: froms.length,
+    feeMin,
+    feeMax,
+    sundayCount: list.filter(d => d.working_hours?.sun?.is_open).length,
+    emiCount: list.filter(d => d.emi_available).length,
+    femaleCount: list.filter(d => String(d.gender || '').toLowerCase() === 'female').length,
+    verifiedCount: list.filter(d => d.is_verified).length,
+    maxExperience: exps.length ? Math.max(...exps) : null,
+    experienced: [...list]
+      .filter(d => typeof d.experience_years === 'number' && d.experience_years >= 10)
+      .sort((a, b) => (b.experience_years || 0) - (a.experience_years || 0))
+      .slice(0, 3),
+    // List order is rank_score order — the same order the cards show.
+    named: list.slice(0, 3),
+  }
+}
+
+const feeRangeText = (f: AreaTreatmentFacts) =>
+  f.feeMin === null ? null
+    : f.feeMax !== null && f.feeMax > f.feeMin ? `${inr(f.feeMin)} to ${inr(f.feeMax)}` : `from ${inr(f.feeMin)}`
+
+const joinNames = (names: string[]) =>
+  names.length <= 1 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+
+function getTreatmentFAQs(treatmentName: string, areaName: string, f: AreaTreatmentFacts) {
+  const t = treatmentName.toLowerCase()
+  const range = feeRangeText(f)
   return [
     {
       q: `How much does ${treatmentName} cost in ${areaName}?`,
-      a: `The cost of ${treatmentName} in ${areaName} varies by clinic tier, doctor experience, and case complexity. Most clinics in ${areaName} provide a written estimate after the first consultation, and many offer EMI or no-cost financing on higher-value treatments. Use the verified listings below to compare ${treatmentName} fees in ${areaName} before you book.`,
+      a: range
+        ? `${plural(f.feeCount, 'dentist', 'dentists')} in ${areaName} ${f.feeCount === 1 ? 'publishes' : 'publish'} a fee for ${t} on this page: ${range}. The final cost depends on your case and is confirmed after the first check-up. Compare each dentist's starting fee in the list above before you book.`
+        : `None of the ${plural(f.total, 'dentist', 'dentists')} offering ${t} in ${areaName} has published a fee yet, so ask the clinic for a written estimate after your first check-up. The final cost depends on your case and the materials used.`,
     },
     {
-      q: `Which is the best dentist for ${treatmentName} in ${areaName}?`,
-      a: `The best dentist for ${treatmentName} in ${areaName} is one who is State Dental Council registered, specialises in this treatment, and has strong patient reviews. We list ${dentistCount || 'several'} verified dentists in ${areaName} offering ${treatmentName}, sorted by rating and relevance, so you can compare qualifications, fees, and reviews side by side.`,
+      q: `Which dentists offer ${treatmentName} in ${areaName}?`,
+      a: `${plural(f.total, 'dentist', 'dentists')} in ${areaName} ${f.total === 1 ? 'offers' : 'offer'} ${t} on this page${f.named.length ? `, including ${joinNames(f.named.map(d => d.name))}` : ''}. ${f.verifiedCount > 0 ? `${f.verifiedCount} of them ${f.verifiedCount === 1 ? 'has' : 'have'} a verified registration. ` : ''}Look for a State Dental Council registration, experience with this treatment and a written treatment plan before you start.`,
     },
     {
       q: `How long does ${treatmentName} take?`,
-      a: `The duration of ${treatmentName} depends on your individual case. Routine procedures are often completed in a single visit, while more complex treatments may need multiple appointments over a few weeks. Your dentist in ${areaName} will share an exact timeline during your consultation.`,
+      a: `It depends on your case. Simple cases are often done in one visit, while complex ones need a few appointments over several weeks. Your dentist in ${areaName} will give you a timeline at the first consultation.`,
     },
     {
-      q: `Are there dentists offering ${treatmentName} open on Sunday in ${areaName}?`,
-      a: `Yes, several dental clinics in ${areaName} offer ${treatmentName} with limited Sunday hours (usually 10am–2pm). Use the "Open now" filter to find clinics currently accepting patients.`,
+      q: `Is any dentist offering ${treatmentName} open on Sunday in ${areaName}?`,
+      a: f.sundayCount > 0
+        ? `Yes. ${plural(f.sundayCount, 'clinic', 'clinics')} offering ${t} in ${areaName} ${f.sundayCount === 1 ? 'lists' : 'list'} Sunday hours. Check the hours on each profile, or use the "Open now" filter.`
+        : `None of the clinics offering ${t} in ${areaName} lists Sunday hours yet. Use the "Open now" filter to see who is open today, or try a nearby area.`,
     },
     {
-      q: `Do dentists in ${areaName} offer EMI for ${treatmentName}?`,
-      a: `Many clinics in ${areaName} offer EMI and no-cost financing options for ${treatmentName}, especially on higher-value treatments. Look for the "EMI" filter on the listings below or confirm with the clinic directly.`,
+      q: `Can I pay for ${treatmentName} in EMI in ${areaName}?`,
+      a: f.emiCount > 0
+        ? `${plural(f.emiCount, 'dentist', 'dentists')} offering ${t} in ${areaName} ${f.emiCount === 1 ? 'accepts' : 'accept'} EMI. Use the "EMI" filter above to see them.`
+        : `None of the dentists offering ${t} in ${areaName} lists EMI yet. Ask the clinic directly; many arrange it for larger treatments.`,
     },
   ]
 }
 
-function getSEOContent(treatmentName: string, areaName: string, cityName: string, domain: string, dentistCount: number) {
-  return {
-    intro: `Looking for ${treatmentName} in ${areaName}? ${areaName} is home to a range of dental clinics offering ${treatmentName} — from boutique studios to multi-specialty practices. Whether this is a routine procedure or a complex case, ${domain} helps you find the right ${treatmentName} specialist in ${areaName}, ${cityName}, with transparent fees and verified reviews.`,
-    para2: `The clinics offering ${treatmentName} in ${areaName} are staffed by experienced professionals using modern equipment and proven techniques. With ${dentistCount || 'multiple'} verified dentists currently listed for ${treatmentName} in ${areaName}, you can compare fees, check availability, and book an appointment instantly — without travelling across ${cityName}.`,
-  }
+// Two short paragraphs built only from this page's facts.
+function getSEOContent(treatmentName: string, areaName: string, cityName: string, f: AreaTreatmentFacts) {
+  const t = treatmentName.toLowerCase()
+  const range = feeRangeText(f)
+  const intro = [
+    `${plural(f.total, 'dentist', 'dentists')} in ${areaName}, ${cityName} ${f.total === 1 ? 'offers' : 'offer'} ${t} on this page.`,
+    range
+      ? `${f.feeCount === f.total ? 'All of them publish' : `${f.feeCount} of them publish`} a starting fee, ranging ${range}.`
+      : `None has published a fee for it yet, so ask for a written estimate first.`,
+    f.experienced.length
+      ? `The most experienced ${f.experienced.length === 1 ? 'is' : 'are'} ${joinNames(f.experienced.map(d => `${d.name} (${d.experience_years} years)`))}.`
+      : '',
+  ].filter(Boolean).join(' ')
+  const extras: string[] = []
+  if (f.sundayCount > 0) extras.push(`${plural(f.sundayCount, 'clinic is', 'clinics are')} open on Sunday`)
+  if (f.emiCount > 0) extras.push(`${plural(f.emiCount, 'dentist offers', 'dentists offer')} EMI`)
+  if (f.femaleCount > 0) extras.push(`${plural(f.femaleCount, 'is a woman dentist', 'are women dentists')}`)
+  const para2 = extras.length
+    ? `Of these, ${joinNames(extras)}. Use the filters above to narrow the list, then book or message the clinic on WhatsApp.`
+    : `Use the filters above to sort by fee, rating or distance, then book or message the clinic on WhatsApp.`
+  return { intro, para2 }
 }
 
 // GPS coords are user-supplied query params; validate before trusting them.
@@ -261,8 +360,18 @@ export default async function AreaTreatmentPage({ params, searchParams }: { para
     .sort((a, b) => (b.avg_rating || 0) - (a.avg_rating || 0))
     .slice(0, 4)
 
-  const faqs = getTreatmentFAQs(treatment.name, area.name, totalOffering)
-  const seoContent = getSEOContent(treatment.name, area.name, city.cityName, city.domain, totalOffering)
+  const facts = buildFacts(list as FactDentist[])
+  const faqs = getTreatmentFAQs(treatment.name, area.name, facts)
+  const seoContent = getSEOContent(treatment.name, area.name, city.cityName, facts)
+  const feeRange = feeRangeText(facts)
+
+  // Same treatment in other areas whose page is live (≥3 complete dentists
+  // offering it) — a crawlable link loop between indexable area+treatment
+  // pages. Strongest first; cap at 6.
+  const sameTreatmentNearby = (allAreas || [])
+    .filter(a => a.slug !== slug && (atCompleteCounts[`${a.id}:${treatment.id}`] ?? 0) >= 3)
+    .sort((a, b) => (atCompleteCounts[`${b.id}:${treatment.id}`] ?? 0) - (atCompleteCounts[`${a.id}:${treatment.id}`] ?? 0))
+    .slice(0, 6)
 
   // JSON-LD schemas
   const origin = `https://${city.domain}`
@@ -408,6 +517,24 @@ export default async function AreaTreatmentPage({ params, searchParams }: { para
                 <AreaFAQAccordion items={faqs} />
               </div>
 
+              {/* Same treatment in other live areas */}
+              {sameTreatmentNearby.length > 0 && (
+                <div style={{ marginTop: 48 }}>
+                  <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 20, marginBottom: 16 }}>
+                    {treatment.name} in other areas of {city.cityName}
+                  </h2>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+                    {sameTreatmentNearby.map(a => (
+                      <Link key={a.slug} href={`/area/${a.slug}/${treatmentSlug}`} style={{
+                        padding: '9px 16px', background: '#F0FDFA', color: TEAL,
+                        border: '1px solid #99F6E4', borderRadius: 20, fontSize: 13.5, fontWeight: 600,
+                        textDecoration: 'none',
+                      }}>{treatment.name} in {a.name}</Link>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Explore dentists in nearby areas — density-gated internal link
                   loop between the city's indexed area pages (≥3 complete
                   profiles). Chips link to /area/[slug]. */}
@@ -453,8 +580,12 @@ export default async function AreaTreatmentPage({ params, searchParams }: { para
                     { label: 'Area', value: area.name },
                     // Zone is Mumbai-only context (Western/Central/Harbour…).
                     ...(isMumbai && area.zone ? [{ label: 'Zone', value: area.zone }] : []),
-                    { label: 'Dentists Listed', value: String(totalOffering || '5+') },
-                    ...(lowestFee !== null ? [{ label: `${treatment.name} from`, value: `₹${lowestFee.toLocaleString('en-IN')}` }] : []),
+                    { label: 'Dentists listed', value: String(totalOffering) },
+                    ...(feeRange ? [{ label: 'Published fees', value: feeRange }] : []),
+                    ...(facts.maxExperience ? [{ label: 'Most experience', value: `${facts.maxExperience} years` }] : []),
+                    { label: 'Open on Sunday', value: facts.sundayCount > 0 ? plural(facts.sundayCount, 'clinic', 'clinics') : 'None listed' },
+                    { label: 'EMI available', value: facts.emiCount > 0 ? plural(facts.emiCount, 'dentist', 'dentists') : 'None listed' },
+                    ...(facts.femaleCount > 0 ? [{ label: 'Women dentists', value: String(facts.femaleCount) }] : []),
                   ].map((row, i) => (
                     <div key={row.label} style={{
                       display: 'flex', padding: '11px 20px',

@@ -6,6 +6,7 @@
 //   → 3 patient's answer (start today / later) → 4 done today
 //   → 5 prescription (always) → 6 next sitting or reminder.
 // One Save writes the visit, chart, plan, prescription and booking/reminder.
+// The Visit saved screen then shows "Today's bill", filled from step 4.
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
@@ -15,12 +16,13 @@ import { resolveCurrentDentist } from '@/lib/currentDentist'
 import MedicineNameInput from '@/components/MedicineNameInput'
 import { fetchMedicineHistory, type PastMedicine } from '@/lib/medicineHistory'
 import { whatsappLink } from '@/lib/phone'
+import { downloadInvoicePdf, type Invoice, type InvoiceDentist } from '@/lib/invoicePdf'
 import { CheckIcon } from '../../dashIcons'
 import { NAVY, TEAL, TEAL_DARK, WHATSAPP } from '@/app/dentist/[slug]/profileTheme'
 import {
   CROWN_TYPES, DIAGNOSES, DIAGNOSIS_PLAIN, DIAGNOSIS_TO_CONDITION, LOWER_TEETH, RX_TEMPLATES, TIME_SLOTS,
-  TREATMENTS, TREATMENT_PLAIN, UPPER_TEETH, addDaysIso, applyAllergySwaps, complaintSummary, generateApptRef,
-  istTodayIso, prettyDate, rupees, stepName, suggestDiagnoses, suggestTreatments, teethForArea, toothPlainName,
+  TREATMENTS, TREATMENT_PLAIN, UPPER_TEETH, addDaysIso, applyAllergySwaps, chargeForToday, complaintSummary, generateApptRef,
+  istTodayIso, prettyDate, rupees, sittingsFromNotes, stepName, suggestDiagnoses, suggestTreatments, teethForArea, toothPlainName,
   type IntakeComplaint, type Medicine, type RxTemplate, type TreatmentDef,
 } from '@/lib/visitFlow'
 
@@ -32,6 +34,13 @@ const AMBER_LINE = '#FCD34D'
 const AMBER_INK = '#92400E'
 
 type Progress = 'none' | 'sitting' | 'finished'
+type DentistRow = InvoiceDentist & { id: string; name: string; clinic_name: string | null; consultation_fee?: number | null }
+// One line of "Today's bill". stepId links it to the plan item it charges for.
+type BillLine = { key: string; stepId: string | null; name: string; note: string; amount: string; custom?: boolean }
+type PayMethod = 'Cash' | 'UPI' | 'Card' | 'later'
+const PAY_CHOICES: { value: PayMethod; label: string }[] = [
+  { value: 'Cash', label: 'Cash' }, { value: 'UPI', label: 'UPI' }, { value: 'Card', label: 'Card' }, { value: 'later', label: 'Pay later' },
+]
 type NextMode = 'book' | 'remind' | 'none'
 
 const CONDITION_STYLE: Record<string, { bg: string; line: string; ink: string }> = {
@@ -99,7 +108,7 @@ export default function VisitPage() {
 
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [dentist, setDentist] = useState<{ id: string; name: string; clinic_name: string | null } | null>(null)
+  const [dentist, setDentist] = useState<DentistRow | null>(null)
   const [patient, setPatient] = useState<any>(null)
   const [intake, setIntake] = useState<any>(null)
   const [waiting, setWaiting] = useState<any[]>([])
@@ -109,6 +118,8 @@ export default function VisitPage() {
   const [feeByTreatment, setFeeByTreatment] = useState<Record<string, number>>({})
   const [lastPrice, setLastPrice] = useState<Record<string, number>>({})
   const [myTemplates, setMyTemplates] = useState<RxTemplate[]>([])
+  // What each plan item has already been billed (from earlier bills' items).
+  const [billedByStep, setBilledByStep] = useState<Record<string, { amount: number; count: number }>>({})
 
   // Visit state
   const [teeth, setTeeth] = useState<number[]>([])
@@ -134,6 +145,14 @@ export default function VisitPage() {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [result, setResult] = useState<{ rxId: string | null; message: string; warnings: string[] } | null>(null)
+  // Today's bill, shown on the Visit saved screen, filled from "Done today".
+  const [billLines, setBillLines] = useState<BillLine[]>([])
+  const [billDiscount, setBillDiscount] = useState('')
+  const [billMethod, setBillMethod] = useState<PayMethod | null>(null)
+  const [billSaving, setBillSaving] = useState(false)
+  const [billError, setBillError] = useState<string | null>(null)
+  const [billSaved, setBillSaved] = useState<Invoice | null>(null)
+  const [billSkipped, setBillSkipped] = useState(false)
   // Two columns side by side: keep the chart in view while the steps scroll.
   const [wide, setWide] = useState(false)
   useEffect(() => {
@@ -151,12 +170,15 @@ export default function VisitPage() {
         const supabase = createClient()
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) { router.push('/for-dentists/login'); return }
-        const d = await resolveCurrentDentist<{ id: string; name: string; clinic_name: string | null }>(supabase, 'id, name, clinic_name')
+        const d = await resolveCurrentDentist<DentistRow>(
+          supabase,
+          'id, name, degree, clinic_name, phone, whatsapp, address, mci_number, city, areas(name), clinic_logo_url, signature_url, consultation_fee',
+        )
         if (!d) { setLoadError('Could not find your clinic.'); return }
         if (cancelled) return
         setDentist(d)
         const startOfDayIst = new Date(`${today}T00:00:00+05:30`).toISOString()
-        const [pt, intakes, chartRows, plans, visits, fees, steps, tpls] = await Promise.all([
+        const [pt, intakes, chartRows, plans, visits, fees, steps, tpls, bills] = await Promise.all([
           supabase.from('patients').select('*').eq('id', patientId).eq('dentist_id', d.id).maybeSingle(),
           supabase.from('patient_intakes').select('id, patient_id, complaint, status, created_at, patients(name)').eq('dentist_id', d.id).gte('created_at', startOfDayIst).order('created_at', { ascending: true }),
           supabase.from('dental_chart_entries').select('tooth_number, condition').eq('patient_id', patientId).eq('dentist_id', d.id),
@@ -165,6 +187,7 @@ export default function VisitPage() {
           supabase.from('dentist_treatments').select('fee_from, treatments(name)').eq('dentist_id', d.id),
           supabase.from('treatment_plan_steps').select('treatment_name, estimated_cost, tooth_numbers, created_at').order('created_at', { ascending: false }).limit(300),
           supabase.from('emr_templates').select('name, sections_json, advice').eq('dentist_id', d.id),
+          supabase.from('invoices').select('items').eq('patient_id', patientId).eq('dentist_id', d.id),
         ])
         if (cancelled) return
         if (pt.error || !pt.data) { setLoadError('Patient not found.'); return }
@@ -182,6 +205,17 @@ export default function VisitPage() {
         setChart(cm)
         setOpenPlans(plans.data || [])
         setPastVisits(visits.data || [])
+
+        const bs: Record<string, { amount: number; count: number }> = {}
+        for (const inv of (bills.data || []) as any[]) {
+          for (const it of Array.isArray(inv.items) ? inv.items : []) {
+            const id = it?.plan_step_id
+            if (!id) continue
+            const cur = bs[id] || { amount: 0, count: 0 }
+            bs[id] = { amount: cur.amount + Number(it.amount || 0), count: cur.count + 1 }
+          }
+        }
+        setBilledByStep(bs)
 
         const fm: Record<string, number> = {}
         for (const r of (fees.data || []) as any[]) {
@@ -304,6 +338,7 @@ export default function VisitPage() {
       const now = new Date().toISOString()
       const findings = dx.length ? `${toothLabel ? `${toothLabel}: ` : ''}${dx.join(', ')}` : ''
       const doneItems: string[] = []
+      const bill: BillLine[] = []
 
       // 2-4. New plan + steps
       let newPlanTitle = ''
@@ -333,12 +368,20 @@ export default function VisitPage() {
             completed_at: p === 'finished' ? now : null,
           }
         })
-        const { error: stepErr } = await supabase.from('treatment_plan_steps').insert(stepRows)
+        const { data: savedSteps, error: stepErr } = await supabase.from('treatment_plan_steps').insert(stepRows).select('id, step_number')
         if (stepErr) {
           // Don't leave an empty plan behind: a retry would create a duplicate.
           await supabase.from('treatment_plans').delete().eq('id', plan.id)
           throw new SaveError(friendlyError('The treatment plan could not be saved', stepErr))
         }
+        planLines.forEach((l, i) => {
+          const p = answer === 'start' ? (doneNew[l.name] || 'none') : 'none'
+          if (p === 'none') return
+          const c = chargeForToday({ total: l.total, sittings: l.def.sittings, billedBefore: 0, billedCount: 0, progress: p })
+          if (c.amount <= 0 && l.total > 0) return
+          const stepId = (savedSteps || []).find((r: any) => r.step_number === i + 1)?.id || null
+          bill.push({ key: `new-${l.name}`, stepId, name: `${l.label}${l.def.perTooth && toothLabel ? ` · ${toothLabel}` : ''}`, note: c.note, amount: c.amount ? String(c.amount) : '' })
+        })
       }
 
       // Existing open plans: acceptance + today's progress
@@ -350,6 +393,12 @@ export default function VisitPage() {
           if (p === 'none') continue
           touched = true
           doneItems.push(`${s.treatment_name}${toothText(s.tooth_numbers) ? ` ${toothText(s.tooth_numbers)}` : ''}${p === 'sitting' ? ' (sitting done)' : ''}`)
+          const before = billedByStep[s.id] || { amount: 0, count: 0 }
+          const total = Number(s.estimated_cost || 0)
+          const c = chargeForToday({ total, sittings: sittingsFromNotes(s.notes), billedBefore: before.amount, billedCount: before.count, progress: p })
+          if (c.amount > 0 || total <= 0) {
+            bill.push({ key: `old-${s.id}`, stepId: s.id, name: `${s.treatment_name}${toothText(s.tooth_numbers) ? ` · ${toothText(s.tooth_numbers)}` : ''}`, note: c.note, amount: c.amount ? String(c.amount) : '' })
+          }
           const { error: e } = await supabase.from('treatment_plan_steps').update({
             status: p === 'finished' ? 'completed' : 'scheduled',
             completed_at: p === 'finished' ? now : null,
@@ -425,6 +474,13 @@ export default function VisitPage() {
         next_appointment_notes: nextMode === 'remind' ? `Reminder: ${nextNote}` : nextMode === 'book' ? nextNote : null,
       }).select('id').single()
       if (vErr) warnings.push(friendlyError('The visit note was not saved', vErr))
+      // Queue the patient's "rate your visit" WhatsApp (best-effort).
+      if (!vErr && visit?.id) {
+        fetch('/api/dentist/review-requests/visit', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ visit_id: visit.id }),
+        }).catch(() => {})
+      }
 
       if (intake) {
         const { error: iErr } = await supabase.from('patient_intakes').update({ status: 'seen', seen_at: now, visit_id: visit?.id || null }).eq('id', intake.id)
@@ -441,6 +497,12 @@ export default function VisitPage() {
       }
       if (rxId) lines.push(`Your prescription: ${window.location.origin}/api/prescriptions/pdf?id=${rxId}`)
       if (nextLine) lines.push(nextLine)
+      // Nothing done today: start the bill with the clinic's consultation fee.
+      if (!bill.length) {
+        const fee = Number(dentist.consultation_fee || 0)
+        bill.push({ key: 'consult', stepId: null, name: 'Consultation', note: fee ? 'Your consultation fee' : 'Type the fee, or skip if it was free', amount: fee ? String(fee) : '' })
+      }
+      setBillLines(bill)
       setResult({ rxId, message: lines.join('\n'), warnings })
     } catch (e: any) {
       setSaveError(e instanceof SaveError ? e.message : friendlyError('The visit could not be saved', e))
@@ -449,13 +511,130 @@ export default function VisitPage() {
     }
   }
 
+  const billSubtotal = billLines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0)
+  const billDiscountAmt = Math.min(Math.max(Number(billDiscount) || 0, 0), billSubtotal)
+  const billTotal = billSubtotal - billDiscountAmt
+
+  function setLine(key: string, patch: Partial<BillLine>) {
+    setBillLines(ls => ls.map(l => l.key === key ? { ...l, ...patch } : l))
+  }
+
+  async function saveBill() {
+    if (!dentist || !patient || billSaving || billSaved) return
+    setBillError(null)
+    const lines = billLines.filter(l => l.name.trim() || Number(l.amount) > 0)
+    if (!lines.length) { setBillError('Add at least one item, or tap Skip.'); return }
+    if (lines.some(l => !l.name.trim())) { setBillError('Type a name for each item.'); return }
+    if (lines.some(l => !(Number(l.amount) > 0))) { setBillError('Type an amount for each item, or remove it.'); return }
+    if (!billMethod) { setBillError('Tap how the patient paid, or Pay later.'); return }
+    setBillSaving(true)
+    try {
+      const supabase = createClient()
+      const items = lines.map(l => {
+        const amt = Number(l.amount)
+        return {
+          treatment_name: l.name.trim(), description: l.name.trim(),
+          quantity: 1, unit_price: amt, amount: amt,
+          ...(l.stepId ? { plan_step_id: l.stepId } : {}),
+        }
+      })
+      const subtotal = items.reduce((sum, i) => sum + i.amount, 0)
+      const discount = Math.min(billDiscountAmt, subtotal)
+      const paid = billMethod !== 'later'
+      const { data, error } = await supabase.from('invoices').insert({
+        invoice_no: `INV-${Date.now().toString().slice(-6)}`,
+        dentist_id: dentist.id, patient_id: patient.id, invoice_date: today,
+        items, subtotal, discount, gst_amount: 0, total: subtotal - discount,
+        notes: 'From visit', payment_status: paid ? 'paid' : 'pending',
+        payment_method: paid ? billMethod : null,
+      }).select('*').single()
+      if (error || !data) { setBillError(friendlyError('The bill was not saved', error)); return }
+      setBillSaved({ ...(data as Invoice), patients: { name: patient.name, phone: patient.phone } })
+    } catch (e: any) {
+      setBillError(friendlyError('The bill was not saved', e))
+    } finally {
+      setBillSaving(false)
+    }
+  }
+
+  async function downloadBill() {
+    if (!billSaved || !dentist) return
+    try { await downloadInvoicePdf(billSaved, dentist) }
+    catch { setBillError('Could not make the bill PDF. Open it from Billing.') }
+  }
+
   // ---- Render -------------------------------------------------------------
 
   if (loading) return <div style={{ padding: 40, color: MUTED }}>Loading…</div>
   if (loadError || !patient) return <div style={{ padding: 40 }}>{loadError || 'Patient not found.'} <Link href="/for-dentists/dashboard/visit" style={{ color: TEAL_DARK }}>Back to waiting list</Link></div>
 
   if (result) {
-    const wa = whatsappLink(patient.phone, result.message)
+    let message = result.message
+    if (billSaved) {
+      const its: any[] = Array.isArray(billSaved.items) ? billSaved.items : []
+      const t = Number(billSaved.total || 0)
+      message += `\nToday's bill: ${its.map(i => `${i.treatment_name} ${rupees(Number(i.amount || 0))}`).join(', ')}.${Number(billSaved.discount || 0) > 0 ? ` Discount ${rupees(Number(billSaved.discount))}.` : ''} ${billSaved.payment_status === 'paid' ? `Paid ${rupees(t)}. Thank you.` : `Amount due ${rupees(t)}.`}`
+    }
+    const wa = whatsappLink(patient.phone, message)
+    const amountStyle: React.CSSProperties = { ...fieldStyle, width: 104, textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }
+    const billCard = billSkipped ? null : billSaved ? (
+      <div style={{ ...card, borderColor: '#86EFAC' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontWeight: 700 }}>Bill saved</span>
+          <span style={{ fontSize: 12, fontWeight: 700, borderRadius: 6, padding: '2px 8px', background: billSaved.payment_status === 'paid' ? TINT : AMBER_BG, color: billSaved.payment_status === 'paid' ? TEAL_DARK : AMBER_INK }}>
+            {billSaved.payment_status === 'paid' ? `Paid · ${billSaved.payment_method}` : 'Pay later'}
+          </span>
+        </div>
+        <div style={smallMuted}>{billSaved.invoice_no} · {rupees(Number(billSaved.total || 0))}. It is in Billing and in the patient&apos;s Bills.</div>
+        {billError && <div role="alert" style={{ color: '#991B1B', fontSize: 13 }}>{billError}</div>}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <button type="button" onClick={downloadBill} style={{ border: `1px solid ${LINE}`, background: '#fff', borderRadius: 12, padding: 12, fontWeight: 700, color: NAVY, cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: 14 }}>Download bill</button>
+          <Link href={`/for-dentists/dashboard/billing?patient_id=${patient.id}`} style={{ border: `1px solid ${LINE}`, borderRadius: 12, padding: 12, textAlign: 'center', fontWeight: 700, color: NAVY, textDecoration: 'none' }}>Open Billing</Link>
+        </div>
+      </div>
+    ) : (
+      <div style={card}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontWeight: 700 }}>Today&apos;s bill</span>
+          <span style={{ fontSize: 11, fontWeight: 700, borderRadius: 6, padding: '2px 6px', background: TINT, color: TEAL_DARK }}>Filled from the visit</span>
+        </div>
+        <div style={{ display: 'grid' }}>
+          {billLines.map(l => (
+            <div key={l.key} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, alignItems: 'center', padding: '8px 0', borderBottom: `1px dashed ${LINE}` }}>
+              <div style={{ minWidth: 0 }}>
+                {l.custom
+                  ? <input value={l.name} onChange={e => setLine(l.key, { name: e.target.value })} placeholder="Item, e.g. X-ray" aria-label="Item name" style={fieldStyle} />
+                  : <div style={{ fontWeight: 700, fontSize: 14 }}>{l.name}</div>}
+                {l.note && <div style={smallMuted}>{l.note}</div>}
+              </div>
+              <input type="number" inputMode="numeric" min={0} value={l.amount} onChange={e => setLine(l.key, { amount: e.target.value })} placeholder="₹" aria-label={`Amount for ${l.name || 'item'}`} style={amountStyle} />
+              <button type="button" onClick={() => setBillLines(ls => ls.filter(x => x.key !== l.key))} aria-label={`Remove ${l.name || 'item'}`} style={{ border: 0, background: 'none', color: MUTED, fontSize: 18, cursor: 'pointer', padding: 4 }}>×</button>
+            </div>
+          ))}
+          <button type="button" onClick={() => setBillLines(ls => [...ls, { key: `custom-${Date.now()}`, stepId: null, name: '', note: '', amount: '', custom: true }])}
+            style={{ border: 0, background: 'none', color: TEAL_DARK, fontWeight: 700, fontSize: 14, textAlign: 'left', padding: '10px 0', cursor: 'pointer', fontFamily: 'var(--font-body)' }}>+ Add an item</button>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, fontSize: 14, color: MUTED }}>
+          <span>Discount</span>
+          <input type="number" inputMode="numeric" min={0} value={billDiscount} onChange={e => setBillDiscount(e.target.value)} placeholder="₹0" aria-label="Discount" style={amountStyle} />
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: 17, fontVariantNumeric: 'tabular-nums' }}>
+          <span>Total</span><span>{rupees(billTotal)}</span>
+        </div>
+        <span style={sectionLabel}>How did they pay?</span>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: -6 }}>
+          {PAY_CHOICES.map(c => <button key={c.value} type="button" onClick={() => setBillMethod(c.value)} aria-pressed={billMethod === c.value} style={chipStyle(billMethod === c.value)}>{c.label}</button>)}
+        </div>
+        {billError && <div role="alert" style={{ color: '#991B1B', fontSize: 13 }}>{billError}</div>}
+        <button type="button" onClick={saveBill} disabled={billSaving}
+          style={{ background: TEAL, color: '#fff', border: 0, borderRadius: 12, padding: 14, fontSize: 15, fontWeight: 700, cursor: billSaving ? 'wait' : 'pointer', fontFamily: 'var(--font-body)', opacity: billSaving ? 0.7 : 1 }}>
+          {billSaving ? 'Saving…' : `Save bill · ${rupees(billTotal)}${billMethod === 'later' ? ' due' : billMethod ? ' paid' : ''}`}
+        </button>
+        <button type="button" onClick={() => setBillSkipped(true)} style={{ border: 0, background: 'none', color: MUTED, fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
+          Skip, no charge today
+        </button>
+      </div>
+    )
     return (
       <div style={{ maxWidth: 560, margin: '0 auto', padding: '24px 16px', display: 'grid', gap: 14 }}>
         <div style={{ ...card, borderColor: '#86EFAC', background: '#F0FDF4' }}>
@@ -467,14 +646,14 @@ export default function VisitPage() {
             {result.warnings.map((w, i) => <div key={i}>{w}</div>)}
           </div>
         )}
+        {billCard}
         <div style={card}>
           <div style={{ fontWeight: 700 }}>Message for the patient</div>
-          <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'var(--font-body)', fontSize: 14, margin: 0, color: NAVY }}>{result.message}</pre>
+          <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'var(--font-body)', fontSize: 14, margin: 0, color: NAVY }}>{message}</pre>
           {wa
             ? <a href={wa} target="_blank" rel="noopener noreferrer" style={{ background: WHATSAPP, color: '#fff', borderRadius: 12, padding: 14, textAlign: 'center', fontWeight: 700, textDecoration: 'none' }}>Send on WhatsApp</a>
             : <div style={smallMuted}>No mobile number saved for this patient.</div>}
           {result.rxId && <a href={`/api/prescriptions/pdf?id=${result.rxId}`} target="_blank" rel="noopener noreferrer" style={{ border: `1px solid ${LINE}`, borderRadius: 12, padding: 12, textAlign: 'center', fontWeight: 700, color: NAVY, textDecoration: 'none' }}>Print prescription</a>}
-          <Link href={`/for-dentists/dashboard/billing?patient_id=${patient.id}`} style={{ border: `1px solid ${LINE}`, borderRadius: 12, padding: 12, textAlign: 'center', fontWeight: 700, color: NAVY, textDecoration: 'none' }}>Bill today&apos;s work</Link>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           <Link href="/for-dentists/dashboard/visit" style={{ background: NAVY, color: '#fff', borderRadius: 12, padding: 12, textAlign: 'center', fontWeight: 700, textDecoration: 'none' }}>Next patient</Link>
