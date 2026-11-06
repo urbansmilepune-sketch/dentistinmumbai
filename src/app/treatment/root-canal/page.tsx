@@ -5,7 +5,6 @@ import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { getCityBySlug, cityOrigin } from '@/config/cities'
 import SiteHeader from '@/components/SiteHeader'
-import MedicalReviewBadge from '@/components/MedicalReviewBadge'
 import { NAVY, NAVY_SOFT, TEAL } from '@/app/dentist/[slug]/profileTheme'
 
 // Bespoke, medically-reviewed landing page for Root Canal Treatment. This is a
@@ -22,7 +21,6 @@ import { NAVY, NAVY_SOFT, TEAL } from '@/app/dentist/[slug]/profileTheme'
 export const dynamic = 'force-dynamic'
 
 const SLUG = 'root-canal'
-const AUTHOR_PATH = '/authors/dr-manish-dighade'
 
 export async function generateMetadata(): Promise<Metadata> {
   const h = await headers()
@@ -118,7 +116,6 @@ export default async function RootCanalPage() {
     description: `Root canal treatment cost in ${C} ranges from ₹3,000 to ₹8,000 per tooth. Compare verified fees from dentists across ${C}.`,
     url: `${origin}/treatment/${SLUG}`,
     medicalAudience: { '@type': 'MedicalAudience', audienceType: 'Patient' },
-    reviewedBy: { '@type': 'Person', name: 'Dr. Manish Dighade', identifier: 'MSDC A-24630', url: `${origin}${AUTHOR_PATH}` },
     lastReviewed: '2026-07-09',
     about: { '@type': 'MedicalProcedure', name: 'Root Canal Treatment', alternateName: 'RCT', procedureType: 'Therapeutic' },
   }
@@ -169,15 +166,6 @@ export default async function RootCanalPage() {
             Root Canal Treatment (RCT) Cost in {C} — Real Fees from Verified Dentists (2026)
           </h1>
 
-          <div style={{ maxWidth: 720 }}>
-            <MedicalReviewBadge
-              name="Dr. Manish Dighade"
-              credentials="BDS, Fellowship in Dental Implantology"
-              registration="MSDC Reg. A-24630"
-              profileUrl={AUTHOR_PATH}
-              reviewDate="July 2026"
-            />
-          </div>
         </div>
       </section>
 
@@ -371,21 +359,14 @@ export default async function RootCanalPage() {
             </div>
           </div>
 
-          {/* MEDICAL REVIEW NOTE */}
+          {/* ABOUT THESE FEES — no single dentist is featured as a reviewer;
+              every listed dentist is treated the same (Ashish, 6 Nov 2026). */}
           <div style={{ ...card, marginBottom: 0, background: '#F8FAFC' }}>
-            <h2 style={{ ...h2, fontSize: 18 }}>Medical Review Note</h2>
-            <p style={p}>
-              This page has been reviewed for clinical accuracy by <strong>Dr. Manish Dighade</strong> (BDS, Fellowship
-              in Dental Implantology, MSDC Reg. A-24630), practicing implantologist at Urban Smile Orthodontic and Dental
-              Implant Centre, Wakad, Pune.
-            </p>
-            <p style={p}>
+            <h2 style={{ ...h2, fontSize: 18 }}>About these fees</h2>
+            <p style={{ ...p, marginBottom: 0 }}>
               Fee data is sourced directly from dentists registered on DentistIn and reflects published rates as of July
               2026. Fees may vary by dentist and case complexity — always confirm with your clinic before booking.
               {lowestFee !== null ? ` The lowest published root canal fee in ${C} right now is ${inr(lowestFee)}.` : ''}
-            </p>
-            <p style={{ margin: 0 }}>
-              <Link href={AUTHOR_PATH} style={{ color: TEAL, fontWeight: 700 }}>About Dr. Manish Dighade →</Link>
             </p>
           </div>
         </div>
