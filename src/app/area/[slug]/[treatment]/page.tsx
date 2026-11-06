@@ -64,7 +64,7 @@ type FactDentist = {
   is_verified?: boolean | null
   avg_rating?: number | null
   review_count?: number | null
-  working_hours?: any
+  working_hours?: { sun?: { is_open?: boolean } | null } | null
   _feeFrom: number | null
   dentist_treatments?: { fee_from: number | null; fee_to: number | null }[]
 }
