@@ -313,6 +313,11 @@ export default function PatientDetailPage() {
       setVisitSaveError(error?.message || 'Failed to save visit. Please try again.')
       return  // keep modal open
     }
+    // Queue the patient's "rate your visit" WhatsApp (best-effort).
+    fetch('/api/dentist/review-requests/visit', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ visit_id: data.id }),
+    }).catch(() => {})
     setVisits(prev => [data, ...prev])
     setShowAddVisit(false)
     setVisitForm({ visit_date: new Date().toISOString().split('T')[0], chief_complaint: '', clinical_findings: '', treatment_done: '', materials_used: '', next_appointment_recommended: '', next_appointment_notes: '' })

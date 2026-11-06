@@ -13,7 +13,7 @@
 //                               {{1}} clinic, {{2}} date
 //   appointment_reminder      → patient + dentist, 3 h and 30 min before
 //                               {{1}}..{{5}}, see sendReminderWhatsApp
-//   review_request            → patient, about 2 h after the visit is Done
+//   review_request            → patient, right after the visit is Done (9 AM-8 PM IST)
 //                               {{1}} first name, {{2}} clinic, {{3}} link
 //                               (also needs REVIEW_REQUESTS_ENABLED=true)
 //

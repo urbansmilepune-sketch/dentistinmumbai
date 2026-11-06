@@ -474,6 +474,13 @@ export default function VisitPage() {
         next_appointment_notes: nextMode === 'remind' ? `Reminder: ${nextNote}` : nextMode === 'book' ? nextNote : null,
       }).select('id').single()
       if (vErr) warnings.push(friendlyError('The visit note was not saved', vErr))
+      // Queue the patient's "rate your visit" WhatsApp (best-effort).
+      if (!vErr && visit?.id) {
+        fetch('/api/dentist/review-requests/visit', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ visit_id: visit.id }),
+        }).catch(() => {})
+      }
 
       if (intake) {
         const { error: iErr } = await supabase.from('patient_intakes').update({ status: 'seen', seen_at: now, visit_id: visit?.id || null }).eq('id', intake.id)
