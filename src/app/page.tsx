@@ -369,7 +369,7 @@ export default async function HomePage() {
                   {priceRows.map(({ t, fee }) => (
                     <Link key={t.id} href={`/treatment/${t.slug}`} className="hm-pr">
                       <span className="hm-pr-name">{t.name}</span>
-                      <span className="hm-pr-fee">from ₹{fee.toLocaleString('en-IN')}<Chevron /></span>
+                      <span className="hm-pr-fee"><span className="hm-pr-from">from</span>₹{fee.toLocaleString('en-IN')}<Chevron /></span>
                     </Link>
                   ))}
                 </div>
@@ -419,7 +419,7 @@ export default async function HomePage() {
       <CitiesFooterLinks currentSlug={city.citySlug} />
 
       {/* FOOTER */}
-      <footer style={{ background: '#0A1628', padding: '56px 20px 24px', color: 'rgba(255,255,255,0.7)' }}>
+      <footer style={{ background: '#0A1628', padding: '56px 0 24px', color: 'rgba(255,255,255,0.7)' }}>
         <div className="container">
           <div className="home-footer-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 40, marginBottom: 48 }}>
             <div>
@@ -502,7 +502,9 @@ export default async function HomePage() {
         .hm-chip:hover { border-color: ${TEAL}; background: rgba(20,184,166,0.12); }
 
         .hm-sec { padding: 48px 20px; }
-        .hm-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+        .hm-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+        .hm-head .hm-h2 { flex: 1 1 auto; min-width: 0; }
+        .hm-seeall { flex-shrink: 0; white-space: nowrap; }
         .hm-h2 { font-family: var(--font-heading); font-weight: 800; color: ${NAVY}; font-size: clamp(1.3rem, 2.8vw, 1.65rem); letter-spacing: -0.01em; margin: 0; }
         .hm-sub { font-size: 14px; color: #64748B; margin: 4px 0 18px; }
         .hm-more { color: ${TEAL_DARK}; font-weight: 700; font-size: 14px; text-decoration: none; }
@@ -515,13 +517,13 @@ export default async function HomePage() {
         .hm-two { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; }
         .hm-areas { display: flex; flex-wrap: wrap; gap: 8px; }
         .hm-area {
-          display: inline-flex; align-items: baseline; gap: 6px; padding: 9px 12px;
-          background: #fff; border: 1px solid var(--border); border-radius: 10px;
+          display: inline-flex; align-items: center; gap: 8px; min-height: 42px; padding: 8px 12px;
+          background: #fff; border: 1px solid var(--border); border-radius: 10px; line-height: 1.25;
           font-weight: 700; font-size: 14px; color: ${NAVY}; text-decoration: none;
           transition: border-color .15s;
         }
         .hm-area:hover { border-color: ${TEAL}; }
-        .hm-area-n { font-weight: 500; font-size: 12.5px; color: #64748B; }
+        .hm-area-n { flex-shrink: 0; font-weight: 600; font-size: 12px; color: #64748B; font-variant-numeric: tabular-nums; }
         .hm-price { background: #fff; border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
         .hm-pr {
           display: flex; justify-content: space-between; align-items: center; gap: 12px;
@@ -530,8 +532,10 @@ export default async function HomePage() {
         }
         .hm-pr:first-child { border-top: 0; }
         .hm-pr:hover { background: #F8FAFC; }
-        .hm-pr-name { font-weight: 700; color: ${NAVY}; font-size: 15px; }
+        .hm-pr-name { min-width: 0; font-weight: 700; color: ${NAVY}; font-size: 15px; line-height: 1.3; }
         .hm-pr-fee { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; color: ${TEAL_DARK}; font-size: 15px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+        .hm-pr-from { font-weight: 500; font-size: 12.5px; color: #64748B; margin-right: -2px; }
+        .hm-pr-fee svg { color: #94A3B8; }
         .hm-more-label { margin: 18px 0 8px; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #64748B; }
         .hm-tlinks { display: flex; flex-wrap: wrap; gap: 6px 14px; }
         .hm-tlink { font-size: 14px; color: #334155; text-decoration: none; }
@@ -548,7 +552,7 @@ export default async function HomePage() {
         }
         .hm-trust { list-style: none; padding: 0; margin: 24px 0 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
         .hm-trust li { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; color: #334155; line-height: 1.5; }
-        .hm-trust li svg { flex-shrink: 0; margin-top: 2px; }
+        .hm-trust li svg { flex-shrink: 0; margin-top: 2.5px; }
         .hm-trust b { color: ${NAVY}; }
 
         .hm-faqrow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 32px; align-items: start; }
@@ -564,8 +568,8 @@ export default async function HomePage() {
         .hm-rempty { border: 1.5px dashed #CBD5E1; border-radius: 16px; padding: 20px; background: #fff; max-width: 640px; }
         .hm-rtitle { margin: 0 0 12px; font-family: var(--font-heading); font-weight: 700; color: ${NAVY}; font-size: 16px; }
         .hm-how { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
-        .hm-how li { display: flex; gap: 10px; align-items: center; font-size: 14px; color: #334155; }
-        .hm-how .hm-step-n { width: 26px; height: 26px; font-size: 13px; }
+        .hm-how li { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; line-height: 1.5; color: #334155; }
+        .hm-how .hm-step-n { width: 24px; height: 24px; font-size: 12.5px; margin-top: -1px; }
         .hm-dcta { background: ${NAVY}; border-radius: 18px; padding: 24px; display: flex; flex-direction: column; gap: 18px; }
         .hm-dcta-btn {
           display: inline-flex; align-items: center; justify-content: center; align-self: flex-start;
@@ -591,7 +595,7 @@ export default async function HomePage() {
           .hm-need { margin-top: 18px; }
           .hm-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-right: -16px; padding-right: 16px; }
           .hm-chips::-webkit-scrollbar { display: none; }
-          .hm-sec { padding: 32px 16px; }
+          .hm-sec { padding: 32px 0; }
           .hm-cards {
             display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none;
             margin-right: -16px; padding-right: 16px; gap: 12px;
@@ -603,6 +607,11 @@ export default async function HomePage() {
           .hm-step { padding: 14px; }
           .hm-pr { padding: 13px 14px; }
           .hm-pr-name, .hm-pr-fee { font-size: 14.5px; }
+          .hm-areas { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+          .hm-area { justify-content: space-between; padding: 8px 10px 8px 12px; font-size: 13.5px; }
+          .hm-area-n { background: #F1F5F9; border-radius: 999px; padding: 1px 7px; }
+          .hm-tlinks { gap: 8px 16px; }
+          .hm-rempty { padding: 16px; }
           .home-footer-grid { gap: 28px !important; }
         }
       `}</style>

@@ -166,7 +166,7 @@ export function NeedHero({ needs, areas, cityName, dentistCount }: HeroProps) {
           padding: 20px 22px; display: grid; grid-template-columns: minmax(0, 1fr) auto;
           gap: 16px 14px; align-items: end; box-shadow: 0 6px 18px rgba(15,23,42,0.05);
         }
-        .nh-step { display: grid; gap: 9px; min-width: 0; }
+        .nh-step { display: grid; grid-template-columns: minmax(0, 1fr); gap: 9px; min-width: 0; }
         .nh-s1 { grid-column: 1 / -1; }
         .nh-s2 { border-top: 1px solid #E2E8F0; padding-top: 16px; }
         .nh-label { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; font-weight: 700; color: ${NAVY}; }
@@ -218,16 +218,20 @@ export function NeedHero({ needs, areas, cityName, dentistCount }: HeroProps) {
         }
         .nh-go:hover { background: ${TEAL_DARK}; }
         .nh-trust { list-style: none; padding: 0; margin: 16px 0 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 16px; font-size: 13px; color: #64748B; }
-        .nh-trust li { display: inline-flex; align-items: center; gap: 5px; }
+        .nh-trust li { display: inline-flex; align-items: center; gap: 5px; line-height: 1.3; white-space: nowrap; }
+        .nh-trust li :global(svg) { flex-shrink: 0; }
         .nh-trust b { color: ${NAVY}; font-weight: 700; }
         @media (max-width: 640px) {
-          .nh { padding: 26px 16px 22px; }
+          .nh { padding: 24px 0 22px; }
           .nh-in { text-align: left; }
           .nh-sub { margin: 6px 0 18px; }
-          .nh-flow { grid-template-columns: 1fr; padding: 14px; gap: 14px; }
+          .nh-flow { grid-template-columns: minmax(0, 1fr); padding: 14px; gap: 14px; }
           .nh-s2 { padding-top: 14px; }
           .nh-go { width: 100%; height: 48px; }
-          .nh-trust { justify-content: flex-start; font-size: 12.5px; gap: 4px 14px; }
+          .nh-where { gap: 8px; padding: 4px 5px 4px 10px; }
+          .nh-select { font-size: 16px; }
+          .nh-near { font-size: 12.5px; padding: 6px 9px; gap: 4px; }
+          .nh-trust { justify-content: flex-start; font-size: 12.5px; gap: 6px 12px; }
         }
       `}</style>
     </section>
@@ -257,7 +261,7 @@ export function NeedSpotlight({ cityName, cards, defaultIds, byTreatment }: Spot
       <div className="container">
         <div className="hm-head">
           <h2 className="hm-h2" aria-live="polite">{title}</h2>
-          <Link href={seeAll} className="hm-more">See all →</Link>
+          <Link href={seeAll} className="hm-more hm-seeall">See all →</Link>
         </div>
         <p className="hm-sub">Degree, fee and timings on every card. Free to book.</p>
         {ids.length > 0 ? (
