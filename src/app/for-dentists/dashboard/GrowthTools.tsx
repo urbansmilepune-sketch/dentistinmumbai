@@ -1,8 +1,9 @@
 'use client'
 
 // Client island for the dashboard "Grow Your Practice" section. Two self-serve
-// tools — a copy-paste website verified badge and a Google Business Profile
-// booking link — each with a copy button that flips to "✓ Copied!" for 2s.
+// tool: a copy-paste website verified badge with a copy button that flips to
+// "✓ Copied!" for 2s. The Google Maps booking link has its own page now
+// (dashboard/google-booking).
 // All content (badge HTML, profile URL, city name) is pre-computed server-side
 // and passed in as props; this component only handles the clipboard + preview.
 
@@ -38,25 +39,16 @@ async function copyText(text: string): Promise<void> {
 
 export default function GrowthTools({
   badgeHtml,
-  profileUrl,
   cityName,
 }: {
   badgeHtml: string
-  profileUrl: string
   cityName: string
 }) {
   const [copiedBadge, setCopiedBadge] = useState(false)
-  const [copiedLink, setCopiedLink] = useState(false)
-
-  async function handleCopy(text: string, which: 'badge' | 'link') {
+  async function handleCopy(text: string) {
     await copyText(text)
-    if (which === 'badge') {
-      setCopiedBadge(true)
-      setTimeout(() => setCopiedBadge(false), 2000)
-    } else {
-      setCopiedLink(true)
-      setTimeout(() => setCopiedLink(false), 2000)
-    }
+    setCopiedBadge(true)
+    setTimeout(() => setCopiedBadge(false), 2000)
   }
 
   const cardStyle: React.CSSProperties = {
@@ -151,7 +143,7 @@ export default function GrowthTools({
           </pre>
 
           <div style={{ marginTop: 12 }}>
-            <button type="button" onClick={() => handleCopy(badgeHtml, 'badge')} style={copyBtnStyle(copiedBadge)}>
+            <button type="button" onClick={() => handleCopy(badgeHtml)} style={copyBtnStyle(copiedBadge)}>
               {copiedBadge ? '✓ Copied!' : 'Copy Code'}
             </button>
           </div>
@@ -163,71 +155,6 @@ export default function GrowthTools({
           <div dangerouslySetInnerHTML={{ __html: badgeHtml }} />
         </div>
 
-        {/* ── TOOL 2: Google Business Profile booking link ─────────────── */}
-        <div style={cardStyle}>
-          <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 15.5, marginBottom: 4 }}>
-            📍 Add Booking Link to Google Profile
-          </h3>
-          <p style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.55, marginBottom: 14 }}>
-            Patients searching on Google Maps can book directly from your listing. Your profile is live
-            on DentistIn {cityName} and DentistIn India — one link covers both.
-          </p>
-
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <input
-              readOnly
-              value={profileUrl}
-              onFocus={e => e.currentTarget.select()}
-              style={{
-                flex: 1,
-                minWidth: 180,
-                padding: '10px 12px',
-                borderRadius: 10,
-                border: '1px solid var(--border)',
-                fontSize: 13,
-                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                color: 'var(--text)',
-                background: 'var(--bg)',
-              }}
-            />
-            <button type="button" onClick={() => handleCopy(profileUrl, 'link')} style={copyBtnStyle(copiedLink)}>
-              {copiedLink ? '✓ Copied!' : 'Copy Link'}
-            </button>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, margin: '16px 0' }}>
-            {[
-              { icon: '🔍', text: 'Open Google Business Profile (business.google.com)' },
-              { icon: '✏️', text: 'Go to Edit Profile → Contact → Appointment links' },
-              { icon: '📋', text: 'Paste the link above and Save' },
-            ].map((s, i) => (
-              <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 13, color: 'var(--text)' }}>
-                <span style={{ flexShrink: 0 }} aria-hidden="true">{s.icon}</span>
-                <span style={{ lineHeight: 1.5 }}><strong style={{ fontWeight: 700 }}>{i + 1}.</strong> {s.text}</span>
-              </div>
-            ))}
-          </div>
-
-          <a
-            href="https://business.google.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              display: 'inline-block',
-              alignSelf: 'flex-start',
-              padding: '10px 16px',
-              borderRadius: 10,
-              background: '#fff',
-              color: NAVY,
-              border: `1.5px solid ${NAVY}`,
-              fontSize: 13,
-              fontWeight: 700,
-              textDecoration: 'none',
-            }}
-          >
-            Open Google Business Profile →
-          </a>
-        </div>
       </div>
     </div>
   )
