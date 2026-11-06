@@ -21,9 +21,11 @@ interface Props {
   initialQuery?: string
   /** Homepage only: its hero carries the search box, so the header skips it. */
   hideSearch?: boolean
+  /** Patient-only header (homepage): hides Expert Advice and List your clinic. */
+  patientOnly?: boolean
 }
 
-export default function SiteHeader({ city, initialQuery, hideSearch = false }: Props) {
+export default function SiteHeader({ city, initialQuery, hideSearch = false, patientOnly = false }: Props) {
   return (
     <header className={`sh-header${hideSearch ? ' sh-nosearch' : ''}`}>
       <div className="sh-inner container">
@@ -41,11 +43,11 @@ export default function SiteHeader({ city, initialQuery, hideSearch = false }: P
 
         <nav className="sh-nav" aria-label="Main">
           <Link href="/dentists" className="sh-link">Find a dentist</Link>
-          <Link href="/articles" className="sh-link">Expert Advice</Link>
+          {!patientOnly && <Link href="/articles" className="sh-link">Expert Advice</Link>}
         </nav>
 
         <div className="sh-actions">
-          <HeaderMenus cityName={city.cityName} />
+          <HeaderMenus cityName={city.cityName} patientOnly={patientOnly} />
         </div>
       </div>
 
@@ -57,12 +59,12 @@ export default function SiteHeader({ city, initialQuery, hideSearch = false }: P
           border-bottom: 1px solid var(--sh-line);
           position: sticky; top: 0; z-index: 100;
         }
-        .sh-inner { display: flex; align-items: center; gap: 24px; height: 68px; }
+        .sh-inner { display: flex; align-items: center; gap: 24px; height: 76px; }
 
         /* Logo crop: --lh is the visible mark height; the rest scales from it. */
         .sh-brand { display: flex; align-items: center; flex-shrink: 0; text-decoration: none; }
         .sh-logo-box {
-          --lh: 34px;
+          --lh: 40px;
           display: block; overflow: hidden;
           height: var(--lh); width: calc(var(--lh) * 190 / 46);
         }
@@ -141,7 +143,7 @@ export default function SiteHeader({ city, initialQuery, hideSearch = false }: P
            chooser and the menu slide up from the bottom of the screen. */
         @media (max-width: 900px) {
           .sh-inner { flex-wrap: wrap; height: auto; min-height: 60px; gap: 10px; padding-top: 10px; padding-bottom: 10px; }
-          .sh-logo-box { --lh: 27px; }
+          .sh-logo-box { --lh: 31px; }
           .sh-nav, .hm-sep, .hm-cta-desk { display: none; }
           .sh-actions { margin-left: auto; }
           .sh-nosearch .sh-actions { margin-left: auto; }
@@ -173,7 +175,7 @@ export default function SiteHeader({ city, initialQuery, hideSearch = false }: P
           .hm-dent .hm-cta { width: 100%; height: 44px; }
         }
         @media (max-width: 360px) {
-          .sh-logo-box { --lh: 23px; }
+          .sh-logo-box { --lh: 26px; }
         }
       `}</style>
     </header>

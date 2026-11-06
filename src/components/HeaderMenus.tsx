@@ -49,7 +49,7 @@ function LoginChoices({ onPick }: { onPick: () => void }) {
   )
 }
 
-export default function HeaderMenus({ cityName }: { cityName: string }) {
+export default function HeaderMenus({ cityName, patientOnly = false }: { cityName: string; patientOnly?: boolean }) {
   const [open, setOpen] = useState<Open>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
   const pathname = usePathname()
@@ -89,8 +89,12 @@ export default function HeaderMenus({ cityName }: { cityName: string }) {
         </svg>
       </button>
 
-      <span className="hm-sep" aria-hidden="true" />
-      <Link href="/for-dentists/register" className="hm-cta hm-cta-desk">List your clinic</Link>
+      {!patientOnly && (
+        <>
+          <span className="hm-sep" aria-hidden="true" />
+          <Link href="/for-dentists/register" className="hm-cta hm-cta-desk">List your clinic</Link>
+        </>
+      )}
 
       <button
         type="button"
@@ -122,15 +126,15 @@ export default function HeaderMenus({ cityName }: { cityName: string }) {
           <div className="hm-grab" aria-hidden="true" />
           <nav className="hm-links">
             <Link href="/dentists" onClick={close}>Find a dentist <span aria-hidden="true">›</span></Link>
-            <Link href="/articles" onClick={close}>Expert Advice <span aria-hidden="true">›</span></Link>
+            {!patientOnly && <Link href="/articles" onClick={close}>Expert Advice <span aria-hidden="true">›</span></Link>}
             <Link href="/patient" onClick={close}>Patient Login <span aria-hidden="true">›</span></Link>
             <Link href="/for-dentists/login" onClick={close}>Dentist Login <span aria-hidden="true">›</span></Link>
           </nav>
-          <div className="hm-dent">
+          {!patientOnly && <div className="hm-dent">
             <b>Are you a dentist?</b>
             <small>Get found by patients in {cityName}. Free to list.</small>
             <Link href="/for-dentists/register" className="hm-cta" onClick={close}>List your clinic</Link>
-          </div>
+          </div>}
         </div>
       )}
     </div>
