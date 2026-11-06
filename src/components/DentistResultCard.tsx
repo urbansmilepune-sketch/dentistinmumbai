@@ -82,14 +82,14 @@ export default function DentistResultCard({ dentist: d, highlight = null, treatm
             : <span>{initialsFrom(d.name)}</span>}
         </div>
         <div className="drc-info">
-          <div className="drc-name-row">
-            <h3 className="drc-name">{name}</h3>
+          <h3 className="drc-name">
+            {name}
             {d.is_verified && (
               <span className="drc-verified" title="Verified">
                 <CheckIcon size={11} color="#fff" strokeWidth={3} />
               </span>
             )}
-          </div>
+          </h3>
           {subBits.length > 0 && <p className="drc-sub">{subBits.join(' · ')}</p>}
           {treatmentNote && <p className="drc-note">{treatmentNote}</p>}
           {d.clinic_name && <p className="drc-clinic">{d.clinic_name}{d.areas?.name ? ` · ${d.areas.name}` : ''}</p>}
@@ -144,7 +144,7 @@ export default function DentistResultCard({ dentist: d, highlight = null, treatm
           padding: 4px 10px; border-radius: 20px;
         }
         .drc-overlay { position: absolute; inset: 0; z-index: 1; border-radius: 16px; }
-        .drc-top { display: flex; gap: 14px; align-items: flex-start; }
+        .drc-top { display: flex; gap: 12px; align-items: flex-start; }
         .drc-avatar {
           width: 60px; height: 60px; border-radius: 14px; flex-shrink: 0; overflow: hidden;
           display: flex; align-items: center; justify-content: center;
@@ -152,22 +152,21 @@ export default function DentistResultCard({ dentist: d, highlight = null, treatm
         }
         .drc-avatar img { width: 100%; height: 100%; object-fit: cover; object-position: center top; }
         .drc-info { flex: 1; min-width: 0; }
-        .drc-name-row { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
-        .drc-name { font-family: var(--font-heading); font-weight: 800; font-size: 16px; color: ${NAVY}; line-height: 1.25; overflow-wrap: anywhere; }
+        .drc-name { font-family: var(--font-heading); font-weight: 800; font-size: 16px; color: ${NAVY}; line-height: 1.25; overflow-wrap: break-word; margin: 0; }
         .drc-verified {
-          display: inline-flex; align-items: center; justify-content: center;
-          width: 17px; height: 17px; border-radius: 50%; background: ${TEAL}; flex-shrink: 0;
+          display: inline-flex; align-items: center; justify-content: center; vertical-align: -2px;
+          width: 16px; height: 16px; border-radius: 50%; background: ${TEAL}; margin-left: 6px;
         }
         .drc-sub { font-size: 13px; color: #475569; margin-top: 3px; line-height: 1.4; }
         .drc-note { font-size: 12.5px; color: ${TEAL_DARK}; font-weight: 600; margin-top: 3px; }
-        .drc-clinic { font-size: 12.5px; color: #94A3B8; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .drc-clinic { font-size: 12.5px; color: #64748B; margin-top: 3px; line-height: 1.4; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
         .drc-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-size: 12.5px; font-weight: 600; }
         .drc-open { display: inline-flex; align-items: center; gap: 6px; }
         .drc-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
         .drc-distance { display: inline-flex; align-items: center; gap: 4px; color: ${TEAL_DARK}; }
         .drc-rating { display: inline-flex; align-items: center; gap: 4px; color: ${NAVY}; }
         .drc-rating-count { color: #94A3B8; font-weight: 500; }
-        .drc-new { background: ${TEAL_SOFT}; color: ${TEAL_DARK}; font-weight: 700; font-size: 11.5px; padding: 2px 9px; border-radius: 20px; }
+        .drc-new { display: inline-flex; align-items: center; line-height: 1.4; background: ${TEAL_SOFT}; color: ${TEAL_DARK}; font-weight: 700; font-size: 11.5px; padding: 2px 9px; border-radius: 20px; }
         .drc-footer {
           display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
           border-top: 1px solid #F1F5F9; padding-top: 12px;
@@ -185,8 +184,8 @@ export default function DentistResultCard({ dentist: d, highlight = null, treatm
         .drc-cta:active { transform: scale(0.98); }
         .drc-cta-secondary { background: #fff; color: ${NAVY}; border: 1.5px solid #E2E8F0; }
         .drc-cta-secondary:hover { border-color: ${NAVY}; }
-        .drc-cta-primary { background: ${TEAL}; color: #fff; }
-        .drc-cta-primary:hover { background: ${TEAL_DARK}; }
+        .drc-cta-primary { background: ${TEAL}; color: #fff; border: 1.5px solid ${TEAL}; }
+        .drc-cta-primary:hover { background: ${TEAL_DARK}; border-color: ${TEAL_DARK}; }
         @media (max-width: 600px) {
           .drc-footer { flex-direction: column; align-items: stretch; }
           .drc-cta-row { width: 100%; }
