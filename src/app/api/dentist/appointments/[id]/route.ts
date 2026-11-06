@@ -258,7 +258,7 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
   // hatch. The recall helper itself dedupes on (patient_id, type) so a
   // re-completion or back-to-back visits don't stack duplicate recalls.
   // Side effect: a visit newly marked Done queues the "rate your visit"
-  // WhatsApp (sent about 2 hours later by the 5-minute cron). Never throws.
+  // WhatsApp (sent by the next 5-minute cron run, 9 AM-8 PM IST). Never throws.
   if (status === 'completed' && appt.status !== 'completed') {
     try {
       await queueReviewRequestForCompletedVisit(db, {

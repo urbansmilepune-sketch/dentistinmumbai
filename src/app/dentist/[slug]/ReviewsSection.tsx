@@ -66,7 +66,7 @@ function ReviewCard({ r, drName }: { r: Review; drName: string }) {
       </div>
       {r.verified_visit && (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, color: TEAL_DARK }}>
-          <ShieldCheckIcon size={14} color={TEAL_DARK} /> Verified visit · booked on DentistIn
+          <ShieldCheckIcon size={14} color={TEAL_DARK} /> Verified visit
         </span>
       )}
       {r.review_text && <p style={{ margin: 0, fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.65 }}>{r.review_text}</p>}
