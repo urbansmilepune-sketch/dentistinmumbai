@@ -9,6 +9,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { NAVY, TEAL, TEAL_DARK, TEAL_SOFT } from '@/app/dentist/[slug]/profileTheme'
 import { WhatsAppIcon, CheckIcon } from '../dashIcons'
+import ClinicFinder, { type GooglePlace } from './ClinicFinder'
 
 async function copyText(text: string): Promise<boolean> {
   try {
@@ -40,13 +41,19 @@ const shotBox: React.CSSProperties = { marginTop: 8, border: '1px solid var(--bo
 const caption: React.CSSProperties = { fontSize: 11, color: 'var(--muted)', textAlign: 'center' }
 
 export default function GoogleBookingGuide({
-  link, stepsMessage, initiallyAdded, monthVisits,
+  link, stepsMessage, initiallyAdded, monthVisits, placesKey, initialPlaceId, clinicQuery, lat, lng,
 }: {
   link: string
   stepsMessage: string
   initiallyAdded: boolean
   monthVisits: number
+  placesKey: string
+  initialPlaceId: string | null
+  clinicQuery: string
+  lat: number
+  lng: number
 }) {
+  const [linkedPlace, setLinkedPlace] = useState<GooglePlace | null>(null)
   const [copied, setCopied] = useState(false)
   const [added, setAdded] = useState(initiallyAdded)
   const [saving, setSaving] = useState(false)
@@ -78,6 +85,7 @@ export default function GoogleBookingGuide({
 
   const displayLink = link.replace(/^https:\/\//, '')
   const waHref = `https://wa.me/?text=${encodeURIComponent(stepsMessage)}`
+  const createListingWaHref = `https://wa.me/?text=${encodeURIComponent('Create a free Google listing for the clinic here, then add the DentistIn booking link to it:\n\nhttps://business.google.com/create\n\nBooking link: ' + link)}`
 
   const step = (n: number, title: string, text: string, shot: React.ReactNode) => (
     <div style={{ display: 'grid', gridTemplateColumns: '28px minmax(0, 1fr)', gap: 10 }}>
@@ -108,6 +116,18 @@ export default function GoogleBookingGuide({
         </div>
       )}
 
+      {placesKey && (
+        <ClinicFinder
+          apiKey={placesKey}
+          initialPlaceId={initialPlaceId}
+          defaultQuery={clinicQuery}
+          lat={lat}
+          lng={lng}
+          whatsAppHref={createListingWaHref}
+          onPlaceChange={setLinkedPlace}
+        />
+      )}
+
       <div style={card}>
         <b style={{ fontSize: 14 }}>Your booking link</b>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', background: '#F8FAFC', border: `1px dashed ${TEAL}`, borderRadius: 12, padding: '8px 8px 8px 12px' }}>
@@ -121,7 +141,9 @@ export default function GoogleBookingGuide({
 
       <div style={card}>
         <div style={{ display: 'grid', gap: 16 }}>
-          {step(1, 'Open your clinic on Google', 'Search your clinic name on Google while signed in to the Google account that manages it. Your listing shows an edit panel on top.', (
+          {step(1, 'Open your clinic on Google', linkedPlace
+            ? 'Tap "Open my Google listing" below while signed in to the Google account that manages the clinic. Your listing shows an edit panel on top.'
+            : 'Search your clinic name on Google while signed in to the Google account that manages it. Your listing shows an edit panel on top.', (
             <div style={shotBox}>
               <div style={shotRow(true)}><span>Edit profile</span><span>›</span></div>
               <div style={shotRow(false)}><span>Read reviews</span><span>›</span></div>
@@ -143,9 +165,15 @@ export default function GoogleBookingGuide({
             </div>
           ))}
         </div>
-        <a href="https://business.google.com/" target="_blank" rel="noopener noreferrer" style={{ height: 46, borderRadius: 12, border: `1.5px solid ${NAVY}`, color: NAVY, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
-          Open Google Business Profile
-        </a>
+        {linkedPlace ? (
+          <a href={linkedPlace.mapsUrl} target="_blank" rel="noopener noreferrer" style={{ height: 46, borderRadius: 12, background: NAVY, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
+            Open my Google listing ↗
+          </a>
+        ) : (
+          <a href="https://business.google.com/" target="_blank" rel="noopener noreferrer" style={{ height: 46, borderRadius: 12, border: `1.5px solid ${NAVY}`, color: NAVY, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
+            Open Google Business Profile
+          </a>
+        )}
       </div>
 
       <div style={card}>

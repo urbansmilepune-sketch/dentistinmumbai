@@ -30,3 +30,13 @@ export function googleStepsMessage(link: string, clinicName: string): string {
     'Patients will then see a "Book" button on Google Maps.',
   ].join('\n')
 }
+
+// The dentist's own Google listing, picked with the "Find your clinic on
+// Google" search (Google Places). Stored as one analytics_events row whose
+// event_type is 'gbp_place:<Google place ID>', so no new column or table.
+export const GBP_PLACE_PREFIX = 'gbp_place:'
+export const PLACE_ID_RE = /^[A-Za-z0-9_-]{10,300}$/
+
+export function googleListingUrl(placeId: string): string {
+  return `https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(placeId)}`
+}
