@@ -3,7 +3,8 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { resolveCurrentDentist } from '@/lib/currentDentist'
-import { googleBookingLink, googleStepsMessage, GBP_ADDED_EVENT, GOOGLE_VISIT_EVENT } from '@/lib/googleBooking'
+import { googleBookingLink, googleStepsMessage, GBP_ADDED_EVENT, GOOGLE_VISIT_EVENT, GBP_PLACE_PREFIX, PLACE_ID_RE } from '@/lib/googleBooking'
+import { getCityBySlug } from '@/config/cities'
 import GoogleBookingGuide from './GoogleBookingGuide'
 
 export const dynamic = 'force-dynamic'
@@ -35,12 +36,17 @@ export default async function GoogleBookingPage() {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   )
   const ms = new Date(); ms.setUTCDate(1); ms.setUTCHours(0, 0, 0, 0)
-  const [{ count: addedCount }, { count: monthVisits }] = await Promise.all([
+  const [{ count: addedCount }, { count: monthVisits }, { data: placeRows }] = await Promise.all([
     admin.from('analytics_events').select('id', { count: 'exact', head: true })
       .eq('dentist_id', dentist.id).eq('event_type', GBP_ADDED_EVENT),
     admin.from('analytics_events').select('id', { count: 'exact', head: true })
       .eq('dentist_id', dentist.id).eq('event_type', GOOGLE_VISIT_EVENT).gte('created_at', ms.toISOString()),
+    admin.from('analytics_events').select('event_type')
+      .eq('dentist_id', dentist.id).like('event_type', `${GBP_PLACE_PREFIX}%`)
+      .order('created_at', { ascending: false }).limit(1),
   ])
+  const savedPlaceId = placeRows?.[0]?.event_type?.slice(GBP_PLACE_PREFIX.length) ?? ''
+  const city = getCityBySlug(dentist.city)
 
   const link = googleBookingLink(dentist.slug, dentist.city)
 
@@ -50,6 +56,11 @@ export default async function GoogleBookingPage() {
       stepsMessage={googleStepsMessage(link, clinicName)}
       initiallyAdded={(addedCount ?? 0) > 0}
       monthVisits={monthVisits ?? 0}
+      placesKey={process.env.NEXT_PUBLIC_GOOGLE_PLACES_KEY || ''}
+      initialPlaceId={PLACE_ID_RE.test(savedPlaceId) ? savedPlaceId : null}
+      clinicQuery={[dentist.clinic_name || dentist.name || '', city.cityName].filter(Boolean).join(' ')}
+      lat={city.lat}
+      lng={city.lng}
     />
   )
 }
