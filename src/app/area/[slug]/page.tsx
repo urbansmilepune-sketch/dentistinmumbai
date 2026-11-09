@@ -47,11 +47,11 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const lead = liveCount > 0
     ? `${liveCount} verified dentists in ${area.name}, ${city.cityName}.`
     : `Verified dentists in ${area.name}, ${city.cityName}.`
-  // Density gate: index only when ≥3 complete-profile dentists back this area.
-  // 1–2 → noindex (thin); 0 → the page redirects to /dentists. Kept in lockstep with the
-  // sitemap, which emits this URL under the same ≥3 rule.
-  const completeCount = (await getAreaCompleteDentistCounts(city.citySlug))[String(area.id)] ?? 0
-  const indexable = completeCount >= 3
+  // Index every area that has at least one active dentist: "dentist in
+  // <area>" is exactly what Pune patients search for, and these pages carry
+  // the area's own clinics, fees and FAQs. 0 dentists → the page redirects to
+  // /dentists. Kept in lockstep with the sitemap (same ≥1 rule).
+  const indexable = liveCount >= 1
   return {
     title: `Best Dentists in ${area.name}, ${city.cityName}`,
     description: `${lead} See real fees, photos and book instantly.`,
@@ -151,13 +151,8 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
 
   if (!area) notFound()
 
-  // Density gate. Only a genuinely EMPTY area (zero active dentists) 404s —
-  // that's a page with nothing to show a patient. An area that has active
-  // dentists but fewer than 3 *complete* profiles still renders for patients
-  // (they may be searching for exactly those clinics) but is noindexed via
-  // generateMetadata and dropped from the sitemap, so it stops earning GSC
-  // "crawled – not indexed" rejections. ≥3 complete → indexed + in sitemap.
-  // "Complete" = 80%+ profile completion.
+  // Any area with at least one active dentist renders and is indexed (Nov
+  // 2026: areas with fewer than 3 complete profiles used to be noindexed).
   // An area with no dentists used to 404. Old links and Google still reach
   // these URLs (61 "Not found" in GSC, Nov 2026), so send the visitor to the
   // city's dentist list instead. 307 (temporary): the area page comes back
@@ -282,15 +277,12 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
     .sort((a, b) => areaCountOf(b.id) - areaCountOf(a.id))
   const nearbyAreas = [...primaryNearby, ...padNearby].slice(0, NEARBY_SLOTS)
 
-  // Indexed-only nearby areas — the crawlable link loop between the city's
-  // density-gated (≥3 complete-profile dentists) area pages. Unlike the
-  // patient widget above (which uses live ≥1 counts and can point at thin,
-  // noindexed areas), this links ONLY to pages Google actually indexes, so the
-  // internal-link equity stays inside the indexed set. Exclude the current
-  // area; strongest first; cap at 4.
+  // Crawlable link loop between the city's area pages. Every area with ≥1
+  // active dentist is indexed, so link the strongest ones (most complete
+  // profiles first, then most dentists). Exclude the current area; cap at 4.
   const indexedNearbyAreas = (allAreas || [])
-    .filter(a => a.slug !== slug && completeCountOf(a.id) >= 3)
-    .sort((a, b) => completeCountOf(b.id) - completeCountOf(a.id))
+    .filter(a => a.slug !== slug && areaCountOf(a.id) >= 1)
+    .sort((a, b) => (completeCountOf(b.id) - completeCountOf(a.id)) || (areaCountOf(b.id) - areaCountOf(a.id)))
     .slice(0, 4)
 
   // Transit line (Mumbai only): `zone` is the suburban railway line. Same-line

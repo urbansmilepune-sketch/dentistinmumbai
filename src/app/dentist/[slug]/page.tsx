@@ -11,7 +11,7 @@ import SiteHeader from '@/components/SiteHeader'
 import { whatsappLink } from '@/lib/phone'
 import { buildMapsIframe } from '@/lib/maps'
 import { getOpenStatus } from '@/lib/openStatus'
-import { completionPct } from '@/lib/profileCompletion'
+import { completionPct, isIndexableProfile } from '@/lib/profileCompletion'
 import { getDentistOwner } from '@/lib/dentistSession'
 import ViewTracker from './ViewTracker'
 import TrackedLink from './TrackedLink'
@@ -61,18 +61,16 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const d = cached?.dentist as any
   if (!d) return {}
 
-  // Index gate: a thin profile (<60% complete) is a low-quality page that
-  // dilutes crawl budget and earns "crawled – not indexed" rejections in
-  // GSC, so we noindex it until the dentist fills it out. Same five-field
-  // score the dashboard shows the dentist. Kept in sync with the sitemap,
-  // which excludes the same sub-60% profiles.
-  const indexable = completionPct({
+  // Index gate: only a near-empty profile (under 40%, i.e. fewer than two of
+  // the five essentials) is noindexed. Shared with the sitemap via
+  // isIndexableProfile so the two can't drift.
+  const indexable = isIndexableProfile({
     profile_photo: d.profile_photo,
     cover_photo: d.cover_photo,
     bio: d.bio,
     whatsapp: d.whatsapp,
     maps_embed: d.maps_embed,
-  }) >= 60
+  })
 
   const brand = `DentistIn${city.cityName.replace(/\s+/g, '')}`
   const areaName = (d.areas as any)?.name || city.cityName
