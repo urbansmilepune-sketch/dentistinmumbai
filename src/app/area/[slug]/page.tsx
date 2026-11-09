@@ -40,13 +40,30 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   // the page body uses (getCityAreaDentistCounts keyed by stringified area id)
   // — no extra round-trip. When the count is 0 we drop the number and lead
   // with a count-free line rather than advertise "0 verified dentists". City
-  // name stays dynamic so non-Pune area pages aren't mislabelled. lowestFee is
-  // intentionally not added here — it would require a separate fee query.
+  // name stays dynamic so non-Pune area pages aren't mislabelled.
   const areaCounts = await getCityAreaDentistCounts(city.citySlug)
   const liveCount = areaCounts[String(area.id)] ?? 0
   const lead = liveCount > 0
-    ? `${liveCount} verified dentists in ${area.name}, ${city.cityName}.`
+    ? `${liveCount} verified dentist${liveCount === 1 ? '' : 's'} in ${area.name}, ${city.cityName}.`
     : `Verified dentists in ${area.name}, ${city.cityName}.`
+  // Live facts for the search snippet: lowest consultation fee, Sunday hours
+  // and EMI. Small read (one area's active dentists); each fact is left out
+  // when no clinic has it, so the snippet never claims something untrue.
+  const { data: snippetRows } = await supabase
+    .from('dentists')
+    .select('consultation_fee, working_hours, emi_available')
+    .eq('area_id', area.id)
+    .eq('is_active', true)
+    .eq('city', city.citySlug)
+  const rows = (snippetRows || []) as { consultation_fee: number | null; working_hours: { sun?: { is_open?: boolean } | null } | null; emi_available: boolean | null }[]
+  const fees = rows.map(r => r.consultation_fee).filter((f): f is number => typeof f === 'number' && f > 0)
+  const sundayCount = rows.filter(r => r.working_hours?.sun?.is_open).length
+  const emiCount = rows.filter(r => r.emi_available).length
+  const facts = [
+    fees.length ? `Consultation from ₹${Math.min(...fees).toLocaleString('en-IN')}` : null,
+    sundayCount ? `${sundayCount} open on Sunday` : null,
+    emiCount ? `EMI at ${emiCount} clinic${emiCount === 1 ? '' : 's'}` : null,
+  ].filter(Boolean).join(', ')
   // Index every area that has at least one active dentist: "dentist in
   // <area>" is exactly what Pune patients search for, and these pages carry
   // the area's own clinics, fees and FAQs. 0 dentists → the page redirects to
@@ -54,7 +71,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const indexable = liveCount >= 1
   return {
     title: `Best Dentists in ${area.name}, ${city.cityName}`,
-    description: `${lead} See real fees, photos and book instantly.`,
+    description: `${lead}${facts ? ` ${facts}.` : ''} Compare fees and photos, then book or WhatsApp free.`,
     alternates: { canonical: `https://${city.domain}/area/${slug}` },
     robots: { index: indexable, follow: true, googleBot: { index: indexable, follow: true } },
   }

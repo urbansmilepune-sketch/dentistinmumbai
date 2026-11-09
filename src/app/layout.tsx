@@ -4,6 +4,7 @@ import { headers } from 'next/headers'
 import { CITY_CONFIGS, getCityBySlug, NATIONAL_HOST, NATIONAL_ORIGIN } from '@/config/cities'
 import { COMING_SOON_CITIES } from '@/config/citiesNational'
 import './globals.css'
+import { Analytics } from '@vercel/analytics/next'
 // SupportButton was previously mounted here for every route and gated its
 // own visibility via usePathname. That conditional kept tripping over
 // hydration edge cases and the button intermittently disappeared on
@@ -128,6 +129,9 @@ export default function RootLayout({
     <html lang="en" className={`${sora.variable} ${dmSans.variable}`}>
       <body>
         {children}
+        {/* Vercel Analytics: page views + referrers (which Google searches land
+            where). Cookie-free; turn it on in Vercel > Project > Analytics. */}
+        <Analytics />
       </body>
     </html>
   )
