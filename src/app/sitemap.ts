@@ -2,8 +2,8 @@ import { MetadataRoute } from 'next'
 import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { getCityByDomain, cityOrigin, CITY_CONFIGS, isNationalHost, NATIONAL_ORIGIN } from '@/config/cities'
-import { getAreaCompleteDentistCounts, getAreaTreatmentCompleteCounts } from '@/lib/cache/public-pages'
-import { completionPct } from '@/lib/profileCompletion'
+import { getCityAreaDentistCounts, getAreaTreatmentCompleteCounts } from '@/lib/cache/public-pages'
+import { isIndexableProfile } from '@/lib/profileCompletion'
 import { getCityArticles } from '@/lib/publicArticles'
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
@@ -64,12 +64,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Pune sitemap (or vice versa).
   //
   // Density gate (Section 1 + 3): the sitemap must NEVER advertise a URL that
-  // the route would notFound() or noindex. It emits an area / area×treatment
-  // URL only when it clears the SAME ≥3-complete-profile bar the page uses
-  // (shared helpers, so route and sitemap can't drift), and a dentist profile
-  // only when it's ≥60% complete. Area×treatment is queried dynamically from
-  // live counts — never statically enumerated.
-  const [{ data: areas, error: areasErr }, { data: dentists }, { data: treatments }, areaCompleteCounts, atCompleteCounts, cityArticles] = await Promise.all([
+  // the route would redirect or noindex. It emits an area URL when the area
+  // has ≥1 active dentist, an area×treatment URL only when it clears the ≥3-
+  // complete-profile bar that page uses (shared helpers, so route and sitemap
+  // can't drift), and a dentist profile only when isIndexableProfile passes.
+  // Area×treatment is queried dynamically from live counts — never statically
+  // enumerated.
+  const [{ data: areas, error: areasErr }, { data: dentists }, { data: treatments }, areaLiveCounts, atCompleteCounts, cityArticles] = await Promise.all([
     // No updated_at / created_at column on `areas` — selecting one 42703s, and
     // PostgREST returns data: null for the whole query, which silently emptied
     // BOTH areaPages and areaTreatmentPages from every city sitemap. Select
@@ -81,7 +82,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       .eq('is_active', true)
       .eq('city', city.citySlug),
     supabase.from('treatments').select('id, slug'),
-    getAreaCompleteDentistCounts(city.citySlug),
+    getCityAreaDentistCounts(city.citySlug),
     getAreaTreatmentCompleteCounts(city.citySlug),
     // Published dentist articles (admin-approved). Their canonical is the
     // city-domain page under the dentist's profile.
@@ -104,11 +105,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${BASE}/articles`, lastModified: new Date(), changeFrequency: 'daily', priority: 0.7 },
   ]
 
-  // Only areas with ≥3 complete-profile dentists (the indexable tier). Ones
-  // that 404 (0 active) or noindex (1–2 complete) are omitted. lastmod is the
-  // area's real updated_at.
+  // Every area with at least one active dentist — the same rule the area
+  // page indexes under. Empty areas redirect to /dentists and are omitted.
   const areaPages: MetadataRoute.Sitemap = (areas || [])
-    .filter(area => (areaCompleteCounts[String(area.id)] ?? 0) >= 3)
+    .filter(area => (areaLiveCounts[String(area.id)] ?? 0) >= 1)
     .map(area => ({
       url: `${BASE}/area/${area.slug}`,
       lastModified: new Date(),
@@ -139,18 +139,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.8,
   }))
 
-  // Only profiles ≥60% complete — matches the noindex gate on the profile
+  // Only profiles that pass isIndexableProfile — matches the noindex gate on the profile
   // route so we never advertise a noindexed profile. lastmod is created_at
   // (dentists has no updated_at column yet; a maintained updated_at would give
   // a truer freshness signal — noted as a follow-up).
   const dentistPages: MetadataRoute.Sitemap = (dentists || [])
-    .filter(d => completionPct({
+    .filter(d => isIndexableProfile({
       profile_photo: (d as any).profile_photo,
       cover_photo: (d as any).cover_photo,
       bio: (d as any).bio,
       whatsapp: (d as any).whatsapp,
       maps_embed: (d as any).maps_embed,
-    }) >= 60)
+    }))
     .map(d => ({
       url: `${BASE}/dentist/${d.slug}`,
       lastModified: d.created_at ? new Date(d.created_at) : new Date(),
