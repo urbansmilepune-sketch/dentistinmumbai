@@ -6,7 +6,8 @@ import { createClient } from '@/lib/supabase/server'
 import { REMEMBER_COOKIE } from '@/lib/auth/rememberMe'
 
 // Client component → metadata lives here. Noindex the login page (Section 8 —
-// utility routes). Also Disallowed in robots.ts and absent from the sitemap.
+// utility routes). Allowed in robots.ts so Google can see the noindex; absent
+// from the sitemap.
 export const viewport = dentistAppViewport
 
 export const metadata: Metadata = {
