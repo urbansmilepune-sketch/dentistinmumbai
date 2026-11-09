@@ -17,12 +17,16 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
         userAgent: '*',
         allow: [
           '/',
-          // The one public funnel page under the otherwise-disallowed
-          // /for-dentists/ tree. Longer than the '/for-dentists/' disallow
-          // below, so longest-match precedence keeps it crawlable. Login is
-          // deliberately NOT re-allowed — it's a sign-in form with no search
-          // value, and the disallow below covers it.
+          // Public pages under the otherwise-disallowed /for-dentists/ tree.
+          // Longer than the '/for-dentists/' disallow below, so longest-match
+          // precedence keeps them crawlable. Login and forgot-password are
+          // linked from the header on every page and carry a noindex tag;
+          // Google can only see that tag if it may fetch the page. While they
+          // were blocked, GSC reported them as "Indexed, though blocked by
+          // robots.txt".
           '/for-dentists/register',
+          '/for-dentists/login',
+          '/for-dentists/forgot-password',
         ],
         disallow: [
           // No trailing slash so it also catches the /admin index route;
@@ -33,9 +37,11 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
           // '/for-dentists/dashboard/' kept from before (now redundant).
           '/for-dentists/',
           '/for-dentists/dashboard/',
-          // Patient portal — private, never indexable. No trailing slash so
-          // it covers both /patient and /patient/*.
-          '/patient',
+          // Patient portal pages behind login. Trailing slash on purpose: the
+          // /patient login page itself is linked from the header ("Patient
+          // Login") and carries a noindex tag, so it must stay fetchable for
+          // Google to drop it (same reason as /login and /book below).
+          '/patient/',
           // /login and /book are deliberately NOT disallowed. /login 308s to
           // /for-dentists/login and every /book page carries a noindex tag,
           // but Google can only see a redirect or noindex on a page it is
