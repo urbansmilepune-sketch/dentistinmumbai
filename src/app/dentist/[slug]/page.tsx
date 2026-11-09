@@ -3,7 +3,7 @@ import type { Metadata } from 'next'
 import { notFound, redirect, permanentRedirect } from 'next/navigation'
 import Link from 'next/link'
 import { headers } from 'next/headers'
-import { getDentistProfileData, getCityAreas, resolveCurrentSlug } from '@/lib/cache/public-pages'
+import { getDentistProfileData, getCityAreas, resolveCurrentSlug, getAreaTreatmentCompleteCounts } from '@/lib/cache/public-pages'
 import { getDentistPublishedArticles } from '@/lib/publicArticles'
 import { topicLabel as articleTopicLabel } from '@/lib/articles'
 import { getCityBySlug, cityOrigin } from '@/config/cities'
@@ -87,13 +87,17 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   // affected profiles are fixed without touching the DB.
   const bareName = String(d.name || '').replace(/^\s*dr\b\.?\s*/i, '').trim()
   const drName = `Dr. ${bareName}`
-  const title = `${drName} - ${clinicLabel} | ${areaName} | ${brand}`
+  // Lead with name + "Dentist in <area>" so the area survives Google's ~60
+  // character cut; clinic name goes last. `absolute` skips the layout's
+  // "| <domain>" suffix, which used to stack on top of the brand here.
+  const place = areaName === city.cityName ? city.cityName : `${areaName}, ${city.cityName}`
+  const title = `${drName}, Dentist in ${place} | ${clinicLabel}`
   const description = `Book appointment with ${drName} at ${clinicLabel} in ${areaName}, ${city.cityName}. ${qualifications}.${experienceSegment} Online booking available.`
   const url = `${cityOrigin(city)}/dentist/${slug}`
   const ogImage = d.profile_photo || undefined
 
   return {
-    title,
+    title: { absolute: title },
     description,
     keywords: `Dr ${bareName}, ${d.clinic_name || ''}, dentist ${areaName}, dental clinic ${city.cityName}, book dentist online`,
     alternates: { canonical: url },
@@ -187,12 +191,24 @@ export default async function DentistProfilePage({ params }: Props) {
   // Other areas in the SAME city for the footer block (links to /area/[slug]).
   // Keyed on the dentist's own city so it stays correct even when the request
   // host's city slug differs (thane/navimumbai → mumbai domain).
-  const cityAreas = await getCityAreas(dentist.city)
+  const [cityAreas, atCompleteCounts] = await Promise.all([
+    getCityAreas(dentist.city),
+    getAreaTreatmentCompleteCounts(dentist.city),
+  ])
   // Published patient-education articles this dentist has written — surfaced in
   // an "Articles by [Name]" section further down. Service-role scoped read (no
   // public RLS policy on dentist_articles); returns [] when there are none.
   const publishedArticles = await getDentistPublishedArticles(dentist.id)
   const treatments = (dentist.dentist_treatments || []) as any[]
+  // "<Treatment> in <area>" links for the treatments this dentist offers.
+  // Only pages that pass the same ≥3 gate the area×treatment route and the
+  // sitemap use, so we never link into a 307 back to the area page.
+  type LinkedTreatment = { id: number | string; name: string; slug: string | null }
+  const areaTreatmentLinks: { href: string; label: string }[] = areaSlug && dentist.area_id
+    ? (treatments.map(dt => dt.treatments) as (LinkedTreatment | null)[])
+        .filter((t): t is LinkedTreatment => !!t?.slug && (atCompleteCounts[`${dentist.area_id}:${t.id}`] ?? 0) >= 3)
+        .map(t => ({ href: `/area/${areaSlug}/${t.slug}`, label: `${t.name} in ${areaName}` }))
+    : []
   const gallery = (dentist.gallery_photos || []) as any[]
   const galleryPhotos = gallery
     .map((p: any) => ({ url: cloudinaryDeliveryUrl(p.url) || p.url, caption: p.caption }))
@@ -399,6 +415,21 @@ export default async function DentistProfilePage({ params }: Props) {
       }
     : null
 
+  // Breadcrumb: Home › Dentists in <area> › Dr. X. Same trail is rendered
+  // visibly at the top of the page (Google requires the two to match). Links
+  // the profile — where most of our search clicks land — back to its area page.
+  const breadcrumbJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Home', item: origin },
+      ...(areaSlug
+        ? [{ '@type': 'ListItem', position: 2, name: `Dentists in ${areaName}`, item: `${origin}/area/${areaSlug}` }]
+        : [{ '@type': 'ListItem', position: 2, name: 'Dentists', item: `${origin}/dentists` }]),
+      { '@type': 'ListItem', position: 3, name: drName, item: `${origin}/dentist/${slug}` },
+    ],
+  }
+
   // Owner-only checklist of high-impact missing items. Curated, NOT a
   // breakdown of completionPct — only items actually missing are listed.
   const checklist: ChecklistItem[] = []
@@ -433,6 +464,7 @@ export default async function DentistProfilePage({ params }: Props) {
       {faqJsonLd && (
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }} />
       )}
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }} />
       <ViewTracker dentistId={dentist.id} />
 
       {/* ─── OWNER VIEW (owner-only; never reaches patients) ─────────────── */}
@@ -442,6 +474,17 @@ export default async function DentistProfilePage({ params }: Props) {
       <SiteHeader city={city} />
 
       <main className="profile-main" style={{ background: 'var(--bg)', minHeight: '100vh' }}>
+        <nav aria-label="Breadcrumb" style={{ background: '#fff', borderBottom: '1px solid #E2E8F0' }}>
+          <div className="container" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', padding: '8px 16px', fontSize: 13, color: '#64748B', minWidth: 0 }}>
+            <Link href="/" style={{ color: '#64748B' }}>Home</Link>
+            <span aria-hidden>›</span>
+            {areaSlug
+              ? <Link href={`/area/${areaSlug}`} style={{ color: '#64748B' }}>Dentists in {areaName}</Link>
+              : <Link href="/dentists" style={{ color: '#64748B' }}>Dentists</Link>}
+            <span aria-hidden>›</span>
+            <span style={{ color: NAVY, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, maxWidth: '100%' }}>{drName}</span>
+          </div>
+        </nav>
         {/* ─── SECTION 1: COVER + PHOTOS ───────────────────────────────── */}
         <ProfileCover photos={galleryPhotos} coverPhoto={cloudinaryDeliveryUrl(dentist.cover_photo)} clinicName={dentist.clinic_name || drName} />
 
@@ -551,6 +594,16 @@ export default async function DentistProfilePage({ params }: Props) {
             <section id="treatments" className="profile-section">
               <h2 className="profile-section-title">Treatments &amp; fees</h2>
               <TreatmentsList treatments={treatments} dentistId={dentist.id} slug={dentist.slug} />
+              {areaTreatmentLinks.length > 0 && (
+                <div style={{ marginTop: 14 }}>
+                  <p style={{ fontSize: 13, color: '#64748B', marginBottom: 8 }}>Compare other dentists nearby</p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {areaTreatmentLinks.map(l => (
+                      <Link key={l.href} href={l.href} style={{ display: 'inline-block', padding: '8px 12px', background: '#fff', border: '1px solid var(--border)', borderRadius: 999, fontSize: 13, fontWeight: 600, color: NAVY, textDecoration: 'none' }}>{l.label}</Link>
+                    ))}
+                  </div>
+                </div>
+              )}
             </section>
           )}
 

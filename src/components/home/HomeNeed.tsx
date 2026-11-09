@@ -84,7 +84,7 @@ export function NeedHero({ needs, areas, cityName, dentistCount }: HeroProps) {
   return (
     <section className="nh">
       <div className="container nh-in">
-        <h1 className="nh-h1">Find the Best Dentist for You</h1>
+        <h1 className="nh-h1">Find the Best Dentist in {cityName}</h1>
         <p className="nh-sub"><span>Choose, Book and Visit</span></p>
 
         <form className="nh-flow" onSubmit={e => { e.preventDefault(); find() }}>
