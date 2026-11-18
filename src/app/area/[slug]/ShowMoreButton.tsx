@@ -19,15 +19,17 @@ export default function ShowMoreButton({ count, areaName, children }: ShowMoreBu
 
   if (count === 0) return null
 
-  if (expanded) {
-    return <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 16 }}>{children}</div>
-  }
-
+  // The extra cards are always in the HTML, only hidden until the button is
+  // tapped. Before Nov 2026 they were rendered only after the tap, so Google
+  // saw just the first 4 clinics of a 20-clinic area page.
   return (
     <>
-      <button onClick={() => setExpanded(true)} className="area-showmore">
-        Show {count} more dentist{count === 1 ? '' : 's'} in {areaName} ↓
-      </button>
+      <div hidden={!expanded} style={{ display: expanded ? 'flex' : 'none', flexDirection: 'column', gap: 16, marginTop: 16 }}>{children}</div>
+      {!expanded && (
+        <button onClick={() => setExpanded(true)} className="area-showmore">
+          Show {count} more dentist{count === 1 ? '' : 's'} in {areaName} ↓
+        </button>
+      )}
       <style>{`
         .area-showmore {
           width: 100%; margin-top: 16px; padding: 14px; border-radius: 12px;
