@@ -9,6 +9,7 @@ import { setupPct, firstMissingLiveStep, SETUP_LATER_COOKIE } from '@/lib/setupS
 import { isDemoEmail } from '@/lib/demo'
 import { dentistAppMetadata, dentistAppViewport, INSTALL_PROMPT_CATCHER } from '@/lib/dentistApp'
 import InstallAppBanner from '@/components/InstallAppBanner'
+import PushAlertsCard from '@/components/PushAlertsCard'
 
 export const metadata = dentistAppMetadata
 export const viewport = dentistAppViewport
@@ -95,6 +96,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         {installCatcher}
         <DashboardShell dentist={dentist} completionPct={pct} staffRole={null} pendingCount={pendingCount}>
           <InstallAppBanner />
+          <PushAlertsCard />
           {children}
         </DashboardShell>
         <DashboardActivityTracker />
@@ -142,6 +144,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       {installCatcher}
       <DashboardShell dentist={ownerDentist} completionPct={pct} staffRole={staffRow.role} pendingCount={pendingCount}>
         <InstallAppBanner />
+        <PushAlertsCard />
         {children}
       </DashboardShell>
       <DashboardActivityTracker />

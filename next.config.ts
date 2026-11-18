@@ -11,6 +11,15 @@ const nextConfig: NextConfig = {
         source: '/_next/static/:path*',
         headers: [{ key: 'X-Robots-Tag', value: 'noindex' }],
       },
+      // Dentist app alerts worker. Never cached, so a fix reaches phones on
+      // the next app open.
+      {
+        source: '/dentist-sw.js',
+        headers: [
+          { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
+          { key: 'Content-Type', value: 'application/javascript; charset=utf-8' },
+        ],
+      },
     ]
   },
 
