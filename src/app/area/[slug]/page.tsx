@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
-import { getCityAreaDentistCounts, getAreaCompleteDentistCounts } from '@/lib/cache/public-pages'
+import { getCityAreaDentistCounts, getAreaCompleteDentistCounts, getAreaTreatmentCompleteCounts } from '@/lib/cache/public-pages'
 import { getCityBySlug } from '@/config/cities'
 import { dentistCountLabel } from '@/lib/dentistCount'
 import SiteHeader from '@/components/SiteHeader'
@@ -77,45 +77,132 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   }
 }
 
-function getFAQs(areaName: string, dentistCount: number, feeStats?: { avgFee: number | null; minFee: number | null; maxFee: number | null; pricedCount: number }) {
-  // Prefer a live, data-backed fee answer when clinics in this area publish
-  // fees; fall back to the generic range only when we have nothing real to say.
-  const feeAnswer = feeStats?.avgFee != null && feeStats.minFee != null && feeStats.maxFee != null
-    ? `Verified clinics in ${areaName} list an average consultation fee of ₹${feeStats.avgFee.toLocaleString('en-IN')}${feeStats.minFee !== feeStats.maxFee ? ` (ranging ₹${feeStats.minFee.toLocaleString('en-IN')}–₹${feeStats.maxFee.toLocaleString('en-IN')})` : ''}, based on ${feeStats.pricedCount} clinic${feeStats.pricedCount === 1 ? '' : 's'} that publish their pricing. Many also offer free or discounted first consultations for new patients.`
-    : `Consultation fees in ${areaName} typically range from ₹200 to ₹500 depending on the clinic and doctor's experience. Many clinics in ${areaName} offer free initial consultations for new patients.`
+// Facts for the guide text and FAQs, built only from this area's live,
+// active dentists. Nov 2026: Google left the biggest area pages (Kharadi,
+// Viman Nagar, Koregaon Park, Magarpatta) "Crawled - currently not indexed"
+// because their long text was one template with the area name swapped in.
+// Every sentence below now comes from the clinics actually listed here.
+type AreaFactDentist = {
+  name: string
+  experience_years?: number | null
+  gender?: string | null
+  emi_available?: boolean | null
+  is_verified?: boolean | null
+  avg_rating?: number | null
+  review_count?: number | null
+  working_hours?: { sun?: { is_open?: boolean } | null } | null
+  dentist_treatments?: { treatments: { name: string; slug: string } | null }[] | null
+}
+
+type AreaFacts = {
+  total: number
+  verifiedCount: number
+  sundayCount: number
+  emiCount: number
+  femaleCount: number
+  experienced: AreaFactDentist[]
+  rated: AreaFactDentist[]
+  named: AreaFactDentist[]
+  treatmentCounts: { name: string; slug: string; count: number }[]
+}
+
+function buildAreaFacts(list: AreaFactDentist[]): AreaFacts {
+  const tCounts = new Map<string, { name: string; slug: string; count: number }>()
+  for (const d of list) {
+    const seen = new Set<string>()
+    for (const dt of d.dentist_treatments || []) {
+      const t = dt?.treatments
+      if (!t?.slug || seen.has(t.slug)) continue
+      seen.add(t.slug)
+      const cur = tCounts.get(t.slug) || { name: t.name, slug: t.slug, count: 0 }
+      cur.count++
+      tCounts.set(t.slug, cur)
+    }
+  }
+  return {
+    total: list.length,
+    verifiedCount: list.filter(d => d.is_verified).length,
+    sundayCount: list.filter(d => d.working_hours?.sun?.is_open).length,
+    emiCount: list.filter(d => d.emi_available).length,
+    femaleCount: list.filter(d => String(d.gender || '').toLowerCase() === 'female').length,
+    experienced: [...list]
+      .filter(d => typeof d.experience_years === 'number' && d.experience_years >= 10)
+      .sort((a, b) => (b.experience_years || 0) - (a.experience_years || 0))
+      .slice(0, 3),
+    rated: [...list]
+      .filter(d => (d.avg_rating || 0) > 0 && (d.review_count || 0) > 0)
+      .sort((a, b) => (b.avg_rating || 0) - (a.avg_rating || 0) || (b.review_count || 0) - (a.review_count || 0))
+      .slice(0, 3),
+    // List order is rank_score order, the same order the cards show.
+    named: list.slice(0, 3),
+    treatmentCounts: [...tCounts.values()].sort((a, b) => b.count - a.count),
+  }
+}
+
+const inr = (n: number) => `₹${n.toLocaleString('en-IN')}`
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+const joinNames = (names: string[]) =>
+  names.length <= 1 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+
+type FeeStats = { avgFee: number | null; minFee: number | null; maxFee: number | null; pricedCount: number }
+
+function getFAQs(areaName: string, f: AreaFacts, fee: FeeStats) {
+  const topTreatments = f.treatmentCounts.slice(0, 4)
   return [
     {
       q: `How many dentists are there in ${areaName}?`,
-      a: `There are currently ${dentistCount || 'several'} verified dentists listed in ${areaName} on our platform. The number continues to grow as we verify and onboard new clinics.`,
+      a: `${plural(f.total, 'dentist is', 'dentists are')} listed in ${areaName} on this page${f.named.length ? `, including ${joinNames(f.named.map(d => d.name))}` : ''}.${f.verifiedCount > 0 ? ` ${f.verifiedCount} of them ${f.verifiedCount === 1 ? 'has' : 'have'} a verified registration.` : ''}`,
     },
     {
       q: `What is the consultation fee in ${areaName}?`,
-      a: feeAnswer,
+      a: fee.avgFee !== null && fee.minFee !== null && fee.maxFee !== null
+        ? `${plural(fee.pricedCount, 'clinic', 'clinics')} in ${areaName} ${fee.pricedCount === 1 ? 'publishes' : 'publish'} a consultation fee here${fee.minFee !== fee.maxFee ? `, from ${inr(fee.minFee)} to ${inr(fee.maxFee)}, averaging ${inr(fee.avgFee)}` : ` of ${inr(fee.minFee)}`}. Each dentist's fee is shown on their card above.`
+        : `None of the clinics in ${areaName} has published a consultation fee yet. Ask the clinic when you book or message them on WhatsApp.`,
     },
     {
       q: `Are there dentists open on Sunday in ${areaName}?`,
-      a: `Yes, several dental clinics in ${areaName} are open on Sundays with limited hours (usually 10am–2pm). Use the "Open Now" filter on our search to find currently open dentists.`,
+      a: f.sundayCount > 0
+        ? `Yes. ${plural(f.sundayCount, 'clinic', 'clinics')} in ${areaName} ${f.sundayCount === 1 ? 'lists' : 'list'} Sunday hours. Check the hours on each profile, or use the "Open now" filter.`
+        : `None of the clinics in ${areaName} lists Sunday hours yet. Use the "Open now" filter to see who is open today, or try a nearby area.`,
     },
     {
-      q: `What is the cost of dental implants in ${areaName}?`,
-      a: `Dental implants in ${areaName} cost between ₹25,000 to ₹80,000 per implant, depending on the brand (Korean, European, or Indian) and the clinic tier. Premium clinics in ${areaName} typically charge ₹45,000–₹80,000.`,
+      q: `Which treatments do dentists in ${areaName} offer?`,
+      a: topTreatments.length
+        ? `The most offered treatments in ${areaName} are ${joinNames(topTreatments.map(t => `${t.name.toLowerCase()} (${plural(t.count, 'dentist', 'dentists')})`))}. Open a treatment tab above to see only the dentists who offer it.`
+        : `Open any dentist's profile to see the treatments they offer and their starting fees.`,
     },
     {
-      q: `Do dentists in ${areaName} accept insurance?`,
-      a: `Several dental clinics in ${areaName} accept dental insurance from major providers like Star Health, HDFC Ergo, and corporate group policies. Check the clinic's profile on our platform or call ahead to confirm.`,
+      q: `Can I pay for dental treatment in EMI in ${areaName}?`,
+      a: f.emiCount > 0
+        ? `${plural(f.emiCount, 'clinic', 'clinics')} in ${areaName} ${f.emiCount === 1 ? 'offers' : 'offer'} EMI. Use the "EMI" filter above to see them.`
+        : `None of the clinics in ${areaName} lists EMI yet. Ask the clinic directly; many arrange it for larger treatments such as implants or braces.`,
     },
     {
       q: `How do I choose the best dentist in ${areaName}?`,
-      a: `Look for a dentist who is State Dental Council registered, has at least 4-star ratings, and specialises in the treatment you need. Our verified listings in ${areaName} include transparent fees, qualification details, and real patient reviews to help you decide.`,
+      a: `Check the dentist's State Dental Council registration, their experience with the treatment you need, and their patient reviews.${f.rated.length ? ` The best-rated in ${areaName} right now ${f.rated.length === 1 ? 'is' : 'are'} ${joinNames(f.rated.map(d => `${d.name} (${(d.avg_rating || 0).toFixed(1)}★, ${plural(d.review_count || 0, 'review', 'reviews')})`))}.` : ''} Ask for a written treatment plan with costs before you start.`,
     },
   ]
 }
 
-function getSEOContent(areaName: string, zone: string, dentistCount: number, cityName: string, domain: string) {
-  return {
-    intro: `${areaName} is one of ${cityName}'s most sought-after residential and commercial localities, and its dental care landscape reflects that diversity. From boutique smile design studios to multi-specialty dental hospitals, ${areaName} offers a comprehensive range of dental services for residents and visitors alike. Whether you need a routine cleaning, orthodontic treatment, or full-mouth rehabilitation, finding the right dentist in ${areaName} is now easier than ever with ${domain}.`,
-    para2: `The dental clinics in ${areaName} are staffed by experienced professionals trained at top Indian dental colleges and abroad. Many clinics in ${areaName} have invested in modern equipment — digital X-rays, CAD/CAM crown milling, laser dentistry, and intra-oral cameras — ensuring that patients receive world-class care without having to travel across ${cityName}. With ${dentistCount || 'multiple'} verified dentists currently listed in ${areaName}, you can compare fees, check availability, and book appointments instantly.`,
-  }
+// Two short paragraphs built only from this area's facts.
+function getSEOContent(areaName: string, cityName: string, f: AreaFacts, fee: FeeStats) {
+  const intro = [
+    `${plural(f.total, 'dentist', 'dentists')} in ${areaName}, ${cityName} ${f.total === 1 ? 'is' : 'are'} listed on this page${f.verifiedCount > 0 ? `, ${f.verifiedCount} with a verified registration` : ''}.`,
+    fee.minFee !== null
+      ? `${fee.pricedCount === f.total ? 'All of them publish' : `${fee.pricedCount} of them publish`} a consultation fee${fee.maxFee !== null && fee.maxFee > fee.minFee ? `, from ${inr(fee.minFee)} to ${inr(fee.maxFee)}` : ` of ${inr(fee.minFee)}`}.`
+      : `None has published a consultation fee yet, so ask when you book.`,
+    f.experienced.length
+      ? `The most experienced ${f.experienced.length === 1 ? 'is' : 'are'} ${joinNames(f.experienced.map(d => `${d.name} (${d.experience_years} years)`))}.`
+      : '',
+  ].filter(Boolean).join(' ')
+  const extras: string[] = []
+  if (f.sundayCount > 0) extras.push(`${plural(f.sundayCount, 'clinic is', 'clinics are')} open on Sunday`)
+  if (f.emiCount > 0) extras.push(`${plural(f.emiCount, 'clinic offers', 'clinics offer')} EMI`)
+  if (f.femaleCount > 0) extras.push(`${plural(f.femaleCount, 'is a woman dentist', 'are women dentists')}`)
+  const para2 = extras.length
+    ? `Of these, ${joinNames(extras)}. Use the filters above to narrow the list, then book or message the clinic on WhatsApp.`
+    : `Use the filters above to sort by fee, rating or distance, then book or message the clinic on WhatsApp.`
+  return { intro, para2 }
 }
 
 // GPS coords are user-supplied query params; validate before trusting them.
@@ -152,7 +239,7 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
   const city = getCityBySlug(h.get('x-city-slug'))
   const citySlug = city.citySlug
 
-  const [{ data: area }, { data: allAreas }, { data: treatments }, areaCounts, completeCounts] = await Promise.all([
+  const [{ data: area }, { data: allAreas }, { data: treatments }, areaCounts, completeCounts, atCompleteCounts] = await Promise.all([
     // Area slug + city pair — necessary because the same slug may exist in
     // multiple cities (e.g. "central" in Mumbai and Pune).
     supabase.from('areas').select('*').eq('slug', slug).eq('city', citySlug).single(),
@@ -162,6 +249,9 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
     getCityAreaDentistCounts(citySlug),
     // Complete-profile (80%+) per-area counts — the density gate. ≥3 = indexed.
     getAreaCompleteDentistCounts(citySlug),
+    // Area x treatment complete-profile counts: decides which treatment names
+    // in the guide link to their (indexable) area x treatment page.
+    getAreaTreatmentCompleteCounts(citySlug),
   ])
   const areaCountOf = (id: number | string) => areaCounts[String(id)] ?? 0
   const completeCountOf = (id: number | string) => completeCounts[String(id)] ?? 0
@@ -320,8 +410,19 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
     .sort((a, b) => (b.avg_rating || 0) - (a.avg_rating || 0))
     .slice(0, 4)
 
-  const faqs = getFAQs(area.name, area.dentist_count || totalInArea, { avgFee, minFee: lowestFee, maxFee: highestFee, pricedCount })
-  const seoContent = getSEOContent(area.name, area.zone, area.dentist_count || totalInArea, city.cityName, city.domain)
+  // areas.dentist_count is unmaintained, so the text uses the live list only.
+  const areaFacts = buildAreaFacts(list)
+  const feeStats = { avgFee, minFee: lowestFee, maxFee: highestFee, pricedCount }
+  const faqs = getFAQs(area.name, areaFacts, feeStats)
+  const seoContent = getSEOContent(area.name, city.cityName, areaFacts, feeStats)
+  // Treatments offered here, most common first. Linked to the area x treatment
+  // page only when that page is indexable (same >=3 complete-profile gate as
+  // the route and sitemap); otherwise plain text, so no link leads to a 307.
+  const treatmentIdBySlug = new Map((treatments || []).map(t => [t.slug, t.id]))
+  const offeredTreatments = areaFacts.treatmentCounts.map(t => {
+    const tid = treatmentIdBySlug.get(t.slug)
+    return { ...t, linked: tid != null && (atCompleteCounts[`${area.id}:${tid}`] ?? 0) >= 3 }
+  })
 
   // JSON-LD schemas
   const origin = `https://${city.domain}`
@@ -515,18 +616,29 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
                 <p style={{ fontSize: 15, color: 'var(--text-secondary)', lineHeight: 1.8, marginBottom: 20 }}>{seoContent.intro}</p>
                 <p style={{ fontSize: 15, color: 'var(--text-secondary)', lineHeight: 1.8, marginBottom: 28 }}>{seoContent.para2}</p>
 
-                <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18, marginBottom: 12 }}>
-                  Dental Specialities Available in {area.name}
-                </h3>
-                <p style={{ fontSize: 15, color: 'var(--text-secondary)', lineHeight: 1.8, marginBottom: 28 }}>
-                  Dental clinics in {area.name} cover the full spectrum of treatments — from preventive care (scaling, cleanings, sealants) to restorative (fillings, crowns, bridges), cosmetic (veneers, teeth whitening, smile makeovers), orthodontic (metal braces, ceramic braces, clear aligners), and surgical (implants, wisdom tooth extraction, bone grafting). Several clinics also offer paediatric dentistry with child-friendly environments.
-                </p>
+                {offeredTreatments.length > 0 && (
+                  <>
+                    <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18, marginBottom: 12 }}>
+                      Treatments offered in {area.name}
+                    </h3>
+                    <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 28px', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {offeredTreatments.map(t => (
+                        <li key={t.slug} style={{ fontSize: 14, padding: '6px 12px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 20 }}>
+                          {t.linked
+                            ? <Link href={`/area/${slug}/${t.slug}`} style={{ color: TEAL, fontWeight: 600 }}>{t.name}</Link>
+                            : <span style={{ fontWeight: 600, color: 'var(--text)' }}>{t.name}</span>}
+                          <span style={{ color: 'var(--muted)' }}> · {plural(t.count, 'dentist', 'dentists')}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
 
                 <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18, marginBottom: 12 }}>
                   How to Choose a Dentist in {area.name}
                 </h3>
                 <p style={{ fontSize: 15, color: 'var(--text-secondary)', lineHeight: 1.8, marginBottom: 28 }}>
-                  When choosing a dentist in {area.name}, verify their State Dental Council registration number, check their specialisation relative to your treatment need, and read at least 10 patient reviews. Fee transparency is also important — a trustworthy clinic will give you a written treatment plan with costs before starting any procedure. All dentists on {city.domain} have been manually verified before listing.
+                  When choosing a dentist in {area.name}, check their State Dental Council registration number, their experience with the treatment you need, and their patient reviews. A trustworthy clinic will give you a written treatment plan with costs before starting any procedure.
                 </p>
 
                 {/* Quick Facts Table */}
@@ -538,10 +650,11 @@ export default async function AreaPage({ params, searchParams }: { params: Promi
                     { label: 'Area', value: area.name },
                     // Zone is Mumbai-only context (Western/Central/Harbour…).
                     ...(isMumbai && area.zone ? [{ label: 'Zone', value: area.zone }] : []),
-                    { label: 'Dentists Listed', value: String(area.dentist_count || totalInArea || '10+') },
+                    { label: 'Dentists Listed', value: String(totalInArea) },
                     // Computed from this area's priced clinics; generic range only when none publish a fee.
-                    { label: 'Avg Consultation Fee', value: avgFee !== null ? `₹${avgFee.toLocaleString('en-IN')}` : '₹200 – ₹500' },
-                    { label: 'Best For', value: 'Implants, Cosmetic Dentistry, Orthodontics' },
+                    ...(avgFee !== null ? [{ label: 'Avg Consultation Fee', value: inr(avgFee) }] : []),
+                    ...(areaFacts.treatmentCounts.length ? [{ label: 'Most Offered', value: areaFacts.treatmentCounts.slice(0, 3).map(t => t.name).join(', ') }] : []),
+                    ...(areaFacts.sundayCount ? [{ label: 'Open on Sunday', value: plural(areaFacts.sundayCount, 'clinic', 'clinics') }] : []),
                   ].map((row, i) => (
                     <div key={row.label} style={{
                       display: 'flex', padding: '11px 20px',
