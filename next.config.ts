@@ -1,6 +1,59 @@
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
+// Portfolio domains with no site of their own. Each one forwards somewhere
+// useful instead of showing a parked page, without creating thin city pages.
+//
+// Spelling variants and duplicates point at the real city site for good.
+const ALIAS_DOMAINS: Record<string, string> = {
+  'dentistin.in': 'https://dentistinindia.in',
+  'dentistinsambhajinager.in': 'https://dentistinsambhajinagar.com',
+  'dentistinsambhajinager.com': 'https://dentistinsambhajinagar.com',
+  'dentistinaurangabad.in': 'https://dentistinsambhajinagar.com',
+  'dentistinaurangabad.com': 'https://dentistinsambhajinagar.com',
+  'dentistinkolhapur.com': 'https://dentistinkolhapur.in',
+}
+
+// Cities we own a domain for but haven't launched. They land on the national
+// cities page (coming-soon list + notify-me) until the city has enough
+// dentists to get its own site. Temporary redirects, so that when a city
+// launches on its own domain no browser or crawler is stuck on a cached 301.
+const COMING_SOON_DOMAINS = [
+  'dentistinagra.com', 'dentistinamritsar.com', 'dentistinbhopal.com',
+  'dentistinbhubaneswar.com', 'dentistinbilaspur.in', 'dentistincalcutta.in',
+  'dentistinchandigarh.in', 'dentistinchennai.in', 'dentistincoimbatore.com',
+  'dentistincuttack.in', 'dentistindehradun.in', 'dentistindharamshala.in',
+  'dentistindore.com', 'dentistindurg.in', 'dentistinfaridabad.com',
+  'dentistinghaziabad.com', 'dentistingurugram.in', 'dentistinguwahati.com',
+  'dentistingwalior.in', 'dentistinjabalpur.in', 'dentistinjalandhar.in',
+  'dentistinjammu.in', 'dentistinjamshedpur.in', 'dentistinkochi.com',
+  'dentistinkozhikode.com', 'dentistinmadurai.com', 'dentistinmathura.in',
+  'dentistinmeerut.in', 'dentistinmohali.in', 'dentistinnoida.in',
+  'dentistinpatiala.in', 'dentistinpatna.com', 'dentistinraipur.com',
+  'dentistinranchi.com', 'dentistinshimla.in', 'dentistinsiliguri.in',
+  'dentistinsrinagar.in', 'dentistinthiruvananthapuram.com',
+  'dentistintrichy.com', 'dentistinudaipur.in', 'dentistinvadodara.in',
+  'dentistinvaranasi.com', 'dentistinvijayawada.com',
+  'dentistinvisakhapatnam.com', 'dentistinvizag.com',
+]
+
+const hostPattern = (domain: string) => `(www\\.)?${domain.replace(/\./g, '\\.')}`
+
+const PORTFOLIO_REDIRECTS = [
+  ...Object.entries(ALIAS_DOMAINS).map(([domain, target]) => ({
+    source: '/:path*',
+    has: [{ type: 'host' as const, value: hostPattern(domain) }],
+    destination: `${target}/:path*`,
+    permanent: true,
+  })),
+  ...COMING_SOON_DOMAINS.map((domain) => ({
+    source: '/:path*',
+    has: [{ type: 'host' as const, value: hostPattern(domain) }],
+    destination: 'https://dentistinindia.in/cities',
+    permanent: false,
+  })),
+]
+
 const nextConfig: NextConfig = {
   // Build assets carry no content worth indexing, and robots.txt doesn't
   // disallow /_next/. An X-Robots-Tag keeps the chunks out of the index even
@@ -27,6 +80,7 @@ const nextConfig: NextConfig = {
   // pages. Matched by request host, with path preserved on the destination.
   async redirects() {
     return [
+      ...PORTFOLIO_REDIRECTS,
       {
         source: '/:path*',
         has: [{ type: 'host', value: '(www\\.)?dentistinthane\\.com' }],
