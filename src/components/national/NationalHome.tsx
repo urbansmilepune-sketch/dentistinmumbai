@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
-import { CITY_CONFIGS, NATIONAL_ORIGIN } from '@/config/cities'
+import { NATIONAL_ORIGIN, LIVE_CITY_CONFIGS } from '@/config/cities'
 import { COMING_SOON_CITIES } from '@/config/citiesNational'
 import NationalMapSection from './NationalMapSection'
 // Server-only projection of the India GeoJSON. Imported HERE (server
@@ -43,7 +43,7 @@ export default async function NationalHome() {
     dentistCountByCity[d.city] = (dentistCountByCity[d.city] || 0) + 1
   }
 
-  const liveCityCount = Object.keys(CITY_CONFIGS).length
+  const liveCityCount = LIVE_CITY_CONFIGS.length
   const soonCityCount = COMING_SOON_CITIES.length
 
   const jsonLd = {
@@ -87,7 +87,7 @@ export default async function NationalHome() {
               Live in {liveCityCount} cities
             </h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
-              {Object.values(CITY_CONFIGS).map(c => (
+              {LIVE_CITY_CONFIGS.map(c => (
                 <a
                   key={c.citySlug}
                   href={`https://${c.domain}`}

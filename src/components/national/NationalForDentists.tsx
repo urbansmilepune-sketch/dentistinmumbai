@@ -1,5 +1,5 @@
 import { createClient as createServiceClient } from '@supabase/supabase-js'
-import { CITY_CONFIGS } from '@/config/cities'
+import { LIVE_CITY_CONFIGS } from '@/config/cities'
 import NationalShell from './NationalShell'
 import CitySelector from './CitySelector'
 
@@ -45,7 +45,7 @@ export default async function NationalForDentists() {
   const totalDentists      = totalDentistsRaw  || 0
   const profileViewsMonth  = profileViewsRaw   || 0
   const appointmentsMonth  = appointmentsRaw   || 0
-  const cityCount          = Object.keys(CITY_CONFIGS).length
+  const cityCount          = LIVE_CITY_CONFIGS.length
 
   return (
     <NationalShell badge="For Dentists">

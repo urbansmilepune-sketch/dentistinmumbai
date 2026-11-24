@@ -1,4 +1,4 @@
-import { CITY_CONFIGS, NATIONAL_ORIGIN, type CitySlug } from '@/config/cities'
+import { CITY_CONFIGS, NATIONAL_ORIGIN, type CitySlug, LIVE_CITY_CONFIGS } from '@/config/cities'
 
 // Cross-city link block rendered near the bottom of every city homepage
 // and dentist profile page. Two reasons it exists:
@@ -24,7 +24,7 @@ export default function CitiesFooterLinks({ currentSlug }: Props) {
   // next.config.ts), so showing them as separate cities here would be a
   // dead-end click.
   const consolidatedIntoMumbai: CitySlug[] = ['thane', 'navimumbai']
-  const others = (Object.values(CITY_CONFIGS) as Array<typeof CITY_CONFIGS[CitySlug]>)
+  const others = LIVE_CITY_CONFIGS
     .filter(c => c.citySlug !== currentSlug)
     .filter(c => !consolidatedIntoMumbai.includes(c.citySlug))
 

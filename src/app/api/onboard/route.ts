@@ -106,11 +106,13 @@ export async function POST(request: NextRequest) {
     const wantedAreaName = area || area_name_raw || ''
     let area_id: string | null = null
     if (wantedAreaName) {
-      const { data: areaExact } = await admin.from('areas').select('id').eq('name', wantedAreaName).maybeSingle()
+      const { data: areaExactRows } = await admin.from('areas').select('id').eq('name', wantedAreaName).eq('city', cityValue).limit(1)
+      const areaExact = areaExactRows?.[0]
       if (areaExact) {
         area_id = areaExact.id
       } else {
-        const { data: areaCi } = await admin.from('areas').select('id').ilike('name', wantedAreaName).maybeSingle()
+        const { data: areaCiRows } = await admin.from('areas').select('id').ilike('name', wantedAreaName).eq('city', cityValue).limit(1)
+        const areaCi = areaCiRows?.[0]
         if (areaCi) {
           area_id = areaCi.id
         } else {

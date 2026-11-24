@@ -1,5 +1,5 @@
 import { createClient as createServiceClient } from '@supabase/supabase-js'
-import { CITY_CONFIGS } from '@/config/cities'
+import { LIVE_CITY_CONFIGS } from '@/config/cities'
 import { COMING_SOON_CITIES } from '@/config/citiesNational'
 import NationalShell from './NationalShell'
 
@@ -41,7 +41,7 @@ export default async function NationalAbout() {
   const totalDentists     = totalDentistsRaw     || 0
   const totalPatients     = totalPatientsRaw     || 0
   const totalAppointments = totalAppointmentsRaw || 0
-  const liveCities        = Object.keys(CITY_CONFIGS).length
+  const liveCities        = LIVE_CITY_CONFIGS.length
   const totalCities       = liveCities + COMING_SOON_CITIES.length
 
   const STATS = [

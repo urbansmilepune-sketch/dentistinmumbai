@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
-import { getCityBySlug, CITY_CONFIGS, NATIONAL_ORIGIN } from '@/config/cities'
+import { getCityBySlug, NATIONAL_ORIGIN, LIVE_CITY_CONFIGS } from '@/config/cities'
 import TickerBar from './TickerBar'
 import ProgressBar from './ProgressBar'
 import HeroButtons from './HeroButtons'
@@ -129,7 +129,7 @@ export default async function ForDentistsPage() {
     { title: 'Multi-city presence', desc: 'List on all 13 city websites automatically.' },
   ]
 
-  const CITY_PILLS = Object.values(CITY_CONFIGS).map(c => c.cityName)
+  const CITY_PILLS = LIVE_CITY_CONFIGS.map(c => c.cityName)
 
   const FAQS = [
     { q: 'Is DentistIn really free?', a: 'Yes. Your listing, profile, booking page, and the full practice management suite — appointments, EMR, billing, communications, analytics — are completely free for founding members. No credit card required.' },

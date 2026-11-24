@@ -11,7 +11,7 @@
 
 import { geoMercator, geoPath, type GeoPermissibleObjects } from 'd3-geo'
 import indiaGeo from './india-states.json'
-import { CITY_CONFIGS } from '@/config/cities'
+import { LIVE_CITY_CONFIGS } from '@/config/cities'
 import { COMING_SOON_CITIES } from '@/config/citiesNational'
 
 // viewBox dimensions. d3.geoMercator().fitSize() fits the GeoJSON inside
@@ -67,7 +67,7 @@ export const STATE_PATHS: StatePath[] = (indiaGeo as { features: { properties: {
 // projection so they land precisely on the state outline. Live cities
 // render last on the client so their halo isn't covered by neighbouring
 // coming-soon dots.
-export const LIVE_DOTS: LiveDot[] = Object.values(CITY_CONFIGS).map(c => {
+export const LIVE_DOTS: LiveDot[] = LIVE_CITY_CONFIGS.map(c => {
   const [x, y] = projection([c.lng, c.lat]) || [0, 0]
   return { kind: 'live', slug: c.citySlug, name: c.cityName, state: c.state, domain: c.domain, x, y }
 })

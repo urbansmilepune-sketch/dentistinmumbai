@@ -6,7 +6,7 @@ import { headers } from 'next/headers'
 import { getDentistProfileData, getCityAreas, resolveCurrentSlug, getAreaTreatmentCompleteCounts } from '@/lib/cache/public-pages'
 import { getDentistPublishedArticles } from '@/lib/publicArticles'
 import { topicLabel as articleTopicLabel } from '@/lib/articles'
-import { getCityBySlug, cityOrigin } from '@/config/cities'
+import { getCityBySlug, cityOrigin, cityBrandName } from '@/config/cities'
 import SiteHeader from '@/components/SiteHeader'
 import { whatsappLink } from '@/lib/phone'
 import { buildMapsIframe } from '@/lib/maps'
@@ -72,7 +72,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     maps_embed: d.maps_embed,
   })
 
-  const brand = `DentistIn${city.cityName.replace(/\s+/g, '')}`
+  const brand = cityBrandName(city)
   const areaName = (d.areas as any)?.name || city.cityName
   const clinicLabel = d.clinic_name || 'Dental Clinic'
   const experienceSegment = d.experience_years ? ` ${d.experience_years} years experience.` : ''

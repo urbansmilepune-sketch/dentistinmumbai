@@ -1,10 +1,11 @@
 import { MetadataRoute } from 'next'
 import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
-import { getCityByDomain, cityOrigin, CITY_CONFIGS, isNationalHost, NATIONAL_ORIGIN } from '@/config/cities'
+import { getCityByDomain, cityOrigin, isNationalHost, NATIONAL_ORIGIN, LIVE_CITY_CONFIGS } from '@/config/cities'
 import { getCityAreaDentistCounts, getAreaTreatmentCompleteCounts } from '@/lib/cache/public-pages'
 import { isIndexableProfile } from '@/lib/profileCompletion'
 import { getCityArticles } from '@/lib/publicArticles'
+import { getOpeningState } from '@/lib/cityOpening'
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const h = await headers()
@@ -29,7 +30,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       { url: `${NATIONAL_ORIGIN}/for-dentists`,     lastModified: now, changeFrequency: 'weekly',  priority: 0.85 },
       { url: `${NATIONAL_ORIGIN}/about`,            lastModified: now, changeFrequency: 'monthly', priority: 0.6 },
     ]
-    const cityHomes: MetadataRoute.Sitemap = Object.values(CITY_CONFIGS).map(c => ({
+    const cityHomes: MetadataRoute.Sitemap = LIVE_CITY_CONFIGS.map(c => ({
       url: `https://${c.domain}`,
       lastModified: now,
       changeFrequency: 'daily' as const,
@@ -58,6 +59,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   const city = getCityByDomain(host)
   const BASE = cityOrigin(city)
+
+  // Opening city still below the dentist minimum: nothing to advertise yet.
+  if ((await getOpeningState(city)).inOpeningPhase) return []
 
   // Each city's sitemap lists only its own areas + dentists. Dentist profile
   // pages use a city-scoped query so we don't leak Mumbai dentists into the

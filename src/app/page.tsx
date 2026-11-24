@@ -6,13 +6,15 @@ import SiteHeader from '@/components/SiteHeader'
 import { NeedProvider, NeedHero, NeedSpotlight } from '@/components/home/HomeNeed'
 import DentistResultCard from '@/components/DentistResultCard'
 import FaqAccordion from '@/components/FaqAccordion'
-import { CITY_CONFIGS, NATIONAL_ORIGIN, cityOrigin, getCityBySlug, cityBrandName, isNationalHost } from '@/config/cities'
+import { NATIONAL_ORIGIN, cityOrigin, getCityBySlug, cityBrandName, isNationalHost, LIVE_CITY_CONFIGS } from '@/config/cities'
 import NationalHome from '@/components/national/NationalHome'
 import CitiesFooterLinks from '@/components/CitiesFooterLinks'
 import PopularSearches from '@/components/PopularSearches'
 import { NAVY, TEAL, TEAL_DARK } from '@/app/dentist/[slug]/profileTheme'
 import { getOpenStatus } from '@/lib/openStatus'
 import { plausibleFromFee } from '@/lib/treatmentPrices'
+import { getOpeningState, getCityWaitlistCount } from '@/lib/cityOpening'
+import CityOpeningHome from '@/components/opening/CityOpeningHome'
 
 // Per-host metadata. dentistinindia.in gets network-framed copy; every
 // city domain gets a "Dentist in <City>" search title tuned for the
@@ -21,7 +23,7 @@ import { plausibleFromFee } from '@/lib/treatmentPrices'
 export async function generateMetadata(): Promise<Metadata> {
   const h = await headers()
   if (h.get('x-is-national') === '1' || isNationalHost(h.get('x-forwarded-host') || h.get('host'))) {
-    const liveCityCount = Object.keys(CITY_CONFIGS).length
+    const liveCityCount = LIVE_CITY_CONFIGS.length
     return {
       title: `DentistIn India | Find a Verified Dentist in Your City | ${liveCityCount} Cities`,
       description: `Find verified dentists across ${liveCityCount} Indian cities. Pick your city to browse clinics, compare fees and book an appointment.`,
@@ -41,6 +43,17 @@ export async function generateMetadata(): Promise<Metadata> {
   const city = getCityBySlug(h.get('x-city-slug'))
   const origin = cityOrigin(city)
   const brand = cityBrandName(city) // e.g. DentistInPune
+  // Opening city with too few dentists: the page is a sign-up/notify page,
+  // not a directory, so keep it out of the index until it switches over.
+  const { inOpeningPhase } = await getOpeningState(city)
+  if (inOpeningPhase) {
+    return {
+      title: `Dentists in ${city.cityName} | Opening Soon | ${brand}`,
+      description: `${brand} is signing up verified dentists in ${city.cityName}. Dentists can list their clinic free; patients can get a WhatsApp alert when booking opens.`,
+      alternates: { canonical: `${origin}/` },
+      robots: { index: false, follow: true, googleBot: { index: false, follow: true } },
+    }
+  }
   return {
     title: `Dentist in ${city.cityName} | Book Verified Dentists | ${brand}`,
     description: `Find and book the best dentists in ${city.cityName}. Registration-checked clinics, fees shown upfront, free online booking. Book your dental appointment today.`,
@@ -140,6 +153,24 @@ export default async function HomePage() {
   }
 
   const city = getCityBySlug(h.get('x-city-slug'))
+
+  // New city still signing up its first dentists → opening-soon homepage.
+  const opening = await getOpeningState(city)
+  if (opening.inOpeningPhase) {
+    const [{ areas: openingAreas }, waitingCount] = await Promise.all([
+      getCityHomeData(city.citySlug),
+      getCityWaitlistCount(city.citySlug),
+    ])
+    return (
+      <CityOpeningHome
+        city={city}
+        areas={[...openingAreas].map(a => a.name).sort((a, b) => a.localeCompare(b))}
+        dentistCount={opening.dentistCount}
+        waitingCount={waitingCount}
+      />
+    )
+  }
+
   const brandName = cityBrandName(city)
   const FAQ_ITEMS = faqItemsFor(city.cityName)
 
