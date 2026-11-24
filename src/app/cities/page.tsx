@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
-import { CITY_CONFIGS, NATIONAL_ORIGIN } from '@/config/cities'
+import { NATIONAL_ORIGIN, LIVE_CITY_CONFIGS } from '@/config/cities'
 import { COMING_SOON_CITIES } from '@/config/citiesNational'
 import CitiesGrid from './CitiesGrid'
 
@@ -48,7 +48,7 @@ export default async function CitiesPage() {
   // Flatten both lists into one shape so the grid doesn't need to know
   // which slug bucket a city came from.
   const unified: UnifiedCity[] = [
-    ...Object.values(CITY_CONFIGS).map(c => ({
+    ...LIVE_CITY_CONFIGS.map(c => ({
       slug: c.citySlug,
       name: c.cityName,
       state: c.state,
@@ -92,7 +92,7 @@ export default async function CitiesPage() {
     return a.state.localeCompare(b.state)
   })
 
-  const liveTotal = Object.keys(CITY_CONFIGS).length
+  const liveTotal = LIVE_CITY_CONFIGS.length
   const soonTotal = COMING_SOON_CITIES.length
 
   return (

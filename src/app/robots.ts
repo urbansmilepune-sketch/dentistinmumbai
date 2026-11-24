@@ -1,6 +1,7 @@
 import { MetadataRoute } from 'next'
 import { headers } from 'next/headers'
 import { getCityByDomain, cityOrigin, isNationalHost, NATIONAL_ORIGIN } from '@/config/cities'
+import { getOpeningState } from '@/lib/cityOpening'
 
 export default async function robots(): Promise<MetadataRoute.Robots> {
   const h = await headers()
@@ -11,6 +12,15 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
   // `Host: dentistinmumbai.in` — pointing crawlers at the wrong property.
   // Branch on the host first, exactly like sitemap.ts already does.
   const origin = isNationalHost(host) ? NATIONAL_ORIGIN : cityOrigin(getCityByDomain(host))
+
+  // Opening city with too few dentists: keep the whole site out of search
+  // until it switches to the full homepage (src/lib/cityOpening.ts).
+  if (!isNationalHost(host)) {
+    const { inOpeningPhase } = await getOpeningState(getCityByDomain(host))
+    if (inOpeningPhase) {
+      return { rules: [{ userAgent: '*', disallow: '/' }], host: origin }
+    }
+  }
   return {
     rules: [
       {

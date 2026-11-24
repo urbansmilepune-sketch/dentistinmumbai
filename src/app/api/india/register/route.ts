@@ -342,7 +342,7 @@ export async function POST(request: NextRequest) {
     slug,
     city: cityForRow,
     message: cityForRow
-      ? `Profile created! You're listed on dentistin${cityForRow}.in and your professional profile on ${NATIONAL_HOST} is live.`
+      ? `Profile created! You're listed on ${CITY_CONFIGS[cityForRow].domain} and your professional profile on ${NATIONAL_HOST} is live.`
       : `Profile created! Your professional profile on ${NATIONAL_HOST} is live. We'll list you on a city directory as soon as we launch one matching yours.`,
   })
 }

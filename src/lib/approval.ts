@@ -114,13 +114,17 @@ export async function approveDentistRegistration(
   let area_id: string | null = null
   if (wantedAreaName) {
     const wanted = wantedAreaName
-    const { data: areaExact } = await admin_db
-      .from('areas').select('id, name').eq('name', wanted).maybeSingle()
+    // Scoped to the dentist's city: the same area name exists in several
+    // cities (and maybeSingle() errors out when it matches more than one).
+    const { data: areaExactRows } = await admin_db
+      .from('areas').select('id, name').eq('name', wanted).eq('city', city).limit(1)
+    const areaExact = areaExactRows?.[0]
     if (areaExact) {
       area_id = areaExact.id
     } else {
-      const { data: areaCi } = await admin_db
-        .from('areas').select('id, name').ilike('name', wanted).maybeSingle()
+      const { data: areaCiRows } = await admin_db
+        .from('areas').select('id, name').ilike('name', wanted).eq('city', city).limit(1)
+      const areaCi = areaCiRows?.[0]
       if (areaCi) {
         area_id = areaCi.id
       } else {

@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { getCityByDomain, isNationalHost, CITY_CONFIGS, DEFAULT_CITY, type CityConfig } from '@/config/cities'
+import { getCityByDomain, isNationalHost, cityBrandName, CITY_CONFIGS, DEFAULT_CITY, type CityConfig } from '@/config/cities'
 
 type LoginMethod = 'otp' | 'password' | 'magic'
 
@@ -71,7 +71,7 @@ export default function LoginForm() {
   // cityConfig.cityName directly, which leaked Mumbai branding onto
   // dentistinindia.in because getCityByDomain falls back to Mumbai for
   // unknown hosts.
-  const brandCityChunk = national ? 'India' : cityConfig.cityName.replace(/\s+/g, '')
+  const brandCityChunk = national ? 'India' : cityBrandName(cityConfig).replace(/^DentistIn/, '')
   const brandLeftPretty = `DentistIn${brandCityChunk}`
 
   // Per-mode copy. The login page wears two hats: a city-clinic portal

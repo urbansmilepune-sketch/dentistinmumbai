@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import NationalShell from './NationalShell'
-import { CITY_CONFIGS, type CitySlug } from '@/config/cities'
+import { CITY_CONFIGS, type CitySlug, LIVE_CITY_CONFIGS } from '@/config/cities'
 
 // /dentists on dentistinindia.in — "Discover Dentists" national grid.
 // Service-role read so the join across dentists + case counts +
@@ -166,7 +166,7 @@ export default async function NationalDentistsDiscover({ searchParams }: Props) 
             Discover dentists
           </h1>
           <p style={{ fontSize: 15, color: '#475569', lineHeight: 1.55 }}>
-            Verified State Dental Council-registered professionals from {Object.keys(CITY_CONFIGS).length} cities across India. Browse by specialty, city, experience.
+            Verified State Dental Council-registered professionals from {LIVE_CITY_CONFIGS.length} cities across India. Browse by specialty, city, experience.
           </p>
         </div>
       </section>
