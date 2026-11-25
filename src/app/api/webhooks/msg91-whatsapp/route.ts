@@ -114,6 +114,11 @@ export async function POST(req: NextRequest) {
   await db.from('whatsapp_inbound_log').insert({ payload, phone, content_type: contentType || null }).then(() => {}, () => {})
 
   if (process.env.WHATSAPP_CASE_POSTING_ENABLED !== 'true') return NextResponse.json({ ok: true, handled: false })
+  // MSG91 webhooks can be account-wide (Thetoothwork uses another number on
+  // the same account): only handle messages sent to the DentistIn number.
+  const ourNumber = (process.env.MSG91_WHATSAPP_NUMBER || '917719013232').replace(/\D/g, '').slice(-10)
+  const toNumber = (pick(payload, ['integratedNumber', 'integrated_number', 'businessNumber', 'display_phone_number']) || '').replace(/\D/g, '').slice(-10)
+  if (toNumber && toNumber !== ourNumber) return NextResponse.json({ ok: true, handled: false, other_number: true })
   const last10 = (phone || '').replace(/\D/g, '').slice(-10)
   if (!/^[6-9]\d{9}$/.test(last10)) return NextResponse.json({ ok: true, handled: false })
 
