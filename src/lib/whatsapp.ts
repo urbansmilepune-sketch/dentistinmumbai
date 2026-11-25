@@ -20,6 +20,9 @@
 //                               {{1}} first name, {{2}} summary line, {{3}} link
 //                               (also needs FOLLOW_DIGEST_ENABLED=true; NOT yet
 //                               approved in MSG91 as of 25 Nov 2026)
+//   case_followup_reminder    → dentist, 3/6/12 months after a case was posted
+//                               {{1}} first name, {{2}} months, {{3}} case title, {{4}} link
+//                               (also needs CASE_FOLLOWUP_REMINDERS_ENABLED=true)
 //
 // Env:
 //   WHATSAPP_ENABLED        — must be "true" or nothing is sent (master switch)
@@ -41,6 +44,7 @@ export type WhatsAppTemplate =
   | 'appointment_reminder'
   | 'review_request'
   | 'network_weekly_digest'
+  | 'case_followup_reminder'
 
 /** Number of {{n}} values each template expects. */
 export const TEMPLATE_VALUE_COUNT: Record<WhatsAppTemplate, number> = {
@@ -51,6 +55,7 @@ export const TEMPLATE_VALUE_COUNT: Record<WhatsAppTemplate, number> = {
   appointment_reminder: 5,
   review_request: 3,
   network_weekly_digest: 3,
+  case_followup_reminder: 4,
 }
 
 export type WhatsAppResult =
@@ -214,4 +219,42 @@ export function sendReviewRequestWhatsApp(p: { patientPhone: string; firstName: 
 /** network_weekly_digest: {{1}} dentist first name, {{2}} summary line, {{3}} link. */
 export function sendFollowDigestWhatsApp(p: { dentistPhone: string; firstName: string; summary: string; link: string }) {
   return sendWhatsAppTemplate(p.dentistPhone, 'network_weekly_digest', [p.firstName, p.summary, p.link])
+}
+
+/** case_followup_reminder: {{1}} first name, {{2}} months, {{3}} case title, {{4}} link. */
+export function sendCaseFollowupReminderWhatsApp(p: { dentistPhone: string; firstName: string; months: number; caseTitle: string; link: string }) {
+  return sendWhatsAppTemplate(p.dentistPhone, 'case_followup_reminder', [p.firstName, String(p.months), p.caseTitle, p.link])
+}
+
+/**
+ * Free-text WhatsApp reply inside the 24-hour window after the person wrote
+ * to us (no template needed). Used to answer dentists who post a case by
+ * WhatsApp. Best-effort, never throws; respects WHATSAPP_ENABLED.
+ */
+export async function sendWhatsAppText(phone: string | null | undefined, text: string): Promise<WhatsAppResult> {
+  if (!whatsAppEnabled()) return { success: false, error: 'WHATSAPP_ENABLED is not "true"' }
+  const authKey = process.env.MSG91_WHATSAPP_AUTH_KEY || process.env.MSG91_AUTH_KEY
+  if (!authKey) return { success: false, error: 'MSG91 auth key not configured' }
+  const to = toWhatsAppNumber(phone)
+  if (!to) return { success: false, error: `invalid phone: ${phone ?? '(empty)'}` }
+  try {
+    const res = await fetch('https://api.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', authkey: authKey },
+      body: JSON.stringify({
+        integrated_number: process.env.MSG91_WHATSAPP_NUMBER || DEFAULT_NUMBER,
+        recipient_number: to,
+        content_type: 'text',
+        text: text.slice(0, 1000),
+      }),
+    })
+    const body = await res.text().catch(() => '')
+    if (!res.ok || /"status"\s*:\s*"fail"/.test(body)) {
+      console.error('[WhatsApp] text reply failed', { to, status: res.status, body })
+      return { success: false, error: body || `HTTP ${res.status}`, status: res.status }
+    }
+    return { success: true, response: body }
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Unknown error' }
+  }
 }
