@@ -8,7 +8,7 @@
 // The case is never published from WhatsApp alone.
 //
 // Safety:
-//   - Only senders whose number matches a dentist's phone/WhatsApp are
+//   - Only senders whose number matches an active dentist's phone/WhatsApp are
 //     handled. Patients write to this number too (it sends booking
 //     messages); they are logged and ignored, never answered.
 //   - Text from a dentist is kept as a note only while a draft is open, or
@@ -23,7 +23,7 @@
 // name anywhere in the JSON (see pick()). Check whatsapp_inbound_log after the
 // first test message if something is not picked up.
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { v2 as cloudinary } from 'cloudinary'
 import { NATIONAL_ORIGIN } from '@/config/cities'
 import { adminDb } from '@/lib/national'
@@ -77,57 +77,124 @@ function parse(payload: unknown) {
   return { phone, text: text && !/^https?:\/\//.test(text) ? text : null, mediaUrl: isImage ? mediaUrl : null, contentType }
 }
 
-async function copyToCloudinary(url: string, dentistId: string): Promise<string | null> {
+async function copyToCloudinary(url: string, dentistId: string): Promise<{ url: string | null; error: string }> {
   try {
     const authKey = process.env.MSG91_WHATSAPP_AUTH_KEY || process.env.MSG91_AUTH_KEY
     const headers: Record<string, string> = {}
-    if (authKey && /msg91/i.test(new URL(url).hostname)) headers.authkey = authKey
+    // MSG91 serves inbound media from whatsapp.phone91.com; send the auth key
+    // to MSG91's own hosts only.
+    if (authKey && /(^|\.)(msg91\.com|phone91\.com)$/i.test(new URL(url).hostname)) headers.authkey = authKey
     const res = await fetch(url, { headers })
-    if (!res.ok) return null
-    const type = res.headers.get('content-type') || 'image/jpeg'
-    if (!type.startsWith('image/')) return null
+    if (!res.ok) return { url: null, error: `media download HTTP ${res.status}` }
+    const type = (res.headers.get('content-type') || 'image/jpeg').split(';')[0]
+    if (!type.startsWith('image/')) return { url: null, error: `media is ${type}, not an image` }
     const buf = Buffer.from(await res.arrayBuffer())
-    if (buf.length > 10 * 1024 * 1024) return null
+    if (buf.length > 10 * 1024 * 1024) return { url: null, error: 'image over 10 MB' }
     const up = await cloudinary.uploader.upload(`data:${type};base64,${buf.toString('base64')}`, {
       folder: `cases/${dentistId}/whatsapp`, resource_type: 'image',
       transformation: [{ width: 1800, crop: 'limit' }], quality: 'auto:good', fetch_format: 'auto',
     })
-    return up.secure_url
+    return { url: up.secure_url, error: '' }
   } catch (err: any) {
     console.error('[wa-inbound] media copy failed', err?.message)
-    return null
+    return { url: null, error: `media copy error: ${String(err?.message || 'unknown').slice(0, 200)}` }
   }
+}
+
+// GET: setup check you can open in a browser. Shows only whether the two
+// Vercel settings are present and whether the key in the URL matches; never
+// the key itself.
+export async function GET(req: NextRequest) {
+  const key = req.nextUrl.searchParams.get('key') || ''
+  const expected = process.env.WHATSAPP_INBOUND_KEY || ''
+  return NextResponse.json({
+    webhook: 'msg91-whatsapp',
+    key_set_in_vercel: !!expected,
+    key_in_url_matches: !!expected && key === expected,
+    posting_enabled: process.env.WHATSAPP_CASE_POSTING_ENABLED === 'true',
+    whatsapp_enabled: process.env.WHATSAPP_ENABLED === 'true',
+  })
 }
 
 export async function POST(req: NextRequest) {
   const key = req.nextUrl.searchParams.get('key') || ''
-  if (!process.env.WHATSAPP_INBOUND_KEY || key !== process.env.WHATSAPP_INBOUND_KEY) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
   // Some MSG91 webhooks send the body as text even with a JSON template.
   const raw = await req.text().catch(() => '')
-  const payload = safeJson(raw) ?? { raw: raw.slice(0, 20000) }
   const db = adminDb()
+  if (!process.env.WHATSAPP_INBOUND_KEY || key !== process.env.WHATSAPP_INBOUND_KEY) {
+    // Log rejected calls too (short, without the key) so a setup mistake is
+    // visible in whatsapp_inbound_log instead of silently returning 401.
+    const why = !process.env.WHATSAPP_INBOUND_KEY ? 'rejected: WHATSAPP_INBOUND_KEY not set in Vercel' : 'rejected: wrong key in webhook URL'
+    await db.from('whatsapp_inbound_log').insert({ payload: { raw: raw.slice(0, 2000) }, phone: null, content_type: why }).then(() => {}, () => {})
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  const payload = safeJson(raw) ?? { raw: raw.slice(0, 20000) }
   const { phone, text, mediaUrl, contentType } = parse(payload)
 
-  // Always log (table may not exist yet; ignore errors).
-  await db.from('whatsapp_inbound_log').insert({ payload, phone, content_type: contentType || null }).then(() => {}, () => {})
+  // MSG91 waits only 3 seconds and retries on timeout, so: log the message,
+  // answer 200 at once, and do the slow part (download, Cloudinary, reply)
+  // after the response. The WhatsApp message id makes retries no-ops.
+  const messageId = pick(payload, ['uuid', 'wamid', 'message_id', 'messageId'])
+  let ins = await db.from('whatsapp_inbound_log')
+    .insert({ payload, phone, content_type: contentType || null, message_id: messageId })
+    .select('id').single()
+  if (ins.error?.code === '23505') return NextResponse.json({ ok: true, duplicate: true })
+  if (ins.error) {
+    // message_id / outcome columns not added yet (5-webhook-outcome.sql): log without them.
+    ins = await db.from('whatsapp_inbound_log').insert({ payload, phone, content_type: contentType || null }).select('id').single()
+  }
+  const logId = (ins.data as any)?.id as number | undefined
 
-  if (process.env.WHATSAPP_CASE_POSTING_ENABLED !== 'true') return NextResponse.json({ ok: true, handled: false })
+  after(() => handleMessage({ db, payload, phone, text, mediaUrl, contentType, logId }).catch(err => {
+    console.error('[wa-inbound] handler error', err?.message)
+    if (logId) db.from('whatsapp_inbound_log').update({ outcome: `error: ${String(err?.message || err).slice(0, 300)}` }).eq('id', logId).then(() => {}, () => {})
+  }))
+  return NextResponse.json({ ok: true, queued: true })
+}
+
+async function handleMessage(ctx: {
+  db: ReturnType<typeof adminDb>
+  payload: unknown
+  phone: string | null
+  text: string | null
+  mediaUrl: string | null
+  contentType: string
+  logId: number | undefined
+}): Promise<void> {
+  const { db, payload, phone, text, mediaUrl, contentType, logId } = ctx
+  const done = async (outcome: string) => {
+    if (logId) await db.from('whatsapp_inbound_log').update({ outcome: outcome.slice(0, 500) }).eq('id', logId).then(() => {}, () => {})
+  }
+  const reply = async (msg: string) => {
+    const r = await sendWhatsAppText(phone, msg)
+    return r.success ? 'reply sent' : `reply FAILED: ${String((r as any).error || '').slice(0, 300)}`
+  }
+
+  if (process.env.WHATSAPP_CASE_POSTING_ENABLED !== 'true') return done('ignored: WHATSAPP_CASE_POSTING_ENABLED is not true')
   // MSG91 webhooks can be account-wide (Thetoothwork uses another number on
   // the same account): only handle messages sent to the DentistIn number.
   const ourNumber = (process.env.MSG91_WHATSAPP_NUMBER || '917719013232').replace(/\D/g, '').slice(-10)
   const toNumber = (pick(payload, ['integratedNumber', 'integrated_number', 'businessNumber', 'display_phone_number']) || '').replace(/\D/g, '').slice(-10)
-  if (toNumber && toNumber !== ourNumber) return NextResponse.json({ ok: true, handled: false, other_number: true })
+  if (toNumber && toNumber !== ourNumber) return done(`ignored: sent to another number (${toNumber})`)
   const last10 = (phone || '').replace(/\D/g, '').slice(-10)
-  if (!/^[6-9]\d{9}$/.test(last10)) return NextResponse.json({ ok: true, handled: false })
+  if (!/^[6-9]\d{9}$/.test(last10)) return done('ignored: no valid sender number')
 
-  const { data: matches } = await db.from('dentists')
-    .select('id, name, phone, whatsapp, is_active')
-    .or(`phone.ilike.%${last10},whatsapp.ilike.%${last10}`)
-    .eq('is_active', true).order('created_at').limit(1)
-  const dentist = matches?.[0]
-  if (!dentist) return NextResponse.json({ ok: true, handled: false })   // patient or unknown: ignore
+  // Stored numbers vary ("+91 99751 91883", "099751-91883"), so match the
+  // ten digits with anything in between, then confirm on digits only.
+  const loose = `%${last10.split('').join('%')}%`
+  const { data: candidates } = await db.from('dentists')
+    .select('id, name, phone, whatsapp, is_active, created_at')
+    .or(`phone.ilike.${loose},whatsapp.ilike.${loose}`)
+    .order('created_at').limit(20)
+  const digits10 = (v: unknown) => String(v || '').replace(/\D/g, '').slice(-10)
+  const sameNumber = ((candidates || []) as Array<Record<string, any>>)
+    .filter(d => digits10(d.phone) === last10 || digits10(d.whatsapp) === last10)
+  const dentist = sameNumber.find(d => d.is_active !== false)
+  if (!dentist) {
+    return done(sameNumber.length
+      ? `ignored: dentist ${sameNumber[0].id} with this number is not active`
+      : `ignored: no dentist with number ending ${last10}`)   // patient or unknown
+  }
 
   const since = new Date(Date.now() - DRAFT_HOURS * 3600000).toISOString()
   const { data: open } = await db.from('whatsapp_case_drafts').select('*')
@@ -141,24 +208,24 @@ export async function POST(req: NextRequest) {
     if (draft && text) {
       const note = [draft.note, text].filter(Boolean).join('\n').slice(0, 4000)
       await db.from('whatsapp_case_drafts').update({ note }).eq('id', draft.id)
-      return NextResponse.json({ ok: true, handled: true })
+      return done(`note added to draft ${draft.id}`)
     }
     if (text && /\bcase\b/i.test(text)) {
-      await sendWhatsAppText(phone, `Hi Dr. ${first}, to post a case on DentistIn India, send the case photos and X-rays here (face and name hidden), with one line about the case. Then finish it on ${link}`)
-      return NextResponse.json({ ok: true, handled: true })
+      return done(`instructions: ${await reply(`Hi Dr. ${first}, to post a case on DentistIn India, send the case photos and X-rays here (face and name hidden), with one line about the case. Then finish it on ${link}`)}`)
     }
-    return NextResponse.json({ ok: true, handled: false })
+    return done(`ignored: ${contentType || 'message'} with no photo from dentist ${dentist.id}`)
   }
 
   const photos: string[] = Array.isArray(draft?.photo_urls) ? draft!.photo_urls : []
   if (photos.length >= MAX_PHOTOS) {
-    return NextResponse.json({ ok: true, handled: true, full: true })
+    return done(`ignored: draft ${draft?.id} already has ${MAX_PHOTOS} photos`)
   }
-  const url = await copyToCloudinary(mediaUrl, dentist.id)
-  if (!url) {
-    await sendWhatsAppText(phone, `Sorry Dr. ${first}, we could not save that photo. Please send it again, or upload it on ${link}`)
-    return NextResponse.json({ ok: true, handled: true, saved: false })
+  const copied = await copyToCloudinary(mediaUrl, dentist.id)
+  if (!copied.url) {
+    const r = await reply(`Sorry Dr. ${first}, we could not save that photo. Please send it again, or upload it on ${link}`)
+    return done(`photo NOT saved (${copied.error}); ${r}`)
   }
+  const url = copied.url
   const next = [...photos, url]
   if (draft) {
     await db.from('whatsapp_case_drafts').update({ photo_urls: next, note: text ? [draft.note, text].filter(Boolean).join('\n').slice(0, 4000) : draft.note }).eq('id', draft.id)
@@ -170,8 +237,9 @@ export async function POST(req: NextRequest) {
   // One reply per burst of photos.
   const lastReply = draft?.replied_at ? new Date(draft.replied_at).getTime() : 0
   if (draft && Date.now() - lastReply > REPLY_GAP_MS) {
-    await sendWhatsAppText(phone, `Got it, Dr. ${first}. ${next.length} photo${next.length === 1 ? '' : 's'} saved for your case. Send more if you like, then finish it here (add the details and patient consent): ${link}`)
-    await db.from('whatsapp_case_drafts').update({ replied_at: new Date().toISOString() }).eq('id', draft.id)
+    const r = await reply(`Got it, Dr. ${first}. ${next.length} photo${next.length === 1 ? '' : 's'} saved for your case. Send more if you like, then finish it here (add the details and patient consent): ${link}`)
+    if (r === 'reply sent') await db.from('whatsapp_case_drafts').update({ replied_at: new Date().toISOString() }).eq('id', draft.id)
+    return done(`photo saved to draft ${draft.id}; ${r}`)
   }
-  return NextResponse.json({ ok: true, handled: true, saved: true })
+  return done(`photo saved to draft ${draft?.id}; reply skipped (sent one in the last 2 minutes)`)
 }
