@@ -5,6 +5,7 @@ import NationalShell from '@/components/national/NationalShell'
 import DentistsOnly from '@/components/national/DentistsOnly'
 import { SPECIALTIES, getSpecialty } from '@/lib/dentalSpecialties'
 import { adminDb, getViewerDentist, isNationalRequest, AFTER_KINDS, cityNameOf, ui } from '@/lib/national'
+import { drName } from '@/lib/dentistName'
 
 export const dynamic = 'force-dynamic'
 
@@ -76,7 +77,7 @@ export default async function CaseLibraryPage({ searchParams }: { searchParams: 
       <main style={ui.page}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
           <div>
-            <h1 style={ui.h1}>{byDentist ? `Cases by Dr. ${byDentist.name}` : 'Case library'}</h1>
+            <h1 style={ui.h1}>{byDentist ? `Cases by ${drName(byDentist.name)}` : 'Case library'}</h1>
             <p style={ui.sub}>Real cases from dentists across India. Ask, answer, and come back for the follow-ups.</p>
           </div>
           <Link href="/cases/new" style={ui.btn}>Post a case</Link>
@@ -101,7 +102,7 @@ export default async function CaseLibraryPage({ searchParams }: { searchParams: 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
           <Link href={link({ f: filter === 'open' ? undefined : 'open' })} style={ui.chip(filter === 'open')}>Needs an answer</Link>
           <Link href={link({ f: filter === 'followup' ? undefined : 'followup' })} style={ui.chip(filter === 'followup')}>Has follow-up</Link>
-          {byDentist && <Link href={link({ by: undefined })} style={ui.chip(true)}>Dr. {byDentist.name} ✕</Link>}
+          {byDentist && <Link href={link({ by: undefined })} style={ui.chip(true)}>{drName(byDentist.name)} ✕</Link>}
         </div>
 
         <div style={{ fontSize: 13, color: '#475569', marginBottom: 10 }}>{cases.length} case{cases.length === 1 ? '' : 's'}</div>
@@ -125,7 +126,7 @@ export default async function CaseLibraryPage({ searchParams }: { searchParams: 
                   <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
                     {spec && <span style={{ ...ui.pill(spec.bg, spec.color), alignSelf: 'flex-start', fontSize: 11, padding: '2px 8px' }}>{spec.label}</span>}
                     <span style={{ fontWeight: 700, fontSize: 14, lineHeight: 1.3 }}>{c.title}</span>
-                    <span style={{ fontSize: 12, color: '#475569' }}>Dr. {c.dentists?.name}{cityNameOf(c.dentists?.city) ? ` · ${cityNameOf(c.dentists?.city)}` : ''}</span>
+                    <span style={{ fontSize: 12, color: '#475569' }}>{drName(c.dentists?.name)}{cityNameOf(c.dentists?.city) ? ` · ${cityNameOf(c.dentists?.city)}` : ''}</span>
                     <span style={{ fontSize: 12, fontWeight: 700, color: n ? '#1D4ED8' : '#B45309' }}>
                       {n ? `${n} repl${n === 1 ? 'y' : 'ies'}` : 'Needs an answer'}{followed.has(c.id) ? ' · has follow-up' : ''}
                     </span>

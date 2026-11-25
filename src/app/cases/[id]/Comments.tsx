@@ -8,6 +8,7 @@
 
 import { useMemo, useState } from 'react'
 import { CITY_CONFIGS } from '@/config/cities'
+import { drName } from '@/lib/dentistName'
 
 export interface CaseComment {
   id: string
@@ -136,8 +137,8 @@ export default function Comments({ caseId, caseAuthorId, initialComments, curren
               <li key={c.id} style={{ border: '1px solid #E2E8F0', borderRadius: 12, padding: 12, display: 'flex', flexDirection: 'column', gap: 8, background: c.asker_marked ? '#F0FDF4' : '#fff' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   {c.dentist?.slug
-                    ? <a href={`/professional/${c.dentist.slug}`} style={{ fontSize: 14, fontWeight: 700, color: '#0F1923', textDecoration: 'none' }}>Dr. {c.dentist.name}</a>
-                    : <span style={{ fontSize: 14, fontWeight: 700, color: '#0F1923' }}>{c.dentist?.name === 'You' ? 'You' : `Dr. ${c.dentist?.name || 'Unknown'}`}</span>}
+                    ? <a href={`/professional/${c.dentist.slug}`} style={{ fontSize: 14, fontWeight: 700, color: '#0F1923', textDecoration: 'none' }}>{drName(c.dentist.name)}</a>
+                    : <span style={{ fontSize: 14, fontWeight: 700, color: '#0F1923' }}>{c.dentist?.name === 'You' ? 'You' : drName(c.dentist?.name)}</span>}
                   {cfg && <span style={{ fontSize: 12, color: '#475569' }}>{cfg.cityName}</span>}
                   {c.dentist_id === caseAuthorId && <span style={{ fontSize: 11, fontWeight: 700, color: '#475569' }}>· posted this case</span>}
                   <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 6, background: k.bg, color: k.color }}>{k.label}</span>

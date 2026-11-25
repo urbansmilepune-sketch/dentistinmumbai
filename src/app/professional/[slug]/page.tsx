@@ -5,6 +5,7 @@ import NationalShell from '@/components/national/NationalShell'
 import { getSpecialty } from '@/lib/dentalSpecialties'
 import { getDentistPublishedArticles } from '@/lib/publicArticles'
 import { NATIONAL_ORIGIN } from '@/config/cities'
+import { drName } from '@/lib/dentistName'
 import {
   adminDb, getViewerDentist, isFoundingDentist, AFTER_KINDS, cityNameOf, cityDomainOf, initialsOf, ui,
 } from '@/lib/national'
@@ -91,13 +92,13 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const d = data.dentist
   const city = cityNameOf(d.city)
   const what = headline(d, data.topSpecialties)
-  const title = `Dr. ${d.name}, ${what}${city ? ' in ' + city : ''} | DentistIn India`
+  const title = `${drName(d.name)}, ${what}${city ? ' in ' + city : ''} | DentistIn India`
   const bits = [
     data.caseCount ? `${data.caseCount} cases shared with dentists across India` : null,
     data.followupCount ? `${data.followupCount} checked after treatment` : null,
     d.is_verified ? 'registration verified' : null,
   ].filter(Boolean).join(', ')
-  const description = `Dr. ${d.name}${d.clinic_name ? ', ' + d.clinic_name : ''}${city ? ', ' + city : ''}. ${bits ? bits.charAt(0).toUpperCase() + bits.slice(1) + '.' : ''} See their expertise and book at the clinic.`.trim()
+  const description = `${drName(d.name)}${d.clinic_name ? ', ' + d.clinic_name : ''}${city ? ', ' + city : ''}. ${bits ? bits.charAt(0).toUpperCase() + bits.slice(1) + '.' : ''} See their expertise and book at the clinic.`.trim()
   return {
     title: { absolute: title },
     description,
@@ -144,9 +145,9 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
       <main style={{ maxWidth: 760, margin: '0 auto', padding: '24px 16px 64px', display: 'flex', flexDirection: 'column', gap: 18 }}>
         <section style={{ ...ui.card, padding: '28px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 10 }}>
           <div style={{ width: 96, height: 96, borderRadius: '50%', overflow: 'hidden', background: '#DBEAFE', color: '#1D4ED8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 30 }}>
-            {d.profile_photo ? <img src={d.profile_photo} alt={`Dr. ${d.name}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initialsOf(d.name)}
+            {d.profile_photo ? <img src={d.profile_photo} alt={drName(d.name)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initialsOf(d.name)}
           </div>
-          <h1 style={{ ...ui.h1, margin: 0 }}>Dr. {d.name}</h1>
+          <h1 style={{ ...ui.h1, margin: 0 }}>{drName(d.name)}</h1>
           <div style={{ fontSize: 15, color: '#475569' }}>
             {headline(d, topSpecialties)}{cityName ? ` · ${cityName}` : ''}
           </div>

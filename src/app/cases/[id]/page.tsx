@@ -13,6 +13,7 @@ import DentistsOnly from '@/components/national/DentistsOnly'
 import BeforeAfter from './BeforeAfter'
 import FollowUpAdder from './FollowUpAdder'
 import { getViewerDentist } from '@/lib/national'
+import { drName } from '@/lib/dentistName'
 
 export const dynamic = 'force-dynamic'
 
@@ -105,7 +106,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   }
   const spec = getSpecialty(data.row.specialty)
   const dentistName = data.row.dentists?.name ?? 'an State Dental Council-verified dentist'
-  const ogTitle = `${data.row.title} by Dr. ${dentistName}`
+  const ogTitle = `${data.row.title} by ${data.row.dentists?.name ? drName(dentistName) : dentistName}`
   const ogDescription = data.row.description?.slice(0, 160)
     || `${spec?.label || 'Clinical case'} · ${'★'.repeat(data.row.complexity)} complexity · Shared on DentistIn India`
   // Prefer a clinical (before/after) photo for the share preview; fall
@@ -260,7 +261,7 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
             <div style={{ fontSize: 14, color: '#475569', marginBottom: 16 }}>
               By{' '}
               <Link href={`/professional/${data.row.dentists.slug}`} style={{ color: '#1D4ED8', textDecoration: 'none', fontWeight: 600 }}>
-                Dr. {data.row.dentists.name}
+                {drName(data.row.dentists.name)}
               </Link>
               {data.row.dentists.clinic_name && <> · {data.row.dentists.clinic_name}</>}
               {data.row.dentists.is_verified && <span style={{ marginLeft: 8, fontSize: 11, padding: '2px 8px', background: '#DCFCE7', color: '#166534', borderRadius: 999, fontWeight: 700 }}>✓ Verified</span>}
@@ -275,7 +276,7 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
               <ShareButton
                 caseId={data.row.id}
                 caseTitle={data.row.title}
-                dentistName={data.row.dentists?.name || 'a verified dentist'}
+                dentistName={data.row.dentists?.name || ''}
                 dentistId={data.row.dentist_id}
               />
             </div>

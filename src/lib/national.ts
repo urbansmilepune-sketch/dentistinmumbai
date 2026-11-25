@@ -10,6 +10,7 @@
 import { createClient as createServiceClient, type SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { CITY_CONFIGS } from '@/config/cities'
+import { cleanName } from '@/lib/dentistName'
 
 export function adminDb(): SupabaseClient {
   return createServiceClient(
@@ -68,7 +69,7 @@ export function cityDomainOf(slug: string | null | undefined): string | null {
 }
 
 export function initialsOf(name: string | null | undefined): string {
-  return (name || 'D').split(' ').map(p => p[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
+  return (cleanName(name) || 'D').split(' ').map(p => p[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
 }
 
 export function isMissingColumnError(err: { code?: string; message?: string } | null | undefined): boolean {
