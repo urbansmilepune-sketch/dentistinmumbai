@@ -158,6 +158,11 @@ export default function LoginForm() {
 
 async function handleGoogle() {
   setError(''); setGLoading(true)
+  // Google returns to /auth/callback, which can't see ?next=; leave it in a
+  // short-lived cookie so e.g. /cases/new survives the round trip.
+  if (nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//')) {
+    document.cookie = `dentistin_next=${encodeURIComponent(nextParam)}; path=/; max-age=600; samesite=lax; secure`
+  }
   const { error: authError } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {

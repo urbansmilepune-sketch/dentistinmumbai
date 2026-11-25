@@ -28,6 +28,7 @@ import { v2 as cloudinary } from 'cloudinary'
 import { NATIONAL_ORIGIN } from '@/config/cities'
 import { adminDb } from '@/lib/national'
 import { cleanName } from '@/lib/dentistName'
+import { waCaseLink } from '@/lib/waLoginLink'
 import { sendWhatsAppText } from '@/lib/whatsapp'
 
 export const dynamic = 'force-dynamic'
@@ -203,7 +204,9 @@ async function handleMessage(ctx: {
     .order('created_at', { ascending: false }).limit(1)
   let draft = open?.[0] as Record<string, any> | undefined
   const first = cleanName(dentist.name).split(' ')[0] || 'Doctor'
-  const link = `${NATIONAL_ORIGIN}/cases/new`
+  // Signed link: signs them in on dentistinindia.in in one tap (their login
+  // may only exist on their city site, whose cookie doesn't carry over).
+  const link = waCaseLink(dentist.id)
 
   if (!mediaUrl) {
     if (draft && text) {

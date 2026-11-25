@@ -1,9 +1,5 @@
 import type { Metadata } from 'next'
-import { cookies } from 'next/headers'
-import { redirect } from 'next/navigation'
 import { dentistAppMetadata, dentistAppViewport } from '@/lib/dentistApp'
-import { createClient } from '@/lib/supabase/server'
-import { REMEMBER_COOKIE } from '@/lib/auth/rememberMe'
 
 // Client component → metadata lives here. Noindex the login page (Section 8 —
 // utility routes). Allowed in robots.ts so Google can see the noindex; absent
@@ -23,11 +19,9 @@ export default async function LoginLayout({ children }: { children: React.ReactN
   // them through the same silent re-login. That route clears the cookie on any
   // failure and comes back here, so this can't loop. Log out clears the cookie
   // first, so logging out still shows this page.
-  const cookieStore = await cookies()
-  if (cookieStore.get(REMEMBER_COOKIE)?.value) {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) redirect('/api/auth/remember-me?next=%2Ffor-dentists%2Fdashboard')
-  }
+  //
+  // The redirect itself now lives in page.tsx, which can read ?next= (a layout
+  // can't), so a dentist sent here from /cases/new goes back to /cases/new
+  // instead of the dashboard.
   return children
 }
