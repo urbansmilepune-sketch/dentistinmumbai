@@ -43,6 +43,7 @@ cloudinary.config({
 const DRAFT_HOURS = 24
 const MAX_PHOTOS = 8
 const REPLY_GAP_MS = 2 * 60 * 1000
+const REPLY_WAIT_MS = 8000   // let the rest of an album arrive before replying
 
 /** First value found under any of these keys, searching the whole object. */
 function pick(obj: unknown, keys: string[], depth = 0): string | null {
@@ -225,21 +226,73 @@ async function handleMessage(ctx: {
     const r = await reply(`Sorry Dr. ${first}, we could not save that photo. Please send it again, or upload it on ${link}`)
     return done(`photo NOT saved (${copied.error}); ${r}`)
   }
+  // Photos in an album arrive as separate webhooks within a second, so several
+  // of these handlers run at once. Every write below is safe under that.
   const url = copied.url
-  const next = [...photos, url]
-  if (draft) {
-    await db.from('whatsapp_case_drafts').update({ photo_urls: next, note: text ? [draft.note, text].filter(Boolean).join('\n').slice(0, 4000) : draft.note }).eq('id', draft.id)
-  } else {
-    const ins = await db.from('whatsapp_case_drafts').insert({ dentist_id: dentist.id, photo_urls: next, note: text }).select('*').single()
-    draft = ins.data || undefined
+  let draftId: string | undefined = draft?.id
+  if (!draftId) {
+    const ins = await db.from('whatsapp_case_drafts').insert({ dentist_id: dentist.id, photo_urls: [], note: null }).select('id').single()
+    draftId = (ins.data as any)?.id
+    // Two handlers may have created a draft at the same moment: everyone uses
+    // the oldest open one, and the extra empty one is deleted.
+    const { data: opens } = await db.from('whatsapp_case_drafts').select('id')
+      .eq('dentist_id', dentist.id).is('used_at', null).gte('created_at', since)
+      .order('created_at').order('id').limit(5)
+    const oldest = (opens as any[] | null)?.[0]?.id as string | undefined
+    if (oldest && draftId && oldest !== draftId) {
+      await db.from('whatsapp_case_drafts').delete().eq('id', draftId)
+      draftId = oldest
+    }
   }
+  if (!draftId) return done('photo NOT saved: could not open a draft')
+  const added = await appendPhoto(db, draftId, url, text)
+  if (!added.ok) return done(`photo NOT saved: ${added.error}`)
 
-  // One reply per burst of photos.
-  const lastReply = draft?.replied_at ? new Date(draft.replied_at).getTime() : 0
-  if (draft && Date.now() - lastReply > REPLY_GAP_MS) {
-    const r = await reply(`Got it, Dr. ${first}. ${next.length} photo${next.length === 1 ? '' : 's'} saved for your case. Send more if you like, then finish it here (add the details and patient consent): ${link}`)
-    if (r === 'reply sent') await db.from('whatsapp_case_drafts').update({ replied_at: new Date().toISOString() }).eq('id', draft.id)
-    return done(`photo saved to draft ${draft.id}; ${r}`)
+  // One reply per burst: wait for the rest of the album, then only the
+  // handler that wins the replied_at claim sends it, with the final count.
+  await new Promise(r => setTimeout(r, REPLY_WAIT_MS))
+  const nowIso = new Date().toISOString()
+  const cutoff = new Date(Date.now() - REPLY_GAP_MS).toISOString()
+  const { data: claimed } = await db.from('whatsapp_case_drafts')
+    .update({ replied_at: nowIso })
+    .eq('id', draftId)
+    .or(`replied_at.is.null,replied_at.lt.${cutoff}`)
+    .select('photo_urls')
+  if (!claimed?.length) return done(`photo saved to draft ${draftId} (${added.count}); reply skipped, another message in this burst replied`)
+  const count = Array.isArray((claimed[0] as any).photo_urls) ? (claimed[0] as any).photo_urls.length : added.count
+  const r = await reply(`Got it, Dr. ${first}. ${count} photo${count === 1 ? '' : 's'} saved for your case. Send more if you like, then finish it here (add the details and patient consent): ${link}`)
+  if (r !== 'reply sent') await db.from('whatsapp_case_drafts').update({ replied_at: null }).eq('id', draftId).eq('replied_at', nowIso)
+  return done(`photo saved to draft ${draftId} (${count}); ${r}`)
+}
+
+// Postgres array literal, for an exact-match filter on photo_urls.
+function pgArray(items: string[]): string {
+  return `{${items.map(u => `"${u.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`).join(',')}}`
+}
+
+// Adds one photo to a draft without losing photos that other handlers add at
+// the same moment: the write only lands if photo_urls is unchanged since we
+// read it; otherwise read again and retry.
+async function appendPhoto(db: ReturnType<typeof adminDb>, draftId: string, url: string, text: string | null): Promise<{ ok: true; count: number } | { ok: false; error: string }> {
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const { data: row, error } = await db.from('whatsapp_case_drafts').select('photo_urls, note').eq('id', draftId).single()
+    if (error || !row) return { ok: false, error: `draft ${draftId} not found` }
+    const photos: string[] = Array.isArray((row as any).photo_urls) ? (row as any).photo_urls : []
+    if (photos.includes(url)) return { ok: true, count: photos.length }
+    if (photos.length >= MAX_PHOTOS) return { ok: false, error: `draft ${draftId} already has ${MAX_PHOTOS} photos` }
+    const note = text ? [(row as any).note, text].filter(Boolean).join('\n').slice(0, 4000) : (row as any).note
+    const { data: upd, error: updErr } = await db.from('whatsapp_case_drafts')
+      .update({ photo_urls: [...photos, url], note })
+      .eq('id', draftId)
+      .eq('photo_urls', pgArray(photos))
+      .select('id')
+    if (upd?.length) return { ok: true, count: photos.length + 1 }
+    if (updErr) {
+      // The array filter was refused: save anyway rather than lose the photo.
+      const plain = await db.from('whatsapp_case_drafts').update({ photo_urls: [...photos, url], note }).eq('id', draftId)
+      return plain.error ? { ok: false, error: plain.error.message } : { ok: true, count: photos.length + 1 }
+    }
+    await new Promise(r => setTimeout(r, 100 + Math.random() * 300))
   }
-  return done(`photo saved to draft ${draft?.id}; reply skipped (sent one in the last 2 minutes)`)
+  return { ok: false, error: 'draft busy, gave up after 12 tries' }
 }
