@@ -11,6 +11,7 @@ import { SPECIALTIES } from '@/lib/dentalSpecialties'
 import { ALL_MATERIALS } from '@/lib/dentalMaterials'
 import { getCityBySlug } from '@/config/cities'
 import { sendAdminNewCaseAlert } from '@/lib/email'
+import { adminDb } from '@/lib/national'
 
 const SPECIALTY_SLUGS = new Set(SPECIALTIES.map(s => s.slug))
 const ALLOWED_KINDS = new Set(['before', 'after', 'xray_before', 'xray_after'])
@@ -190,6 +191,16 @@ export async function POST(request: NextRequest) {
     .insert(photos.map(p => ({ case_id: caseRow.id, url: p.url, kind: p.kind, caption: p.caption, display_order: p.display_order })))
   if (photoErr) {
     return NextResponse.json({ error: `Case saved but photos failed: ${photoErr.message}`, case_id: caseRow.id }, { status: 500 })
+  }
+
+  // WhatsApp drafts (v2) that fed this case: mark them used so the
+  // "photos from WhatsApp" banner doesn't offer them again. Best-effort.
+  const draftIds = Array.isArray(payload?.whatsapp_draft_ids)
+    ? payload.whatsapp_draft_ids.filter((x: unknown) => typeof x === 'string').slice(0, 20)
+    : []
+  if (draftIds.length) {
+    await adminDb().from('whatsapp_case_drafts').update({ used_at: new Date().toISOString(), case_id: caseRow.id })
+      .in('id', draftIds).eq('dentist_id', dentist.id).then(() => {}, () => {})
   }
 
   // Admin email alert — best-effort; never blocks the submission. Only for

@@ -80,3 +80,49 @@ export async function callClaude(opts: {
 }): Promise<string> {
   return (await callClaudeWithUsage(opts)).text
 }
+
+// Vision call: same endpoint, with images passed by URL (Cloudinary). Used by
+// the case AI helper to spot faces / patient names and draft a summary.
+export async function callClaudeVision(opts: {
+  system: string
+  text: string
+  imageUrls: string[]
+  maxTokens?: number
+}): Promise<{ text: string; usage: ClaudeUsage }> {
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey) throw new AIUnavailableError('ANTHROPIC_API_KEY is not configured')
+  const content: any[] = []
+  opts.imageUrls.forEach((url, i) => {
+    content.push({ type: 'text', text: `Photo ${i + 1}:` })
+    content.push({ type: 'image', source: { type: 'url', url } })
+  })
+  content.push({ type: 'text', text: opts.text })
+
+  let res: Response
+  try {
+    res = await fetch(ANTHROPIC_API, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({
+        model: CLAUDE_MODEL,
+        max_tokens: opts.maxTokens ?? 1500,
+        system: [{ type: 'text', text: opts.system, cache_control: { type: 'ephemeral' } }],
+        messages: [{ role: 'user', content }],
+      }),
+    })
+  } catch (err) {
+    throw new AIUnavailableError(err instanceof Error ? err.message : 'Network error reaching Anthropic')
+  }
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '')
+    throw new AIUnavailableError(`Anthropic API returned ${res.status}: ${detail.slice(0, 200)}`)
+  }
+  const data = await res.json().catch(() => null)
+  const text = Array.isArray(data?.content)
+    ? data.content.filter((b: any) => b?.type === 'text').map((b: any) => b.text).join('')
+    : ''
+  if (!text) throw new AIUnavailableError('Empty response from Anthropic')
+  const inputTokens = Number(data?.usage?.input_tokens) || 0
+  const outputTokens = Number(data?.usage?.output_tokens) || 0
+  return { text, usage: { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens } }
+}

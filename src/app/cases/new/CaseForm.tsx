@@ -16,6 +16,7 @@ import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { SPECIALTIES } from '@/lib/dentalSpecialties'
 import { MATERIAL_GROUPS } from '@/lib/dentalMaterials'
+import AiHelper from './AiHelper'
 
 type Kind = 'before' | 'after' | 'xray_before' | 'xray_after'
 
@@ -57,14 +58,23 @@ const POST_KINDS: Kind[] = ['after', 'xray_after']
 
 const SATISFACTION_OPTIONS = ['Excellent', 'Good', 'Satisfactory', 'Requires follow-up']
 
-export default function CaseForm({ dentistName, isVerified }: { dentistName: string; isVerified: boolean }) {
+export default function CaseForm({ dentistName, isVerified, initialPhotos = [], initialNote = '', whatsappDraftIds = [] }: {
+  dentistName: string
+  isVerified: boolean
+  /** Photos sent on WhatsApp (v2), pre-filled as clinical "before" photos. */
+  initialPhotos?: string[]
+  /** Text sent with the WhatsApp photos, pre-filled into the treatment notes. */
+  initialNote?: string
+  /** WhatsApp drafts to mark as used once this case is saved. */
+  whatsappDraftIds?: string[]
+}) {
   const router = useRouter()
 
   // Basics
   const [title, setTitle]                       = useState('')
   const [specialty, setSpecialty]               = useState('')
   const [complexity, setComplexity]             = useState(3)
-  const [description, setDescription]           = useState('')
+  const [description, setDescription]           = useState(initialNote)
   const [question, setQuestion]                 = useState('')
   const [consent, setConsent]                   = useState(false)
 
@@ -93,7 +103,7 @@ export default function CaseForm({ dentistName, isVerified }: { dentistName: str
   const [isPrivateNotes, setIsPrivateNotes]     = useState(false)
   const [discussionEnabled, setDiscussionEnabled] = useState(true)
 
-  const [photos, setPhotos]                     = useState<UploadedPhoto[]>([])
+  const [photos, setPhotos]                     = useState<UploadedPhoto[]>(initialPhotos.slice(0, MAX_PER_KIND * 2).map(url => ({ url, kind: 'before' as Kind, caption: '' })))
   // Upload errors are scoped to the kind that failed so the message shows
   // under the right photo section (pre vs post), never duplicated.
   const [uploadErr, setUploadErr]               = useState<{ kind: Kind; msg: string } | null>(null)
@@ -180,6 +190,7 @@ export default function CaseForm({ dentistName, isVerified }: { dentistName: str
           key_learning: keyLearning || null,
           patient_satisfaction: patientSatisfaction || null,
           photos: photos.map((p, i) => ({ url: p.url, kind: p.kind, caption: p.caption, display_order: i })),
+          whatsapp_draft_ids: whatsappDraftIds,
         }),
       })
       const data = await res.json().catch(() => ({}))
@@ -250,6 +261,11 @@ export default function CaseForm({ dentistName, isVerified }: { dentistName: str
                     aria-label={`Caption for ${KIND_LABEL[kind]} photo`}
                     style={captionInputStyle}
                   />
+                  <select value={p.kind} aria-label="Move this photo to another section"
+                    onChange={e => { const k = e.target.value as Kind; setPhotos(prev => prev.map((x, j) => (j === globalIdx ? { ...x, kind: k } : x))) }}
+                    style={{ ...captionInputStyle, marginTop: 4, color: '#475569' }}>
+                    {(Object.keys(KIND_LABEL) as Kind[]).map(k => <option key={k} value={k}>{k === p.kind ? 'Section: ' : 'Move to: '}{KIND_LABEL[k]}</option>)}
+                  </select>
                 </div>
               )
             })}
@@ -357,6 +373,16 @@ export default function CaseForm({ dentistName, isVerified }: { dentistName: str
         {PRE_KINDS.map(renderKindBlock)}
         {uploadErrIn(PRE_KINDS)}
       </section>
+
+      <AiHelper
+        photos={photos.map(p => ({ url: p.url, kind: p.kind }))}
+        notes={[title && `Title: ${title}`, chiefComplaint && `Chief complaint: ${chiefComplaint}`, diagnosis && `Diagnosis: ${diagnosis}`, treatmentPlanDetail && `Plan: ${treatmentPlanDetail}`, description && `Notes: ${description}`].filter(Boolean).join('\n')}
+        onReplaceUrl={(i, url) => setPhotos(prev => prev.map((p, j) => (j === i ? { ...p, url } : p)))}
+        onUseTitle={setTitle}
+        onUseSummary={v => setDescription(prev => (prev.trim() ? `${prev.trim()}\n\n${v}` : v))}
+        onUseSpecialty={setSpecialty}
+        onUseQuestion={setQuestion}
+      />
 
       {/* Section 3 — Diagnosis & treatment plan */}
       <section style={sectionStyle}>

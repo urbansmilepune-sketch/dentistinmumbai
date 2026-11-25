@@ -34,6 +34,10 @@
       "schedule": "0 3 * * *"
     },
     {
+      "path": "/api/cron/case-followup-reminders",
+      "schedule": "0 5 * * *"
+    },
+    {
       "path": "/api/cron/follow-digest",
       "schedule": "0 4 * * 1"
     },
