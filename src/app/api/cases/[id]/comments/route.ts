@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
+import { isMissingColumnError } from '@/lib/national'
 
 const admin = createServiceClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -78,11 +79,16 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   if (!content) return NextResponse.json({ error: 'Comment cannot be empty' }, { status: 400 })
   if (content.length > 4000) return NextResponse.json({ error: 'Comment too long' }, { status: 400 })
 
-  const { data: row, error } = await supabase
+  // Reply type (suggestion / question / comment). The kind column comes
+  // from the national v1 SQL; until it runs, retry without it.
+  const kind = ['suggestion', 'question', 'comment'].includes(payload.kind) ? payload.kind : 'comment'
+  const insertComment = (withKind: boolean) => supabase
     .from('case_comments')
-    .insert({ case_id: caseId, dentist_id: dentist.id, content })
-    .select('id, content, created_at, dentist_id')
+    .insert(withKind ? { case_id: caseId, dentist_id: dentist.id, content, kind } : { case_id: caseId, dentist_id: dentist.id, content })
+    .select(withKind ? 'id, content, created_at, dentist_id, kind' : 'id, content, created_at, dentist_id')
     .single()
+  let { data: row, error } = await insertComment(true)
+  if (error && isMissingColumnError(error)) ({ data: row, error } = await insertComment(false))
   if (error || !row) return NextResponse.json({ error: error?.message || 'Could not post' }, { status: 500 })
 
   const newCount = await recountAndPersist(caseId)

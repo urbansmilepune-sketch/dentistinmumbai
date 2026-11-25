@@ -1,280 +1,255 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
-import { createClient as createServiceClient } from '@supabase/supabase-js'
 import NationalShell from '@/components/national/NationalShell'
-import { CITY_CONFIGS } from '@/config/cities'
 import { getSpecialty } from '@/lib/dentalSpecialties'
-import ShareButton from '@/components/national/ShareButton'
+import { getDentistPublishedArticles } from '@/lib/publicArticles'
+import { NATIONAL_ORIGIN } from '@/config/cities'
+import {
+  adminDb, getViewerDentist, isFoundingDentist, AFTER_KINDS, cityNameOf, cityDomainOf, initialsOf, ui,
+} from '@/lib/national'
 
 export const dynamic = 'force-dynamic'
 
-// Professional profile = the public-facing card for a dentist's national
-// network presence. Distinct from /dentist/[slug] which is the patient-
-// facing booking profile. Service-role read because we surface cases
-// (which RLS gates by status='approved') alongside dentist fields, and
-// keeping the query in one place is cleaner than splitting between the
-// user-bound and admin clients.
+// Public expert profile on dentistinindia.in (v1 dentist network).
+//
+// This is the page a patient lands on when they search a dentist's name,
+// before or after a first consultation. It shows expertise and reputation
+// only: how many cases the dentist shared with other dentists, how many
+// were checked again later, what they do most, badges, articles. No
+// X-rays, no clinical discussion (those stay inside the dentists-only case
+// library) and no booking: Book goes to the dentist's city site.
 
-interface DentistRow {
-  id: string
-  name: string
-  slug: string
-  clinic_name: string | null
-  city: string | null
-  email: string
-  qualifications: string | null
-  specialties: string[] | null
-  is_active: boolean | null
-  is_verified: boolean | null
-  experience_years: number | null
-  profile_photo: string | null
-  professional_bio: string | null
-  publications: string | null
-  hospital_affiliations: string | null
+type Row = Record<string, any>
+
+interface Loaded {
+  dentist: Row
+  caseCount: number
+  followupCount: number
+  answersCount: number
+  helpfulCount: number
+  topSpecialties: Array<{ slug: string; count: number }>
 }
 
-interface CaseRow {
-  id: string
-  title: string
-  specialty: string
-  complexity: number
-  like_count: number
-  comment_count: number
-  thumb: string | null
-}
-
-async function load(slug: string): Promise<{ dentist: DentistRow; cases: CaseRow[] } | null> {
-  const admin = createServiceClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  )
-  // Slugs are not guaranteed globally unique across cities, so a bare
-  // .single() would error (and 404 a valid profile) on a collision. Resolve
-  // deterministically instead: oldest registration owns the canonical slug.
-  const { data: matches } = await admin
-    .from('dentists')
-    .select('id, name, slug, clinic_name, city, email, qualifications, specialties, is_active, is_verified, experience_years, profile_photo, professional_bio, publications, hospital_affiliations')
-    .eq('slug', slug)
-    .order('created_at', { ascending: true })
-    .limit(1)
+async function load(slug: string): Promise<Loaded | null> {
+  const db = adminDb()
+  // Slugs are not globally unique across cities: the oldest registration
+  // owns the canonical one (same rule as before).
+  const { data: matches } = await db
+    .from('dentists').select('*')
+    .eq('slug', slug).order('created_at', { ascending: true }).limit(1)
   const dentist = matches?.[0]
-  if (!dentist) return null
+  if (!dentist || dentist.is_active === false) return null
 
-  const { data: cases } = await admin
-    .from('cases')
-    .select('id, title, specialty, complexity, like_count, comment_count')
-    .eq('dentist_id', dentist.id)
-    .eq('status', 'approved')
-    .order('created_at', { ascending: false })
-    .limit(24)
+  const { data: cases } = await db
+    .from('cases').select('id, specialty')
+    .eq('dentist_id', dentist.id).eq('status', 'approved').limit(1000)
+  const caseRows = (cases || []) as Array<{ id: string; specialty: string }>
 
-  const caseIds = (cases || []).map((c: any) => c.id as string)
-  const thumbs = new Map<string, string>()
-  if (caseIds.length) {
-    const { data: photos } = await admin
-      .from('case_photos')
-      .select('case_id, url, kind, display_order')
-      .in('case_id', caseIds)
-      .order('display_order')
-    for (const p of (photos || []) as Array<{ case_id: string; url: string; kind: string }>) {
-      if (!thumbs.has(p.case_id) || (p.kind === 'before' || p.kind === 'after')) {
-        thumbs.set(p.case_id, p.url)
-      }
-    }
+  let followupCount = 0
+  if (caseRows.length) {
+    const { data: afterPhotos } = await db
+      .from('case_photos').select('case_id')
+      .in('case_id', caseRows.map(c => c.id)).in('kind', AFTER_KINDS)
+    followupCount = new Set((afterPhotos || []).map((p: any) => p.case_id)).size
   }
 
-  return {
-    dentist: dentist as unknown as DentistRow,
-    cases: (cases || []).map((c: any) => ({
-      id: c.id, title: c.title, specialty: c.specialty, complexity: c.complexity,
-      like_count: c.like_count || 0, comment_count: c.comment_count || 0,
-      thumb: thumbs.get(c.id) ?? null,
-    })),
+  const { data: myComments } = await db
+    .from('case_comments').select('id').eq('dentist_id', dentist.id).limit(1000)
+  const commentIds = (myComments || []).map((c: any) => c.id as string)
+  let helpfulCount = 0
+  if (commentIds.length) {
+    const { count, error } = await db
+      .from('case_comment_helpful').select('comment_id', { count: 'exact', head: true })
+      .in('comment_id', commentIds)
+    if (!error) helpfulCount = count ?? 0
   }
+
+  const bySpec = new Map<string, number>()
+  for (const c of caseRows) bySpec.set(c.specialty, (bySpec.get(c.specialty) || 0) + 1)
+  const topSpecialties = Array.from(bySpec.entries())
+    .map(([s, count]) => ({ slug: s, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 4)
+
+  return { dentist, caseCount: caseRows.length, followupCount, answersCount: commentIds.length, helpfulCount, topSpecialties }
+}
+
+function headline(d: Row, top: Loaded['topSpecialties']): string {
+  const skills: string[] = Array.isArray(d.top_skills) ? d.top_skills : []
+  if (skills.length) return skills.slice(0, 2).join(' and ')
+  const spec = top[0] ? getSpecialty(top[0].slug)?.label : null
+  if (spec) return spec
+  if (Array.isArray(d.specialties) && d.specialties.length) return d.specialties[0]
+  return 'Dentist'
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params
   const data = await load(slug)
-  if (!data) return { title: 'Profile not found | Dentist In India' }
-  const title = `Dr. ${data.dentist.name} | Dentist In India`
-  const description = `Clinical cases and professional profile of Dr. ${data.dentist.name}${data.dentist.clinic_name ? ', ' + data.dentist.clinic_name : ''} on the Dentist In India network.`
-  return { title, description }
+  if (!data) return { title: 'Profile not found | DentistIn India', robots: { index: false, follow: false } }
+  const d = data.dentist
+  const city = cityNameOf(d.city)
+  const what = headline(d, data.topSpecialties)
+  const title = `Dr. ${d.name}, ${what}${city ? ' in ' + city : ''} | DentistIn India`
+  const bits = [
+    data.caseCount ? `${data.caseCount} cases shared with dentists across India` : null,
+    data.followupCount ? `${data.followupCount} checked after treatment` : null,
+    d.is_verified ? 'registration verified' : null,
+  ].filter(Boolean).join(', ')
+  const description = `Dr. ${d.name}${d.clinic_name ? ', ' + d.clinic_name : ''}${city ? ', ' + city : ''}. ${bits ? bits.charAt(0).toUpperCase() + bits.slice(1) + '.' : ''} See their expertise and book at the clinic.`.trim()
+  return {
+    title: { absolute: title },
+    description,
+    alternates: { canonical: `${NATIONAL_ORIGIN}/professional/${d.slug}` },
+    openGraph: { title, description, type: 'profile', siteName: 'DentistIn India', ...(d.profile_photo ? { images: [{ url: d.profile_photo }] } : {}) },
+  }
 }
 
-export default async function ProfessionalProfilePage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function ExpertProfilePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
   const data = await load(slug)
   if (!data) notFound()
-  const { dentist, cases } = data
+  const { dentist: d, caseCount, followupCount, answersCount, helpfulCount, topSpecialties } = data
 
-  // "Edit" affordance only renders if the signed-in user owns this row.
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const isOwner = !!user?.email && user.email.toLowerCase() === dentist.email.toLowerCase()
+  const viewer = await getViewerDentist()
+  const isOwner = !!viewer && viewer.id === d.id
+  const articles = await getDentistPublishedArticles(d.id).catch(() => [])
 
-  // The follow graph (counts, viewer-follows-this-dentist, the Follow
-  // button) was removed with the social-layer freeze. dentist_follows is
-  // untouched in the database — this page just no longer reads it, which
-  // also drops three per-render queries off the platform's most-trafficked
-  // national route (261 indexable profile URLs).
+  const cityName = cityNameOf(d.city)
+  const domain = cityDomainOf(d.city)
+  const skills: string[] = Array.isArray(d.top_skills) ? d.top_skills.slice(0, 3) : []
+  const founding = isFoundingDentist(d.created_at)
 
-  const cityCfg = dentist.city ? (CITY_CONFIGS as any)[dentist.city] : null
-  const initials = dentist.name.split(' ').map(p => p[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
+  const badges: Array<{ label: string; sub: string; bg: string; color: string }> = []
+  if (founding) badges.push({ label: 'Founding Dentist', sub: 'Among the first dentists on DentistIn', bg: '#FEF3C7', color: '#78350F' })
+  if (d.is_verified) badges.push({ label: 'Registration verified', sub: 'Dental Council number checked', bg: '#ECFDF5', color: '#065F46' })
+  for (const s of topSpecialties) {
+    if (s.count >= 5) {
+      const label = getSpecialty(s.slug)?.label
+      if (label) badges.push({ label: `Active ${label.toLowerCase()} contributor`, sub: `${s.count} cases shared`, bg: '#EFF6FF', color: '#1E3A8A' })
+    }
+  }
+  if (helpfulCount >= 10) badges.push({ label: 'Trusted by peers', sub: `${helpfulCount} answers marked helpful`, bg: '#F5F3FF', color: '#5B21B6' })
+
+  const stats = [
+    { n: caseCount, label: 'cases shared with other dentists' },
+    { n: followupCount, label: 'cases checked again after treatment' },
+    { n: helpfulCount, label: 'times their advice helped another dentist' },
+    { n: articles.length, label: 'articles written for patients' },
+  ]
 
   return (
-    <NationalShell badge="Professional">
-      <main style={{ maxWidth: 980, margin: '0 auto', padding: '32px 20px 64px' }}>
-        {/* Header card */}
-        <section style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 16, padding: 28, boxShadow: '0 2px 6px rgba(15, 25, 35, 0.04)', marginBottom: 24 }}>
-          <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-            <div style={{ width: 96, height: 96, borderRadius: '50%', background: '#EFF6FF', color: '#1D4ED8', fontWeight: 800, fontSize: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
-              {dentist.profile_photo ? <img src={dentist.profile_photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials}
-            </div>
-            <div style={{ flex: 1, minWidth: 240 }}>
-              <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 28, lineHeight: 1.2, color: '#0F1923', marginBottom: 4 }}>
-                Dr. {dentist.name}
-              </h1>
-              {dentist.qualifications && (
-                <div style={{ fontSize: 13, color: '#64748B', marginBottom: 8 }}>{dentist.qualifications}</div>
-              )}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
-                {dentist.is_verified && (
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', background: '#DCFCE7', color: '#166534', borderRadius: 999 }}>✓ State Dental Council-verified</span>
-                )}
-                {cityCfg && (
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', background: '#EFF6FF', color: '#1D4ED8', borderRadius: 999, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{cityCfg.cityName}</span>
-                )}
-                {typeof dentist.experience_years === 'number' && dentist.experience_years > 0 && (
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', background: '#F1F5F9', color: '#475569', borderRadius: 999 }}>{dentist.experience_years}+ years</span>
-                )}
-              </div>
-              {dentist.clinic_name && (
-                <div style={{ fontSize: 14, color: '#475569' }}>{dentist.clinic_name}</div>
-              )}
-              {(dentist.specialties && dentist.specialties.length > 0) && (
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12 }}>
-                  {dentist.specialties.map(sp => (
-                    <span key={sp} style={{ fontSize: 11, padding: '3px 9px', background: '#F8FAFC', color: '#475569', border: '1px solid #E2E8F0', borderRadius: 999, fontWeight: 600 }}>{sp}</span>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {cityCfg && (
-                <a href={`https://${cityCfg.domain}/dentist/${dentist.slug}`} target="_blank" rel="noopener" style={{ padding: '9px 16px', minHeight: 38, background: '#1D4ED8', color: '#fff', borderRadius: 8, fontSize: 13, fontWeight: 700, textDecoration: 'none', textAlign: 'center' }}>
-                  Book on {cityCfg.cityName} →
-                </a>
-              )}
-              {isOwner && (
-                <Link href="/professional/me/edit" style={{ padding: '9px 16px', minHeight: 38, background: '#fff', color: '#0F1923', border: '1px solid #E2E8F0', borderRadius: 8, fontSize: 13, fontWeight: 700, textDecoration: 'none', textAlign: 'center' }}>
-                  Edit profile
-                </Link>
-              )}
-            </div>
+    <NationalShell>
+      <main style={{ maxWidth: 760, margin: '0 auto', padding: '24px 16px 64px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <section style={{ ...ui.card, padding: '28px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 10 }}>
+          <div style={{ width: 96, height: 96, borderRadius: '50%', overflow: 'hidden', background: '#DBEAFE', color: '#1D4ED8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 30 }}>
+            {d.profile_photo ? <img src={d.profile_photo} alt={`Dr. ${d.name}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initialsOf(d.name)}
           </div>
-
-          {dentist.professional_bio && (
-            <p style={{ fontSize: 15, color: '#475569', lineHeight: 1.7, marginTop: 20, whiteSpace: 'pre-wrap' }}>
-              {dentist.professional_bio}
-            </p>
+          <h1 style={{ ...ui.h1, margin: 0 }}>Dr. {d.name}</h1>
+          <div style={{ fontSize: 15, color: '#475569' }}>
+            {headline(d, topSpecialties)}{cityName ? ` · ${cityName}` : ''}
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center' }}>
+            {d.qualifications && <span style={ui.pill('#EFF6FF', '#1D4ED8')}>{d.qualifications}</span>}
+            {typeof d.experience_years === 'number' && d.experience_years > 0 && <span style={ui.pill('#EFF6FF', '#1D4ED8')}>{d.experience_years}+ years</span>}
+            {d.clinic_name && <span style={ui.pill('#F1F5F9', '#334155')}>{d.clinic_name}</span>}
+          </div>
+          {d.patient_line && (
+            <p style={{ fontSize: 15, fontStyle: 'italic', color: '#334155', margin: '4px 0 0', maxWidth: 520 }}>&ldquo;{d.patient_line}&rdquo;</p>
           )}
-        </section>
-
-        {/* Cases gallery */}
-        <section style={{ marginBottom: 24 }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
-            <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 18, color: '#0F1923' }}>
-              Cases · <span style={{ color: '#64748B', fontWeight: 600 }}>{cases.length}</span>
-            </h2>
-            {isOwner && (
-              <Link href="/cases/new" style={{ fontSize: 13, color: '#1D4ED8', fontWeight: 700, textDecoration: 'none' }}>+ Post a case</Link>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', marginTop: 8 }}>
+            {domain && (
+              <a href={`https://${domain}/dentist/${d.slug}`} style={ui.btn}>Book at the clinic{cityName ? ` in ${cityName}` : ''}</a>
             )}
+            {isOwner && <Link href="/claim" style={ui.btnGhost}>Edit my profile</Link>}
           </div>
-          {cases.length === 0 ? (
-            <div style={{ background: '#F8FAFC', border: '1px dashed #CBD5E1', borderRadius: 14, padding: 36, textAlign: 'center', color: '#64748B', fontSize: 14 }}>
-              {isOwner ? (
-                <>No cases yet. <Link href="/cases/new" style={{ color: '#1D4ED8', fontWeight: 700, textDecoration: 'none' }}>Post your first →</Link></>
-              ) : (
-                <>No public cases yet.</>
-              )}
-            </div>
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 14 }}>
-              {cases.map(c => {
-                const spec = getSpecialty(c.specialty)
-                return (
-                  <div key={c.id} style={{ position: 'relative', background: '#fff', border: '1px solid #E2E8F0', borderRadius: 14, overflow: 'hidden' }}>
-                    <Link href={`/cases/${c.id}`} style={{ textDecoration: 'none', color: '#0F1923', display: 'block' }}>
-                      <div style={{ width: '100%', aspectRatio: '4 / 3', background: '#F1F5F9', overflow: 'hidden' }}>
-                        {c.thumb ? <img src={c.thumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} loading="lazy" /> : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#CBD5E1', fontSize: 28 }}>🦷</div>}
-                      </div>
-                      <div style={{ padding: 14 }}>
-                        {spec && <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', padding: '2px 8px', background: spec.bg, color: spec.color, borderRadius: 999 }}>{spec.label}</span>}
-                        <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 14, color: '#0F1923', marginTop: 6, lineHeight: 1.35 }}>{c.title}</h3>
-                        {(c.like_count > 0 || c.comment_count > 0) && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, fontSize: 11, color: '#94A3B8' }}>
-                            {c.like_count > 0 && <span title="Likes">♥ {c.like_count}</span>}
-                            {c.comment_count > 0 && <span title="Comments">💬 {c.comment_count}</span>}
-                          </div>
-                        )}
-                      </div>
-                    </Link>
-                    <div style={{ position: 'absolute', top: 8, right: 8 }}>
-                      <ShareButton caseId={c.id} caseTitle={c.title} dentistName={dentist.name} dentistId={dentist.id} compact />
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
+          {domain && <div style={{ fontSize: 12, color: '#475569' }}>Booking opens on {domain}</div>}
         </section>
 
-        {/* Publications + affiliations */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
-          <ProfileBlock
-            title="Publications"
-            value={dentist.publications}
-            emptyHint={isOwner ? 'Add papers, talks, posters or features you want listed publicly.' : 'No publications listed.'}
-          />
-          <ProfileBlock
-            title="Hospital affiliations"
-            value={dentist.hospital_affiliations}
-            emptyHint={isOwner ? 'List hospitals or specialist centres you visit or consult at.' : 'No affiliations listed.'}
-          />
-        </div>
+        <section>
+          <h2 style={ui.h2}>Why other dentists trust this doctor</h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
+            {stats.map(s => (
+              <div key={s.label} style={{ ...ui.card, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 26, color: '#1D4ED8' }}>{s.n}</div>
+                <div style={{ fontSize: 13, color: '#334155', lineHeight: 1.4 }}>{s.label}</div>
+              </div>
+            ))}
+          </div>
+        </section>
 
-        {/* Stats row — Followers/Following went with the social-layer
-            freeze. CPD + courses stay as coming-soon placeholders until
-            those products ship. */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginTop: 18 }}>
-          <ComingSoon label="CPD points earned"  value="0" hint="Continuing dental education tracking is coming soon." />
-          <ComingSoon label="Courses"             value="0" hint="Course creation + enrolment is coming soon." />
-        </div>
+        {badges.length > 0 && (
+          <section>
+            <h2 style={ui.h2}>Earned on DentistIn</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
+              {badges.map(b => (
+                <div key={b.label} style={{ borderRadius: 12, padding: '12px 14px', background: b.bg, color: b.color }}>
+                  <div style={{ fontWeight: 800, fontSize: 14 }}>{b.label}</div>
+                  <div style={{ fontSize: 12, marginTop: 2 }}>{b.sub}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {(topSpecialties.length > 0 || skills.length > 0) && (
+          <section>
+            <h2 style={ui.h2}>What this doctor does most</h2>
+            <div style={{ ...ui.card, padding: 0 }}>
+              {topSpecialties.length > 0
+                ? topSpecialties.map((s, i) => (
+                  <div key={s.slug} style={{ display: 'flex', justifyContent: 'space-between', padding: 14, borderTop: i ? '1px solid #E2E8F0' : 'none', fontSize: 15 }}>
+                    <span style={{ fontWeight: 600 }}>{getSpecialty(s.slug)?.label || s.slug}</span>
+                    <span style={{ color: '#475569' }}>{s.count} case{s.count === 1 ? '' : 's'}</span>
+                  </div>
+                ))
+                : skills.map((s, i) => (
+                  <div key={s} style={{ padding: 14, borderTop: i ? '1px solid #E2E8F0' : 'none', fontSize: 15, fontWeight: 600 }}>{s}</div>
+                ))}
+            </div>
+            <p style={{ fontSize: 12, color: '#475569', marginTop: 8 }}>X-rays and clinical discussion are shared only between dentists.</p>
+          </section>
+        )}
+
+        {articles.length > 0 && domain && (
+          <section>
+            <h2 style={ui.h2}>Articles for patients</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {articles.slice(0, 5).map(a => (
+                <a key={a.slug} href={`https://${domain}/dentist/${d.slug}/articles/${a.slug}`} style={{ ...ui.card, fontSize: 15, fontWeight: 600, color: '#0F1923', textDecoration: 'none' }}>{a.title}</a>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {(d.publications || d.hospital_affiliations) && (
+          <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+            {d.publications && <TextBlock title="Courses, talks and publications" value={d.publications} />}
+            {d.hospital_affiliations && <TextBlock title="Hospital affiliations" value={d.hospital_affiliations} />}
+          </section>
+        )}
+
+        {viewer && (
+          <section style={{ ...ui.card, background: '#0F1923', borderColor: '#0F1923', color: '#fff', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ fontWeight: 700 }}>You&apos;re signed in as a dentist</div>
+            <div style={{ fontSize: 14, color: '#CBD5E1' }}>{answersCount} replies on other dentists&apos; cases.</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <Link href={`/cases?by=${d.slug}`} style={{ ...ui.btn, background: '#fff', color: '#0F1923' }}>{isOwner ? 'My cases' : 'See their cases'}</Link>
+              {isOwner && <Link href="/cases/new" style={ui.btn}>Post a case</Link>}
+            </div>
+          </section>
+        )}
       </main>
     </NationalShell>
   )
 }
 
-function ProfileBlock({ title, value, emptyHint }: { title: string; value: string | null; emptyHint: string }) {
+function TextBlock({ title, value }: { title: string; value: string }) {
   return (
-    <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 14, padding: 20 }}>
-      <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 14, color: '#0F1923', marginBottom: 10 }}>{title}</h3>
-      {value
-        ? <p style={{ fontSize: 13, color: '#475569', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{value}</p>
-        : <p style={{ fontSize: 12, color: '#94A3B8', lineHeight: 1.6, fontStyle: 'italic' }}>{emptyHint}</p>}
-    </div>
-  )
-}
-
-function ComingSoon({ label, value, hint }: { label: string; value: string; hint: string }) {
-  return (
-    <div style={{ background: '#F8FAFC', border: '1px dashed #CBD5E1', borderRadius: 12, padding: '14px 18px' }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: '#94A3B8', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 4 }}>{label}</div>
-      <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 22, color: '#94A3B8', lineHeight: 1 }}>{value}</div>
-      <div style={{ fontSize: 11, color: '#64748B', marginTop: 6 }}>{hint}</div>
+    <div style={ui.card}>
+      <h3 style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 15, margin: '0 0 8px' }}>{title}</h3>
+      <p style={{ fontSize: 14, color: '#475569', lineHeight: 1.6, whiteSpace: 'pre-wrap', margin: 0 }}>{value}</p>
     </div>
   )
 }

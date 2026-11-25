@@ -1,59 +1,67 @@
 import Link from 'next/link'
 import BrandLogo from './BrandLogo'
 
-// Shared header + footer for the secondary national pages (every national
-// surface except / and /cities, which have their own inline chrome).
+// Shared header + footer for the dentistinindia.in dentist network.
 //
-// Stripped back to match the holding-page homepage: brand mark plus a single
-// "All cities" link, and a one-line footer. No sign-in, no claim-profile, no
-// case-discussion link, no vendor link — dentistinindia.in isn't being
-// promoted as a platform right now, so its chrome shouldn't advertise one.
+// v1 (Nov 2026): the national site is the dentists' own platform again,
+// so the header carries the four network sections. It deliberately does
+// not read auth (no per-render cookie read on every national page); the
+// "For dentists" link goes to /claim, which handles signed-in and
+// signed-out visitors itself.
 //
-// The pages this wraps (/join, /insights, /professional/[slug],
-// /dental-tourism, /cases/[id], /vendors, /about, /articles) are all
-// untouched and still fully functional — they're simply reachable by direct
-// link rather than by navigation from here.
-//
-// NOTE: this no longer reads auth. The previous version called
-// supabase.auth.getUser() on every render to decide between "My profile /
-// Sign out" and "Sign in / Claim your profile". With the nav gone there's
-// nothing auth-dependent left, so that per-render cookie read + JWT validate
-// is gone from every national page. The side effect is that signed-in
-// dentists lose the Sign out control on these pages; the practice dashboard
-// has its own shell and its own sign-out, so it isn't orphaned.
+// Booking never happens here: patient actions link out to the dentist's
+// city site.
 
 interface Props {
-  /** Toggles a coloured pill in the right side of the header so the
-   *  user knows they're inside a sub-flow (e.g. "Dental Tourism"). */
+  /** Optional pill next to the logo naming the current section. */
   badge?: string
   children: React.ReactNode
 }
 
+const NAV = [
+  { href: '/cases', label: 'Cases' },
+  { href: '/events', label: 'Events' },
+  { href: '/experts', label: 'Find an expert' },
+]
+
 export default function NationalShell({ badge, children }: Props) {
   return (
-    <div style={{ background: '#fff', color: '#0F1923', fontFamily: 'var(--font-body)', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <nav style={{ position: 'sticky', top: 0, zIndex: 50, background: '#fff', borderBottom: '1px solid #E2E8F0', padding: '14px 20px' }}>
-        <div style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-          <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#0F1923', textDecoration: 'none' }}>
-            <BrandLogo height={32} />
+    <div style={{ background: '#F8FAFC', color: '#0F1923', fontFamily: 'var(--font-body)', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <nav style={{ position: 'sticky', top: 0, zIndex: 50, background: '#fff', borderBottom: '1px solid #E2E8F0', padding: '10px 16px' }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#0F1923', textDecoration: 'none', minHeight: 44 }}>
+            <BrandLogo height={30} />
             {badge && (
-              <span style={{ marginLeft: 6, fontFamily: 'var(--font-body)', fontSize: 11, fontWeight: 700, padding: '3px 8px', background: '#EFF6FF', color: '#1D4ED8', borderRadius: 999, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+              <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', background: '#EFF6FF', color: '#1D4ED8', borderRadius: 999, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
                 {badge}
               </span>
             )}
           </Link>
-          <Link href="/cities" style={{ fontSize: 14, fontWeight: 600, color: '#475569', textDecoration: 'none' }}>
-            All cities
-          </Link>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+            {NAV.map(n => (
+              <Link key={n.href} href={n.href} style={{ display: 'inline-flex', alignItems: 'center', minHeight: 44, padding: '0 10px', fontSize: 14, fontWeight: 600, color: '#334155', textDecoration: 'none' }}>
+                {n.label}
+              </Link>
+            ))}
+            <Link href="/claim" style={{ display: 'inline-flex', alignItems: 'center', minHeight: 40, padding: '0 14px', marginLeft: 4, borderRadius: 8, background: '#1D4ED8', color: '#fff', fontSize: 14, fontWeight: 700, textDecoration: 'none' }}>
+              For dentists
+            </Link>
+          </div>
         </div>
       </nav>
 
       <div style={{ flex: 1 }}>{children}</div>
 
-      <footer style={{ background: '#0F1923', color: '#64748B', padding: '20px', textAlign: 'center', fontSize: 12 }}>
-        <Link href="/cities" style={{ color: '#94A3B8', textDecoration: 'none', fontWeight: 600 }}>All cities</Link>
-        <span style={{ margin: '0 10px', color: '#334155' }}>|</span>
-        © {new Date().getFullYear()} DentistIn. All rights reserved.
+      <footer style={{ background: '#0F1923', color: '#94A3B8', padding: '24px 16px', fontSize: 13 }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', gap: 16, flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+            {NAV.map(n => (
+              <Link key={n.href} href={n.href} style={{ color: '#CBD5E1', textDecoration: 'none', fontWeight: 600 }}>{n.label}</Link>
+            ))}
+            <Link href="/cities" style={{ color: '#CBD5E1', textDecoration: 'none', fontWeight: 600 }}>All cities</Link>
+          </div>
+          <div>© {new Date().getFullYear()} DentistIn. Book appointments on your city&apos;s DentistIn site.</div>
+        </div>
       </footer>
     </div>
   )

@@ -89,12 +89,9 @@ const nextConfig: NextConfig = {
       // these land on the bare hub rather than a ?tab= that no longer exists.
       // /cases/[id] is deliberately still served: the six approved cases are
       // indexable and sitemap-listed, so their URLs must keep resolving.
-      {
-        source: '/cases',
-        has: [{ type: 'host', value: '(www\\.)?dentistinindia\\.in' }],
-        destination: '/insights',
-        permanent: true,
-      },
+      // '/cases' used to 301 to /insights during the social-layer freeze.
+      // Since the Nov 2026 network v1 it is the dentists-only case library
+      // again, so that redirect is gone.
       {
         source: '/articles',
         has: [{ type: 'host', value: '(www\\.)?dentistinindia\\.in' }],
