@@ -21,13 +21,13 @@ import {
 } from '@/lib/auth/rememberMe'
 
 export async function GET(request: NextRequest) {
-  const loginUrl = new URL('/for-dentists/login', request.url)
-
   // Open-redirect guard: only same-origin relative paths.
   const nextParam = request.nextUrl.searchParams.get('next') || '/for-dentists/dashboard'
   const next = nextParam.startsWith('/') && !nextParam.startsWith('//')
     ? nextParam
     : '/for-dentists/dashboard'
+  const loginUrl = new URL('/for-dentists/login', request.url)
+  if (next !== '/for-dentists/dashboard') loginUrl.searchParams.set('next', next)
 
   const failToLogin = () => {
     const res = NextResponse.redirect(loginUrl)

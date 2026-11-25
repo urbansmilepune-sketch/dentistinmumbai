@@ -2,6 +2,8 @@ import { redirect } from 'next/navigation'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import LoginForm from './LoginForm'
+import { cookies } from 'next/headers'
+import { REMEMBER_COOKIE } from '@/lib/auth/rememberMe'
 
 // Already signed in? Skip the form.
 //
@@ -21,11 +23,17 @@ export default async function DentistLoginPage({
 }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
+  const params = await searchParams
+  const rawNext = typeof params.next === 'string' ? params.next : ''
+  const next = rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : '/for-dentists/dashboard'
 
-  if (user?.email && (await hasDashboardAccess(user.email))) {
-    const params = await searchParams
-    const next = typeof params.next === 'string' ? params.next : ''
-    redirect(next.startsWith('/') && !next.startsWith('//') ? next : '/for-dentists/dashboard')
+  if (user?.email && (await hasDashboardAccess(user.email))) redirect(next)
+
+  // 30-day "remember me": no session but a remember cookie → silent re-login,
+  // then on to ?next= (moved here from layout.tsx, which can't read ?next=).
+  // That route clears the cookie on failure and comes back here, so no loop.
+  if (!user && (await cookies()).get(REMEMBER_COOKIE)?.value) {
+    redirect(`/api/auth/remember-me?next=${encodeURIComponent(next)}`)
   }
 
   return <LoginForm />

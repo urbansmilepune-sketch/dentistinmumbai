@@ -66,7 +66,15 @@ export async function GET(request: NextRequest) {
     // 30-day "remember me", same as the email-code and password logins. Google
     // sign-in used to skip this, so Google dentists were logged out as soon as
     // their Supabase session lapsed.
-    const response = NextResponse.redirect(`${origin}${dentistLanding}`)
+    // ?next= from the login page (e.g. /cases/new from our WhatsApp reply),
+    // carried through Google sign-in in a short-lived cookie.
+    let landing = dentistLanding
+    try {
+      const n = decodeURIComponent(request.cookies.get('dentistin_next')?.value || '')
+      if (n.startsWith('/') && !n.startsWith('//')) landing = n
+    } catch { /* bad cookie → dashboard */ }
+    const response = NextResponse.redirect(`${origin}${landing}`)
+    response.cookies.set('dentistin_next', '', { path: '/', maxAge: 0 })
     const cookieValue = await issueRememberToken(admin, dentistRow.id)
     if (cookieValue) response.cookies.set(REMEMBER_COOKIE, cookieValue, rememberCookieOptions())
     return response
