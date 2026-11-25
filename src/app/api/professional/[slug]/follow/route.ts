@@ -1,59 +1,43 @@
-// POST /api/professional/[slug]/follow — toggle a follow relationship
-// from the signed-in dentist to the dentist identified by slug. Same
-// try-insert / fall-back-to-delete pattern used by likes + saves.
+// POST /api/professional/[slug]/follow — toggle a follow from the
+// signed-in dentist to the dentist with this slug (v1 network, Nov 2026).
+// New cases from people you follow show in the case library's
+// "Following" tab and in the weekly follow digest
+// (src/lib/followDigest.ts).
 //
-// We do NOT maintain a denormalised follower_count on dentists — counts
-// are derived via count(*) on every render. The dentist_follows table
-// is indexed on both follower_id + following_id so the query is cheap.
+// Auth is checked here; reads and writes use the service role.
+// Follower counts are derived with count(*), never stored.
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
-import { createClient as createServiceClient } from '@supabase/supabase-js'
-
-const admin = createServiceClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-)
+import { adminDb, getViewerDentist } from '@/lib/national'
 
 export async function POST(_req: NextRequest, ctx: { params: Promise<{ slug: string }> }) {
   const { slug } = await ctx.params
+  const viewer = await getViewerDentist()
+  if (!viewer) return NextResponse.json({ error: 'Sign in as a dentist to follow' }, { status: 401 })
 
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user?.email) return NextResponse.json({ error: 'Sign in to follow' }, { status: 401 })
+  const db = adminDb()
+  // Slugs aren't unique across cities: the oldest registration owns it.
+  const { data: rows } = await db
+    .from('dentists').select('id, is_active').eq('slug', slug).order('created_at').limit(1)
+  const target = rows?.[0]
+  if (!target || target.is_active === false) return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
+  if (target.id === viewer.id) return NextResponse.json({ error: "You can't follow yourself" }, { status: 400 })
 
-  // Resolve both endpoints. We need the follower id (from email) and
-  // the target id (from slug). One round-trip via two .single() reads;
-  // the second uses the admin client because the dentists row is keyed
-  // by slug — anon RLS reads of arbitrary slugs aren't guaranteed.
-  const [{ data: me }, { data: target }] = await Promise.all([
-    supabase.from('dentists').select('id').eq('email', user.email).single(),
-    admin.from('dentists').select('id, slug, name').eq('slug', slug).single(),
-  ])
-  if (!me)    return NextResponse.json({ error: 'Dentist profile not found' }, { status: 404 })
-  if (!target) return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
-  if (me.id === target.id) return NextResponse.json({ error: "You can't follow yourself" }, { status: 400 })
+  const { data: existing } = await db
+    .from('dentist_follows').select('id').eq('follower_id', viewer.id).eq('following_id', target.id).maybeSingle()
 
-  const ins = await supabase
-    .from('dentist_follows')
-    .insert({ follower_id: me.id, following_id: target.id })
-    .select('id')
-    .single()
-
-  if (ins.error) {
-    if (ins.error.code === '23505') {
-      const del = await supabase
-        .from('dentist_follows').delete()
-        .eq('follower_id', me.id).eq('following_id', target.id)
-      if (del.error) return NextResponse.json({ error: del.error.message }, { status: 500 })
-      // Recompute follower count for the response.
-      const { count } = await admin
-        .from('dentist_follows').select('*', { count: 'exact', head: true }).eq('following_id', target.id)
-      return NextResponse.json({ success: true, following: false, follower_count: count ?? 0 })
-    }
-    return NextResponse.json({ error: ins.error.message }, { status: 500 })
+  let following: boolean
+  if (existing) {
+    const del = await db.from('dentist_follows').delete().eq('id', existing.id)
+    if (del.error) return NextResponse.json({ error: 'Could not save' }, { status: 500 })
+    following = false
+  } else {
+    const ins = await db.from('dentist_follows').insert({ follower_id: viewer.id, following_id: target.id })
+    if (ins.error && ins.error.code !== '23505') return NextResponse.json({ error: 'Could not save' }, { status: 500 })
+    following = true
   }
-  const { count } = await admin
-    .from('dentist_follows').select('*', { count: 'exact', head: true }).eq('following_id', target.id)
-  return NextResponse.json({ success: true, following: true, follower_count: count ?? 0 })
+
+  const { count } = await db
+    .from('dentist_follows').select('id', { count: 'exact', head: true }).eq('following_id', target.id)
+  return NextResponse.json({ success: true, following, follower_count: count ?? 0 })
 }

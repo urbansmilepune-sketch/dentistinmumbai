@@ -12,6 +12,8 @@ import { NATIONAL_ORIGIN } from '@/config/cities'
 import DentistsOnly from '@/components/national/DentistsOnly'
 import BeforeAfter from './BeforeAfter'
 import FollowUpAdder from './FollowUpAdder'
+import LikeButton from './LikeButton'
+import FollowButton from '@/components/national/FollowButton'
 import { getViewerDentist } from '@/lib/national'
 import { drName } from '@/lib/dentistName'
 
@@ -158,10 +160,8 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
   const viewer = await getViewerDentist()
   if (!viewer) return <DentistsOnly next={`/cases/${id}`} title="This case is shared with dentists only" />
 
-  // Peer review context. Like and Save stay gone — those are the vanity
-  // mechanics we're deliberately not building. The comment thread is back:
-  // clinical peer feedback is the point of publishing a case, not a social
-  // interaction. Service role because the thread joins author rows that anon
+  // Peer review context: discussion, helpful marks, likes and follows
+  // (v1 network, Nov 2026). Service role because the thread joins author rows that anon
   // can't read when the case is pending (owner preview case).
   const adminClient = createServiceClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -202,6 +202,16 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
       asker_marked: who.includes(data.row.dentist_id),
     }
   })
+
+  // Like and follow state for the viewer (v1 network: likes and follows
+  // are back, dentists only).
+  const isAuthor = viewer.id === data.row.dentist_id
+  const [{ data: myLike }, { data: myFollow }] = await Promise.all([
+    adminClient.from('case_likes').select('id').eq('case_id', data.row.id).eq('dentist_id', viewer.id).maybeSingle(),
+    isAuthor
+      ? Promise.resolve({ data: null })
+      : adminClient.from('dentist_follows').select('id').eq('follower_id', viewer.id).eq('following_id', data.row.dentist_id).maybeSingle(),
+  ])
 
   // Bump view_count for every load on an approved case. Fire-and-forget
   // — nothing reads view_count since the trending rail went away, but the
@@ -265,14 +275,18 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
               </Link>
               {data.row.dentists.clinic_name && <> · {data.row.dentists.clinic_name}</>}
               {data.row.dentists.is_verified && <span style={{ marginLeft: 8, fontSize: 11, padding: '2px 8px', background: '#DCFCE7', color: '#166534', borderRadius: 999, fontWeight: 700 }}>✓ Verified</span>}
+              {!isAuthor && data.row.dentists.slug && (
+                <span style={{ marginLeft: 10, verticalAlign: 'middle' }}>
+                  <FollowButton slug={data.row.dentists.slug} initialFollowing={!!myFollow} compact />
+                </span>
+              )}
             </div>
           )}
-          {/* Like and Save went with the social-layer freeze; Share stays
-              because it's a distribution affordance, not a social graph.
-              Approved-only so a pending case's owner preview doesn't offer
-              to share an unpublishable row. */}
+          {/* Like (back in v1 network, dentists only) and Share. Approved-only
+              so a pending case's owner preview doesn't offer either. */}
           {data.row.status === 'approved' && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <LikeButton caseId={data.row.id} initialLiked={!!myLike} initialCount={data.row.like_count || 0} isOwn={isAuthor} />
               <ShareButton
                 caseId={data.row.id}
                 caseTitle={data.row.title}

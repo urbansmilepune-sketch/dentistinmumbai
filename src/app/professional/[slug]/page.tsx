@@ -6,6 +6,7 @@ import { getSpecialty } from '@/lib/dentalSpecialties'
 import { getDentistPublishedArticles } from '@/lib/publicArticles'
 import { NATIONAL_ORIGIN } from '@/config/cities'
 import { drName } from '@/lib/dentistName'
+import FollowButton from '@/components/national/FollowButton'
 import {
   adminDb, getViewerDentist, isFoundingDentist, AFTER_KINDS, cityNameOf, cityDomainOf, initialsOf, ui,
 } from '@/lib/national'
@@ -29,6 +30,8 @@ interface Loaded {
   followupCount: number
   answersCount: number
   helpfulCount: number
+  likeCount: number
+  followerCount: number
   topSpecialties: Array<{ slug: string; count: number }>
 }
 
@@ -43,9 +46,12 @@ async function load(slug: string): Promise<Loaded | null> {
   if (!dentist || dentist.is_active === false) return null
 
   const { data: cases } = await db
-    .from('cases').select('id, specialty')
+    .from('cases').select('id, specialty, like_count')
     .eq('dentist_id', dentist.id).eq('status', 'approved').limit(1000)
-  const caseRows = (cases || []) as Array<{ id: string; specialty: string }>
+  const caseRows = (cases || []) as Array<{ id: string; specialty: string; like_count: number | null }>
+  const likeCount = caseRows.reduce((n, c) => n + (c.like_count || 0), 0)
+  const { count: followerCount } = await db
+    .from('dentist_follows').select('id', { count: 'exact', head: true }).eq('following_id', dentist.id)
 
   let followupCount = 0
   if (caseRows.length) {
@@ -73,7 +79,7 @@ async function load(slug: string): Promise<Loaded | null> {
     .sort((a, b) => b.count - a.count)
     .slice(0, 4)
 
-  return { dentist, caseCount: caseRows.length, followupCount, answersCount: commentIds.length, helpfulCount, topSpecialties }
+  return { dentist, caseCount: caseRows.length, followupCount, answersCount: commentIds.length, helpfulCount, likeCount, followerCount: followerCount ?? 0, topSpecialties }
 }
 
 function headline(d: Row, top: Loaded['topSpecialties']): string {
@@ -111,10 +117,15 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
   const { slug } = await params
   const data = await load(slug)
   if (!data) notFound()
-  const { dentist: d, caseCount, followupCount, answersCount, helpfulCount, topSpecialties } = data
+  const { dentist: d, caseCount, followupCount, answersCount, helpfulCount, likeCount, followerCount, topSpecialties } = data
 
   const viewer = await getViewerDentist()
   const isOwner = !!viewer && viewer.id === d.id
+  let isFollowing = false
+  if (viewer && !isOwner) {
+    const { data: f } = await adminDb().from('dentist_follows').select('id').eq('follower_id', viewer.id).eq('following_id', d.id).maybeSingle()
+    isFollowing = !!f
+  }
   const articles = await getDentistPublishedArticles(d.id).catch(() => [])
 
   const cityName = cityNameOf(d.city)
@@ -136,7 +147,9 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
   const stats = [
     { n: caseCount, label: 'cases shared with other dentists' },
     { n: followupCount, label: 'cases checked again after treatment' },
+    { n: likeCount, label: 'likes from other dentists on their cases' },
     { n: helpfulCount, label: 'times their advice helped another dentist' },
+    { n: followerCount, label: 'dentists follow their work' },
     { n: articles.length, label: 'articles written for patients' },
   ]
 
@@ -164,6 +177,7 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
               <a href={`https://${domain}/dentist/${d.slug}`} style={ui.btn}>Book at the clinic{cityName ? ` in ${cityName}` : ''}</a>
             )}
             {isOwner && <Link href="/claim" style={ui.btnGhost}>Edit my profile</Link>}
+            {viewer && !isOwner && <FollowButton slug={d.slug} initialFollowing={isFollowing} />}
           </div>
           {domain && <div style={{ fontSize: 12, color: '#475569' }}>Booking opens on {domain}</div>}
         </section>
