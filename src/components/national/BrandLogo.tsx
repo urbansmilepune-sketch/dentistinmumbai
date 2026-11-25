@@ -12,7 +12,7 @@
 import { useState } from 'react'
 
 interface Props {
-  /** Display height in px. Width auto-scales. Defaults to nav size. */
+  /** Visible height of the logo mark in px. Width scales from it. */
   height?: number
   /** Renders the text fallback at this font-size. Defaults track height. */
   fontSize?: number
@@ -43,14 +43,21 @@ export default function BrandLogo({ height = 28, fontSize, className, style }: P
     )
   }
 
+  // logo-india.webp is 252x168 with the mark only in the box x 32-222,
+  // y 62-108 (same as the city logos, see SiteHeader.tsx). Crop to that
+  // box so `height` is the visible mark height, not mostly padding.
+  const scale = height / 46
   return (
-    <img
-      src="/logo-india.webp"
-      alt="Dentist In India"
-      height={height}
-      onError={() => setFailed(true)}
+    <span
       className={className}
-      style={{ height, width: 'auto', display: 'block', ...style }}
-    />
+      style={{ display: 'block', overflow: 'hidden', height, width: Math.round(190 * scale), ...style }}
+    >
+      <img
+        src="/logo-india.webp"
+        alt="Dentist In India"
+        onError={() => setFailed(true)}
+        style={{ display: 'block', maxWidth: 'none', height: Math.round(168 * scale), width: 'auto', marginLeft: -32 * scale, marginTop: -62 * scale }}
+      />
+    </span>
   )
 }
