@@ -53,12 +53,19 @@ function pick(obj: unknown, keys: string[], depth = 0): string | null {
     if (typeof v === 'number') return String(v)
   }
   for (const v of Object.values(obj as Record<string, unknown>)) {
-    if (v && typeof v === 'object') {
-      const r = pick(v, keys, depth + 1)
+    // MSG91's default inbound payload can carry nested JSON as a string
+    // (e.g. "messages": "[{...}]"), so parse those and look inside too.
+    const inner = typeof v === 'string' && /^\s*[[{]/.test(v) ? safeJson(v) : v
+    if (inner && typeof inner === 'object') {
+      const r = pick(inner, keys, depth + 1)
       if (r) return r
     }
   }
   return null
+}
+
+function safeJson(s: string): unknown {
+  try { return JSON.parse(s) } catch { return null }
 }
 
 function parse(payload: unknown) {
@@ -66,7 +73,7 @@ function parse(payload: unknown) {
   const contentType = (pick(payload, ['contentType', 'content_type', 'type']) || '').toLowerCase()
   const text = pick(payload, ['text', 'body', 'caption', 'message'])
   const mediaUrl = pick(payload, ['url', 'mediaUrl', 'media_url', 'fileUrl', 'file_url', 'link'])
-  const isImage = /image/.test(contentType) || (!!mediaUrl && /\.(jpe?g|png|webp)(\?|$)/i.test(mediaUrl))
+  const isImage = /image|photo/.test(contentType) || (!!mediaUrl && /\.(jpe?g|png|webp)(\?|$)/i.test(mediaUrl))
   return { phone, text: text && !/^https?:\/\//.test(text) ? text : null, mediaUrl: isImage ? mediaUrl : null, contentType }
 }
 
@@ -97,7 +104,9 @@ export async function POST(req: NextRequest) {
   if (!process.env.WHATSAPP_INBOUND_KEY || key !== process.env.WHATSAPP_INBOUND_KEY) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
-  const payload = await req.json().catch(() => null)
+  // Some MSG91 webhooks send the body as text even with a JSON template.
+  const raw = await req.text().catch(() => '')
+  const payload = safeJson(raw) ?? { raw: raw.slice(0, 20000) }
   const db = adminDb()
   const { phone, text, mediaUrl, contentType } = parse(payload)
 
@@ -105,6 +114,11 @@ export async function POST(req: NextRequest) {
   await db.from('whatsapp_inbound_log').insert({ payload, phone, content_type: contentType || null }).then(() => {}, () => {})
 
   if (process.env.WHATSAPP_CASE_POSTING_ENABLED !== 'true') return NextResponse.json({ ok: true, handled: false })
+  // MSG91 webhooks can be account-wide (Thetoothwork uses another number on
+  // the same account): only handle messages sent to the DentistIn number.
+  const ourNumber = (process.env.MSG91_WHATSAPP_NUMBER || '917719013232').replace(/\D/g, '').slice(-10)
+  const toNumber = (pick(payload, ['integratedNumber', 'integrated_number', 'businessNumber', 'display_phone_number']) || '').replace(/\D/g, '').slice(-10)
+  if (toNumber && toNumber !== ourNumber) return NextResponse.json({ ok: true, handled: false, other_number: true })
   const last10 = (phone || '').replace(/\D/g, '').slice(-10)
   if (!/^[6-9]\d{9}$/.test(last10)) return NextResponse.json({ ok: true, handled: false })
 
