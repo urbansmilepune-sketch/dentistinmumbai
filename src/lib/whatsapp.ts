@@ -23,6 +23,13 @@
 //   case_followup_reminder    → dentist, 3/6/12 months after a case was posted
 //                               {{1}} first name, {{2}} months, {{3}} case title, {{4}} link
 //                               (also needs CASE_FOLLOWUP_REMINDERS_ENABLED=true)
+//   event_alert_live          → dentist, when a paid Featured event / course goes live
+//   event_alert_reminder      → dentist, 2 days before that event
+//                               both: {{1}} first name, {{2}} event name, {{3}} date,
+//                               {{4}} place, {{5}} link; MARKETING category with a
+//                               "Stop event alerts" quick-reply button
+//                               (also need EVENT_ALERTS_ENABLED=true; created 26 Nov 2026,
+//                               not yet approved by Meta)
 //
 // Env:
 //   WHATSAPP_ENABLED        — must be "true" or nothing is sent (master switch)
@@ -45,6 +52,8 @@ export type WhatsAppTemplate =
   | 'review_request'
   | 'network_weekly_digest'
   | 'case_followup_reminder'
+  | 'event_alert_live'
+  | 'event_alert_reminder'
 
 /** Number of {{n}} values each template expects. */
 export const TEMPLATE_VALUE_COUNT: Record<WhatsAppTemplate, number> = {
@@ -56,6 +65,8 @@ export const TEMPLATE_VALUE_COUNT: Record<WhatsAppTemplate, number> = {
   review_request: 3,
   network_weekly_digest: 3,
   case_followup_reminder: 4,
+  event_alert_live: 5,
+  event_alert_reminder: 5,
 }
 
 export type WhatsAppResult =
@@ -224,6 +235,11 @@ export function sendFollowDigestWhatsApp(p: { dentistPhone: string; firstName: s
 /** case_followup_reminder: {{1}} first name, {{2}} months, {{3}} case title, {{4}} link. */
 export function sendCaseFollowupReminderWhatsApp(p: { dentistPhone: string; firstName: string; months: number; caseTitle: string; link: string }) {
   return sendWhatsAppTemplate(p.dentistPhone, 'case_followup_reminder', [p.firstName, String(p.months), p.caseTitle, p.link])
+}
+
+/** event_alert_live / event_alert_reminder: {{1}} first name, {{2}} event, {{3}} date, {{4}} place, {{5}} link. */
+export function sendEventAlertWhatsApp(p: { dentistPhone: string; kind: 'live' | 'reminder'; firstName: string; title: string; when: string; where: string; link: string }) {
+  return sendWhatsAppTemplate(p.dentistPhone, p.kind === 'live' ? 'event_alert_live' : 'event_alert_reminder', [p.firstName, p.title, p.when, p.where, p.link])
 }
 
 /**

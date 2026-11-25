@@ -172,7 +172,6 @@ async function handleMessage(ctx: {
     return r.success ? 'reply sent' : `reply FAILED: ${String((r as any).error || '').slice(0, 300)}`
   }
 
-  if (process.env.WHATSAPP_CASE_POSTING_ENABLED !== 'true') return done('ignored: WHATSAPP_CASE_POSTING_ENABLED is not true')
   // MSG91 webhooks can be account-wide (Thetoothwork uses another number on
   // the same account): only handle messages sent to the DentistIn number.
   const ourNumber = (process.env.MSG91_WHATSAPP_NUMBER || '917719013232').replace(/\D/g, '').slice(-10)
@@ -180,6 +179,23 @@ async function handleMessage(ctx: {
   if (toNumber && toNumber !== ourNumber) return done(`ignored: sent to another number (${toNumber})`)
   const last10 = (phone || '').replace(/\D/g, '').slice(-10)
   if (!/^[6-9]\d{9}$/.test(last10)) return done('ignored: no valid sender number')
+
+  // "Stop event alerts" (the quick-reply button on event alerts) or a plain
+  // STOP turns event alerts off for every dentist row with this number.
+  // Always honoured, whatever the case-posting switch says.
+  if (text && /^\s*stop(\s+event\s+alerts)?\s*[.!]?\s*$/i.test(text)) {
+    const loose = `%${last10.split('').join('%')}%`
+    const { data: rows } = await db.from('dentists').select('id, phone, whatsapp').or(`phone.ilike.${loose},whatsapp.ilike.${loose}`).limit(20)
+    const d10 = (v: unknown) => String(v || '').replace(/\D/g, '').slice(-10)
+    const ids = ((rows || []) as Array<Record<string, any>>).filter(d => d10(d.phone) === last10 || d10(d.whatsapp) === last10).map(d => d.id as string)
+    if (!ids.length) return done(`stop: no dentist with number ending ${last10}`)
+    const { error } = await db.from('dentists').update({ event_alerts_off: true }).in('id', ids)
+    if (error) return done(`stop FAILED: ${error.message}`)
+    const r = await reply('Done. You will not get event alerts from DentistIn India any more.')
+    return done(`event alerts off for ${ids.length} dentist row(s); ${r}`)
+  }
+
+  if (process.env.WHATSAPP_CASE_POSTING_ENABLED !== 'true') return done('ignored: WHATSAPP_CASE_POSTING_ENABLED is not true')
 
   // Stored numbers vary ("+91 99751 91883", "099751-91883"), so match the
   // ten digits with anything in between, then confirm on digits only.
