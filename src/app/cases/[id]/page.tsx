@@ -9,6 +9,10 @@ import ReportButton from './ReportButton'
 import Comments from './Comments'
 import ShareButton from '@/components/national/ShareButton'
 import { NATIONAL_ORIGIN } from '@/config/cities'
+import DentistsOnly from '@/components/national/DentistsOnly'
+import BeforeAfter from './BeforeAfter'
+import FollowUpAdder from './FollowUpAdder'
+import { getViewerDentist } from '@/lib/national'
 
 export const dynamic = 'force-dynamic'
 
@@ -66,6 +70,7 @@ interface PhotoRow {
   kind: 'before' | 'after' | 'xray_before' | 'xray_after'
   caption: string | null
   display_order: number
+  months_after?: number | null
 }
 
 const KIND_LABEL: Record<PhotoRow['kind'], string> = {
@@ -86,7 +91,7 @@ async function loadCase(id: string): Promise<{ row: CaseRow; photos: PhotoRow[] 
     admin.from('cases')
       .select('*, dentists(name, slug, clinic_name, city, email, is_verified)')
       .eq('id', id).single(),
-    admin.from('case_photos').select('id, url, kind, caption, display_order').eq('case_id', id).order('display_order'),
+    admin.from('case_photos').select('*').eq('case_id', id).order('display_order'),
   ])
   if (!row) return null
   return { row: row as unknown as CaseRow, photos: (photos || []) as PhotoRow[] }
@@ -113,6 +118,9 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
     title: `${data.row.title} | Dentist In India`,
     description: ogDescription,
     alternates: { canonical: ogUrl },
+    // Cases are dentists-only since the Nov 2026 network v1: keep them out
+    // of search. The share preview (og tags) still works for WhatsApp.
+    robots: { index: false, follow: false },
     openGraph: {
       title: ogTitle,
       description: ogDescription,
@@ -144,6 +152,11 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
   const isOwner = user?.email && data.row.dentists?.email && user.email.toLowerCase() === data.row.dentists.email.toLowerCase()
   if (data.row.status !== 'approved' && !isOwner) notFound()
 
+  // Dentists only: clinical photos and discussion are not shown to
+  // patients or to anyone signed out.
+  const viewer = await getViewerDentist()
+  if (!viewer) return <DentistsOnly next={`/cases/${id}`} title="This case is shared with dentists only" />
+
   // Peer review context. Like and Save stay gone — those are the vanity
   // mechanics we're deliberately not building. The comment thread is back:
   // clinical peer feedback is the point of publishing a case, not a social
@@ -157,19 +170,37 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
   // Identifies the viewer to the Comments component so it can offer the
   // reply box (verified dentists only) and a delete affordance on their own
   // comments. Undefined for signed-out visitors, who get a read-only thread.
-  let currentDentist: { id: string; is_verified: boolean } | undefined
-  if (user?.email) {
-    const { data: d } = await supabase
-      .from('dentists').select('id, is_verified').eq('email', user.email).single()
-    if (d) currentDentist = { id: d.id, is_verified: !!d.is_verified }
-  }
+  const currentDentist = { id: viewer.id, is_verified: viewer.is_verified, name: viewer.name }
 
   const { data: commentsRows } = await adminClient
     .from('case_comments')
-    .select('id, content, created_at, dentist_id, dentist:dentist_id(name, slug, city, specialties, is_verified)')
+    .select('*, dentist:dentist_id(name, slug, city, specialties, is_verified)')
     .eq('case_id', data.row.id)
     .order('created_at', { ascending: true })
     .limit(200)
+
+  // Helpful marks (table from the national v1 SQL; empty until it runs).
+  const commentIds = (commentsRows || []).map((c: any) => c.id as string)
+  const helpfulBy = new Map<string, string[]>()
+  if (commentIds.length) {
+    const { data: marks, error: marksErr } = await adminClient
+      .from('case_comment_helpful').select('comment_id, dentist_id').in('comment_id', commentIds)
+    if (!marksErr) {
+      for (const m of (marks || []) as Array<{ comment_id: string; dentist_id: string }>) {
+        helpfulBy.set(m.comment_id, [...(helpfulBy.get(m.comment_id) || []), m.dentist_id])
+      }
+    }
+  }
+  const comments = (commentsRows || []).map((c: any) => {
+    const who = helpfulBy.get(c.id) || []
+    return {
+      ...c,
+      kind: c.kind || 'comment',
+      helpful_count: who.length,
+      viewer_marked: who.includes(viewer.id),
+      asker_marked: who.includes(data.row.dentist_id),
+    }
+  })
 
   // Bump view_count for every load on an approved case. Fire-and-forget
   // — nothing reads view_count since the trending rail went away, but the
@@ -183,6 +214,16 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
   const after     = data.photos.filter(p => p.kind === 'after')
   const xrayBefore = data.photos.filter(p => p.kind === 'xray_before')
   const xrayAfter  = data.photos.filter(p => p.kind === 'xray_after')
+
+  // Before/after slider: prefer the X-ray pair, else the clinical pair.
+  // The "after" side is the latest follow-up (highest months_after).
+  const latest = (rows: PhotoRow[]) => rows.slice().sort((a, b) => (b.months_after || 0) - (a.months_after || 0) || b.display_order - a.display_order)[0]
+  const pair = xrayBefore.length && xrayAfter.length
+    ? { before: xrayBefore[0], after: latest(xrayAfter) }
+    : before.length && after.length ? { before: before[0], after: latest(after) } : null
+  const followUps = [...after, ...xrayAfter].filter(p => p.months_after).sort((a, b) => (a.months_after || 0) - (b.months_after || 0))
+  const doneMonths = followUps.map(p => p.months_after as number)
+  const question = (data.row as any).question as string | null | undefined
 
   const showClinicalNotes = !data.row.is_private_notes || isOwner
   const costLine = data.row.cost_min || data.row.cost_max
@@ -245,12 +286,42 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
             has no data, so older cases (and pre-migration rows) still render
             cleanly. Order: intro → pre-op imaging → plan → post-op imaging →
             conclusion. */}
+        {question && (
+          <section style={{ background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 14, padding: 18, marginBottom: 18 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#92400E', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Question to other dentists</div>
+            <p style={{ fontSize: 17, fontWeight: 700, color: '#0F1923', margin: 0, lineHeight: 1.45 }}>{question}</p>
+          </section>
+        )}
+        {(data.row as any).patient_consent && (
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#047857', marginBottom: 14 }}>✓ Patient consent recorded · face and name removed</div>
+        )}
+        {pair && (
+          <BeforeAfter before={pair.before.url} after={pair.after.url} afterLabel={pair.after.months_after ? `${pair.after.months_after} months` : 'After'} />
+        )}
+        {(followUps.length > 0 || isOwner) && (
+          <section style={{ ...templateCardStyle, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <h2 style={{ ...templateHeadingStyle, fontSize: 16, marginBottom: 0 }}>Follow-ups</h2>
+            {followUps.length === 0 ? (
+              <p style={{ fontSize: 14, color: '#475569', margin: 0 }}>No follow-up yet. Cases with a 6 or 12-month X-ray teach the most.</p>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10 }}>
+                {followUps.map(p => (
+                  <figure key={p.id} style={{ margin: 0 }}>
+                    <img src={p.url} alt={`${p.months_after}-month follow-up`} style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 10, border: '1px solid #E2E8F0' }} />
+                    <figcaption style={{ fontSize: 13, fontWeight: 700, color: '#0F1923', marginTop: 4 }}>{p.months_after} months</figcaption>
+                  </figure>
+                ))}
+              </div>
+            )}
+            {isOwner && data.row.status === 'approved' && <FollowUpAdder caseId={data.row.id} doneMonths={doneMonths} />}
+          </section>
+        )}
         <PatientIntroCard row={data.row} />
         <PhotoGroup title="Before Treatment — Clinical Photos" rows={before} />
         <PhotoGroup title="Pre-Treatment X-Ray / OPG" rows={xrayBefore} />
         <DiagnosisCard row={data.row} />
-        <PhotoGroup title="After Treatment — Clinical Photos" rows={after} />
-        <PhotoGroup title="Post-Treatment X-Ray / OPG" rows={xrayAfter} />
+        <PhotoGroup title="After Treatment — Clinical Photos" rows={after.filter(p => !p.months_after)} />
+        <PhotoGroup title="Post-Treatment X-Ray / OPG" rows={xrayAfter.filter(p => !p.months_after)} />
         <ConclusionCard row={data.row} />
 
         {/* Description */}
@@ -304,7 +375,8 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
         {data.row.status === 'approved' && (
           <Comments
             caseId={data.row.id}
-            initialComments={(commentsRows as any) || []}
+            caseAuthorId={data.row.dentist_id}
+            initialComments={comments as any}
             currentDentist={currentDentist}
             discussionEnabled={data.row.discussion_enabled}
           />

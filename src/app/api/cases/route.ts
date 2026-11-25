@@ -93,6 +93,13 @@ export async function POST(request: NextRequest) {
   const keyLearning = cap(payload.key_learning, 5000)
   const patientSatisfaction = oneOf(payload.patient_satisfaction, SATISFACTIONS)
 
+  // Network v1: the question asked of other dentists + patient consent.
+  // Consent is required: no case is published without it.
+  const question = cap(payload.question, 300)
+  if (payload.patient_consent !== true) {
+    return NextResponse.json({ error: 'Please confirm the patient agreed to share these images and that no face, name or phone number is visible' }, { status: 400 })
+  }
+
   // Materials — accept only entries that match the curated catalogue.
   const rawMaterials = Array.isArray(payload.materials) ? payload.materials : []
   const materials = rawMaterials
@@ -150,19 +157,24 @@ export async function POST(request: NextRequest) {
     patient_satisfaction: patientSatisfaction,
   }
 
-  const insertCase = (includeTemplate: boolean) =>
+  const networkFields = { question, patient_consent: true }
+
+  const insertCase = (fields: Record<string, unknown>) =>
     supabase
       .from('cases')
-      .insert(includeTemplate ? { ...baseFields, ...templateFields } : baseFields)
+      .insert(fields)
       .select('id, status')
       .single()
 
-  let { data: caseRow, error: caseErr } = await insertCase(true)
-  // Migration window: if the template columns aren't on the live DB yet,
-  // retry without them so the case still saves (template data is dropped
-  // until the ALTER runs — see the SQL handed off separately).
+  let { data: caseRow, error: caseErr } = await insertCase({ ...baseFields, ...templateFields, ...networkFields })
+  // Migration window: if the network or template columns aren't on the
+  // live DB yet, retry without them so the case still saves (that data is
+  // dropped until the ALTER runs — see the SQL handed off separately).
   if (caseErr && isMissingColumnError(caseErr)) {
-    ;({ data: caseRow, error: caseErr } = await insertCase(false))
+    ;({ data: caseRow, error: caseErr } = await insertCase({ ...baseFields, ...templateFields }))
+  }
+  if (caseErr && isMissingColumnError(caseErr)) {
+    ;({ data: caseRow, error: caseErr } = await insertCase(baseFields))
   }
   if (caseErr || !caseRow) {
     return NextResponse.json({ error: `Could not save case: ${caseErr?.message ?? 'unknown'}` }, { status: 500 })

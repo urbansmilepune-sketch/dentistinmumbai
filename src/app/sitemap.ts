@@ -6,6 +6,7 @@ import { getCityAreaDentistCounts, getAreaTreatmentCompleteCounts } from '@/lib/
 import { isIndexableProfile } from '@/lib/profileCompletion'
 import { getCityArticles } from '@/lib/publicArticles'
 import { getOpeningState } from '@/lib/cityOpening'
+import { SPECIALTIES } from '@/lib/dentalSpecialties'
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const h = await headers()
@@ -29,6 +30,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       { url: `${NATIONAL_ORIGIN}/dental-tourism`,   lastModified: now, changeFrequency: 'monthly', priority: 0.85 },
       { url: `${NATIONAL_ORIGIN}/for-dentists`,     lastModified: now, changeFrequency: 'weekly',  priority: 0.85 },
       { url: `${NATIONAL_ORIGIN}/about`,            lastModified: now, changeFrequency: 'monthly', priority: 0.6 },
+      { url: `${NATIONAL_ORIGIN}/events`,           lastModified: now, changeFrequency: 'daily',   priority: 0.85 },
+      ...SPECIALTIES.map(s => ({ url: `${NATIONAL_ORIGIN}/experts?t=${s.slug}`, lastModified: now, changeFrequency: 'weekly' as const, priority: 0.8 })),
     ]
     const cityHomes: MetadataRoute.Sitemap = LIVE_CITY_CONFIGS.map(c => ({
       url: `https://${c.domain}`,
@@ -38,23 +41,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     }))
     // Approved case + professional-profile URLs — fetched via the
     // user-bound client; case_photos RLS doesn't gate the cases.id read.
-    const [{ data: approvedCases }, { data: activeDentists }] = await Promise.all([
-      supabase.from('cases').select('id, created_at').eq('status', 'approved').order('created_at', { ascending: false }).limit(5000),
-      supabase.from('dentists').select('slug').eq('is_active', true).limit(5000),
-    ])
-    const casePages: MetadataRoute.Sitemap = (approvedCases || []).map((c: any) => ({
-      url: `${NATIONAL_ORIGIN}/cases/${c.id}`,
-      lastModified: c.created_at ? new Date(c.created_at) : now,
-      changeFrequency: 'weekly' as const,
-      priority: 0.75,
-    }))
+    // Case pages are dentists-only (noindex) since the Nov 2026 network
+    // v1, so only the public expert profiles are listed.
+    const { data: activeDentists } = await supabase.from('dentists').select('slug').eq('is_active', true).limit(5000)
     const profilePages: MetadataRoute.Sitemap = (activeDentists || []).map((d: any) => ({
       url: `${NATIONAL_ORIGIN}/professional/${d.slug}`,
       lastModified: now,
       changeFrequency: 'weekly' as const,
       priority: 0.7,
     }))
-    return [...nationalPages, ...cityHomes, ...casePages, ...profilePages]
+    return [...nationalPages, ...cityHomes, ...profilePages]
   }
 
   const city = getCityByDomain(host)

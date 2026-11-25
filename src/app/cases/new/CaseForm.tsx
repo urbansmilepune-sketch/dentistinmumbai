@@ -65,6 +65,8 @@ export default function CaseForm({ dentistName, isVerified }: { dentistName: str
   const [specialty, setSpecialty]               = useState('')
   const [complexity, setComplexity]             = useState(3)
   const [description, setDescription]           = useState('')
+  const [question, setQuestion]                 = useState('')
+  const [consent, setConsent]                   = useState(false)
 
   // Section 1 — Patient introduction (no name/contact for privacy)
   const [patientAge, setPatientAge]             = useState('')
@@ -148,6 +150,7 @@ export default function CaseForm({ dentistName, isVerified }: { dentistName: str
     if (!diagnosis.trim())          return setSubmitErr('Add a diagnosis')
     if (!treatmentPlanDetail.trim()) return setSubmitErr('Add a treatment plan')
     if (photos.length === 0)        return setSubmitErr('Upload at least one photo')
+    if (!consent)                   return setSubmitErr('Tick the patient consent box before submitting')
 
     setSubmitting(true)
     try {
@@ -156,6 +159,8 @@ export default function CaseForm({ dentistName, isVerified }: { dentistName: str
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title, specialty, complexity,
+          question: question || null,
+          patient_consent: consent,
           description, clinical_notes: clinicalNotes,
           is_private_notes: isPrivateNotes,
           discussion_enabled: discussionEnabled,
@@ -295,6 +300,13 @@ export default function CaseForm({ dentistName, isVerified }: { dentistName: str
               <span style={{ marginLeft: 8, fontSize: 13, color: '#64748B' }}>{complexity} / 5</span>
             </div>
           </div>
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle} htmlFor="case-question">Your question to other dentists (optional)</label>
+          <input id="case-question" value={question} onChange={e => setQuestion(e.target.value)} maxLength={300}
+            placeholder="e.g. Would you load at 3 months or wait for 4?" style={inputStyle} />
+          <p style={{ fontSize: 12, color: '#475569', marginTop: 6 }}>A clear question gets faster, better replies.</p>
         </div>
 
         <div>
@@ -451,9 +463,14 @@ export default function CaseForm({ dentistName, isVerified }: { dentistName: str
         </label>
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginTop: 6, fontSize: 13, color: '#475569', marginLeft: 18 }}>
           <input type="checkbox" checked={discussionEnabled} onChange={e => setDiscussionEnabled(e.target.checked)} />
-          Allow other verified dentists to comment (coming soon)
+          Allow other verified dentists to reply
         </label>
       </section>
+
+      <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: 14, borderRadius: 12, background: '#ECFDF5', border: '1px solid #A7F3D0', fontSize: 14, lineHeight: 1.5, color: '#065F46', marginBottom: 14 }}>
+        <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} style={{ width: 20, height: 20, marginTop: 2, flexShrink: 0 }} />
+        <span>The patient agreed to share these images for teaching, and no face, name or phone number is visible in any photo or X-ray.</span>
+      </label>
 
       {submitErr && <div style={{ color: '#DC2626', fontSize: 13, marginBottom: 12, fontWeight: 600 }}>{submitErr}</div>}
 
