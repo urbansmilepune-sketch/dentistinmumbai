@@ -99,15 +99,34 @@ async function copyToCloudinary(url: string, dentistId: string): Promise<string 
   }
 }
 
+// GET: setup check you can open in a browser. Shows only whether the two
+// Vercel settings are present and whether the key in the URL matches; never
+// the key itself.
+export async function GET(req: NextRequest) {
+  const key = req.nextUrl.searchParams.get('key') || ''
+  const expected = process.env.WHATSAPP_INBOUND_KEY || ''
+  return NextResponse.json({
+    webhook: 'msg91-whatsapp',
+    key_set_in_vercel: !!expected,
+    key_in_url_matches: !!expected && key === expected,
+    posting_enabled: process.env.WHATSAPP_CASE_POSTING_ENABLED === 'true',
+    whatsapp_enabled: process.env.WHATSAPP_ENABLED === 'true',
+  })
+}
+
 export async function POST(req: NextRequest) {
   const key = req.nextUrl.searchParams.get('key') || ''
-  if (!process.env.WHATSAPP_INBOUND_KEY || key !== process.env.WHATSAPP_INBOUND_KEY) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
   // Some MSG91 webhooks send the body as text even with a JSON template.
   const raw = await req.text().catch(() => '')
-  const payload = safeJson(raw) ?? { raw: raw.slice(0, 20000) }
   const db = adminDb()
+  if (!process.env.WHATSAPP_INBOUND_KEY || key !== process.env.WHATSAPP_INBOUND_KEY) {
+    // Log rejected calls too (short, without the key) so a setup mistake is
+    // visible in whatsapp_inbound_log instead of silently returning 401.
+    const why = !process.env.WHATSAPP_INBOUND_KEY ? 'rejected: WHATSAPP_INBOUND_KEY not set in Vercel' : 'rejected: wrong key in webhook URL'
+    await db.from('whatsapp_inbound_log').insert({ payload: { raw: raw.slice(0, 2000) }, phone: null, content_type: why }).then(() => {}, () => {})
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  const payload = safeJson(raw) ?? { raw: raw.slice(0, 20000) }
   const { phone, text, mediaUrl, contentType } = parse(payload)
 
   // Always log (table may not exist yet; ignore errors).
