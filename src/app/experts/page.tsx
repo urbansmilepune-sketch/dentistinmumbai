@@ -5,6 +5,7 @@ import NationalShell from '@/components/national/NationalShell'
 import { SPECIALTIES, getSpecialty } from '@/lib/dentalSpecialties'
 import { LIVE_CITY_CONFIGS, NATIONAL_ORIGIN } from '@/config/cities'
 import { adminDb, isNationalRequest, AFTER_KINDS, cityNameOf, initialsOf, isFoundingDentist, ui } from '@/lib/national'
+import { drName } from '@/lib/dentistName'
 
 export const dynamic = 'force-dynamic'
 
@@ -112,7 +113,7 @@ export default async function ExpertsPage({ searchParams }: { searchParams: Prom
                     {d.profile_photo ? <img src={d.profile_photo} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initialsOf(d.name)}
                   </div>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 700, fontSize: 15 }}>Dr. {d.name}</div>
+                    <div style={{ fontWeight: 700, fontSize: 15 }}>{drName(d.name)}</div>
                     <div style={{ fontSize: 13, color: '#475569' }}>
                       {[d.qualifications, typeof d.experience_years === 'number' && d.experience_years > 0 ? `${d.experience_years}+ years` : null, cityNameOf(d.city)].filter(Boolean).join(' · ')}
                     </div>

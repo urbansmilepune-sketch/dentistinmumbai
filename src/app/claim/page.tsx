@@ -5,6 +5,7 @@ import NationalShell from '@/components/national/NationalShell'
 import { createClient } from '@/lib/supabase/server'
 import { adminDb, isNationalRequest, isFoundingDentist, cityNameOf, initialsOf, SKILL_OPTIONS, ui } from '@/lib/national'
 import ClaimForm from './ClaimForm'
+import { drName } from '@/lib/dentistName'
 
 export const dynamic = 'force-dynamic'
 
@@ -77,7 +78,7 @@ export default async function ClaimPage() {
               {d.profile_photo ? <img src={d.profile_photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initialsOf(d.name)}
             </div>
             <div>
-              <div style={{ fontWeight: 800, fontSize: 17 }}>Dr. {d.name}</div>
+              <div style={{ fontWeight: 800, fontSize: 17 }}>{drName(d.name)}</div>
               <div style={{ fontSize: 13, color: '#475569' }}>{[d.qualifications, d.clinic_name, cityNameOf(d.city)].filter(Boolean).join(' · ')}</div>
             </div>
           </div>

@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import NationalShell from './NationalShell'
 import { CITY_CONFIGS, type CitySlug, LIVE_CITY_CONFIGS } from '@/config/cities'
+import { drName } from '@/lib/dentistName'
 
 // /dentists on dentistinindia.in — "Discover Dentists" national grid.
 // Service-role read so the join across dentists + case counts +
@@ -232,7 +233,7 @@ export default async function NationalDentistsDiscover({ searchParams }: Props) 
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                      <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 14, lineHeight: 1.3 }}>Dr. {d.name}</span>
+                      <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 14, lineHeight: 1.3 }}>{drName(d.name)}</span>
                       {d.is_verified && <span style={{ fontSize: 10, padding: '1px 6px', background: '#DCFCE7', color: '#166534', borderRadius: 999, fontWeight: 700 }}>✓</span>}
                     </div>
                     {d.qualifications && <div style={{ fontSize: 11, color: '#64748B' }}>{d.qualifications}</div>}

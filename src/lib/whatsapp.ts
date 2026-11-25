@@ -16,6 +16,10 @@
 //   review_request            → patient, right after the visit is Done (9 AM-8 PM IST)
 //                               {{1}} first name, {{2}} clinic, {{3}} link
 //                               (also needs REVIEW_REQUESTS_ENABLED=true)
+//   network_weekly_digest     → dentist, weekly, new cases from people they follow
+//                               {{1}} first name, {{2}} summary line, {{3}} link
+//                               (also needs FOLLOW_DIGEST_ENABLED=true; NOT yet
+//                               approved in MSG91 as of 25 Nov 2026)
 //
 // Env:
 //   WHATSAPP_ENABLED        — must be "true" or nothing is sent (master switch)
@@ -36,6 +40,7 @@ export type WhatsAppTemplate =
   | 'appointment_cancellation'
   | 'appointment_reminder'
   | 'review_request'
+  | 'network_weekly_digest'
 
 /** Number of {{n}} values each template expects. */
 export const TEMPLATE_VALUE_COUNT: Record<WhatsAppTemplate, number> = {
@@ -45,6 +50,7 @@ export const TEMPLATE_VALUE_COUNT: Record<WhatsAppTemplate, number> = {
   appointment_cancellation: 2,
   appointment_reminder: 5,
   review_request: 3,
+  network_weekly_digest: 3,
 }
 
 export type WhatsAppResult =
@@ -203,4 +209,9 @@ export function sendReminderWhatsApp(p: { patientPhone: string; patientName: str
 /** review_request: {{1}} patient first name, {{2}} clinic, {{3}} review link. */
 export function sendReviewRequestWhatsApp(p: { patientPhone: string; firstName: string; clinicName: string; link: string }) {
   return sendWhatsAppTemplate(p.patientPhone, 'review_request', [p.firstName, p.clinicName, p.link])
+}
+
+/** network_weekly_digest: {{1}} dentist first name, {{2}} summary line, {{3}} link. */
+export function sendFollowDigestWhatsApp(p: { dentistPhone: string; firstName: string; summary: string; link: string }) {
+  return sendWhatsAppTemplate(p.dentistPhone, 'network_weekly_digest', [p.firstName, p.summary, p.link])
 }

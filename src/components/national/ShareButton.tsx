@@ -15,6 +15,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { NATIONAL_ORIGIN } from '@/config/cities'
+import { drName } from '@/lib/dentistName'
 
 interface Props {
   caseId: string
@@ -31,8 +32,9 @@ export default function ShareButton({ caseId, caseTitle, dentistName, dentistId,
   const rootRef = useRef<HTMLDivElement | null>(null)
 
   const url = `${NATIONAL_ORIGIN}/cases/${caseId}`
-  const whatsappText = `Check out this clinical case by Dr. ${dentistName} on DentistIn India 🦷\n${caseTitle}\n${url}`
-  const twitterText  = `Interesting dental case by Dr. ${dentistName} on DentistIn India`
+  const who = dentistName ? drName(dentistName) : 'a verified dentist'
+  const whatsappText = `Check out this clinical case by ${who} on DentistIn India 🦷\n${caseTitle}\n${url}`
+  const twitterText  = `Interesting dental case by ${who} on DentistIn India`
 
   const whatsappHref = `https://wa.me/?text=${encodeURIComponent(whatsappText)}`
   const linkedinHref = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`
