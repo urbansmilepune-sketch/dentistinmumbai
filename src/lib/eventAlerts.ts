@@ -23,6 +23,7 @@ import { NATIONAL_ORIGIN } from '@/config/cities'
 import { getCityFrom } from '@/lib/email'
 import { cleanName } from '@/lib/dentistName'
 import { cityNameOf } from '@/lib/national'
+import { placeLabel } from '@/lib/eventCountries'
 import { sendEventAlertWhatsApp, whatsAppEnabled } from '@/lib/whatsapp'
 
 export type AlertKind = 'live' | 'reminder'
@@ -99,8 +100,8 @@ export function eventWhen(ev: { starts_on: string; ends_on?: string | null }): s
   return ev.ends_on && ev.ends_on !== ev.starts_on ? `${f(ev.starts_on)} to ${f(ev.ends_on)}` : f(ev.starts_on)
 }
 
-export function eventWhere(ev: { is_online: boolean; city: string | null }): string {
-  return ev.is_online ? 'Online' : (cityNameOf(ev.city) || ev.city || 'India')
+export function eventWhere(ev: { is_online: boolean; city: string | null; country?: string | null }): string {
+  return placeLabel(ev, cityNameOf)
 }
 
 function esc(s: string): string {
@@ -141,7 +142,7 @@ export async function sendEventAlerts(db: SupabaseClient, ev: Record<string, any
   const from = process.env.EVENT_EMAIL_FROM || getCityFrom(null, { national: true })
   const link = `${NATIONAL_ORIGIN}/events?e=${ev.id}#ev-${ev.id}`
   const when = eventWhen(ev as { starts_on: string; ends_on: string | null })
-  const where = eventWhere(ev as { is_online: boolean; city: string | null })
+  const where = eventWhere(ev as { is_online: boolean; city: string | null; country?: string | null })
   const title = String(ev.title || 'Dental event')
   const sendWa = whatsAppEnabled()
 

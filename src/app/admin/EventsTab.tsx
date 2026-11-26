@@ -176,7 +176,7 @@ export default function EventsTab() {
             </div>
             <div style={{ fontWeight: 700, fontSize: 16 }}>{e.title}</div>
             <div style={{ fontSize: 13, color: '#475569' }}>
-              {e.is_online ? 'Online' : (e.city || 'No city')} · {fmtDate(e.starts_on)}{e.ends_on && e.ends_on !== e.starts_on ? ` to ${fmtDate(e.ends_on)}` : ''}{e.fee_text ? ` · ${e.fee_text}` : ''}
+              {e.is_online ? 'Online' : (e.city || 'No city')}{e.country && e.country !== 'India' ? `, ${e.country}` : ''} · {fmtDate(e.starts_on)}{e.ends_on && e.ends_on !== e.starts_on ? ` to ${fmtDate(e.ends_on)}` : ''}{e.fee_text ? ` · ${e.fee_text}` : ''}
               {e.organiser ? ` · by ${e.organiser}` : ''}
             </div>
             {(e.submitter_email || e.submitter_phone) && <div style={{ fontSize: 13, color: '#475569' }}>Contact: {[e.submitter_email, e.submitter_phone].filter(Boolean).join(' · ')}</div>}
@@ -214,7 +214,7 @@ export default function EventsTab() {
         <div role="dialog" aria-modal="true" aria-label="Edit listing" style={{ position: 'fixed', inset: 0, background: 'rgba(15,25,35,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, zIndex: 1000 }}>
           <div style={{ background: '#fff', borderRadius: 16, padding: 18, width: '100%', maxWidth: 520, maxHeight: '90vh', overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
             <b style={{ fontSize: 17 }}>Edit listing</b>
-            {([['title', 'Name'], ['organiser', 'Organiser'], ['city', 'City (slug like pune, or a name)'], ['fee_text', 'Fee'], ['link', 'Link'], ['admin_note', 'Private note']] as const).map(([k, l]) => (
+            {([['title', 'Name'], ['organiser', 'Organiser'], ['country', 'Country (India for Indian events)'], ['city', 'City (slug like pune, or a name abroad)'], ['fee_text', 'Fee'], ['link', 'Link'], ['admin_note', 'Private note']] as const).map(([k, l]) => (
               <label key={k} style={{ fontSize: 13, fontWeight: 600, display: 'flex', flexDirection: 'column', gap: 4 }}>{l}
                 <input style={input} value={editing[k] ?? ''} onChange={ev => setEditing({ ...editing, [k]: ev.target.value })} />
               </label>
@@ -242,7 +242,7 @@ export default function EventsTab() {
               <button type="button" style={btn()} onClick={() => setEditing(null)}>Cancel</button>
               <button type="button" style={btn('blue')} onClick={async () => {
                 const f = editing
-                const ok = await act(f.id, 'edit', { fields: { title: f.title, organiser: f.organiser ?? '', city: f.city ?? '', fee_text: f.fee_text ?? '', link: f.link ?? '', admin_note: f.admin_note ?? '', starts_on: f.starts_on, ends_on: f.ends_on || '', kind: f.kind, is_online: !!f.is_online, description: f.description ?? '' } })
+                const ok = await act(f.id, 'edit', { fields: { title: f.title, country: f.country ?? 'India', organiser: f.organiser ?? '', city: f.city ?? '', fee_text: f.fee_text ?? '', link: f.link ?? '', admin_note: f.admin_note ?? '', starts_on: f.starts_on, ends_on: f.ends_on || '', kind: f.kind, is_online: !!f.is_online, description: f.description ?? '' } })
                 if (ok) setEditing(null)
               }}>Save</button>
             </div>

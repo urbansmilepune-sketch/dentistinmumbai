@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { NATIONAL_ORIGIN, LIVE_CITY_CONFIGS } from '@/config/cities'
 import NationalShell from './NationalShell'
 import { adminDb, ui, EVENT_KIND_LABEL, cityNameOf } from '@/lib/national'
+import { placeLabel } from '@/lib/eventCountries'
 import { SPECIALTIES } from '@/lib/dentalSpecialties'
 
 // dentistinindia.in homepage, v1 of the dentist network (Nov 2026).
@@ -94,7 +95,7 @@ export default async function NationalHome() {
                 <Link key={e.id} href="/events" style={{ ...ui.card, textDecoration: 'none', color: '#0F1923', display: 'flex', flexDirection: 'column', gap: 6 }}>
                   <span style={{ fontSize: 12, fontWeight: 700, color: '#1D4ED8' }}>{formatDate(e.starts_on)} · {EVENT_KIND_LABEL[e.kind] || 'Event'}</span>
                   <span style={{ fontWeight: 700, fontSize: 15 }}>{e.title}</span>
-                  <span style={{ fontSize: 13, color: '#475569' }}>{e.is_online ? 'Online' : (cityNameOf(e.city) || e.city || 'India')}</span>
+                  <span style={{ fontSize: 13, color: '#475569' }}>{placeLabel(e, cityNameOf)}</span>
                 </Link>
               ))}
             </div>
