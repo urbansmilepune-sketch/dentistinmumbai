@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
+import { notFound, permanentRedirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import NationalShell from '@/components/national/NationalShell'
@@ -16,6 +16,7 @@ import LikeButton from './LikeButton'
 import FollowButton from '@/components/national/FollowButton'
 import { getViewerDentist } from '@/lib/national'
 import { drName } from '@/lib/dentistName'
+import { caseSlug, casePath, isCaseUuid, shortIdFromSlug, uuidRangeForShortId } from '@/lib/caseSlug'
 
 export const dynamic = 'force-dynamic'
 
@@ -88,16 +89,32 @@ async function loadCase(id: string): Promise<{ row: CaseRow; photos: PhotoRow[] 
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   )
-  const [{ data: row }, { data: photos }] = await Promise.all([
-    // Select `*` so the query never 400s on the structured-template columns
-    // before their out-of-band migration lands; embed the dentist join.
-    admin.from('cases')
-      .select('*, dentists(name, slug, clinic_name, city, email, is_verified)')
-      .eq('id', id).single(),
-    admin.from('case_photos').select('*').eq('case_id', id).order('display_order'),
-  ])
+  // The URL segment is either the old raw UUID (still works, redirected to
+  // the slug by the page) or a readable slug ending in the first 8 hex of
+  // the id. Select `*` so the query never 400s on the structured-template
+  // columns before their out-of-band migration lands; embed the dentist join.
+  const select = '*, dentists(name, slug, clinic_name, city, email, is_verified)'
+  let row: CaseRow | null = null
+  if (isCaseUuid(id)) {
+    const { data } = await admin.from('cases').select(select).eq('id', id).maybeSingle()
+    row = (data as unknown as CaseRow) || null
+  } else {
+    const short = shortIdFromSlug(id)
+    if (!short) return null
+    const { from, to } = uuidRangeForShortId(short)
+    const { data } = await admin.from('cases').select(select).gte('id', from).lte('id', to).limit(20)
+    const rows = (data || []) as unknown as CaseRow[]
+    // Two cases sharing the same 8-hex start is very unlikely; if it
+    // happens, the words in the slug decide which one is meant.
+    row = rows.find(r => caseSlug({ id: r.id, title: r.title, city: r.dentists?.city }) === id) || (rows.length === 1 ? rows[0] : null)
+  }
   if (!row) return null
-  return { row: row as unknown as CaseRow, photos: (photos || []) as PhotoRow[] }
+  const { data: photos } = await admin.from('case_photos').select('*').eq('case_id', row.id).order('display_order')
+  return { row, photos: (photos || []) as PhotoRow[] }
+}
+
+function slugFor(row: CaseRow): string {
+  return caseSlug({ id: row.id, title: row.title, city: row.dentists?.city })
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
@@ -116,7 +133,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   // (Supabase storage), so they work directly as og:image.
   const ogPhoto = data.photos.find(p => p.kind === 'before' || p.kind === 'after') || data.photos[0]
   const ogImage = ogPhoto?.url
-  const ogUrl = `${NATIONAL_ORIGIN}/cases/${data.row.id}`
+  const ogUrl = `${NATIONAL_ORIGIN}/cases/${slugFor(data.row)}`
   return {
     title: `${data.row.title} | Dentist In India`,
     description: ogDescription,
@@ -155,10 +172,17 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
   const isOwner = user?.email && data.row.dentists?.email && user.email.toLowerCase() === data.row.dentists.email.toLowerCase()
   if (data.row.status !== 'approved' && !isOwner) notFound()
 
+  // Old raw-ID links (WhatsApp shares, reminders, admin) and links whose
+  // title has since been edited go permanently to the current readable
+  // URL. Done after the access check so a pending case's title never
+  // leaks through a redirect.
+  const slug = slugFor(data.row)
+  if (id !== slug) permanentRedirect(casePath({ id: data.row.id, title: data.row.title, city: data.row.dentists?.city }))
+
   // Dentists only: clinical photos and discussion are not shown to
   // patients or to anyone signed out.
   const viewer = await getViewerDentist()
-  if (!viewer) return <DentistsOnly next={`/cases/${id}`} title="This case is shared with dentists only" />
+  if (!viewer) return <DentistsOnly next={`/cases/${slug}`} title="This case is shared with dentists only" />
 
   // Peer review context: discussion, helpful marks, likes and follows
   // (v1 network, Nov 2026). Service role because the thread joins author rows that anon
@@ -291,6 +315,7 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
                 caseId={data.row.id}
                 caseTitle={data.row.title}
                 dentistName={data.row.dentists?.name || ''}
+                caseCity={data.row.dentists?.city}
                 dentistId={data.row.dentist_id}
               />
             </div>

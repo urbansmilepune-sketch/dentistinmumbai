@@ -6,6 +6,7 @@ import DentistsOnly from '@/components/national/DentistsOnly'
 import { SPECIALTIES, getSpecialty } from '@/lib/dentalSpecialties'
 import { adminDb, getViewerDentist, isNationalRequest, AFTER_KINDS, cityNameOf, ui } from '@/lib/national'
 import { drName } from '@/lib/dentistName'
+import { casePath } from '@/lib/caseSlug'
 import { followedIds, sinceDaysAgo } from '@/lib/followDigest'
 
 export const dynamic = 'force-dynamic'
@@ -143,7 +144,7 @@ export default async function CaseLibraryPage({ searchParams }: { searchParams: 
               const thumb = thumbs.get(c.id)
               const n = c.comment_count || 0
               return (
-                <Link key={c.id} href={`/cases/${c.id}`} style={{ ...ui.card, padding: 12, display: 'flex', gap: 12, textDecoration: 'none', color: '#0F1923' }}>
+                <Link key={c.id} href={casePath({ id: c.id, title: c.title, city: c.dentists?.city })} style={{ ...ui.card, padding: 12, display: 'flex', gap: 12, textDecoration: 'none', color: '#0F1923' }}>
                   <div style={{ width: 84, height: 84, flexShrink: 0, borderRadius: 10, overflow: 'hidden', background: '#1E293B' }}>
                     {thumb && <img src={thumb} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
                   </div>

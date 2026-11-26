@@ -1,7 +1,7 @@
 'use client'
 
 // Per-case share dropdown. Always shares the national URL
-// (https://dentistinindia.in/cases/<id>) regardless of which surface the
+// (https://dentistinindia.in/cases/<readable-slug>) regardless of which surface the
 // button is rendered on, so the OG preview resolves on the canonical host.
 //
 // Variants:
@@ -16,22 +16,25 @@
 import { useEffect, useRef, useState } from 'react'
 import { NATIONAL_ORIGIN } from '@/config/cities'
 import { drName } from '@/lib/dentistName'
+import { casePath } from '@/lib/caseSlug'
 
 interface Props {
   caseId: string
   caseTitle: string
   dentistName: string
+  /** Author's city, used in the readable case link. */
+  caseCity?: string | null
   /** Case author's dentist_id — analytics attribution lands here. */
   dentistId?: string | null
   compact?: boolean
 }
 
-export default function ShareButton({ caseId, caseTitle, dentistName, dentistId, compact = false }: Props) {
+export default function ShareButton({ caseId, caseTitle, dentistName, caseCity, dentistId, compact = false }: Props) {
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
 
-  const url = `${NATIONAL_ORIGIN}/cases/${caseId}`
+  const url = `${NATIONAL_ORIGIN}${casePath({ id: caseId, title: caseTitle, city: caseCity })}`
   const who = dentistName ? drName(dentistName) : 'a verified dentist'
   const whatsappText = `Check out this clinical case by ${who} on DentistIn India 🦷\n${caseTitle}\n${url}`
   const twitterText  = `Interesting dental case by ${who} on DentistIn India`

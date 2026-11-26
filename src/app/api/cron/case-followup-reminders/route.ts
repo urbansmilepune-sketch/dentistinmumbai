@@ -19,6 +19,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { NATIONAL_ORIGIN } from '@/config/cities'
 import { adminDb, AFTER_KINDS } from '@/lib/national'
 import { cleanName } from '@/lib/dentistName'
+import { casePath } from '@/lib/caseSlug'
 import { sendCaseFollowupReminderWhatsApp, whatsAppEnabled } from '@/lib/whatsapp'
 
 export const dynamic = 'force-dynamic'
@@ -42,7 +43,7 @@ export async function GET(request: NextRequest) {
   const oldest = new Date(now - 13 * MONTH_DAYS * DAY).toISOString()
   const newest = new Date(now - 3 * MONTH_DAYS * DAY).toISOString()
   const { data: rows, error } = await db
-    .from('cases').select('id, title, created_at, dentist_id, dentists(name, phone, whatsapp, is_active)')
+    .from('cases').select('id, title, created_at, dentist_id, dentists(name, phone, whatsapp, is_active, city)')
     .eq('status', 'approved').gte('created_at', oldest).lte('created_at', newest).limit(2000)
   if (error) return NextResponse.json({ error: 'Could not read cases' }, { status: 500 })
   const cases = (rows || []) as Array<Record<string, any>>
@@ -83,7 +84,7 @@ export async function GET(request: NextRequest) {
       firstName: cleanName(d.name).split(' ')[0] || 'Doctor',
       months: m,
       caseTitle: String(c.title || 'your case').slice(0, 80),
-      link: `${NATIONAL_ORIGIN}/cases/${c.id}`,
+      link: `${NATIONAL_ORIGIN}${casePath({ id: c.id, title: c.title, city: d.city })}`,
     })
     if (res.success) {
       sent++
