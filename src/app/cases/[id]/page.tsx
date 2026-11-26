@@ -14,7 +14,7 @@ import BeforeAfter from './BeforeAfter'
 import FollowUpAdder from './FollowUpAdder'
 import LikeButton from './LikeButton'
 import FollowButton from '@/components/national/FollowButton'
-import { getViewerDentist, cityNameOf } from '@/lib/national'
+import { getViewerDentist, cityNameOf, ui } from '@/lib/national'
 import { drName } from '@/lib/dentistName'
 import { caseSlug, casePath, isCaseUuid, shortIdFromSlug, uuidRangeForShortId } from '@/lib/caseSlug'
 
@@ -135,17 +135,20 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   const ogDescription = [
     `${spec?.label || 'Clinical'} case${cityName ? ' from ' + cityName : ''}, shared with dentists on DentistIn India.`,
     replies ? `${replies} ${replies === 1 ? 'reply' : 'replies'} from dentists.` : null,
-    'Dentists can sign in to see the full case.',
+    'See the case on DentistIn India.',
   ].filter(Boolean).join(' ')
+  // Search result text (the page itself shows the public summary) can use
+  // the summary; the share preview above stays text-free.
+  const pageDescription = summaryText(data.row.description, 155) || ogDescription
   const ogUrl = `${NATIONAL_ORIGIN}/cases/${slugFor(data.row)}`
   const ogImage = `${NATIONAL_ORIGIN}/api/og/case/${slugFor(data.row)}`
   return {
-    title: `${data.row.title} | Dentist In India`,
-    description: ogDescription,
+    title: { absolute: `${data.row.title}${cityName && !data.row.title.toLowerCase().includes(cityName.toLowerCase()) ? `, ${cityName}` : ''} | Dentist In India` },
+    description: pageDescription,
     alternates: { canonical: ogUrl },
-    // Cases are dentists-only since the Nov 2026 network v1: keep them out
-    // of search. The share preview (og tags) still works for WhatsApp.
-    robots: { index: false, follow: false },
+    // Approved cases are indexable since 26 Nov 2026: signed-out visitors
+    // and Google get a text-only public summary (PublicCaseSummary).
+    robots: { index: true, follow: true },
     openGraph: {
       title: ogTitle,
       description: ogDescription,
@@ -187,7 +190,14 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
   // Dentists only: clinical photos and discussion are not shown to
   // patients or to anyone signed out.
   const viewer = await getViewerDentist()
-  if (!viewer) return <DentistsOnly next={`/cases/${slug}`} title="This case is shared with dentists only" />
+  if (!viewer) {
+    // Signed out (patients, Google): approved cases get a public text
+    // summary that can be indexed. Photos, X-rays, notes and discussion
+    // stay dentists-only. The owner previewing a pending case while signed
+    // out of the network still gets the sign-in gate.
+    if (data.row.status !== 'approved') return <DentistsOnly next={`/cases/${slug}`} title="This case is shared with dentists only" />
+    return <PublicCaseSummary row={data.row} slug={slug} photoCount={data.photos.length} />
+  }
 
   // Peer review context: discussion, helpful marks, likes and follows
   // (v1 network, Nov 2026). Service role because the thread joins author rows that anon
@@ -542,5 +552,105 @@ function Fact({ label, value }: { label: string; value: string }) {
       <div style={{ fontSize: 11, fontWeight: 700, color: '#94A3B8', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 4 }}>{label}</div>
       <div style={{ fontSize: 16, color: '#0F1923', fontWeight: 700 }}>{value}</div>
     </div>
+  )
+}
+
+// Plain one-paragraph text for meta tags and the public summary: collapse
+// whitespace, drop anything that looks like a phone number or email (case
+// text is dentist-written and patient details must never go public), and
+// cut on a word break.
+function summaryText(raw: string | null | undefined, max: number): string {
+  if (!raw) return ''
+  let t = raw
+    .replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, '')
+    .replace(/(?:\+?\d[\d\s-]{8,}\d)/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (t.length > max) {
+    t = t.slice(0, max)
+    const cut = t.lastIndexOf(' ')
+    t = (cut > max * 0.6 ? t.slice(0, cut) : t).replace(/[,;:.\s]+$/, '') + '…'
+  }
+  return t
+}
+
+// What patients and Google see for an approved case: title, treatment,
+// dentist, city and a short description. No photos, X-rays, patient age or
+// gender, clinical notes, costs or discussion.
+function PublicCaseSummary({ row, slug, photoCount }: { row: CaseRow; slug: string; photoCount: number }) {
+  const spec = getSpecialty(row.specialty)
+  const d = row.dentists
+  const cityName = cityNameOf(d?.city)
+  const who = d?.name ? drName(d.name) : 'A verified dentist'
+  const summary = summaryText(row.description, 300)
+  const url = `${NATIONAL_ORIGIN}/cases/${slug}`
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@graph': [
+      {
+        '@type': 'Article',
+        headline: row.title.slice(0, 110),
+        ...(summary ? { description: summary } : {}),
+        url,
+        mainEntityOfPage: url,
+        datePublished: row.created_at,
+        ...(spec ? { about: { '@type': 'MedicalProcedure', name: spec.label } } : {}),
+        author: d ? {
+          '@type': 'Person',
+          name: who,
+          url: `${NATIONAL_ORIGIN}/professional/${d.slug}`,
+          ...(d.clinic_name ? { worksFor: { '@type': 'Dentist', name: d.clinic_name, ...(cityName ? { address: { '@type': 'PostalAddress', addressLocality: cityName, addressCountry: 'IN' } } : {}) } } : {}),
+        } : undefined,
+        publisher: { '@type': 'Organization', name: 'Dentist In India', url: NATIONAL_ORIGIN },
+      },
+      {
+        '@type': 'BreadcrumbList',
+        itemListElement: [
+          { '@type': 'ListItem', position: 1, name: 'Dentist In India', item: NATIONAL_ORIGIN },
+          ...(d ? [{ '@type': 'ListItem', position: 2, name: who, item: `${NATIONAL_ORIGIN}/professional/${d.slug}` }] : []),
+          { '@type': 'ListItem', position: d ? 3 : 2, name: row.title.slice(0, 80), item: url },
+        ],
+      },
+    ],
+  }
+  return (
+    <NationalShell badge="Case">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c') }} />
+      <main style={{ maxWidth: 720, margin: '0 auto', padding: '32px 16px 64px' }}>
+        <nav style={{ fontSize: 13, color: '#64748B', marginBottom: 16 }}>
+          <Link href="/" style={{ color: '#64748B', textDecoration: 'none' }}>Home</Link>
+          {d && <> › <Link href={`/professional/${d.slug}`} style={{ color: '#64748B', textDecoration: 'none' }}>{who}</Link></>}
+          {' '}› Case
+        </nav>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+          {spec && <span style={ui.pill(spec.bg, spec.color)}>{spec.label}</span>}
+          {cityName && <span style={ui.pill('#F1F5F9', '#334155')}>{cityName}</span>}
+        </div>
+        <h1 style={{ ...ui.h1, fontSize: 28 }}>{row.title}</h1>
+        {d && (
+          <p style={{ fontSize: 14, color: '#475569', margin: '0 0 20px' }}>
+            Treated and shared by{' '}
+            <Link href={`/professional/${d.slug}`} style={{ color: '#1D4ED8', fontWeight: 700, textDecoration: 'none' }}>{who}</Link>
+            {d.clinic_name && <> · {d.clinic_name}</>}
+            {d.is_verified && <span style={{ marginLeft: 8, ...ui.pill('#DCFCE7', '#166534') }}>✓ Verified</span>}
+          </p>
+        )}
+        {summary && (
+          <section style={{ ...ui.card, padding: 20, marginBottom: 16 }}>
+            <h2 style={{ ...ui.h2, fontSize: 16 }}>About this case</h2>
+            <p style={ui.sub}>{summary}</p>
+          </section>
+        )}
+        <section style={{ ...ui.card, padding: 20, background: '#F8FAFC', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <p style={{ ...ui.sub, fontSize: 14 }}>
+            {photoCount > 0 ? 'Clinical photos, X-rays and' : 'Full clinical details and'} the discussion between dentists are shared only with registered dentists.
+          </p>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            {d && <Link href={`/professional/${d.slug}`} style={ui.btn}>See {who}&apos;s profile</Link>}
+            <Link href={`/for-dentists/login?next=${encodeURIComponent(`/cases/${slug}`)}`} style={ui.btnGhost}>I&apos;m a dentist, sign in</Link>
+          </div>
+        </section>
+      </main>
+    </NationalShell>
   )
 }
