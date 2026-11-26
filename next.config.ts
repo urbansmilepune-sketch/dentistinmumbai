@@ -26,6 +26,12 @@ const PORTFOLIO_REDIRECTS = [
 ]
 
 const nextConfig: NextConfig = {
+  // Share card pictures (src/lib/shareCards.tsx) read the Inter font files
+  // from disk; make sure they ship with those functions.
+  outputFileTracingIncludes: {
+    '/api/og/**': ['./src/assets/fonts/**/*'],
+  },
+
   // Build assets carry no content worth indexing, and robots.txt doesn't
   // disallow /_next/. An X-Robots-Tag keeps the chunks out of the index even
   // when a crawler reaches one directly from a rendered page.

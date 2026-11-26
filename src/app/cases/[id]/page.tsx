@@ -14,7 +14,7 @@ import BeforeAfter from './BeforeAfter'
 import FollowUpAdder from './FollowUpAdder'
 import LikeButton from './LikeButton'
 import FollowButton from '@/components/national/FollowButton'
-import { getViewerDentist } from '@/lib/national'
+import { getViewerDentist, cityNameOf } from '@/lib/national'
 import { drName } from '@/lib/dentistName'
 import { caseSlug, casePath, isCaseUuid, shortIdFromSlug, uuidRangeForShortId } from '@/lib/caseSlug'
 
@@ -124,16 +124,21 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
     return { title: 'Case | Dentist In India', robots: { index: false, follow: false } }
   }
   const spec = getSpecialty(data.row.specialty)
-  const dentistName = data.row.dentists?.name ?? 'an State Dental Council-verified dentist'
-  const ogTitle = `${data.row.title} by ${data.row.dentists?.name ? drName(dentistName) : dentistName}`
-  const ogDescription = data.row.description?.slice(0, 160)
-    || `${spec?.label || 'Clinical case'} · ${'★'.repeat(data.row.complexity)} complexity · Shared on DentistIn India`
-  // Prefer a clinical (before/after) photo for the share preview; fall
-  // back to whatever photo is first. Photo URLs are already absolute
-  // (Supabase storage), so they work directly as og:image.
-  const ogPhoto = data.photos.find(p => p.kind === 'before' || p.kind === 'after') || data.photos[0]
-  const ogImage = ogPhoto?.url
+  const dentistName = data.row.dentists?.name ? drName(data.row.dentists.name) : 'a verified dentist'
+  const ogTitle = `${data.row.title} by ${dentistName}`
+  // The preview is seen by everyone in a WhatsApp group, not just dentists,
+  // so it never carries the case text or a clinical photo. The picture is a
+  // share card drawn from the title, specialty, city and name only
+  // (src/lib/shareCards.tsx).
+  const cityName = cityNameOf(data.row.dentists?.city)
+  const replies = data.row.comment_count || 0
+  const ogDescription = [
+    `${spec?.label || 'Clinical'} case${cityName ? ' from ' + cityName : ''}, shared with dentists on DentistIn India.`,
+    replies ? `${replies} ${replies === 1 ? 'reply' : 'replies'} from dentists.` : null,
+    'Dentists can sign in to see the full case.',
+  ].filter(Boolean).join(' ')
   const ogUrl = `${NATIONAL_ORIGIN}/cases/${slugFor(data.row)}`
+  const ogImage = `${NATIONAL_ORIGIN}/api/og/case/${slugFor(data.row)}`
   return {
     title: `${data.row.title} | Dentist In India`,
     description: ogDescription,
@@ -147,13 +152,13 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
       url: ogUrl,
       siteName: 'Dentist In India',
       type: 'article',
-      ...(ogImage ? { images: [{ url: ogImage }] } : {}),
+      images: [{ url: ogImage, width: 1200, height: 630, alt: ogTitle }],
     },
     twitter: {
       card: 'summary_large_image',
       title: ogTitle,
       description: ogDescription,
-      ...(ogImage ? { images: [ogImage] } : {}),
+      images: [ogImage],
     },
   }
 }

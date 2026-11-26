@@ -23,7 +23,9 @@ export async function POST(request: NextRequest) {
     const ip = forwarded ? forwarded.split(',')[0].trim() : null
 
     const { dentist_id, event_type } = await request.json()
-    // event_type: 'profile_view' | 'whatsapp_click' | 'call_click' | 'booking_click' | 'case_share' | 'google_book_visit'
+    // event_type: 'profile_view' | 'whatsapp_click' | 'call_click' | 'booking_click' | 'case_share' | 'profile_share' | 'invite_share' | 'google_book_visit'
+    // profile_share and invite_share (Nov 2026 growth work) are attributed to
+    // the profile owner / the inviting dentist; no counter column.
     // google_book_visit = booking page opened from the dentist's Google
     // listing (link carries ?src=google). No counter column; the dashboard
     // counts the rows.
@@ -36,7 +38,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
     }
 
-    const validEvents = ['profile_view', 'whatsapp_click', 'call_click', 'booking_click', 'case_share', 'google_book_visit']
+    const validEvents = ['profile_view', 'whatsapp_click', 'call_click', 'booking_click', 'case_share', 'profile_share', 'invite_share', 'google_book_visit']
     if (!validEvents.includes(event_type)) {
       return NextResponse.json({ error: 'Invalid event type' }, { status: 400 })
     }
