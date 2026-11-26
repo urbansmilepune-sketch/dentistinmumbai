@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { FEATURE_DAYS, quoteFeatured, rupees, type FeatureDays } from '@/lib/eventPricing'
+import { COUNTRIES, INDIA } from '@/lib/eventCountries'
 
 interface Props {
   cities: Array<{ slug: string; name: string }>
@@ -24,7 +25,7 @@ const EVENT_KINDS = [
 export default function EventForm({ cities, coverageCities, counts, topics, defaultEmail, defaultCity, defaultMode, paymentsOn }: Props) {
   const [mode, setMode] = useState<'event' | 'course'>(defaultMode)
   const [f, setF] = useState({
-    title: '', kind: 'seminar', topic: '', starts_on: '', ends_on: '', is_online: false, city: defaultCity,
+    title: '', kind: 'seminar', topic: '', starts_on: '', ends_on: '', is_online: false, city: defaultCity, country: INDIA, otherCountry: '',
     organiser: '', fee_text: '', link: '', description: '', gives_certificate: false, email: defaultEmail, phone: '', website: '',
   })
   const [plan, setPlan] = useState<'free' | 'featured'>('free')
@@ -57,7 +58,7 @@ export default function EventForm({ cities, coverageCities, counts, topics, defa
       const res = await fetch('/api/events', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ...f, kind: mode === 'course' ? 'course' : f.kind, ends_on: f.ends_on || null, topic: f.topic || null,
+          ...f, country: f.country === 'other' ? f.otherCountry : f.country, kind: mode === 'course' ? 'course' : f.kind, ends_on: f.ends_on || null, topic: f.topic || null,
           plan, feature_all_india: allIndia, feature_cities: featureCities, feature_days: days,
           custom_alert_request: plan === 'featured' && wantsCustom ? customText : null,
         }),
@@ -151,13 +152,28 @@ export default function EventForm({ cities, coverageCities, counts, topics, defa
         <input type="checkbox" checked={f.is_online} onChange={e => set('is_online', e.target.checked)} style={{ width: 20, height: 20 }} />
         It&apos;s online
       </label>
+      <div style={row}>
+        <label style={label} htmlFor="ev-country">Country</label>
+        <select id="ev-country" value={f.country} onChange={e => setF(prev => ({ ...prev, country: e.target.value, city: e.target.value === INDIA ? defaultCity : '' }))} style={input}>
+          <option value={INDIA}>India</option>
+          {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+          <option value="other">Other country…</option>
+        </select>
+        {f.country === 'other' && (
+          <input aria-label="Country name" required value={f.otherCountry} onChange={e => set('otherCountry', e.target.value)} placeholder="Type the country" style={{ ...input, marginTop: 8 }} />
+        )}
+      </div>
       {!f.is_online && (
         <div style={row}>
           <label style={label} htmlFor="ev-city">City</label>
-          <select id="ev-city" value={f.city} onChange={e => set('city', e.target.value)} style={input}>
-            <option value="">Select a city</option>
-            {cities.map(c => <option key={c.slug} value={c.slug}>{c.name}</option>)}
-          </select>
+          {f.country === INDIA ? (
+            <select id="ev-city" value={f.city} onChange={e => set('city', e.target.value)} style={input}>
+              <option value="">Select a city</option>
+              {cities.map(c => <option key={c.slug} value={c.slug}>{c.name}</option>)}
+            </select>
+          ) : (
+            <input id="ev-city" required value={f.city} onChange={e => set('city', e.target.value)} placeholder="e.g. Dubai" style={input} />
+          )}
         </div>
       )}
       <div style={grid2}>

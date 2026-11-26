@@ -17,6 +17,7 @@ import { quoteFeatured, isFeatureDays } from '@/lib/eventPricing'
 import { activeDentistCounts } from '@/lib/eventAlerts'
 import { createEventPaymentLink } from '@/lib/eventPayments'
 import { sendListingReceivedEmail } from '@/lib/eventEmails'
+import { normalizeCountry, INDIA } from '@/lib/eventCountries'
 
 const KINDS = ['exhibition', 'course', 'seminar', 'study_club', 'conference']
 
@@ -46,7 +47,12 @@ export async function POST(request: NextRequest) {
   const startsOn = isoDate(b.starts_on)
   const endsOn = isoDate(b.ends_on)
   const isOnline = b.is_online === true
-  const city = typeof b.city === 'string' && Object.prototype.hasOwnProperty.call(CITY_CONFIGS, b.city) ? b.city : null
+  // International events (Nov 2026): any country; the city is then free text.
+  const country = normalizeCountry(b.country)
+  const abroad = country !== INDIA
+  const city = abroad
+    ? cap(b.city, 60)
+    : typeof b.city === 'string' && Object.prototype.hasOwnProperty.call(CITY_CONFIGS, b.city) ? b.city : null
   const topic = SPECIALTIES.some(s => s.slug === b.topic) ? b.topic : null
   const link = cap(b.link, 400)
   const email = cap(b.email, 200)
@@ -56,7 +62,7 @@ export async function POST(request: NextRequest) {
   if (!startsOn) return NextResponse.json({ error: 'Add the start date' }, { status: 400 })
   if (startsOn < new Date().toISOString().slice(0, 10)) return NextResponse.json({ error: 'The start date has already passed' }, { status: 400 })
   if (endsOn && endsOn < startsOn) return NextResponse.json({ error: 'The end date is before the start date' }, { status: 400 })
-  if (!isOnline && !city) return NextResponse.json({ error: 'Pick the city, or mark it as online' }, { status: 400 })
+  if (!isOnline && !city) return NextResponse.json({ error: abroad ? 'Add the city, or mark it as online' : 'Pick the city, or mark it as online' }, { status: 400 })
   if (link && !/^https?:\/\//.test(link)) return NextResponse.json({ error: 'The link must start with https://' }, { status: 400 })
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return NextResponse.json({ error: 'Add a contact email so we can confirm the listing' }, { status: 400 })
 
@@ -91,7 +97,7 @@ export async function POST(request: NextRequest) {
     gives_certificate: b.gives_certificate === true,
     status: 'pending', submitted_by: viewer?.id ?? null, submitter_email: email,
   }
-  let ins = await db.from('events').insert({ ...base, ...feature, submitter_phone: phone }).select('id').single()
+  let ins = await db.from('events').insert({ ...base, ...feature, submitter_phone: phone, country }).select('id').single()
   // Before the events v2 SQL runs, the new columns don't exist: a free
   // listing still saves the old way, a Featured one has to wait.
   if (ins.error && isMissingColumnError(ins.error) && !featured) {

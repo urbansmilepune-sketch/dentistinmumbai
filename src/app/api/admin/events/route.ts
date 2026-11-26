@@ -17,6 +17,7 @@ import { createEventPaymentLink, eventPaymentsEnabled } from '@/lib/eventPayment
 import { sendListingLiveEmail } from '@/lib/eventEmails'
 import { featuredUntil, istToday } from '@/lib/eventFeatured'
 import { eventAlertsEnabled } from '@/lib/eventAlerts'
+import { normalizeCountry } from '@/lib/eventCountries'
 
 const KINDS = ['exhibition', 'course', 'seminar', 'study_club', 'conference']
 
@@ -77,6 +78,7 @@ export async function POST(request: NextRequest) {
       if (f.ends_on === '' || f.ends_on === null) update.ends_on = null
       else if (isDate(f.ends_on)) update.ends_on = f.ends_on
       if (typeof f.is_online === 'boolean') update.is_online = f.is_online
+      if (typeof f.country === 'string') update.country = normalizeCountry(f.country)
       for (const [k, max] of [['city', 60], ['organiser', 160], ['fee_text', 80], ['description', 600], ['admin_note', 400]] as const) {
         const v = str(f[k], max)
         if (v !== undefined) update[k] = v

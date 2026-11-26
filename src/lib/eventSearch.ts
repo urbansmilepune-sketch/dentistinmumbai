@@ -1,9 +1,10 @@
 // Monthly auto-search for upcoming dental events and courses in India.
 //
 // Runs on the 1st of each month (cron /api/cron/event-search) and from the
-// admin Events tab ("Search now"). Four searches run side by side, each a
-// Claude call with the web search tool limited to 10 searches, so one run is
-// about 40 searches. Claude reads the organisers' pages and returns only the
+// admin Events tab ("Search now"). Five searches run side by side (four for
+// India, one for the big international congresses, which looks 9 months
+// ahead), each a Claude call with the web search tool limited to 10
+// searches, so one run is about 50 searches. Claude reads the organisers' pages and returns only the
 // facts (name, dates, city, organiser, fee, link). We never copy page text
 // or posters: the description is one short sentence in our own words and
 // every listing links back to the source.
@@ -14,51 +15,60 @@
 // are dropped.
 //
 // Cost (Nov 2026 prices, Sonnet 4.6): about $10 per 1,000 searches plus
-// tokens, so roughly $2-3 a run. Each run is logged in event_search_runs.
+// tokens, so roughly $3-4 a run. Each run is logged in event_search_runs.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { CITY_CONFIGS } from '@/config/cities'
 import { CLAUDE_MODEL } from '@/lib/anthropic'
+import { normalizeCountry, INDIA } from '@/lib/eventCountries'
 
 const ANTHROPIC_API = 'https://api.anthropic.com/v1/messages'
 const KINDS = ['exhibition', 'course', 'seminar', 'study_club', 'conference']
 const HORIZON_DAYS = 130
+// Big international meetings are announced a year ahead, so look further.
+const INTL_HORIZON_DAYS = 270
 
-const THEMES = [
-  'Large national and state dental conferences and trade exhibitions in India (for example Famdent shows, Indian Dental Association national and state conferences, national conferences of the Indian speciality societies for prosthodontics, orthodontics, periodontics, endodontics, oral surgery, paedodontics, oral medicine and public health dentistry).',
-  'Continuing dental education (CDE) programs, seminars and study club meetings run by Indian Dental Association (IDA) branches and state branches across India.',
-  'CDE programs, workshops and hands-on courses run by dental colleges, universities and health sciences universities in India, including Dental Council of India and state dental council CDE listings.',
-  'Hands-on clinical courses and online courses or webinars for dentists in India run by Indian training institutes, academies and dental companies (implants, endodontics, aligners, lasers, smile design, practice management).',
+interface Theme { text: string; intl?: boolean }
+
+const THEMES: Theme[] = [
+  { text: 'Large national and state dental conferences and trade exhibitions in India (for example Famdent shows, Indian Dental Association national and state conferences, national conferences of the Indian speciality societies for prosthodontics, orthodontics, periodontics, endodontics, oral surgery, paedodontics, oral medicine and public health dentistry).' },
+  { text: 'Continuing dental education (CDE) programs, seminars and study club meetings run by Indian Dental Association (IDA) branches and state branches across India.' },
+  { text: 'CDE programs, workshops and hands-on courses run by dental colleges, universities and health sciences universities in India, including Dental Council of India and state dental council CDE listings.' },
+  { text: 'Hands-on clinical courses and online courses or webinars for dentists in India run by Indian training institutes, academies and dental companies (implants, endodontics, aligners, lasers, smile design, practice management).' },
+  { text: 'The major international dental congresses and trade shows outside India that Indian dentists travel to (for example AEEDC Dubai, IDS Cologne, FDI World Dental Congress, EuroPerio, ITI World Symposium, the American Association of Orthodontists annual session, Greater New York Dental Meeting, CED-IADR and the big Asia-Pacific dental congresses in Singapore, Thailand and Malaysia).', intl: true },
 ]
 
-function system(today: string, until: string): string {
+function system(today: string, until: string, intl = false): string {
   return `You find upcoming dental events for a calendar used by dentists in India.
 
 Search the web and read the organisers' own pages. List only events that:
 - are for dentists or dental students (not patient camps),
-- take place in India, or online run by an Indian organiser,
+${intl ? '- take place outside India (in person), and are large enough that Indian dentists travel to them,' : '- take place in India, or online run by an Indian organiser,'}
 - start between ${today} and ${until},
 - you saw on a real page during this search, with a date stated on that page.
 
 Never guess a date, city, fee or link. If the page does not state something, leave it null. Skip anything you are unsure about. Do not copy wording from the page: write the description yourself, one neutral sentence of at most 25 words.
 
 Answer with ONLY a JSON array, no other text. Each item:
-{"title": string, "kind": one of ${JSON.stringify(KINDS)}, "starts_on": "YYYY-MM-DD", "ends_on": "YYYY-MM-DD" or null, "city": city name or null, "is_online": boolean, "organiser": string or null, "fee_text": short fee as stated (e.g. "₹2,500", "Free") or null, "link": the https URL of the page where you found it, "description": string or null, "gives_certificate": boolean}
+{"title": string, "kind": one of ${JSON.stringify(KINDS)}, "starts_on": "YYYY-MM-DD", "ends_on": "YYYY-MM-DD" or null, "city": city name or null, "country": country name (${intl ? 'the country it takes place in' : '"India"'}), "is_online": boolean, "organiser": string or null, "fee_text": short fee as stated (e.g. "₹2,500", "Free") or null, "link": the https URL of the page where you found it, "description": string or null, "gives_certificate": boolean}
 
 Return [] if you found nothing that qualifies. At most 25 items.`
 }
 
 interface Found {
-  title: string; kind: string; starts_on: string; ends_on: string | null; city: string | null; is_online: boolean
+  title: string; kind: string; starts_on: string; ends_on: string | null; city: string | null; country?: string | null; is_online: boolean
   organiser: string | null; fee_text: string | null; link: string; description: string | null; gives_certificate: boolean
 }
 
-interface CallResult { items: Found[]; searches: number; inputTokens: number; outputTokens: number; error?: string }
+interface CallResult { intl: boolean; until: string; items: Found[]; searches: number; inputTokens: number; outputTokens: number; error?: string }
 
-async function searchTheme(theme: string, today: string, until: string): Promise<CallResult> {
+async function searchTheme(theme: Theme, today: string): Promise<CallResult> {
+  const intl = !!theme.intl
+  const until = new Date(Date.parse(today) + (intl ? INTL_HORIZON_DAYS : HORIZON_DAYS) * 86400000).toISOString().slice(0, 10)
+  const base = { intl, until }
   const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) return { items: [], searches: 0, inputTokens: 0, outputTokens: 0, error: 'ANTHROPIC_API_KEY is not configured' }
-  const messages: any[] = [{ role: 'user', content: `Find upcoming events in this group: ${theme}` }]
+  if (!apiKey) return { ...base, items: [], searches: 0, inputTokens: 0, outputTokens: 0, error: 'ANTHROPIC_API_KEY is not configured' }
+  const messages: any[] = [{ role: 'user', content: `Find upcoming events in this group: ${theme.text}` }]
   let searches = 0, inputTokens = 0, outputTokens = 0
   let text = ''
   // The server pauses a long search turn (stop_reason pause_turn); we resend
@@ -72,18 +82,18 @@ async function searchTheme(theme: string, today: string, until: string): Promise
         body: JSON.stringify({
           model: CLAUDE_MODEL,
           max_tokens: 8000,
-          system: system(today, until),
+          system: system(today, until, intl),
           tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 10, user_location: { type: 'approximate', country: 'IN', timezone: 'Asia/Kolkata' } }],
           messages,
         }),
         signal: AbortSignal.timeout(240000),
       })
     } catch (err: any) {
-      return { items: [], searches, inputTokens, outputTokens, error: `network: ${err?.message || err}` }
+      return { ...base, items: [], searches, inputTokens, outputTokens, error: `network: ${err?.message || err}` }
     }
     if (!res.ok) {
       const detail = await res.text().catch(() => '')
-      return { items: [], searches, inputTokens, outputTokens, error: `Anthropic ${res.status}: ${detail.slice(0, 200)}` }
+      return { ...base, items: [], searches, inputTokens, outputTokens, error: `Anthropic ${res.status}: ${detail.slice(0, 200)}` }
     }
     const data = await res.json().catch(() => null)
     inputTokens += Number(data?.usage?.input_tokens) || 0
@@ -97,7 +107,7 @@ async function searchTheme(theme: string, today: string, until: string): Promise
     }
     break
   }
-  return { items: parseItems(text), searches, inputTokens, outputTokens }
+  return { ...base, items: parseItems(text), searches, inputTokens, outputTokens }
 }
 
 function parseItems(text: string): Found[] {
@@ -140,12 +150,11 @@ const isDate = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{
 export async function runEventSearch(db: SupabaseClient, trigger: 'cron' | 'manual') {
   const now = new Date()
   const today = new Date(now.getTime() + 5.5 * 3600000).toISOString().slice(0, 10) // IST date
-  const until = new Date(Date.parse(today) + HORIZON_DAYS * 86400000).toISOString().slice(0, 10)
 
   const { data: runRow } = await db.from('event_search_runs').insert({ trigger }).select('id').single()
   const runId = (runRow as any)?.id as string | undefined
 
-  const results = await Promise.all(THEMES.map(t => searchTheme(t, today, until)))
+  const results = await Promise.all(THEMES.map(t => searchTheme(t, today)))
   const searches = results.reduce((a, r) => a + r.searches, 0)
   const inputTokens = results.reduce((a, r) => a + r.inputTokens, 0)
   const outputTokens = results.reduce((a, r) => a + r.outputTokens, 0)
@@ -168,19 +177,23 @@ export async function runEventSearch(db: SupabaseClient, trigger: 'cron' | 'manu
       const title = str(it?.title, 160)
       const link = str(it?.link, 400)
       if (!title || !link || !/^https:\/\//.test(link) || /google\.|bing\.com|facebook\.com\/search/.test(link)) continue
-      if (!isDate(it.starts_on) || it.starts_on < today || it.starts_on > until) continue
+      if (!isDate(it.starts_on) || it.starts_on < today || it.starts_on > r.until) continue
       const endsOn = isDate(it.ends_on) && it.ends_on >= it.starts_on ? it.ends_on : null
       const key = dedupeKey(title, it.starts_on)
       if (seen.has(key)) continue
       seen.add(key)
       const online = it.is_online === true
+      const country = r.intl ? normalizeCountry(it.country) : INDIA
+      // The international group must not bring Indian events back as abroad.
+      if (r.intl && country === INDIA) continue
       rows.push({
+        country,
         title,
         kind: KINDS.includes(it.kind) ? it.kind : 'seminar',
         starts_on: it.starts_on,
         ends_on: endsOn,
         is_online: online,
-        city: online ? null : cityValue(str(it.city, 60)),
+        city: online ? null : r.intl ? str(it.city, 60) : cityValue(str(it.city, 60)),
         organiser: str(it.organiser, 160),
         fee_text: str(it.fee_text, 80),
         link,
