@@ -24,15 +24,30 @@ function words(s: string): string {
     .replace(/^-+|-+$/g, '')
 }
 
+// Words part is kept to about 50 characters so the whole slug, with the
+// 9-character "-<id>" ending, stays near 60. The title is cut on a word
+// break first, then the city is added, so the city is never cut off.
+const MAX_WORDS_LEN = 50
+
+function cutOnWord(s: string, max: number): string {
+  if (s.length <= max) return s
+  const head = s.slice(0, max + 1)
+  const cut = head.lastIndexOf('-')
+  let out = (cut > 0 ? head.slice(0, cut) : s.slice(0, max)).replace(/-+$/, '')
+  // Don't end on a filler word ("...-change-the").
+  while (/-(the|a|an|of|and|or|to|in|on|for|with|by|is|can|its|this|that)$/.test(out)) out = out.replace(/-[a-z]+$/, '')
+  return out
+}
+
 export function caseSlug(c: { id: string; title?: string | null; city?: string | null }): string {
   let base = words(c.title || '')
   const city = words(c.city || '')
-  if (city && !`-${base}-`.includes(`-${city}-`)) base = base ? `${base}-${city}` : city
-  // Keep the words part short enough for a tidy link; cut on a word break.
-  if (base.length > 70) {
-    base = base.slice(0, 70)
-    const cut = base.lastIndexOf('-')
-    if (cut > 30) base = base.slice(0, cut)
+  const cityInTitle = !!city && `-${base}-`.includes(`-${city}-`)
+  if (city && !cityInTitle) {
+    base = cutOnWord(base, Math.max(MAX_WORDS_LEN - city.length - 1, 20))
+    base = base ? `${base}-${city}` : city
+  } else {
+    base = cutOnWord(base, MAX_WORDS_LEN)
   }
   const short = c.id.replace(/-/g, '').slice(0, SHORT_ID_LEN).toLowerCase()
   return base ? `${base}-${short}` : `case-${short}`
