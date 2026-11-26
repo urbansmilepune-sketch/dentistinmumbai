@@ -94,11 +94,10 @@ export default function LoginForm() {
   // can't pass an absolute URL and redirect the user off-platform.
   function nextPath(): string {
     if (nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//')) return nextParam
-    // Both hosts land on the practice dashboard. This used to send national
-    // sign-ins to /feed, which no longer exists after the social-layer
-    // freeze — leaving it would have dropped every dentist signing in on
-    // dentistinindia.in onto a dead route.
-    return '/for-dentists/dashboard'
+    // City hosts land on the practice dashboard. dentistinindia.in lands on
+    // its home page, which is the dentist home when signed in (Nov 2026);
+    // the clinic dashboard is one tap away there ("Manage my clinic").
+    return national ? '/' : '/for-dentists/dashboard'
   }
 
   async function handleEmail(e: React.FormEvent) {

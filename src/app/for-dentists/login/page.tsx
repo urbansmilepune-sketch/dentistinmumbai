@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import LoginForm from './LoginForm'
 import { cookies } from 'next/headers'
 import { REMEMBER_COOKIE } from '@/lib/auth/rememberMe'
+import { isNationalRequest } from '@/lib/national'
 
 // Already signed in? Skip the form.
 //
@@ -25,7 +26,9 @@ export default async function DentistLoginPage({
   const { data: { user } } = await supabase.auth.getUser()
   const params = await searchParams
   const rawNext = typeof params.next === 'string' ? params.next : ''
-  const next = rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : '/for-dentists/dashboard'
+  // dentistinindia.in's home page is the signed-in dentist home (Nov 2026).
+  const defaultNext = (await isNationalRequest()) ? '/' : '/for-dentists/dashboard'
+  const next = rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : defaultNext
 
   if (user?.email && (await hasDashboardAccess(user.email))) redirect(next)
 

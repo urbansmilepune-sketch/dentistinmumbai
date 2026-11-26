@@ -28,7 +28,12 @@ export async function loadExpertProfile(slug: string): Promise<Loaded | null> {
     .eq('slug', slug).order('created_at', { ascending: true }).limit(1)
   const dentist = matches?.[0]
   if (!dentist || dentist.is_active === false) return null
+  return loadExpertStats(dentist)
+}
 
+/** The same numbers for a dentist row already loaded (e.g. the signed-in dentist's home). */
+export async function loadExpertStats(dentist: Row): Promise<Loaded> {
+  const db = adminDb()
   const { data: cases } = await db
     .from('cases').select('id, specialty, like_count')
     .eq('dentist_id', dentist.id).eq('status', 'approved').limit(1000)

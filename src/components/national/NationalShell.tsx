@@ -15,6 +15,12 @@ import BrandLogo from './BrandLogo'
 interface Props {
   /** Optional pill next to the logo naming the current section. */
   badge?: string
+  /** Replaces the "For dentists" button on the right of the header (the
+   *  home page puts "For patients" there when signed out, and "My clinic"
+   *  plus the dentist's photo when signed in). */
+  right?: React.ReactNode
+  /** Hide the Cases / Events / Find an expert links (signed-out home). */
+  hideNav?: boolean
   children: React.ReactNode
 }
 
@@ -24,7 +30,7 @@ const NAV = [
   { href: '/experts', label: 'Find an expert' },
 ]
 
-export default function NationalShell({ badge, children }: Props) {
+export default function NationalShell({ badge, right, hideNav, children }: Props) {
   return (
     <div style={{ background: '#F8FAFC', color: '#0F1923', fontFamily: 'var(--font-body)', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <nav style={{ position: 'sticky', top: 0, zIndex: 50, background: '#fff', borderBottom: '1px solid #E2E8F0', padding: '10px 16px' }}>
@@ -38,14 +44,16 @@ export default function NationalShell({ badge, children }: Props) {
             )}
           </Link>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-            {NAV.map(n => (
+            {!hideNav && NAV.map(n => (
               <Link key={n.href} href={n.href} style={{ display: 'inline-flex', alignItems: 'center', minHeight: 44, padding: '0 10px', fontSize: 14, fontWeight: 600, color: '#334155', textDecoration: 'none' }}>
                 {n.label}
               </Link>
             ))}
-            <Link href="/claim" style={{ display: 'inline-flex', alignItems: 'center', minHeight: 40, padding: '0 14px', marginLeft: 4, borderRadius: 8, background: '#1D4ED8', color: '#fff', fontSize: 14, fontWeight: 700, textDecoration: 'none' }}>
-              For dentists
-            </Link>
+            {right ?? (
+              <Link href="/claim" style={{ display: 'inline-flex', alignItems: 'center', minHeight: 40, padding: '0 14px', marginLeft: 4, borderRadius: 8, background: '#1D4ED8', color: '#fff', fontSize: 14, fontWeight: 700, textDecoration: 'none' }}>
+                For dentists
+              </Link>
+            )}
           </div>
         </div>
       </nav>
