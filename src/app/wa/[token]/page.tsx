@@ -27,23 +27,26 @@ export default async function WaCaseLinkPage({ params, searchParams }: {
     if (data?.email && data.is_active !== false) name = drName((data as any).name)
   }
   const failed = sp.error === '1'
+  // ?to=alerts: the link in the WhatsApp activity summary (27 Nov 2026).
+  const alerts = sp.to === 'alerts'
 
   const card: React.CSSProperties = { maxWidth: 440, margin: '48px auto', padding: '28px 24px', background: '#fff', border: '1px solid #E2E8F0', borderRadius: 16, textAlign: 'center' }
   const btn: React.CSSProperties = { display: 'block', width: '100%', padding: '14px 18px', borderRadius: 12, border: 0, background: '#0F766E', color: '#fff', fontSize: 16, fontWeight: 700, cursor: 'pointer', textDecoration: 'none' }
 
   return (
-    <NationalShell badge="Post a Case">
+    <NationalShell badge={alerts ? 'Alerts' : 'Post a Case'}>
       <main style={{ padding: '0 16px' }}>
         <div style={card}>
           {name && !failed ? (
             <>
-              <h1 style={{ fontSize: 22, fontWeight: 800, color: '#0F1923', marginBottom: 8 }}>Your WhatsApp photos are ready</h1>
+              <h1 style={{ fontSize: 22, fontWeight: 800, color: '#0F1923', marginBottom: 8 }}>{alerts ? 'See your DentistIn India alerts' : 'Your WhatsApp photos are ready'}</h1>
               <p style={{ fontSize: 14, color: '#475569', lineHeight: 1.6, marginBottom: 20 }}>
-                Continue as {name} to add the case details and patient consent.
+                {alerts ? `Continue as ${name} to see who followed you, liked your cases and replied.` : `Continue as ${name} to add the case details and patient consent.`}
               </p>
               <form method="post" action="/api/auth/whatsapp-link">
                 <input type="hidden" name="token" value={token} />
-                <button type="submit" style={btn}>Continue to my case</button>
+                {alerts && <input type="hidden" name="to" value="alerts" />}
+                <button type="submit" style={btn}>{alerts ? 'See my alerts' : 'Continue to my case'}</button>
               </form>
             </>
           ) : (
@@ -52,9 +55,9 @@ export default async function WaCaseLinkPage({ params, searchParams }: {
                 {failed ? 'We could not sign you in' : check.ok || (!check.ok && check.reason === 'expired') ? 'This link has expired' : 'This link is not valid'}
               </h1>
               <p style={{ fontSize: 14, color: '#475569', lineHeight: 1.6, marginBottom: 20 }}>
-                Your photos are still saved. Sign in with the same email you use on your city site and they will be waiting for you.
+                {alerts ? 'Sign in with the same email you use on your city site to see your alerts.' : 'Your photos are still saved. Sign in with the same email you use on your city site and they will be waiting for you.'}
               </p>
-              <Link href="/for-dentists/login?next=/cases/new" style={btn}>Sign in and finish my case</Link>
+              <Link href={alerts ? '/for-dentists/login?next=/alerts' : '/for-dentists/login?next=/cases/new'} style={btn}>{alerts ? 'Sign in and see my alerts' : 'Sign in and finish my case'}</Link>
             </>
           )}
         </div>

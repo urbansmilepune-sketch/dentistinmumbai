@@ -7,8 +7,9 @@
 // cases.like_count is recomputed from count(*) after every toggle, so
 // it can't drift.
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { adminDb, getViewerDentist } from '@/lib/national'
+import { addAlert, removeAlert } from '@/lib/networkAlerts'
 
 export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id: caseId } = await ctx.params
@@ -28,10 +29,12 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
     const del = await db.from('case_likes').delete().eq('id', existing.id)
     if (del.error) return NextResponse.json({ error: 'Could not save' }, { status: 500 })
     liked = false
+    after(() => removeAlert({ recipientId: c.dentist_id, actorId: viewer.id, kind: 'case_like', caseId }))
   } else {
     const ins = await db.from('case_likes').insert({ case_id: caseId, dentist_id: viewer.id })
     if (ins.error && ins.error.code !== '23505') return NextResponse.json({ error: 'Could not save' }, { status: 500 })
     liked = true
+    after(() => addAlert({ recipientId: c.dentist_id, actorId: viewer.id, kind: 'case_like', caseId }))
   }
 
   const { count } = await db.from('case_likes').select('id', { count: 'exact', head: true }).eq('case_id', caseId)

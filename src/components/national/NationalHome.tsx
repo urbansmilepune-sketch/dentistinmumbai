@@ -3,6 +3,8 @@ import { redirect } from 'next/navigation'
 import { NATIONAL_ORIGIN } from '@/config/cities'
 import { getViewerDentist } from '@/lib/national'
 import { loadDentistHome } from '@/lib/dentistHome'
+import { touchNetworkSeen } from '@/lib/networkAlerts'
+import { after } from 'next/server'
 import { REMEMBER_COOKIE } from '@/lib/auth/rememberMe'
 import NationalLanding from './home/NationalLanding'
 import DentistHome from './home/DentistHome'
@@ -23,6 +25,8 @@ export default async function NationalHome() {
   const viewer = await getViewerDentist()
   if (viewer) {
     const data = await loadDentistHome(viewer.id)
+    // "Opened DentistIn India": the WhatsApp activity summary skips them.
+    after(() => touchNetworkSeen(viewer.id))
     if (data) return <DentistHome data={data} />
   } else if ((await cookies()).get(REMEMBER_COOKIE)?.value) {
     // 30-day "remember me": sign them back in silently, then come back here.

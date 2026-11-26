@@ -20,6 +20,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { NATIONAL_ORIGIN } from '@/config/cities'
 import { adminDb } from '@/lib/national'
 import { cleanName } from '@/lib/dentistName'
+import { readPrefs } from '@/lib/networkAlerts'
 import { newCasesFromFollowed, digestLine, sinceDaysAgo, DIGEST_DAYS } from '@/lib/followDigest'
 import { sendFollowDigestWhatsApp, whatsAppEnabled } from '@/lib/whatsapp'
 
@@ -51,6 +52,8 @@ export async function GET(request: NextRequest) {
 
   for (const d of (people || []) as Array<Record<string, any>>) {
     if (d.is_active === false) continue
+    // Switched off on dentistinindia.in/alerts (or by replying STOP).
+    if (!readPrefs(d.network_alert_prefs).whatsapp_digest) continue
     const last = d.follow_digest_sent_at ? new Date(d.follow_digest_sent_at).getTime() : 0
     if (last && last > sixDaysAgo) { skippedRecent++; continue }
     const since = last ? new Date(Math.max(last, Date.parse(sinceDaysAgo(DIGEST_DAYS)))).toISOString() : sinceDaysAgo(DIGEST_DAYS)

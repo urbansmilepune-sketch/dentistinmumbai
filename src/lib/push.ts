@@ -162,6 +162,30 @@ export async function notifyClinic(
   }
 }
 
+/**
+ * DentistIn India activity alert (replies, 7 PM summary) to the dentist's
+ * own phones only, never to clinic staff. Booking switches don't apply:
+ * these have their own switches on dentistinindia.in/alerts.
+ * Returns true if at least one phone accepted it.
+ */
+export async function notifyNetwork(dentistId: string, msg: PushMessage): Promise<boolean> {
+  try {
+    if (!dentistId || !configure()) return false
+    const db = pushAdmin()
+    const { data, error } = await db
+      .from(PUSH_TABLE)
+      .select('id, endpoint, p256dh, auth, prefs, user_email, is_owner')
+      .eq('dentist_id', dentistId)
+      .eq('is_owner', true)
+    if (error || !data?.length) return false
+    const results = await Promise.allSettled((data as SubRow[]).map(r => sendToRow(db, r, msg)))
+    return results.some(r => r.status === 'fulfilled' && r.value === 'sent')
+  } catch (err: any) {
+    console.error('[push] notifyNetwork threw', err?.message)
+    return false
+  }
+}
+
 /** Test alert to a single phone (Settings → Send a test alert). */
 export async function sendTestAlert(row: SubRow): Promise<'sent' | 'gone' | 'failed' | 'not_configured'> {
   if (!configure()) return 'not_configured'
