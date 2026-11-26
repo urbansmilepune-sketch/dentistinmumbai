@@ -1,7 +1,7 @@
 import { MetadataRoute } from 'next'
 import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
-import { getCityByDomain, cityOrigin, isNationalHost, NATIONAL_ORIGIN, LIVE_CITY_CONFIGS } from '@/config/cities'
+import { getCityByDomain, cityOrigin, isNationalHost, NATIONAL_ORIGIN } from '@/config/cities'
 import { getCityAreaDentistCounts, getAreaTreatmentCompleteCounts } from '@/lib/cache/public-pages'
 import { isIndexableProfile } from '@/lib/profileCompletion'
 import { getCityArticles } from '@/lib/publicArticles'
@@ -15,10 +15,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const host = h.get('x-forwarded-host') || h.get('host')
   const supabase = await createClient()
 
-  // National parent. The sitemap surfaces the network homepage + /cities,
-  // and lists every city domain as a dofollow link so Google crawls the
-  // city sites through the parent. Per-city sitemaps still live at each
-  // city domain's own /sitemap.xml — this is just the discovery layer.
+  // National parent. Lists only dentistinindia.in URLs: a sitemap may only
+  // contain URLs on its own host, and the city-domain homes we used to list
+  // here made Search Console report "URL not allowed" for each one. The city
+  // sites are still linked from /cities and the footer as normal links, and
+  // each city domain serves its own /sitemap.xml.
   if (isNationalHost(host)) {
     const now = new Date()
     const nationalPages: MetadataRoute.Sitemap = [
@@ -35,12 +36,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       { url: `${NATIONAL_ORIGIN}/events`,           lastModified: now, changeFrequency: 'daily',   priority: 0.85 },
       ...SPECIALTIES.map(s => ({ url: `${NATIONAL_ORIGIN}/experts?t=${s.slug}`, lastModified: now, changeFrequency: 'weekly' as const, priority: 0.8 })),
     ]
-    const cityHomes: MetadataRoute.Sitemap = LIVE_CITY_CONFIGS.map(c => ({
-      url: `https://${c.domain}`,
-      lastModified: now,
-      changeFrequency: 'daily' as const,
-      priority: 0.8,
-    }))
     // Approved case + professional-profile URLs — fetched via the
     // user-bound client; case_photos RLS doesn't gate the cases.id read.
     // Approved cases only (their public summary is indexable since
@@ -66,7 +61,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: 'monthly' as const,
       priority: 0.6,
     }))
-    return [...nationalPages, ...cityHomes, ...profilePages, ...casePages]
+    return [...nationalPages, ...profilePages, ...casePages]
   }
 
   const city = getCityByDomain(host)
