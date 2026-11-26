@@ -7,8 +7,12 @@ import { getDentistPublishedArticles } from '@/lib/publicArticles'
 import { NATIONAL_ORIGIN } from '@/config/cities'
 import { drName } from '@/lib/dentistName'
 import FollowButton from '@/components/national/FollowButton'
+import { loadExpertProfile, expertHeadline } from '@/lib/expertProfile'
+import ProfileShareButton from '@/components/national/ProfileShareButton'
+import InviteBox from '@/components/national/InviteBox'
+import { getOrCreateInviteCode, loadInviteStats, type InviteStats } from '@/lib/invites'
 import {
-  adminDb, getViewerDentist, isFoundingDentist, AFTER_KINDS, cityNameOf, cityDomainOf, initialsOf, ui,
+  adminDb, getViewerDentist, isFoundingDentist, cityNameOf, cityDomainOf, initialsOf, ui,
 } from '@/lib/national'
 
 export const dynamic = 'force-dynamic'
@@ -22,82 +26,13 @@ export const dynamic = 'force-dynamic'
 // X-rays, no clinical discussion (those stay inside the dentists-only case
 // library) and no booking: Book goes to the dentist's city site.
 
-type Row = Record<string, any>
-
-interface Loaded {
-  dentist: Row
-  caseCount: number
-  followupCount: number
-  answersCount: number
-  helpfulCount: number
-  likeCount: number
-  followerCount: number
-  topSpecialties: Array<{ slug: string; count: number }>
-}
-
-async function load(slug: string): Promise<Loaded | null> {
-  const db = adminDb()
-  // Slugs are not globally unique across cities: the oldest registration
-  // owns the canonical one (same rule as before).
-  const { data: matches } = await db
-    .from('dentists').select('*')
-    .eq('slug', slug).order('created_at', { ascending: true }).limit(1)
-  const dentist = matches?.[0]
-  if (!dentist || dentist.is_active === false) return null
-
-  const { data: cases } = await db
-    .from('cases').select('id, specialty, like_count')
-    .eq('dentist_id', dentist.id).eq('status', 'approved').limit(1000)
-  const caseRows = (cases || []) as Array<{ id: string; specialty: string; like_count: number | null }>
-  const likeCount = caseRows.reduce((n, c) => n + (c.like_count || 0), 0)
-  const { count: followerCount } = await db
-    .from('dentist_follows').select('id', { count: 'exact', head: true }).eq('following_id', dentist.id)
-
-  let followupCount = 0
-  if (caseRows.length) {
-    const { data: afterPhotos } = await db
-      .from('case_photos').select('case_id')
-      .in('case_id', caseRows.map(c => c.id)).in('kind', AFTER_KINDS)
-    followupCount = new Set((afterPhotos || []).map((p: any) => p.case_id)).size
-  }
-
-  const { data: myComments } = await db
-    .from('case_comments').select('id').eq('dentist_id', dentist.id).limit(1000)
-  const commentIds = (myComments || []).map((c: any) => c.id as string)
-  let helpfulCount = 0
-  if (commentIds.length) {
-    const { count, error } = await db
-      .from('case_comment_helpful').select('comment_id', { count: 'exact', head: true })
-      .in('comment_id', commentIds)
-    if (!error) helpfulCount = count ?? 0
-  }
-
-  const bySpec = new Map<string, number>()
-  for (const c of caseRows) bySpec.set(c.specialty, (bySpec.get(c.specialty) || 0) + 1)
-  const topSpecialties = Array.from(bySpec.entries())
-    .map(([s, count]) => ({ slug: s, count }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 4)
-
-  return { dentist, caseCount: caseRows.length, followupCount, answersCount: commentIds.length, helpfulCount, likeCount, followerCount: followerCount ?? 0, topSpecialties }
-}
-
-function headline(d: Row, top: Loaded['topSpecialties']): string {
-  const skills: string[] = Array.isArray(d.top_skills) ? d.top_skills : []
-  if (skills.length) return skills.slice(0, 2).join(' and ')
-  const spec = top[0] ? getSpecialty(top[0].slug)?.label : null
-  if (spec) return spec
-  if (Array.isArray(d.specialties) && d.specialties.length) return d.specialties[0]
-  return 'Dentist'
-}
-
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params
-  const data = await load(slug)
+  const data = await loadExpertProfile(slug)
   if (!data) return { title: 'Profile not found | DentistIn India', robots: { index: false, follow: false } }
   const d = data.dentist
   const city = cityNameOf(d.city)
-  const what = headline(d, data.topSpecialties)
+  const what = expertHeadline(d, data.topSpecialties)
   const title = `${drName(d.name)}, ${what}${city ? ' in ' + city : ''} | DentistIn India`
   const bits = [
     data.caseCount ? `${data.caseCount} cases shared with dentists across India` : null,
@@ -109,13 +44,18 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     title: { absolute: title },
     description,
     alternates: { canonical: `${NATIONAL_ORIGIN}/professional/${d.slug}` },
-    openGraph: { title, description, type: 'profile', siteName: 'DentistIn India', ...(d.profile_photo ? { images: [{ url: d.profile_photo }] } : {}) },
+    openGraph: {
+      title, description, type: 'profile', siteName: 'DentistIn India',
+      url: `${NATIONAL_ORIGIN}/professional/${d.slug}`,
+      images: [{ url: `${NATIONAL_ORIGIN}/api/og/profile/${d.slug}`, width: 1200, height: 630, alt: drName(d.name) }],
+    },
+    twitter: { card: 'summary_large_image', title, description, images: [`${NATIONAL_ORIGIN}/api/og/profile/${d.slug}`] },
   }
 }
 
 export default async function ExpertProfilePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
-  const data = await load(slug)
+  const data = await loadExpertProfile(slug)
   if (!data) notFound()
   const { dentist: d, caseCount, followupCount, answersCount, helpfulCount, likeCount, followerCount, topSpecialties } = data
 
@@ -127,6 +67,13 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
     isFollowing = !!f
   }
   const articles = await getDentistPublishedArticles(d.id).catch(() => [])
+
+  // Invite a colleague: owner only. Hidden until the invite SQL has run.
+  let invite: { code: string; stats: InviteStats } | null = null
+  if (isOwner) {
+    const code = await getOrCreateInviteCode(d.id).catch(() => null)
+    if (code) invite = { code, stats: await loadInviteStats(d.id, code) }
+  }
 
   const cityName = cityNameOf(d.city)
   const domain = cityDomainOf(d.city)
@@ -162,7 +109,7 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
           </div>
           <h1 style={{ ...ui.h1, margin: 0 }}>{drName(d.name)}</h1>
           <div style={{ fontSize: 15, color: '#475569' }}>
-            {headline(d, topSpecialties)}{cityName ? ` · ${cityName}` : ''}
+            {expertHeadline(d, topSpecialties)}{cityName ? ` · ${cityName}` : ''}
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center' }}>
             {d.qualifications && <span style={ui.pill('#EFF6FF', '#1D4ED8')}>{d.qualifications}</span>}
@@ -177,6 +124,7 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
               <a href={`https://${domain}/dentist/${d.slug}`} style={ui.btn}>Book at the clinic{cityName ? ` in ${cityName}` : ''}</a>
             )}
             {isOwner && <Link href="/claim" style={ui.btnGhost}>Edit my profile</Link>}
+            <ProfileShareButton slug={d.slug} name={d.name} dentistId={d.id} isOwner={isOwner} />
             {viewer && !isOwner && <FollowButton slug={d.slug} initialFollowing={isFollowing} />}
           </div>
           {domain && <div style={{ fontSize: 12, color: '#475569' }}>Booking opens on {domain}</div>}
@@ -245,6 +193,16 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
           </section>
         )}
 
+        {invite && (
+          <InviteBox
+            dentistId={d.id}
+            code={invite.code}
+            sent={invite.stats.sent}
+            joined={invite.stats.joined}
+            recent={invite.stats.recent.map(r => ({ name: drName(r.name), slug: r.slug, when: timeAgo(r.created_at) }))}
+          />
+        )}
+
         {viewer && (
           <section style={{ ...ui.card, background: '#0F1923', borderColor: '#0F1923', color: '#fff', display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{ fontWeight: 700 }}>You&apos;re signed in as a dentist</div>
@@ -267,4 +225,13 @@ function TextBlock({ title, value }: { title: string; value: string }) {
       <p style={{ fontSize: 14, color: '#475569', lineHeight: 1.6, whiteSpace: 'pre-wrap', margin: 0 }}>{value}</p>
     </div>
   )
+}
+
+function timeAgo(iso: string): string {
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000)
+  if (days <= 0) return 'Today'
+  if (days === 1) return 'Yesterday'
+  if (days < 7) return `${days} days ago`
+  if (days < 14) return 'Last week'
+  return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
 }

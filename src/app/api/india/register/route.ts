@@ -32,6 +32,7 @@ import {
   withinRateLimit,
   clientIp,
 } from '@/lib/registrationGuards'
+import { normalizeInviteCode } from '@/lib/invites'
 
 const admin = createServiceClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -271,6 +272,16 @@ export async function POST(request: NextRequest) {
         { error: 'Could not create your profile. Please try again in a moment.', detail: dentErr.message },
         { status: 500 },
       )
+    }
+
+    // Invite a colleague: credit the dentist whose invite link brought this
+    // signup. A separate best-effort update so a missing column (SQL not
+    // run yet) or a bad code never blocks or rolls back the signup.
+    const refCode = normalizeInviteCode(payload?.ref)
+    if (refCode) {
+      const { error: refErr } = await admin.from('dentists').update({ ref: refCode }).eq('email', email)
+      if (refErr) console.warn('[india/register] could not save invite ref', refCode, refErr.message)
+      await admin.from('dentist_registrations').update({ ref_code: refCode }).eq('ref_no', refNo)
     }
 
     // Admin email alert — best-effort; never blocks the signup. The national

@@ -1,22 +1,24 @@
 'use client'
 
-// Per-case share dropdown. Always shares the national URL
+// Per-case share button. Always shares the national URL
 // (https://dentistinindia.in/cases/<readable-slug>) regardless of which surface the
-// button is rendered on, so the OG preview resolves on the canonical host.
+// button is rendered on, so the preview resolves on the canonical host.
+// The preview picture is the case share card (/api/og/case/<slug>): title,
+// specialty, city and dentist name, never a clinical photo.
 //
 // Variants:
 //   - default ("↗ Share" pill) — used on /cases/[id] in the social-actions row
-//   - compact (icon button)    — used in card corners alongside SaveButton
+//   - compact (icon button)    — for card corners alongside SaveButton
 //
-// Share triggers fire-and-forget POST to /api/analytics/track with
+// Shares fire-and-forget POST to /api/analytics/track with
 // event_type='case_share' attributed to the case author's dentist_id. The
 // sharer themselves isn't tracked — privacy + we just want amplification
 // signal for the author.
 
-import { useEffect, useRef, useState } from 'react'
 import { NATIONAL_ORIGIN } from '@/config/cities'
 import { drName } from '@/lib/dentistName'
-import { casePath } from '@/lib/caseSlug'
+import { caseSlug } from '@/lib/caseSlug'
+import ShareMenu from './ShareMenu'
 
 interface Props {
   caseId: string
@@ -30,37 +32,11 @@ interface Props {
 }
 
 export default function ShareButton({ caseId, caseTitle, dentistName, caseCity, dentistId, compact = false }: Props) {
-  const [open, setOpen] = useState(false)
-  const [copied, setCopied] = useState(false)
-  const rootRef = useRef<HTMLDivElement | null>(null)
-
-  const url = `${NATIONAL_ORIGIN}${casePath({ id: caseId, title: caseTitle, city: caseCity })}`
+  const slug = caseSlug({ id: caseId, title: caseTitle, city: caseCity })
+  const url = `${NATIONAL_ORIGIN}/cases/${slug}`
   const who = dentistName ? drName(dentistName) : 'a verified dentist'
-  const whatsappText = `Check out this clinical case by ${who} on DentistIn India 🦷\n${caseTitle}\n${url}`
-  const twitterText  = `Interesting dental case by ${who} on DentistIn India`
 
-  const whatsappHref = `https://wa.me/?text=${encodeURIComponent(whatsappText)}`
-  const linkedinHref = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`
-  const twitterHref  = `https://twitter.com/intent/tweet?text=${encodeURIComponent(twitterText)}&url=${encodeURIComponent(url)}`
-
-  // Close on outside click + Escape.
-  useEffect(() => {
-    if (!open) return
-    function onDocClick(e: MouseEvent) {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false)
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    document.addEventListener('mousedown', onDocClick)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDocClick)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [open])
-
-  function trackShare() {
+  function track() {
     if (!dentistId) return
     fetch('/api/analytics/track', {
       method: 'POST',
@@ -69,93 +45,16 @@ export default function ShareButton({ caseId, caseTitle, dentistName, caseCity, 
     }).catch(() => {})
   }
 
-  async function onCopy() {
-    try {
-      await navigator.clipboard.writeText(url)
-      setCopied(true)
-      trackShare()
-      window.setTimeout(() => setCopied(false), 1800)
-    } catch {
-      // Clipboard API can be blocked by permissions or non-secure contexts;
-      // fall through silently — the share dropdown still has the other
-      // channels.
-    }
-  }
-
-  function onChannel(href: string) {
-    trackShare()
-    window.open(href, '_blank', 'noopener,noreferrer')
-    setOpen(false)
-  }
-
   return (
-    <div ref={rootRef} style={{ position: 'relative', display: 'inline-block' }}>
-      <button
-        type="button"
-        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen(v => !v) }}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        title="Share this case"
-        style={compact ? compactBtn : fullBtn}
-      >
-        {compact ? '↗' : '↗ Share'}
-      </button>
-
-      {open && (
-        <div
-          role="menu"
-          onClick={(e) => { e.preventDefault(); e.stopPropagation() }}
-          style={{
-            position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 100,
-            background: '#fff', border: '1px solid #E2E8F0', borderRadius: 10,
-            boxShadow: '0 6px 18px rgba(15,25,35,0.12)',
-            minWidth: 200, padding: 4, overflow: 'hidden',
-          }}
-        >
-          <Item onClick={onCopy} icon="📋" label={copied ? 'Copied!' : 'Copy link'} highlight={copied} />
-          <Item onClick={() => onChannel(whatsappHref)} icon="💚" label="WhatsApp" />
-          <Item onClick={() => onChannel(linkedinHref)} icon="💼" label="LinkedIn" />
-          <Item onClick={() => onChannel(twitterHref)}  icon="🐦" label="Twitter / X" />
-        </div>
-      )}
-    </div>
+    <ShareMenu
+      url={url}
+      whatsappText={`Check out this clinical case by ${who} on DentistIn India 🦷\n${caseTitle}\n${url}`}
+      tweetText={`Interesting dental case by ${who} on DentistIn India`}
+      storyImageUrl={`/api/og/case/${slug}?format=story`}
+      storyFileName={`dentistin-case-${slug.slice(-8)}.png`}
+      title="Share this case"
+      compact={compact}
+      onShare={track}
+    />
   )
-}
-
-function Item({ onClick, icon, label, highlight }: { onClick: () => void; icon: string; label: string; highlight?: boolean }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        display: 'flex', alignItems: 'center', gap: 10,
-        width: '100%', textAlign: 'left',
-        padding: '9px 12px', borderRadius: 7,
-        background: highlight ? '#DCFCE7' : 'transparent',
-        color: highlight ? '#166534' : '#0F1923',
-        border: 'none', cursor: 'pointer',
-        fontSize: 13, fontWeight: 600, fontFamily: 'inherit',
-      }}
-    >
-      <span style={{ fontSize: 14, lineHeight: 1 }}>{icon}</span>
-      <span>{label}</span>
-    </button>
-  )
-}
-
-const fullBtn: React.CSSProperties = {
-  padding: '8px 14px', minHeight: 36,
-  background: '#fff', color: '#0F1923',
-  border: '1px solid #E2E8F0', borderRadius: 8,
-  fontSize: 13, fontWeight: 700, cursor: 'pointer',
-  display: 'inline-flex', alignItems: 'center', gap: 6,
-  fontFamily: 'inherit',
-}
-const compactBtn: React.CSSProperties = {
-  width: 32, height: 32, padding: 0,
-  background: 'rgba(255,255,255,0.94)', color: '#0F1923',
-  border: '1px solid #E2E8F0', borderRadius: 8,
-  fontSize: 14, fontWeight: 700, cursor: 'pointer',
-  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-  fontFamily: 'inherit',
 }

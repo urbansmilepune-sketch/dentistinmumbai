@@ -10,9 +10,10 @@
 // unlaunched cities can still create a national-only profile. The server
 // handles the "no city site to host them" case gracefully.
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { CITY_CONFIGS, type CitySlug } from '@/config/cities'
 import { HONEYPOT_FIELD } from '@/lib/registrationGuards'
+import { recallInvite, rememberInvite } from '@/lib/inviteClient'
 
 const SPECIALIZATIONS = [
   'General Dentist',
@@ -49,6 +50,13 @@ export default function JoinForm() {
   // Honeypot: read via ref at submit time so a value set directly on the DOM
   // (not through a React event) is still captured. Humans never see this field.
   const honeypotRef = useRef<HTMLInputElement>(null)
+  // Invite code of the dentist who sent this colleague (/invite/<CODE> or
+  // /join?ref=<CODE>), remembered on this phone for 30 days. Sent with the
+  // signup so the new dentist is credited to the inviter.
+  useEffect(() => {
+    const fromUrl = new URLSearchParams(window.location.search).get('ref')?.trim()
+    if (fromUrl) rememberInvite(fromUrl)
+  }, [])
 
   function set<K extends keyof typeof form>(k: K, v: string) {
     setForm(f => ({ ...f, [k]: v }))
@@ -63,6 +71,7 @@ export default function JoinForm() {
         body: JSON.stringify({
           ...form,
           experience_years: form.experience_years ? Number(form.experience_years) : null,
+          ref: new URLSearchParams(window.location.search).get('ref')?.trim() || recallInvite() || undefined,
           [HONEYPOT_FIELD]: honeypotRef.current?.value || '',
         }),
       })

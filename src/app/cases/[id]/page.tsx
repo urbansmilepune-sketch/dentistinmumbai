@@ -124,20 +124,27 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
     return { title: 'Case | Dentist In India', robots: { index: false, follow: false } }
   }
   const spec = getSpecialty(data.row.specialty)
-  const dentistName = data.row.dentists?.name ?? 'an State Dental Council-verified dentist'
-  const ogTitle = `${data.row.title} by ${data.row.dentists?.name ? drName(dentistName) : dentistName}`
+  const dentistName = data.row.dentists?.name ? drName(data.row.dentists.name) : 'a verified dentist'
+  const ogTitle = `${data.row.title} by ${dentistName}`
+  // The preview is seen by everyone in a WhatsApp group, not just dentists,
+  // so it never carries the case text or a clinical photo. The picture is a
+  // share card drawn from the title, specialty, city and name only
+  // (src/lib/shareCards.tsx).
   const cityName = cityNameOf(data.row.dentists?.city)
-  const ogDescription = summaryText(data.row.description, 155)
-    || `${spec?.label || 'Clinical'} case${cityName ? ` from ${cityName}` : ''} shared by ${data.row.dentists?.name ? drName(dentistName) : dentistName} on DentistIn India.`
-  // Prefer a clinical (before/after) photo for the share preview; fall
-  // back to whatever photo is first. Photo URLs are already absolute
-  // (Supabase storage), so they work directly as og:image.
-  const ogPhoto = data.photos.find(p => p.kind === 'before' || p.kind === 'after') || data.photos[0]
-  const ogImage = ogPhoto?.url
+  const replies = data.row.comment_count || 0
+  const ogDescription = [
+    `${spec?.label || 'Clinical'} case${cityName ? ' from ' + cityName : ''}, shared with dentists on DentistIn India.`,
+    replies ? `${replies} ${replies === 1 ? 'reply' : 'replies'} from dentists.` : null,
+    'See the case on DentistIn India.',
+  ].filter(Boolean).join(' ')
+  // Search result text (the page itself shows the public summary) can use
+  // the summary; the share preview above stays text-free.
+  const pageDescription = summaryText(data.row.description, 155) || ogDescription
   const ogUrl = `${NATIONAL_ORIGIN}/cases/${slugFor(data.row)}`
+  const ogImage = `${NATIONAL_ORIGIN}/api/og/case/${slugFor(data.row)}`
   return {
     title: { absolute: `${data.row.title}${cityName && !data.row.title.toLowerCase().includes(cityName.toLowerCase()) ? `, ${cityName}` : ''} | Dentist In India` },
-    description: ogDescription,
+    description: pageDescription,
     alternates: { canonical: ogUrl },
     // Approved cases are indexable since 26 Nov 2026: signed-out visitors
     // and Google get a text-only public summary (PublicCaseSummary).
@@ -148,13 +155,13 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
       url: ogUrl,
       siteName: 'Dentist In India',
       type: 'article',
-      ...(ogImage ? { images: [{ url: ogImage }] } : {}),
+      images: [{ url: ogImage, width: 1200, height: 630, alt: ogTitle }],
     },
     twitter: {
       card: 'summary_large_image',
       title: ogTitle,
       description: ogDescription,
-      ...(ogImage ? { images: [ogImage] } : {}),
+      images: [ogImage],
     },
   }
 }
