@@ -12,11 +12,11 @@
 // Patient privacy: we deliberately collect NO name/contact — only age,
 // gender, and clinical context.
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { SPECIALTIES } from '@/lib/dentalSpecialties'
 import { MATERIAL_GROUPS } from '@/lib/dentalMaterials'
-import AiHelper from './AiHelper'
+import AiHelper, { type Result as AiResult } from './AiHelper'
 
 type Kind = 'before' | 'after' | 'xray_before' | 'xray_after'
 
@@ -108,6 +108,47 @@ export default function CaseForm({ dentistName, isVerified, initialPhotos = [], 
   // under the right photo section (pre vs post), never duplicated.
   const [uploadErr, setUploadErr]               = useState<{ kind: Kind; msg: string } | null>(null)
   const [uploading, setUploading]               = useState<Kind | null>(null)
+
+  // Fields the AI drafted from WhatsApp photos + text, shown with an
+  // "AI draft, please check" tag until the dentist edits them.
+  const [aiFilled, setAiFilled]                 = useState<Set<string>>(new Set())
+  const live = useRef({ title, specialty, question, description, chiefComplaint, diagnosis, treatmentPlanDetail, patientAge, patientGender, clinicalNotes })
+  useEffect(() => {
+    live.current = { title, specialty, question, description, chiefComplaint, diagnosis, treatmentPlanDetail, patientAge, patientGender, clinicalNotes }
+  })
+
+  // WhatsApp cases: put the AI draft into every field that is still empty
+  // (or still holds the raw WhatsApp text). Never ticks consent or submits.
+  function autoFill(r: AiResult): string[] {
+    const v = live.current
+    const filled: string[] = []
+    const empty = (x: string) => !x.trim()
+    const put = (key: string, has: boolean, apply: () => void) => { if (has) { apply(); filled.push(key) } }
+    put('title', !!r.title && empty(v.title), () => setTitle(r.title))
+    put('specialty', !!r.specialty && !v.specialty, () => setSpecialty(r.specialty))
+    put('question', !!r.question && empty(v.question), () => setQuestion(r.question))
+    const rawNote = initialNote.trim()
+    put('summary', !!r.summary && (empty(v.description) || v.description.trim() === rawNote), () => {
+      setDescription(r.summary)
+      // Keep the dentist's own WhatsApp words, so nothing they sent is lost.
+      if (rawNote && empty(v.clinicalNotes)) setClinicalNotes(`From WhatsApp: ${rawNote}`)
+    })
+    put('chiefComplaint', !!r.chief_complaint && empty(v.chiefComplaint), () => setChiefComplaint(r.chief_complaint!))
+    put('diagnosis', !!r.diagnosis && empty(v.diagnosis), () => setDiagnosis(r.diagnosis!))
+    put('treatmentPlan', !!r.treatment_plan && empty(v.treatmentPlanDetail), () => setTreatmentPlanDetail(r.treatment_plan!))
+    put('patientAge', !!r.patient_age && empty(v.patientAge), () => setPatientAge(String(r.patient_age)))
+    put('patientGender', !!r.patient_gender && !v.patientGender, () => setPatientGender(r.patient_gender!))
+    if (r.complexity) { setComplexity(r.complexity); filled.push('complexity') }
+    // WhatsApp photos all arrive as clinical "before" photos: move the ones
+    // that look like X-rays to the X-ray section.
+    setPhotos(prev => prev.map((p, i) => (r.photos[i]?.looks_like === 'xray' && p.kind === 'before' ? { ...p, kind: 'xray_before' } : p)))
+    setAiFilled(new Set(filled))
+    return filled
+  }
+  const edited = (key: string) => setAiFilled(prev => { if (!prev.has(key)) return prev; const n = new Set(prev); n.delete(key); return n })
+  const aiTag = (key: string) => aiFilled.has(key)
+    ? <span style={{ marginLeft: 8, padding: '1px 7px', borderRadius: 999, background: '#EDE9FE', color: '#6D28D9', fontSize: 10, fontWeight: 700, textTransform: 'none', letterSpacing: 0 }}>AI draft, please check</span>
+    : null
 
   const [submitting, setSubmitting]             = useState(false)
   const [submitErr, setSubmitErr]               = useState('')
@@ -291,24 +332,24 @@ export default function CaseForm({ dentistName, isVerified, initialPhotos = [], 
       {/* Basics */}
       <section style={sectionStyle}>
         <div style={{ marginBottom: 14 }}>
-          <label style={labelStyle} htmlFor="case-title">Case title</label>
-          <input id="case-title" required value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Full-mouth rehabilitation with All-on-4 implants" style={inputStyle} />
+          <label style={labelStyle} htmlFor="case-title">Case title{aiTag('title')}</label>
+          <input id="case-title" required value={title} onChange={e => { setTitle(e.target.value); edited('title') }} placeholder="e.g. Full-mouth rehabilitation with All-on-4 implants" style={inputStyle} />
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
           <div>
-            <label style={labelStyle} htmlFor="case-specialty">Specialty</label>
-            <select id="case-specialty" required value={specialty} onChange={e => setSpecialty(e.target.value)} style={inputStyle}>
+            <label style={labelStyle} htmlFor="case-specialty">Specialty{aiTag('specialty')}</label>
+            <select id="case-specialty" required value={specialty} onChange={e => { setSpecialty(e.target.value); edited('specialty') }} style={inputStyle}>
               <option value="">Select…</option>
               {SPECIALTIES.map(s => <option key={s.slug} value={s.slug}>{s.label}</option>)}
             </select>
           </div>
           <div>
-            <label style={labelStyle} htmlFor="case-complexity">Complexity (1 simple — 5 complex)</label>
+            <label style={labelStyle} htmlFor="case-complexity">Complexity (1 simple — 5 complex){aiTag('complexity')}</label>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, height: 44 }}>
               {[1, 2, 3, 4, 5].map(n => (
                 <button
-                  key={n} type="button" onClick={() => setComplexity(n)}
+                  key={n} type="button" onClick={() => { setComplexity(n); edited('complexity') }}
                   aria-label={`${n} of 5 complexity`}
                   style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 24, lineHeight: 1, color: n <= complexity ? '#F59E0B' : '#CBD5E1', padding: 0 }}
                 >★</button>
@@ -319,15 +360,15 @@ export default function CaseForm({ dentistName, isVerified, initialPhotos = [], 
         </div>
 
         <div style={{ marginBottom: 14 }}>
-          <label style={labelStyle} htmlFor="case-question">Your question to other dentists (optional)</label>
-          <input id="case-question" value={question} onChange={e => setQuestion(e.target.value)} maxLength={300}
+          <label style={labelStyle} htmlFor="case-question">Your question to other dentists (optional){aiTag('question')}</label>
+          <input id="case-question" value={question} onChange={e => { setQuestion(e.target.value); edited('question') }} maxLength={300}
             placeholder="e.g. Would you load at 3 months or wait for 4?" style={inputStyle} />
           <p style={{ fontSize: 12, color: '#475569', marginTop: 6 }}>A clear question gets faster, better replies.</p>
         </div>
 
         <div>
-          <label style={labelStyle} htmlFor="case-desc">Treatment description</label>
-          <textarea id="case-desc" rows={5} value={description} onChange={e => setDescription(e.target.value)}
+          <label style={labelStyle} htmlFor="case-desc">Treatment description{aiTag('summary')}</label>
+          <textarea id="case-desc" rows={5} value={description} onChange={e => { setDescription(e.target.value); edited('summary') }}
             placeholder="Walk through the chief complaint, diagnosis, the plan you chose, and how the treatment unfolded."
             style={{ ...inputStyle, minHeight: 110, resize: 'vertical' }} />
         </div>
@@ -339,13 +380,13 @@ export default function CaseForm({ dentistName, isVerified, initialPhotos = [], 
         <p style={{ fontSize: 12, color: '#64748B', marginBottom: 14 }}>All optional. For patient privacy, do not enter names or contact details.</p>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
           <div>
-            <label style={labelStyle} htmlFor="patient-age">Patient age</label>
+            <label style={labelStyle} htmlFor="patient-age">Patient age{aiTag('patientAge')}</label>
             <input id="patient-age" inputMode="numeric" maxLength={3} placeholder="e.g. 42" value={patientAge}
-              onChange={e => setPatientAge(e.target.value.replace(/\D/g, ''))} style={inputStyle} />
+              onChange={e => { setPatientAge(e.target.value.replace(/\D/g, '')); edited('patientAge') }} style={inputStyle} />
           </div>
           <div>
-            <label style={labelStyle} htmlFor="patient-gender">Patient gender</label>
-            <select id="patient-gender" value={patientGender} onChange={e => setPatientGender(e.target.value)} style={inputStyle}>
+            <label style={labelStyle} htmlFor="patient-gender">Patient gender{aiTag('patientGender')}</label>
+            <select id="patient-gender" value={patientGender} onChange={e => { setPatientGender(e.target.value); edited('patientGender') }} style={inputStyle}>
               <option value="">Select…</option>
               <option value="Male">Male</option>
               <option value="Female">Female</option>
@@ -354,8 +395,8 @@ export default function CaseForm({ dentistName, isVerified, initialPhotos = [], 
           </div>
         </div>
         <div style={{ marginBottom: 14 }}>
-          <label style={labelStyle} htmlFor="chief-complaint">Chief complaint</label>
-          <textarea id="chief-complaint" rows={3} value={chiefComplaint} onChange={e => setChiefComplaint(e.target.value)}
+          <label style={labelStyle} htmlFor="chief-complaint">Chief complaint{aiTag('chiefComplaint')}</label>
+          <textarea id="chief-complaint" rows={3} value={chiefComplaint} onChange={e => { setChiefComplaint(e.target.value); edited('chiefComplaint') }}
             placeholder="What brought the patient in? e.g. Pain in lower left molar for 3 weeks"
             style={{ ...inputStyle, minHeight: 76, resize: 'vertical' }} />
         </div>
@@ -382,20 +423,22 @@ export default function CaseForm({ dentistName, isVerified, initialPhotos = [], 
         onUseSummary={v => setDescription(prev => (prev.trim() ? `${prev.trim()}\n\n${v}` : v))}
         onUseSpecialty={setSpecialty}
         onUseQuestion={setQuestion}
+        autoRun={initialPhotos.length > 0}
+        onAutoFill={autoFill}
       />
 
       {/* Section 3 — Diagnosis & treatment plan */}
       <section style={sectionStyle}>
         <h2 style={sectionHeadingStyle}>🔬 Diagnosis &amp; Treatment Plan</h2>
         <div style={{ marginBottom: 14 }}>
-          <label style={labelStyle} htmlFor="diagnosis">Diagnosis <span style={{ color: '#DC2626' }}>*</span></label>
-          <textarea id="diagnosis" required rows={3} value={diagnosis} onChange={e => setDiagnosis(e.target.value)}
+          <label style={labelStyle} htmlFor="diagnosis">Diagnosis <span style={{ color: '#DC2626' }}>*</span>{aiTag('diagnosis')}</label>
+          <textarea id="diagnosis" required rows={3} value={diagnosis} onChange={e => { setDiagnosis(e.target.value); edited('diagnosis') }}
             placeholder="e.g. Chronic periodontitis Grade III, missing 36, 37. Adequate bone for implant placement."
             style={{ ...inputStyle, minHeight: 88, resize: 'vertical' }} />
         </div>
         <div style={{ marginBottom: 14 }}>
-          <label style={labelStyle} htmlFor="treatment-plan">Treatment plan <span style={{ color: '#DC2626' }}>*</span></label>
-          <textarea id="treatment-plan" required rows={4} value={treatmentPlanDetail} onChange={e => setTreatmentPlanDetail(e.target.value)}
+          <label style={labelStyle} htmlFor="treatment-plan">Treatment plan <span style={{ color: '#DC2626' }}>*</span>{aiTag('treatmentPlan')}</label>
+          <textarea id="treatment-plan" required rows={4} value={treatmentPlanDetail} onChange={e => { setTreatmentPlanDetail(e.target.value); edited('treatmentPlan') }}
             placeholder="e.g. Phase 1: Scaling and root planing. Phase 2: Implant placement 36, 37. Phase 3: Crown placement after osseointegration (3 months)"
             style={{ ...inputStyle, minHeight: 110, resize: 'vertical' }} />
         </div>

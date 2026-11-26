@@ -5,6 +5,8 @@
 //     a rough box so the form can cover it), and whether it looks like an
 //     X-ray or a clinical photo
 //   - a draft title, short summary, specialty, question and tags
+//   - draft chief complaint, diagnosis, plan, age/gender (notes only) and
+//     complexity, used to pre-fill the form for WhatsApp cases
 // The dentist reviews everything; nothing is applied without a tap, and the
 // patient-consent tick is still theirs to give.
 //
@@ -25,7 +27,8 @@ const CLOUDINARY = /^https:\/\/res\.cloudinary\.com\/[^/]+\/image\/upload\//
 const SYSTEM = `You help dentists in India prepare a clinical case to share with other dentists.
 You get the case photos and the dentist's notes. Reply with JSON only, no prose, in exactly this shape:
 {"photos":[{"index":1,"face_visible":false,"identifying_text":false,"text_box":null,"looks_like":"xray"}],
- "title":"","summary":"","specialty":"","question":"","tags":[]}
+ "title":"","summary":"","specialty":"","question":"","tags":[],
+ "chief_complaint":"","diagnosis":"","treatment_plan":"","patient_age":null,"patient_gender":"","complexity":null}
 Rules:
 - photos: one entry per photo, index starting at 1.
   face_visible: true if any part of the patient's face beyond lips and teeth is visible (eyes, nose, full face) that could identify them.
@@ -37,6 +40,12 @@ Rules:
 - specialty: one of ${SPECIALTIES.map(s => s.slug).join(', ')}.
 - question: one short question the dentist could ask peers about this case, or "" if the notes do not suggest one.
 - tags: 3 to 6 short lowercase clinical tags.
+- chief_complaint: the patient's complaint in one line, only if the notes say it; else "".
+- diagnosis: a short clinical diagnosis from the notes and what is clearly visible (tooth numbers in FDI notation if known). If unsure, write what is visible, e.g. "Deep caries on 36 with periapical radiolucency"; "" if nothing can be said.
+- treatment_plan: the treatment done or planned, as short steps, only from the notes or what the after photos clearly show; else "".
+- patient_age: a number only if the notes give the age; else null. patient_gender: "Male", "Female" or "" only from the notes, never guessed from photos.
+- complexity: 1 (simple) to 5 (complex) for this kind of case, or null if unclear.
+Notes may be short WhatsApp shorthand (e.g. "36 rct pt 34m pain 2wk"): expand it into proper clinical wording.
 Never include patient names, ages tied to names, or other personal details in any field.`
 
 export async function POST(req: NextRequest) {
@@ -61,7 +70,7 @@ export async function POST(req: NextRequest) {
       system: SYSTEM,
       imageUrls: urls,
       text: `Dentist's notes so far (may be empty):\n${notes || '(none)'}\n\nReturn the JSON now.`,
-      maxTokens: 1500,
+      maxTokens: 2000,
     })
     await logAiUsage(viewer.id, 'case_ai_assist', usage.totalTokens)
     const json = parseJson(text)
@@ -104,6 +113,12 @@ function clean(j: any, n: number) {
     summary: str(j.summary, 800),
     specialty: SPECIALTIES.some(s => s.slug === j.specialty) ? j.specialty : '',
     question: str(j.question, 300),
+    chief_complaint: str(j.chief_complaint, 400),
+    diagnosis: str(j.diagnosis, 600),
+    treatment_plan: str(j.treatment_plan, 1000),
+    patient_age: Number.isInteger(Number(j.patient_age)) && Number(j.patient_age) > 0 && Number(j.patient_age) < 110 && j.patient_age !== null ? Number(j.patient_age) : null,
+    patient_gender: ['Male', 'Female'].includes(j.patient_gender) ? j.patient_gender : '',
+    complexity: Number.isInteger(Number(j.complexity)) && Number(j.complexity) >= 1 && Number(j.complexity) <= 5 && j.complexity !== null ? Number(j.complexity) : null,
     tags: (Array.isArray(j.tags) ? j.tags : []).filter((t: unknown) => typeof t === 'string').slice(0, 6).map((t: string) => t.slice(0, 40)),
   }
 }

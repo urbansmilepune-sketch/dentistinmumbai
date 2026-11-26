@@ -42,7 +42,10 @@ export default async function NewCasePage() {
   const draftRows = ((drafts || []) as Array<{ id: string; photo_urls: string[] | null; note: string | null }>)
   const waPhotos = draftRows.flatMap(d => (Array.isArray(d.photo_urls) ? d.photo_urls : [])).slice(0, 8)
   const waIds = draftRows.map(d => d.id)
-  const waNote = draftRows.map(d => d.note).filter(Boolean).join('\n').slice(0, 4000)
+  // Phone numbers sometimes ride along in a forwarded message; never carry
+  // them into the case (or send them to the AI).
+  const waNote = draftRows.map(d => d.note).filter(Boolean).join('\n')
+    .replace(/(?:\+?91[\s-]?)?[6-9](?:[\s-]?\d){9}/g, '[number removed]').slice(0, 4000)
 
   return (
     <NationalShell badge="Post a Case">
@@ -57,7 +60,7 @@ export default async function NewCasePage() {
         </header>
         {waPhotos.length > 0 && (
           <div style={{ background: '#ECFDF5', border: '1px solid #A7F3D0', color: '#065F46', borderRadius: 12, padding: '12px 16px', marginBottom: 18, fontSize: 14, fontWeight: 600 }}>
-            {waPhotos.length} photo{waPhotos.length === 1 ? '' : 's'} you sent on WhatsApp {waPhotos.length === 1 ? 'is' : 'are'} already added below. Move X-rays to the X-ray section, then tap Check my photos.
+            {waPhotos.length} photo{waPhotos.length === 1 ? '' : 's'} you sent on WhatsApp {waPhotos.length === 1 ? 'is' : 'are'} added below. Our AI is drafting the title, diagnosis and write-up from your photos{waNote ? ' and message' : ''}. Check each field marked &ldquo;AI draft&rdquo;, fill anything still empty, then tick patient consent. Nothing is posted until you tap Submit.
           </div>
         )}
         <CaseForm dentistName={dentist.name} isVerified={!!dentist.is_verified} initialPhotos={waPhotos} initialNote={waNote} whatsappDraftIds={waIds} />
