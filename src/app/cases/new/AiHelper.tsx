@@ -8,13 +8,17 @@
 //   - suggests title, summary, specialty, question; each needs a tap to use
 // Nothing changes without the dentist tapping, and consent stays theirs.
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { getSpecialty } from '@/lib/dentalSpecialties'
 
 type Kind = 'before' | 'after' | 'xray_before' | 'xray_after'
 interface Photo { url: string; kind: Kind }
 interface PhotoCheck { face_visible: boolean; identifying_text: boolean; text_box: { x: number; y: number; w: number; h: number } | null; looks_like: 'xray' | 'photo' }
-interface Result { photos: PhotoCheck[]; title: string; summary: string; specialty: string; question: string; tags: string[] }
+export interface Result {
+  photos: PhotoCheck[]; title: string; summary: string; specialty: string; question: string; tags: string[]
+  chief_complaint?: string; diagnosis?: string; treatment_plan?: string
+  patient_age?: number | null; patient_gender?: string; complexity?: number | null
+}
 
 interface Props {
   photos: Photo[]
@@ -24,6 +28,10 @@ interface Props {
   onUseSummary: (v: string) => void
   onUseSpecialty: (v: string) => void
   onUseQuestion: (v: string) => void
+  /** WhatsApp cases: run the check once on open and hand the draft to the form. */
+  autoRun?: boolean
+  /** Returns the suggestion keys it applied (title, specialty, question, summary). */
+  onAutoFill?: (r: Result) => string[]
 }
 
 export function blurFacesUrl(url: string): string {
@@ -46,7 +54,7 @@ async function coverBox(url: string, box: { x: number; y: number; w: number; h: 
   return await new Promise<Blob>((resolve, reject) => c.toBlob(b => (b ? resolve(b) : reject(new Error('Could not save image'))), 'image/jpeg', 0.92))
 }
 
-export default function AiHelper({ photos, notes, onReplaceUrl, onUseTitle, onUseSummary, onUseSpecialty, onUseQuestion }: Props) {
+export default function AiHelper({ photos, notes, onReplaceUrl, onUseTitle, onUseSummary, onUseSpecialty, onUseQuestion, autoRun = false, onAutoFill }: Props) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [result, setResult] = useState<Result | null>(null)
@@ -54,8 +62,32 @@ export default function AiHelper({ photos, notes, onReplaceUrl, onUseTitle, onUs
   const [fixing, setFixing] = useState<number | null>(null)
   const [used, setUsed] = useState<Record<string, boolean>>({})
 
-  async function run() {
+  const autoRan = useRef(false)
+  const markUsed = (keys?: string[]) => { if (keys?.length) setUsed(u => ({ ...u, ...Object.fromEntries(keys.map(k => [k, true])) })) }
+
+  // One automatic run for WhatsApp photos. The draft is cached for this tab
+  // so a reload doesn't spend another AI call on the same photos.
+  useEffect(() => {
+    if (!autoRun || autoRan.current || !photos.length) return
+    autoRan.current = true
+    const key = `case-ai:${photos.map(p => p.url).join('|')}`
+    let cached: Result | null = null
+    try { cached = JSON.parse(sessionStorage.getItem(key) || 'null') } catch {}
+    if (cached?.photos?.length === photos.length) {
+      setResult(cached); setCheckedUrls(photos.map(p => p.url)); markUsed(onAutoFill?.(cached))
+      return
+    }
+    run(true).then(r => {
+      if (!r) return
+      try { sessionStorage.setItem(key, JSON.stringify(r)) } catch {}
+      markUsed(onAutoFill?.(r))
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRun])
+
+  async function run(auto = false): Promise<Result | null> {
     setErr(''); setBusy(true); setResult(null); setUsed({})
+    let out: Result | null = null
     try {
       const res = await fetch('/api/cases/ai-assist', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -65,8 +97,13 @@ export default function AiHelper({ photos, notes, onReplaceUrl, onUseTitle, onUs
       if (!res.ok || !data?.success) throw new Error(data?.error || 'The AI helper could not run')
       setResult(data.result)
       setCheckedUrls(photos.map(p => p.url))
-    } catch (e: any) { setErr(e?.message || 'The AI helper could not run') }
+      out = data.result
+    } catch (e: any) {
+      const m = e?.message || 'The AI helper could not run'
+      setErr(auto ? `We could not draft the details automatically (${m}). Tap Check my photos to try again, or fill the form yourself.` : m)
+    }
     setBusy(false)
+    return out
   }
 
   async function blur(i: number) {
@@ -104,9 +141,9 @@ export default function AiHelper({ photos, notes, onReplaceUrl, onUseTitle, onUs
           <div style={{ fontWeight: 800, fontSize: 15, color: '#4C1D95' }}>AI case helper</div>
           <div style={{ fontSize: 13, color: '#5B21B6' }}>Checks photos for faces and patient names, and drafts the write-up. You decide what to use.</div>
         </div>
-        <button type="button" onClick={run} disabled={busy || photos.length === 0}
+        <button type="button" onClick={() => run()} disabled={busy || photos.length === 0}
           style={{ ...btn, minHeight: 44, background: busy || !photos.length ? '#C4B5FD' : '#6D28D9', color: '#fff', borderColor: 'transparent', cursor: busy ? 'wait' : photos.length ? 'pointer' : 'not-allowed' }}>
-          {busy ? 'Checking…' : result ? 'Check again' : 'Check my photos'}
+          {busy ? (autoRun && !result ? 'Drafting from your photos…' : 'Checking…') : result ? 'Check again' : 'Check my photos'}
         </button>
       </div>
       {photos.length === 0 && <div style={{ fontSize: 12, color: '#6D28D9', marginTop: 8 }}>Upload photos below first.</div>}

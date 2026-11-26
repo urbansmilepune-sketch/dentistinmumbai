@@ -3,8 +3,11 @@
 //
 // A dentist sends case photos to the DentistIn WhatsApp number. Each photo
 // is copied to Cloudinary and added to their open WhatsApp draft; we reply
-// once with a link to /cases/new, where the photos are already filled in
-// and the dentist adds the details, runs the AI helper and ticks consent.
+// once with a link to /cases/new, where the photos are already filled in.
+// Any caption or follow-up text is kept as a note; on opening the form the
+// AI helper drafts title, specialty, diagnosis, plan and write-up from the
+// photos + note into the empty fields, and the dentist checks, ticks consent
+// and submits.
 // The case is never published from WhatsApp alone.
 //
 // Safety:
@@ -226,12 +229,15 @@ async function handleMessage(ctx: {
 
   if (!mediaUrl) {
     if (draft && text) {
+      const firstNote = !draft.note
       const note = [draft.note, text].filter(Boolean).join('\n').slice(0, 4000)
       await db.from('whatsapp_case_drafts').update({ note }).eq('id', draft.id)
-      return done(`note added to draft ${draft.id}`)
+      // Confirm the first note only, so a few lines in a row get one reply.
+      if (!firstNote) return done(`note added to draft ${draft.id}`)
+      return done(`note added to draft ${draft.id}; ${await reply(`Noted, Dr. ${first}. We will use this to fill in your case. Open it here to check and submit: ${link}`)}`)
     }
     if (text && /\bcase\b/i.test(text)) {
-      return done(`instructions: ${await reply(`Hi Dr. ${first}, to post a case on DentistIn India, send the case photos and X-rays here (face and name hidden), with one line about the case. Then finish it on ${link}`)}`)
+      return done(`instructions: ${await reply(`Hi Dr. ${first}, to post a case on DentistIn India, send the case photos and X-rays here (face and name hidden), with one line about the case, e.g. "36 RCT, 34 yr male, pain 2 weeks". We fill in the details for you; then check and submit it on ${link}`)}`)
     }
     return done(`ignored: ${contentType || 'message'} with no photo from dentist ${dentist.id}`)
   }
@@ -279,7 +285,7 @@ async function handleMessage(ctx: {
     .select('photo_urls')
   if (!claimed?.length) return done(`photo saved to draft ${draftId} (${added.count}); reply skipped, another message in this burst replied`)
   const count = Array.isArray((claimed[0] as any).photo_urls) ? (claimed[0] as any).photo_urls.length : added.count
-  const r = await reply(`Got it, Dr. ${first}. ${count} photo${count === 1 ? '' : 's'} saved for your case. Send more if you like, then finish it here (add the details and patient consent): ${link}`)
+  const r = await reply(`Got it, Dr. ${first}. ${count} photo${count === 1 ? '' : 's'} saved for your case.\n\nWant less typing? Reply here with a line about the case (tooth, age, complaint, what you did), e.g. "36 RCT, 34 yr male, pain 2 weeks". No patient names or phone numbers, please.\n\nThen open your case: we fill in the details from your photos and message, you check them and tap Submit. ${link}`)
   if (r !== 'reply sent') await db.from('whatsapp_case_drafts').update({ replied_at: null }).eq('id', draftId).eq('replied_at', nowIso)
   return done(`photo saved to draft ${draftId} (${count}); ${r}`)
 }
