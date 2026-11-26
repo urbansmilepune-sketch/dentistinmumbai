@@ -203,6 +203,12 @@ export async function POST(request: NextRequest) {
       .in('id', draftIds).eq('dentist_id', dentist.id).then(() => {}, () => {})
   }
 
+  // Saved draft (case_drafts) this case was published from: it's done now.
+  const caseDraftId = typeof payload?.case_draft_id === 'string' ? payload.case_draft_id : null
+  if (caseDraftId) {
+    await adminDb().from('case_drafts').delete().eq('id', caseDraftId).eq('dentist_id', dentist.id).then(() => {}, () => {})
+  }
+
   // Admin email alert — best-effort; never blocks the submission. Only for
   // cases that actually need review: once a dentist crosses the auto-approve
   // threshold their cases land as 'approved' and don't warrant a ping.

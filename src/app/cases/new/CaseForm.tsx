@@ -17,6 +17,7 @@ import { useRouter } from 'next/navigation'
 import { SPECIALTIES } from '@/lib/dentalSpecialties'
 import { MATERIAL_GROUPS } from '@/lib/dentalMaterials'
 import AiHelper, { type Result as AiResult } from './AiHelper'
+import type { CaseDraftData } from '@/lib/caseDraft'
 
 type Kind = 'before' | 'after' | 'xray_before' | 'xray_after'
 
@@ -58,7 +59,7 @@ const POST_KINDS: Kind[] = ['after', 'xray_after']
 
 const SATISFACTION_OPTIONS = ['Excellent', 'Good', 'Satisfactory', 'Requires follow-up']
 
-export default function CaseForm({ dentistName, isVerified, initialPhotos = [], initialNote = '', whatsappDraftIds = [] }: {
+export default function CaseForm({ dentistName, isVerified, initialPhotos = [], initialNote = '', whatsappDraftIds = [], initialDraft, draftId: initialDraftId }: {
   dentistName: string
   isVerified: boolean
   /** Photos sent on WhatsApp (v2), pre-filled as clinical "before" photos. */
@@ -67,43 +68,47 @@ export default function CaseForm({ dentistName, isVerified, initialPhotos = [], 
   initialNote?: string
   /** WhatsApp drafts to mark as used once this case is saved. */
   whatsappDraftIds?: string[]
+  /** A saved draft being resumed (case_drafts.data). Consent is never saved. */
+  initialDraft?: CaseDraftData
+  draftId?: string
 }) {
   const router = useRouter()
+  const d = initialDraft
 
   // Basics
-  const [title, setTitle]                       = useState('')
-  const [specialty, setSpecialty]               = useState('')
-  const [complexity, setComplexity]             = useState(3)
-  const [description, setDescription]           = useState(initialNote)
-  const [question, setQuestion]                 = useState('')
+  const [title, setTitle]                       = useState(d?.title ?? '')
+  const [specialty, setSpecialty]               = useState(d?.specialty ?? '')
+  const [complexity, setComplexity]             = useState(d?.complexity ?? 3)
+  const [description, setDescription]           = useState(d?.description ?? initialNote)
+  const [question, setQuestion]                 = useState(d?.question ?? '')
   const [consent, setConsent]                   = useState(false)
 
   // Section 1 — Patient introduction (no name/contact for privacy)
-  const [patientAge, setPatientAge]             = useState('')
-  const [patientGender, setPatientGender]       = useState('')
-  const [chiefComplaint, setChiefComplaint]     = useState('')
-  const [medicalHistory, setMedicalHistory]     = useState('')
+  const [patientAge, setPatientAge]             = useState(d?.patientAge ?? '')
+  const [patientGender, setPatientGender]       = useState(d?.patientGender ?? '')
+  const [chiefComplaint, setChiefComplaint]     = useState(d?.chiefComplaint ?? '')
+  const [medicalHistory, setMedicalHistory]     = useState(d?.medicalHistory ?? '')
 
   // Section 3 — Diagnosis & treatment plan
-  const [diagnosis, setDiagnosis]                   = useState('')
-  const [treatmentPlanDetail, setTreatmentPlanDetail] = useState('')
-  const [numSittings, setNumSittings]               = useState('')
+  const [diagnosis, setDiagnosis]                   = useState(d?.diagnosis ?? '')
+  const [treatmentPlanDetail, setTreatmentPlanDetail] = useState(d?.treatmentPlanDetail ?? '')
+  const [numSittings, setNumSittings]               = useState(d?.numSittings ?? '')
 
   // Section 5 — Dentist conclusion
-  const [outcomeSummary, setOutcomeSummary]         = useState('')
-  const [keyLearning, setKeyLearning]               = useState('')
-  const [patientSatisfaction, setPatientSatisfaction] = useState('')
+  const [outcomeSummary, setOutcomeSummary]         = useState(d?.outcomeSummary ?? '')
+  const [keyLearning, setKeyLearning]               = useState(d?.keyLearning ?? '')
+  const [patientSatisfaction, setPatientSatisfaction] = useState(d?.patientSatisfaction ?? '')
 
   // Existing meta
-  const [materials, setMaterials]               = useState<Set<string>>(new Set())
-  const [costMin, setCostMin]                   = useState('')
-  const [costMax, setCostMax]                   = useState('')
-  const [durationWeeks, setDurationWeeks]       = useState('')
-  const [clinicalNotes, setClinicalNotes]       = useState('')
-  const [isPrivateNotes, setIsPrivateNotes]     = useState(false)
-  const [discussionEnabled, setDiscussionEnabled] = useState(true)
+  const [materials, setMaterials]               = useState<Set<string>>(new Set(d?.materials ?? []))
+  const [costMin, setCostMin]                   = useState(d?.costMin ?? '')
+  const [costMax, setCostMax]                   = useState(d?.costMax ?? '')
+  const [durationWeeks, setDurationWeeks]       = useState(d?.durationWeeks ?? '')
+  const [clinicalNotes, setClinicalNotes]       = useState(d?.clinicalNotes ?? '')
+  const [isPrivateNotes, setIsPrivateNotes]     = useState(d?.isPrivateNotes ?? false)
+  const [discussionEnabled, setDiscussionEnabled] = useState(d?.discussionEnabled ?? true)
 
-  const [photos, setPhotos]                     = useState<UploadedPhoto[]>(initialPhotos.slice(0, MAX_PER_KIND * 2).map(url => ({ url, kind: 'before' as Kind, caption: '' })))
+  const [photos, setPhotos]                     = useState<UploadedPhoto[]>(d ? d.photos : initialPhotos.slice(0, MAX_PER_KIND * 2).map(url => ({ url, kind: 'before' as Kind, caption: '' })))
   // Upload errors are scoped to the kind that failed so the message shows
   // under the right photo section (pre vs post), never duplicated.
   const [uploadErr, setUploadErr]               = useState<{ kind: Kind; msg: string } | null>(null)
@@ -152,6 +157,49 @@ export default function CaseForm({ dentistName, isVerified, initialPhotos = [], 
 
   const [submitting, setSubmitting]             = useState(false)
   const [submitErr, setSubmitErr]               = useState('')
+
+  // Save as draft: private, resumable from /cases/drafts. No required
+  // fields and no consent, because nothing is published.
+  const [draftId, setDraftId]                   = useState(initialDraftId ?? '')
+  const [savingDraft, setSavingDraft]           = useState(false)
+  const [draftMsg, setDraftMsg]                 = useState<{ ok: boolean; text: string } | null>(null)
+
+  function draftData(): CaseDraftData {
+    return {
+      title, specialty, complexity, description, question,
+      patientAge, patientGender, chiefComplaint, medicalHistory,
+      diagnosis, treatmentPlanDetail, numSittings,
+      outcomeSummary, keyLearning, patientSatisfaction,
+      materials: Array.from(materials), costMin, costMax, durationWeeks,
+      clinicalNotes, isPrivateNotes, discussionEnabled,
+      photos: photos.map(p => ({ url: p.url, kind: p.kind, caption: p.caption })),
+    }
+  }
+
+  async function saveDraft() {
+    setDraftMsg(null)
+    setSubmitErr('')
+    setSavingDraft(true)
+    try {
+      const res = await fetch('/api/cases/drafts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: draftId || undefined, data: draftData(), whatsapp_draft_ids: whatsappDraftIds }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data?.id) {
+        setDraftMsg({ ok: false, text: data?.error || 'Could not save the draft right now' })
+      } else {
+        setDraftId(data.id)
+        // Keep the URL on this draft so a refresh reopens it.
+        window.history.replaceState(null, '', `/cases/new?draft=${data.id}`)
+        setDraftMsg({ ok: true, text: 'Draft saved. Only you can see it. Find it any time under My drafts.' })
+      }
+    } catch {
+      setDraftMsg({ ok: false, text: 'Network error — please try again.' })
+    }
+    setSavingDraft(false)
+  }
 
   function toggleMaterial(m: string) {
     setMaterials(prev => {
@@ -232,6 +280,7 @@ export default function CaseForm({ dentistName, isVerified, initialPhotos = [], 
           patient_satisfaction: patientSatisfaction || null,
           photos: photos.map((p, i) => ({ url: p.url, kind: p.kind, caption: p.caption, display_order: i })),
           whatsapp_draft_ids: whatsappDraftIds,
+          case_draft_id: draftId || null,
         }),
       })
       const data = await res.json().catch(() => ({}))
@@ -423,7 +472,7 @@ export default function CaseForm({ dentistName, isVerified, initialPhotos = [], 
         onUseSummary={v => setDescription(prev => (prev.trim() ? `${prev.trim()}\n\n${v}` : v))}
         onUseSpecialty={setSpecialty}
         onUseQuestion={setQuestion}
-        autoRun={initialPhotos.length > 0}
+        autoRun={initialPhotos.length > 0 && !d}
         onAutoFill={autoFill}
       />
 
@@ -542,8 +591,17 @@ export default function CaseForm({ dentistName, isVerified, initialPhotos = [], 
       </label>
 
       {submitErr && <div style={{ color: '#DC2626', fontSize: 13, marginBottom: 12, fontWeight: 600 }}>{submitErr}</div>}
+      {draftMsg && (
+        <div style={{ color: draftMsg.ok ? '#065F46' : '#DC2626', fontSize: 13, marginBottom: 12, fontWeight: 600 }}>
+          {draftMsg.text}{draftMsg.ok && <> <a href="/cases/drafts" style={{ color: '#1D4ED8' }}>My drafts</a></>}
+        </div>
+      )}
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+        <button type="button" onClick={saveDraft} disabled={savingDraft || submitting}
+          style={{ padding: '13px 22px', minHeight: 48, background: '#fff', color: '#1D4ED8', border: '1.5px solid #BFDBFE', borderRadius: 10, fontFamily: 'var(--font-body)', fontSize: 14, fontWeight: 700, cursor: savingDraft ? 'wait' : 'pointer' }}>
+          {savingDraft ? 'Saving…' : 'Save draft'}
+        </button>
         <button type="submit" disabled={submitting}
           style={{ padding: '13px 22px', minHeight: 48, background: submitting ? '#93C5FD' : '#1D4ED8', color: '#fff', border: 'none', borderRadius: 10, fontFamily: 'var(--font-body)', fontSize: 14, fontWeight: 700, cursor: submitting ? 'wait' : 'pointer' }}>
           {submitting ? 'Submitting…' : 'Submit case'}

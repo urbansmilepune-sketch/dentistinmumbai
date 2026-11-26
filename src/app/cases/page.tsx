@@ -90,7 +90,10 @@ export default async function CaseLibraryPage({ searchParams }: { searchParams: 
             <h1 style={ui.h1}>{byDentist ? `Cases by ${drName(byDentist.name)}` : 'Case library'}</h1>
             <p style={ui.sub}>Real cases from dentists across India. Ask, answer, and come back for the follow-ups.</p>
           </div>
-          <Link href="/cases/new" style={ui.btn}>Post a case</Link>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <Link href="/cases/drafts" style={ui.btnGhost}>My drafts</Link>
+            <Link href="/cases/new" style={ui.btn}>Post a case</Link>
+          </div>
         </div>
 
         <form action="/cases" method="get" style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
