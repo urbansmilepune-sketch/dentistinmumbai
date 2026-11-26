@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { NATIONAL_ORIGIN } from '@/config/cities'
-import { adminDb, getViewerDentist } from '@/lib/national'
+import { getViewerDentist } from '@/lib/national'
 import { loadDentistHome } from '@/lib/dentistHome'
 import { REMEMBER_COOKIE } from '@/lib/auth/rememberMe'
 import NationalLanding from './home/NationalLanding'
@@ -30,12 +30,6 @@ export default async function NationalHome() {
     redirect('/api/auth/remember-me?next=%2F')
   }
 
-  const db = adminDb()
-  const [dentistsRes, casesRes] = await Promise.all([
-    db.from('dentists').select('id', { count: 'exact', head: true }).eq('is_active', true),
-    db.from('cases').select('id', { count: 'exact', head: true }).eq('status', 'approved'),
-  ])
-
   const jsonLd = {
     '@context': 'https://schema.org',
     '@graph': [
@@ -47,7 +41,7 @@ export default async function NationalHome() {
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
-      <NationalLanding dentistCount={dentistsRes.count ?? 0} caseCount={casesRes.count ?? 0} />
+      <NationalLanding />
     </>
   )
 }

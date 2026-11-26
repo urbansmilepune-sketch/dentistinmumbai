@@ -53,7 +53,6 @@ export default function PatientsMenu({ treatments, cities }: Props) {
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {cities.map(c => <a key={c.domain} href={`https://${c.domain}`} style={chip}>{c.name}</a>)}
-            <Link href="/cities" style={{ ...chip, fontWeight: 700, color: '#1D4ED8' }}>All cities</Link>
           </div>
         </div>
       )}
