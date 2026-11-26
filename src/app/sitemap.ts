@@ -7,6 +7,8 @@ import { isIndexableProfile } from '@/lib/profileCompletion'
 import { getCityArticles } from '@/lib/publicArticles'
 import { getOpeningState } from '@/lib/cityOpening'
 import { SPECIALTIES } from '@/lib/dentalSpecialties'
+import { caseSlug } from '@/lib/caseSlug'
+import { adminDb } from '@/lib/national'
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const h = await headers()
@@ -24,8 +26,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       { url: `${NATIONAL_ORIGIN}/cities`,           lastModified: now, changeFrequency: 'weekly',  priority: 0.9 },
       // /cases dropped: it 301s to /insights since the social-layer freeze,
       // and a sitemap should never advertise a redirect. /insights listed in
-      // its place — it's the indexable articles hub. Individual /cases/[id]
-      // URLs stay below; they still resolve and are still indexable.
+      // its place — it's the indexable articles hub. Approved cases are
+      // listed below by their readable slug.
       { url: `${NATIONAL_ORIGIN}/insights`,         lastModified: now, changeFrequency: 'daily',   priority: 0.9 },
       { url: `${NATIONAL_ORIGIN}/dental-tourism`,   lastModified: now, changeFrequency: 'monthly', priority: 0.85 },
       { url: `${NATIONAL_ORIGIN}/for-dentists`,     lastModified: now, changeFrequency: 'weekly',  priority: 0.85 },
@@ -41,8 +43,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     }))
     // Approved case + professional-profile URLs — fetched via the
     // user-bound client; case_photos RLS doesn't gate the cases.id read.
-    // Case pages are dentists-only (noindex) since the Nov 2026 network
-    // v1, so only the public expert profiles are listed.
+    // Approved cases only (their public summary is indexable since
+    // 26 Nov 2026); pending, rejected and drafts never appear. Service role
+    // so the dentist city join isn't hidden by RLS; only approved rows read.
     const { data: activeDentists } = await supabase.from('dentists').select('slug').eq('is_active', true).limit(5000)
     const profilePages: MetadataRoute.Sitemap = (activeDentists || []).map((d: any) => ({
       url: `${NATIONAL_ORIGIN}/professional/${d.slug}`,
@@ -50,7 +53,20 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: 'weekly' as const,
       priority: 0.7,
     }))
-    return [...nationalPages, ...cityHomes, ...profilePages]
+    const { data: approvedCases, error: casesErr } = await adminDb()
+      .from('cases')
+      .select('id, title, created_at, dentists(city)')
+      .eq('status', 'approved')
+      .order('created_at', { ascending: false })
+      .limit(1000)
+    if (casesErr) console.error('[sitemap] approved cases query failed', casesErr)
+    const casePages: MetadataRoute.Sitemap = (approvedCases || []).map((c: any) => ({
+      url: `${NATIONAL_ORIGIN}/cases/${caseSlug({ id: c.id, title: c.title, city: c.dentists?.city })}`,
+      lastModified: c.created_at ? new Date(c.created_at) : now,
+      changeFrequency: 'monthly' as const,
+      priority: 0.6,
+    }))
+    return [...nationalPages, ...cityHomes, ...profilePages, ...casePages]
   }
 
   const city = getCityByDomain(host)
