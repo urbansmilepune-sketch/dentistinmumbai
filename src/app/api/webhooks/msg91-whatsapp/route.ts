@@ -6,7 +6,7 @@
 // once asking for a line of details (tooth, age, complaint, what was done).
 // Their next text, or "skip", gets the link to /cases/new; with no text in
 // 2 minutes the link is sent anyway. A caption on the photos counts as the
-// details, so then the link comes in the first reply. Each draft gets the
+// details too (we still ask if there is anything to add). Each draft gets the
 // link once (link_sent_at; without that column, the old one-reply flow).
 // Any caption or follow-up text is kept as a note; on opening the form the
 // AI helper drafts title, specialty, diagnosis, plan and write-up from the
@@ -55,6 +55,14 @@ const MAX_PHOTOS = 8
 const REPLY_GAP_MS = 2 * 60 * 1000
 const REPLY_WAIT_MS = 8000   // let the rest of an album arrive before replying
 const LINK_FALLBACK_MS = 2 * 60 * 1000   // no details by then: send the link anyway
+const LINK_DONE_MS = 10 * 60 * 1000      // link sent this long ago: that case is finished
+
+// Drafts from before link_sent_at existed got the link in their first reply,
+// so replied_at stands in for it there.
+function linkDone(d: Record<string, any>): boolean {
+  const at = d.link_sent_at || d.replied_at
+  return !!at && Date.now() - new Date(at).getTime() > LINK_DONE_MS
+}
 
 /** First value found under any of these keys, searching the whole object. */
 function pick(obj: unknown, keys: string[], depth = 0): string | null {
@@ -225,32 +233,37 @@ async function handleMessage(ctx: {
   }
 
   const since = new Date(Date.now() - DRAFT_HOURS * 3600000).toISOString()
+  // A draft whose link went out more than LINK_DONE_MS ago is finished: new
+  // photos after that start a new case instead of joining an old test or
+  // half-done case (which also made us skip the "Any details?" question).
   const { data: open } = await db.from('whatsapp_case_drafts').select('*')
     .eq('dentist_id', dentist.id).is('used_at', null).gte('created_at', since)
-    .order('created_at', { ascending: false }).limit(1)
-  let draft = open?.[0] as Record<string, any> | undefined
+    .order('created_at', { ascending: false }).limit(5)
+  let draft = ((open || []) as Array<Record<string, any>>).find(d => !linkDone(d))
+  // Text still goes to the newest open draft: details can come late.
+  const latestDraft = (open || [])[0] as Record<string, any> | undefined
   const first = cleanName(dentist.name).split(' ')[0] || 'Doctor'
   // Signed link: signs them in on dentistinindia.in in one tap (their login
   // may only exist on their city site, whose cookie doesn't carry over).
   const link = waCaseLink(dentist.id)
 
   if (!mediaUrl) {
-    if (draft && text) {
+    if (latestDraft && text) {
       const skip = /^\s*(skip|no|nothing|later)\s*[.!]?\s*$/i.test(text)
-      const firstNote = !draft.note
+      const firstNote = !latestDraft.note
       if (!skip) {
-        const note = [draft.note, text].filter(Boolean).join('\n').slice(0, 4000)
-        await db.from('whatsapp_case_drafts').update({ note }).eq('id', draft.id)
+        const note = [latestDraft.note, text].filter(Boolean).join('\n').slice(0, 4000)
+        await db.from('whatsapp_case_drafts').update({ note }).eq('id', latestDraft.id)
       }
-      const claim = await claimLink(db, draft.id)
-      if (claim === 'sent-before') return done(`note added to draft ${draft.id}; link already sent`)
-      if (claim === 'no-column' && !firstNote && !skip) return done(`note added to draft ${draft.id}`)
+      const claim = await claimLink(db, latestDraft.id)
+      if (claim === 'sent-before') return done(`note added to draft ${latestDraft.id}; link already sent`)
+      if (claim === 'no-column' && !firstNote && !skip) return done(`note added to draft ${latestDraft.id}`)
       const msg = skip
         ? `No problem, Dr. ${first}. Open your case here, check the details we filled in from your photos, and tap Submit: ${link}`
         : `Thanks, Dr. ${first}. We will fill in your case from your photos and this note. Open it here, check the details and tap Submit: ${link}`
       const r = await reply(msg)
-      if (r !== 'reply sent' && claim === 'claimed') await unclaimLink(db, draft.id)
-      return done(`${skip ? 'skip' : 'note added'} on draft ${draft.id}; link ${r}`)
+      if (r !== 'reply sent' && claim === 'claimed') await unclaimLink(db, latestDraft.id)
+      return done(`${skip ? 'skip' : 'note added'} on draft ${latestDraft.id}; link ${r}`)
     }
     if (text && /\bcase\b/i.test(text)) {
       return done(`instructions: ${await reply(`Hi Dr. ${first}, to post a case on DentistIn India, send the case photos and X-rays here (face and name hidden), with one line about the case, e.g. "36 RCT, 34 yr male, pain 2 weeks". We fill in the details for you; then check and submit it on ${link}`)}`)
@@ -276,10 +289,10 @@ async function handleMessage(ctx: {
     draftId = (ins.data as any)?.id
     // Two handlers may have created a draft at the same moment: everyone uses
     // the oldest open one, and the extra empty one is deleted.
-    const { data: opens } = await db.from('whatsapp_case_drafts').select('id')
+    const { data: opens } = await db.from('whatsapp_case_drafts').select('*')
       .eq('dentist_id', dentist.id).is('used_at', null).gte('created_at', since)
-      .order('created_at').order('id').limit(5)
-    const oldest = (opens as any[] | null)?.[0]?.id as string | undefined
+      .order('created_at').order('id').limit(10)
+    const oldest = ((opens || []) as Array<Record<string, any>>).find(d => !linkDone(d))?.id as string | undefined
     if (oldest && draftId && oldest !== draftId) {
       await db.from('whatsapp_case_drafts').delete().eq('id', draftId)
       draftId = oldest
@@ -305,7 +318,6 @@ async function handleMessage(ctx: {
   const unclaimReply = () => db.from('whatsapp_case_drafts').update({ replied_at: null }).eq('id', draftId).eq('replied_at', nowIso)
 
   const { data: state, error: stateErr } = await db.from('whatsapp_case_drafts').select('note, link_sent_at').eq('id', draftId).single()
-  const hasNote = !!(state as any)?.note
   // Old flow (link_sent_at column not added yet), or the link went out
   // already (more photos later): photos saved + link in one message.
   const linkAt = (state as any)?.link_sent_at as string | null | undefined
@@ -317,16 +329,10 @@ async function handleMessage(ctx: {
     if (r !== 'reply sent') await unclaimReply()
     return done(`photo saved to draft ${draftId} (${count}); ${r}`)
   }
-  // A caption came with the photos: that is the details, send the link now.
-  if (hasNote) {
-    const claim = await claimLink(db, draftId)
-    if (claim !== 'claimed') return done(`photo saved to draft ${draftId} (${count}); link already sent`)
-    const r = await reply(`${saved} We will fill in your case from your photos and message. Open it here, check the details and tap Submit: ${link}`)
-    if (r !== 'reply sent') { await unclaimReply(); await unclaimLink(db, draftId) }
-    return done(`photo saved to draft ${draftId} (${count}); link ${r}`)
-  }
-  // Ask for details first; their reply (or "skip") gets the link.
-  const r = await reply(`${saved}\n\nAny details you want to share? Reply with one line, e.g. "36 RCT, 34 yr male, pain 2 weeks". We use it to fill in your case for you. No patient names or phone numbers, please.\n\nOr reply SKIP to get the link now.`)
+  // Always ask for details first; their reply (or "skip") gets the link. A
+  // caption sent with the photos is kept too, so then we ask for anything more.
+  const hasNote = !!(state as any)?.note
+  const r = await reply(`${saved}\n\n${hasNote ? 'Got your note. Anything else to add?' : 'Any details you want to share?'} Reply with one line, e.g. "36 RCT, 34 yr male, pain 2 weeks". We use it to fill in your case for you. No patient names or phone numbers, please.\n\nOr reply SKIP to get the link now.`)
   if (r !== 'reply sent') {
     await unclaimReply()
     return done(`photo saved to draft ${draftId} (${count}); details ask ${r}`)
