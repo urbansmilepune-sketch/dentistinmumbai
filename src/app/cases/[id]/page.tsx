@@ -17,6 +17,7 @@ import FollowButton from '@/components/national/FollowButton'
 import { getViewerDentist, cityNameOf, ui } from '@/lib/national'
 import { drName } from '@/lib/dentistName'
 import { caseSlug, casePath, isCaseUuid, shortIdFromSlug, uuidRangeForShortId } from '@/lib/caseSlug'
+import { summaryText } from '@/lib/caseSummary'
 
 export const dynamic = 'force-dynamic'
 
@@ -553,25 +554,6 @@ function Fact({ label, value }: { label: string; value: string }) {
       <div style={{ fontSize: 16, color: '#0F1923', fontWeight: 700 }}>{value}</div>
     </div>
   )
-}
-
-// Plain one-paragraph text for meta tags and the public summary: collapse
-// whitespace, drop anything that looks like a phone number or email (case
-// text is dentist-written and patient details must never go public), and
-// cut on a word break.
-function summaryText(raw: string | null | undefined, max: number): string {
-  if (!raw) return ''
-  let t = raw
-    .replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, '')
-    .replace(/(?:\+?\d[\d\s-]{8,}\d)/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-  if (t.length > max) {
-    t = t.slice(0, max)
-    const cut = t.lastIndexOf(' ')
-    t = (cut > max * 0.6 ? t.slice(0, cut) : t).replace(/[,;:.\s]+$/, '') + '…'
-  }
-  return t
 }
 
 // What patients and Google see for an approved case: title, treatment,

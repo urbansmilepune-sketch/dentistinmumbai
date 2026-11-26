@@ -25,10 +25,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     const nationalPages: MetadataRoute.Sitemap = [
       { url: NATIONAL_ORIGIN,                       lastModified: now, changeFrequency: 'daily',   priority: 1.0 },
       { url: `${NATIONAL_ORIGIN}/cities`,           lastModified: now, changeFrequency: 'weekly',  priority: 0.9 },
-      // /cases dropped: it 301s to /insights since the social-layer freeze,
-      // and a sitemap should never advertise a redirect. /insights listed in
-      // its place — it's the indexable articles hub. Approved cases are
-      // listed below by their readable slug.
+      // /cases is the public case library again (indexable since 26 Nov
+      // 2026); approved cases are also listed below by their readable slug.
+      { url: `${NATIONAL_ORIGIN}/cases`,            lastModified: now, changeFrequency: 'daily',   priority: 0.9 },
       { url: `${NATIONAL_ORIGIN}/insights`,         lastModified: now, changeFrequency: 'daily',   priority: 0.9 },
       { url: `${NATIONAL_ORIGIN}/dental-tourism`,   lastModified: now, changeFrequency: 'monthly', priority: 0.85 },
       { url: `${NATIONAL_ORIGIN}/for-dentists`,     lastModified: now, changeFrequency: 'weekly',  priority: 0.85 },
