@@ -7,6 +7,7 @@ import CommunicationsTab from './CommunicationsTab'
 import OutreachTab from './OutreachTab'
 import VisitLogsTab from './VisitLogsTab'
 import ArticlesTab from './ArticlesTab'
+import EventsTab from './EventsTab'
 import AutoRefresh from '@/components/AutoRefresh'
 import { CITY_CONFIGS, cityOrigin, getCityBySlug } from '@/config/cities'
 
@@ -1944,6 +1945,11 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
             employees in the dentauraprime.com platform. */}
         {section === 'visit-logs' && (
           <VisitLogsTab />
+        )}
+
+        {/* EVENTS — dentistinindia.in events + courses review, Featured payments, monthly search. */}
+        {section === 'events' && (
+          <EventsTab />
         )}
 
         {/* ARTICLES — dentist-submitted article review queue (pending first). */}

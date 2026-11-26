@@ -48,6 +48,22 @@ export async function POST(request: NextRequest) {
   }
 
   const link = payload?.payload?.payment_link?.entity
+
+  // Featured event / course listing on dentistinindia.in (src/lib/eventPayments.ts).
+  const event_id = link?.notes?.event_id
+  if (event_id) {
+    const db = createServiceClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+    const { error } = await db.from('events')
+      .update({ payment_status: 'paid', paid_at: new Date().toISOString() })
+      .eq('id', event_id).eq('payment_link_id', link?.id).eq('payment_status', 'pending')
+    if (error) {
+      console.error('[razorpay-webhook] event update failed', { event_id, error })
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+    console.log('[razorpay-webhook] event listing marked paid', { event_id, link_id: link?.id })
+    return NextResponse.json({ ok: true })
+  }
+
   const invoice_id = link?.notes?.invoice_id
   if (!invoice_id) {
     console.error('[razorpay-webhook] payment_link.paid without notes.invoice_id', { link_id: link?.id })
