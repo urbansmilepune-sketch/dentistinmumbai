@@ -3,7 +3,11 @@
 //
 // A dentist sends case photos to the DentistIn WhatsApp number. Each photo
 // is copied to Cloudinary and added to their open WhatsApp draft; we reply
-// once with a link to /cases/new, where the photos are already filled in.
+// once asking for a line of details (tooth, age, complaint, what was done).
+// Their next text, or "skip", gets the link to /cases/new; with no text in
+// 2 minutes the link is sent anyway. A caption on the photos counts as the
+// details, so then the link comes in the first reply. Each draft gets the
+// link once (link_sent_at; without that column, the old one-reply flow).
 // Any caption or follow-up text is kept as a note; on opening the form the
 // AI helper drafts title, specialty, diagnosis, plan and write-up from the
 // photos + note into the empty fields, and the dentist checks, ticks consent
@@ -35,7 +39,9 @@ import { waCaseLink } from '@/lib/waLoginLink'
 import { sendWhatsAppText } from '@/lib/whatsapp'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 60
+// 300: the handler that answers an album may wait LINK_FALLBACK_MS for the
+// dentist's details before sending the link anyway.
+export const maxDuration = 300
 
 cloudinary.config({
   cloud_name: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME,
@@ -48,6 +54,7 @@ const DRAFT_HOURS = 24
 const MAX_PHOTOS = 8
 const REPLY_GAP_MS = 2 * 60 * 1000
 const REPLY_WAIT_MS = 8000   // let the rest of an album arrive before replying
+const LINK_FALLBACK_MS = 2 * 60 * 1000   // no details by then: send the link anyway
 
 /** First value found under any of these keys, searching the whole object. */
 function pick(obj: unknown, keys: string[], depth = 0): string | null {
@@ -229,12 +236,21 @@ async function handleMessage(ctx: {
 
   if (!mediaUrl) {
     if (draft && text) {
+      const skip = /^\s*(skip|no|nothing|later)\s*[.!]?\s*$/i.test(text)
       const firstNote = !draft.note
-      const note = [draft.note, text].filter(Boolean).join('\n').slice(0, 4000)
-      await db.from('whatsapp_case_drafts').update({ note }).eq('id', draft.id)
-      // Confirm the first note only, so a few lines in a row get one reply.
-      if (!firstNote) return done(`note added to draft ${draft.id}`)
-      return done(`note added to draft ${draft.id}; ${await reply(`Noted, Dr. ${first}. We will use this to fill in your case. Open it here to check and submit: ${link}`)}`)
+      if (!skip) {
+        const note = [draft.note, text].filter(Boolean).join('\n').slice(0, 4000)
+        await db.from('whatsapp_case_drafts').update({ note }).eq('id', draft.id)
+      }
+      const claim = await claimLink(db, draft.id)
+      if (claim === 'sent-before') return done(`note added to draft ${draft.id}; link already sent`)
+      if (claim === 'no-column' && !firstNote && !skip) return done(`note added to draft ${draft.id}`)
+      const msg = skip
+        ? `No problem, Dr. ${first}. Open your case here, check the details we filled in from your photos, and tap Submit: ${link}`
+        : `Thanks, Dr. ${first}. We will fill in your case from your photos and this note. Open it here, check the details and tap Submit: ${link}`
+      const r = await reply(msg)
+      if (r !== 'reply sent' && claim === 'claimed') await unclaimLink(db, draft.id)
+      return done(`${skip ? 'skip' : 'note added'} on draft ${draft.id}; link ${r}`)
     }
     if (text && /\bcase\b/i.test(text)) {
       return done(`instructions: ${await reply(`Hi Dr. ${first}, to post a case on DentistIn India, send the case photos and X-rays here (face and name hidden), with one line about the case, e.g. "36 RCT, 34 yr male, pain 2 weeks". We fill in the details for you; then check and submit it on ${link}`)}`)
@@ -285,9 +301,57 @@ async function handleMessage(ctx: {
     .select('photo_urls')
   if (!claimed?.length) return done(`photo saved to draft ${draftId} (${added.count}); reply skipped, another message in this burst replied`)
   const count = Array.isArray((claimed[0] as any).photo_urls) ? (claimed[0] as any).photo_urls.length : added.count
-  const r = await reply(`Got it, Dr. ${first}. ${count} photo${count === 1 ? '' : 's'} saved for your case.\n\nWant less typing? Reply here with a line about the case (tooth, age, complaint, what you did), e.g. "36 RCT, 34 yr male, pain 2 weeks". No patient names or phone numbers, please.\n\nThen open your case: we fill in the details from your photos and message, you check them and tap Submit. ${link}`)
-  if (r !== 'reply sent') await db.from('whatsapp_case_drafts').update({ replied_at: null }).eq('id', draftId).eq('replied_at', nowIso)
-  return done(`photo saved to draft ${draftId} (${count}); ${r}`)
+  const saved = `Got it, Dr. ${first}. ${count} photo${count === 1 ? '' : 's'} saved for your case.`
+  const unclaimReply = () => db.from('whatsapp_case_drafts').update({ replied_at: null }).eq('id', draftId).eq('replied_at', nowIso)
+
+  const { data: state, error: stateErr } = await db.from('whatsapp_case_drafts').select('note, link_sent_at').eq('id', draftId).single()
+  const hasNote = !!(state as any)?.note
+  // Old flow (link_sent_at column not added yet), or the link went out
+  // already (more photos later): photos saved + link in one message.
+  const linkAt = (state as any)?.link_sent_at as string | null | undefined
+  if (stateErr || linkAt) {
+    // Link sent in the last 10 minutes (e.g. their details text overtook the
+    // album): don't send it twice.
+    const recent = !!linkAt && Date.now() - new Date(linkAt).getTime() < 10 * 60 * 1000
+    const r = await reply(recent ? `${saved} Use the link above to finish your case.` : `${saved} Open your case here, check the details and tap Submit: ${link}`)
+    if (r !== 'reply sent') await unclaimReply()
+    return done(`photo saved to draft ${draftId} (${count}); ${r}`)
+  }
+  // A caption came with the photos: that is the details, send the link now.
+  if (hasNote) {
+    const claim = await claimLink(db, draftId)
+    if (claim !== 'claimed') return done(`photo saved to draft ${draftId} (${count}); link already sent`)
+    const r = await reply(`${saved} We will fill in your case from your photos and message. Open it here, check the details and tap Submit: ${link}`)
+    if (r !== 'reply sent') { await unclaimReply(); await unclaimLink(db, draftId) }
+    return done(`photo saved to draft ${draftId} (${count}); link ${r}`)
+  }
+  // Ask for details first; their reply (or "skip") gets the link.
+  const r = await reply(`${saved}\n\nAny details you want to share? Reply with one line, e.g. "36 RCT, 34 yr male, pain 2 weeks". We use it to fill in your case for you. No patient names or phone numbers, please.\n\nOr reply SKIP to get the link now.`)
+  if (r !== 'reply sent') {
+    await unclaimReply()
+    return done(`photo saved to draft ${draftId} (${count}); details ask ${r}`)
+  }
+  await done(`photo saved to draft ${draftId} (${count}); details ask sent, waiting for details`)
+  // Nobody gets stuck: no details in 2 minutes, send the link anyway.
+  await new Promise(res => setTimeout(res, LINK_FALLBACK_MS))
+  const claim = await claimLink(db, draftId)
+  if (claim !== 'claimed') return done(`photo saved to draft ${draftId} (${count}); details ask sent; link sent by the details reply`)
+  const r2 = await reply(`Dr. ${first}, here is the link to finish your case. Check the details we filled in from your photos and tap Submit: ${link}`)
+  if (r2 !== 'reply sent') await unclaimLink(db, draftId)
+  return done(`photo saved to draft ${draftId} (${count}); details ask sent; no details in 2 min, link ${r2}`)
+}
+
+// Marks a draft's link as sent, once. 'claimed' = this caller sends it.
+async function claimLink(db: ReturnType<typeof adminDb>, draftId: string): Promise<'claimed' | 'sent-before' | 'no-column'> {
+  const { data, error } = await db.from('whatsapp_case_drafts')
+    .update({ link_sent_at: new Date().toISOString() })
+    .eq('id', draftId).is('link_sent_at', null).select('id')
+  if (error) return 'no-column'
+  return data?.length ? 'claimed' : 'sent-before'
+}
+
+async function unclaimLink(db: ReturnType<typeof adminDb>, draftId: string): Promise<void> {
+  await db.from('whatsapp_case_drafts').update({ link_sent_at: null }).eq('id', draftId).then(() => {}, () => {})
 }
 
 // Postgres array literal, for an exact-match filter on photo_urls.
