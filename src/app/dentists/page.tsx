@@ -472,7 +472,8 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
               <div className="listing-topbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
                 <div>
                   <h1 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 18, marginBottom: 2 }}>
-                    {totalCount} Dentist{totalCount !== 1 ? 's' : ''} in {city.cityName}
+                    {/* Never show patients "0 dentists" (locked UI rule). */}
+                    {totalCount > 0 ? `${totalCount} Dentist${totalCount !== 1 ? 's' : ''} in ${city.cityName}` : `Dentists in ${city.cityName}`}
                     {activeAreaNames.length > 0 && <span style={{ color: 'var(--blue)' }}> · {activeAreaNames.join(', ')}</span>}
                   </h1>
                   <p style={{ fontSize: 13, color: 'var(--muted)' }}>
@@ -513,8 +514,8 @@ export default async function DentistsPage({ searchParams }: { searchParams: Pro
                 /* No results */
                 <div style={{ textAlign: 'center', padding: '80px 20px', background: '#fff', borderRadius: 16, border: '1px solid var(--border)' }}>
                   <div style={{ fontSize: 56, marginBottom: 16 }}>🔍</div>
-                  <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: 22, fontWeight: 700, marginBottom: 8 }}>No dentists found</h2>
-                  <p style={{ color: 'var(--muted)', fontSize: 15, marginBottom: 28 }}>Try adjusting your filters or search in a nearby area</p>
+                  <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: 22, fontWeight: 700, marginBottom: 8 }}>No dentists match this search yet</h2>
+                  <p style={{ color: 'var(--muted)', fontSize: 15, marginBottom: 28 }}>Try another treatment or area, or clear the filters.</p>
                   <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
                     {/* Point at the dedicated, indexable /area/[slug] page
                         rather than a ?area= filtered view (Section 4). */}

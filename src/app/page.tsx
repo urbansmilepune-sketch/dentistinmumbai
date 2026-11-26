@@ -13,8 +13,7 @@ import PopularSearches from '@/components/PopularSearches'
 import { NAVY, TEAL, TEAL_DARK } from '@/app/dentist/[slug]/profileTheme'
 import { getOpenStatus } from '@/lib/openStatus'
 import { plausibleFromFee } from '@/lib/treatmentPrices'
-import { getOpeningState, getCityWaitlistCount } from '@/lib/cityOpening'
-import CityOpeningHome from '@/components/opening/CityOpeningHome'
+import { getOpeningState } from '@/lib/cityOpening'
 
 // Per-host metadata. dentistinindia.in gets network-framed copy; every
 // city domain gets a "Dentist in <City>" search title tuned for the
@@ -43,13 +42,14 @@ export async function generateMetadata(): Promise<Metadata> {
   const city = getCityBySlug(h.get('x-city-slug'))
   const origin = cityOrigin(city)
   const brand = cityBrandName(city) // e.g. DentistInPune
-  // Opening city with too few dentists: the page is a sign-up/notify page,
-  // not a directory, so keep it out of the index until it switches over.
+  // New city with too few dentists: same homepage as every city (Ashish,
+  // 26 Nov 2026: no "opening soon"), but kept out of Google's index until it
+  // has enough dentists to not look empty.
   const { inOpeningPhase } = await getOpeningState(city)
   if (inOpeningPhase) {
     return {
-      title: `Dentists in ${city.cityName} | Opening Soon | ${brand}`,
-      description: `${brand} is signing up verified dentists in ${city.cityName}. Dentists can list their clinic free; patients can get a WhatsApp alert when booking opens.`,
+      title: `Dentist in ${city.cityName} | Book Verified Dentists | ${brand}`,
+      description: `Find and book dentists in ${city.cityName} on ${brand}. Dentists in ${city.cityName} can list their clinic free.`,
       alternates: { canonical: `${origin}/` },
       robots: { index: false, follow: true, googleBot: { index: false, follow: true } },
     }
@@ -154,22 +154,11 @@ export default async function HomePage() {
 
   const city = getCityBySlug(h.get('x-city-slug'))
 
-  // New city still signing up its first dentists → opening-soon homepage.
-  const opening = await getOpeningState(city)
-  if (opening.inOpeningPhase) {
-    const [{ areas: openingAreas }, waitingCount] = await Promise.all([
-      getCityHomeData(city.citySlug),
-      getCityWaitlistCount(city.citySlug),
-    ])
-    return (
-      <CityOpeningHome
-        city={city}
-        areas={[...openingAreas].map(a => a.name).sort((a, b) => a.localeCompare(b))}
-        dentistCount={opening.dentistCount}
-        waitingCount={waitingCount}
-      />
-    )
-  }
+  // New city still signing up its first dentists: the normal homepage (no
+  // "opening soon" page any more, Ashish 26 Nov 2026) plus a "Register your
+  // clinic" banner for dentists. robots/sitemap still hold it out of Google
+  // until it has OPENING_MIN_DENTISTS dentists.
+  const { inOpeningPhase: newCity } = await getOpeningState(city)
 
   const brandName = cityBrandName(city)
   const FAQ_ITEMS = faqItemsFor(city.cityName)
@@ -314,6 +303,23 @@ export default async function HomePage() {
           {/* DENTIST ROW: follows the need picked in the hero */}
           <NeedSpotlight cityName={city.cityName} cards={spotlightCards} defaultIds={defaultIds} byTreatment={byTreatment} />
         </NeedProvider>
+
+        {/* NEW CITY: ask dentists to register (shown until the city has 5 dentists) */}
+        {newCity && (
+          <section className="hm-sec">
+            <div className="container">
+              <div className="hm-dcta">
+                <div>
+                  <h2 className="hm-h2" style={{ color: '#fff' }}>Are you a dentist in {city.cityName}?</h2>
+                  <p style={{ margin: '6px 0 0', color: 'rgba(255,255,255,0.78)', fontSize: 15, lineHeight: 1.55 }}>
+                    List your clinic free on {brandName}. Patients in {city.cityName} find and book you here, and you get the clinic dashboard too.
+                  </p>
+                </div>
+                <Link href="/for-dentists/register" className="hm-dcta-btn">Register your clinic free</Link>
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* WHAT PATIENTS SAY: real reviews once there are enough, else how reviews work */}
         <section className="hm-sec" style={{ background: 'var(--bg)' }}>
