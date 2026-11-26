@@ -11,11 +11,11 @@ export async function GET(request: NextRequest) {
   // Detect the national host via the forwarded host (set by the platform
   // proxy) with a fall-back to the parsed URL host for local dev. This used
   // to route national sign-ins to /feed; that route went with the
-  // social-layer freeze, so both hosts now land on the practice dashboard.
-  // `national` is still needed below for the unrecognised-user branch.
+  // social-layer freeze. Since Nov 2026 dentistinindia.in lands on its home
+  // page (the signed-in dentist home); city hosts land on the dashboard.
   const forwardedHost = request.headers.get('x-forwarded-host') || request.headers.get('host')
   const national = isNationalHost(forwardedHost) || isNationalHost(new URL(request.url).hostname)
-  const dentistLanding = '/for-dentists/dashboard'
+  const dentistLanding = national ? '/' : '/for-dentists/dashboard'
 
   if (!code) {
     return NextResponse.redirect(`${origin}/for-dentists/login?error=oauth_failed&reason=no_code`)
