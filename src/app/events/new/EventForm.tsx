@@ -93,10 +93,6 @@ export default function EventForm({ cities, coverageCities, counts, topics, defa
     flex: 1, textAlign: 'left', padding: 12, borderRadius: 12, cursor: 'pointer', fontFamily: 'var(--font-body)',
     border: on ? '2px solid #1D4ED8' : '1px solid #CBD5E1', background: on ? '#EFF6FF' : '#fff', color: '#0F1923',
   })
-  const planBox = (on: boolean, gold = false): React.CSSProperties => ({
-    display: 'flex', gap: 10, alignItems: 'flex-start', width: '100%', textAlign: 'left', padding: 12, borderRadius: 12, cursor: 'pointer', fontFamily: 'var(--font-body)', marginBottom: 10,
-    border: on ? `2px solid ${gold ? '#F59E0B' : '#1D4ED8'}` : '1px solid #CBD5E1', background: on ? (gold ? '#FFFBEB' : '#EFF6FF') : '#fff', color: '#0F1923',
-  })
   const chip = (on: boolean): React.CSSProperties => ({
     minHeight: 38, padding: '0 14px', borderRadius: 999, fontSize: 13, fontWeight: on ? 700 : 500, cursor: 'pointer', fontFamily: 'var(--font-body)',
     background: on ? '#0F1923' : '#fff', color: on ? '#fff' : '#0F1923', border: on ? '1px solid #0F1923' : '1px solid #CBD5E1',
@@ -116,6 +112,89 @@ export default function EventForm({ cities, coverageCities, counts, topics, defa
           <div style={{ fontSize: 12, color: '#475569', lineHeight: 1.4, marginTop: 4 }}>Hands-on or online course run by you</div>
         </button>
       </div>
+
+      <div style={{ fontSize: 12, fontWeight: 700, color: '#475569', letterSpacing: '0.05em', margin: '4px 0 16px' }}>HOW SHOULD IT SHOW?</div>
+      <button type="button" onClick={() => setPlan('featured')} aria-pressed={plan === 'featured'}
+        style={{ position: 'relative', display: 'block', width: '100%', textAlign: 'left', padding: '16px 14px 14px', borderRadius: 14, cursor: 'pointer', fontFamily: 'var(--font-body)', marginBottom: 10, color: '#0F1923',
+          border: plan === 'featured' ? '2px solid #F59E0B' : '2px solid #FCD34D',
+          background: 'linear-gradient(180deg, #FFFBEB 0%, #FEF3C7 100%)',
+          boxShadow: plan === 'featured' ? '0 6px 18px rgba(245, 158, 11, 0.28)' : '0 2px 8px rgba(245, 158, 11, 0.15)' }}>
+        <span style={{ position: 'absolute', top: -11, left: 14, background: '#F59E0B', color: '#fff', fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', padding: '3px 10px', borderRadius: 999 }}>★ RECOMMENDED</span>
+        <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span aria-hidden="true" style={{ width: 22, height: 22, borderRadius: 999, flexShrink: 0, border: '2px solid #F59E0B', background: plan === 'featured' ? '#F59E0B' : '#fff', boxShadow: plan === 'featured' ? 'inset 0 0 0 3px #fff' : 'none' }} />
+            <span style={{ fontWeight: 800, fontSize: 17 }}>Featured listing</span>
+          </span>
+          <span style={{ textAlign: 'right' }}>
+            <span style={{ display: 'block', fontWeight: 800, fontSize: 17 }}>{plan === 'featured' ? rupees(quote.total) : 'from ₹499'}</span>
+          </span>
+        </span>
+        <span style={{ display: 'block', fontSize: 13, color: '#78350F', margin: '6px 0 10px 32px', lineHeight: 1.45 }}>Get seen by registered dentists, not just people who visit the calendar.</span>
+        <span style={{ display: 'grid', gap: 8, marginLeft: 32 }}>
+          {[
+            ['📌', 'Pinned at the top of the Events page', 'Above all standard listings, with a gold Featured badge.'],
+            ['📧', 'Email + WhatsApp alert the day it goes live', 'Sent to every registered dentist in the cities you pick (or all of India).'],
+            ['⏰', 'Reminder 2 days before it starts', 'A second email + WhatsApp so dentists don’t forget.'],
+            ['🗺️', 'You choose the coverage', 'One or more cities, or All India, for 7, 15 or 30 days.'],
+            ['✉️', 'Custom notification (optional add-on)', 'An extra message on a date you choose, or to one speciality.'],
+          ].map(([icon, head, sub]) => (
+            <span key={head} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+              <span aria-hidden="true" style={{ fontSize: 16, lineHeight: '20px' }}>{icon}</span>
+              <span style={{ fontSize: 13, lineHeight: 1.4 }}>
+                <b style={{ display: 'block' }}>{head}</b>
+                <span style={{ color: '#57534E' }}>{sub}</span>
+              </span>
+            </span>
+          ))}
+        </span>
+        <span style={{ display: 'block', fontSize: 12, color: '#78350F', marginTop: 12, marginLeft: 32 }}>Full refund if we don’t approve it.</span>
+      </button>
+
+      {plan === 'featured' && (
+        <div style={{ border: '1px solid #CBD5E1', borderRadius: 12, padding: 14, marginBottom: 12 }}>
+          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>1. Where should it be featured?</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+            <button type="button" onClick={() => { setAllIndia(!allIndia); if (!allIndia) setFeatureCities([]) }} style={chip(allIndia)} aria-pressed={allIndia}>All India</button>
+            {coverageCities.map(c => (
+              <button key={c.slug} type="button" onClick={() => toggleCity(c.slug)} style={chip(!allIndia && featureCities.includes(c.slug))} aria-pressed={!allIndia && featureCities.includes(c.slug)}>
+                {c.name}
+              </button>
+            ))}
+          </div>
+          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>2. For how many days?</div>
+          <div style={{ display: 'flex', background: '#E2E8F0', borderRadius: 10, padding: 3, marginBottom: 14 }}>
+            {FEATURE_DAYS.map(d => (
+              <button key={d} type="button" onClick={() => setDays(d)} aria-pressed={days === d}
+                style={{ flex: 1, minHeight: 40, border: 0, borderRadius: 8, cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: 14, fontWeight: days === d ? 700 : 500, background: days === d ? '#fff' : 'transparent', color: '#0F1923' }}>
+                {d} days
+              </button>
+            ))}
+          </div>
+          <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: 10, fontSize: 13, color: '#334155', display: 'grid', gap: 6 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}><span>Featured {coverageLabel}, {days} days</span><b>{rupees(quote.coverage)}</b></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}><span>Alerts to about {quote.dentists} dentists, twice</span><b>{rupees(quote.alerts)}</b></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 15, color: '#0F1923' }}><b>Total</b><b>{rupees(quote.total)}</b></div>
+          </div>
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 14, marginTop: 14 }}>
+            <input type="checkbox" checked={wantsCustom} onChange={e => setWantsCustom(e.target.checked)} style={{ width: 20, height: 20, marginTop: 1 }} />
+            <span><b>Add-on: custom notification</b><br /><span style={{ fontSize: 12, color: '#475569' }}>An extra message on a date you choose, or only to one speciality. Price to be set: we&apos;ll confirm it before you pay for it.</span></span>
+          </label>
+          {wantsCustom && (
+            <textarea rows={2} maxLength={400} value={customText} onChange={e => setCustomText(e.target.value)} placeholder="What should go out, to whom, and when?" style={{ ...input, padding: 12, minHeight: 70, marginTop: 10, resize: 'vertical' }} />
+          )}
+        </div>
+      )}
+
+      <button type="button" onClick={() => setPlan('free')} aria-pressed={plan === 'free'}
+        style={{ display: 'flex', gap: 10, alignItems: 'center', width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: 12, cursor: 'pointer', fontFamily: 'var(--font-body)', marginBottom: 18,
+          border: plan === 'free' ? '2px solid #1D4ED8' : '1px solid #E2E8F0', background: plan === 'free' ? '#EFF6FF' : '#F8FAFC', color: '#0F1923' }}>
+        <span aria-hidden="true" style={{ width: 18, height: 18, borderRadius: 999, flexShrink: 0, border: '2px solid #94A3B8', background: plan === 'free' ? '#1D4ED8' : '#fff', boxShadow: plan === 'free' ? 'inset 0 0 0 3px #fff' : 'none' }} />
+        <span style={{ flex: 1 }}>
+          <span style={{ display: 'block', fontWeight: 600, fontSize: 14 }}>Standard listing</span>
+          <span style={{ display: 'block', fontSize: 12, color: '#64748B', lineHeight: 1.45, marginTop: 2 }}>Shows in the calendar by date only. No alerts to dentists.</span>
+        </span>
+        <span style={{ fontWeight: 700, color: '#475569' }}>Free</span>
+      </button>
 
       <div style={row}>
         <label style={label} htmlFor="ev-title">{isCourse ? 'Course name' : 'Event name'}</label>
@@ -212,57 +291,6 @@ export default function EventForm({ cities, coverageCities, counts, topics, defa
         <label htmlFor="ev-website">Website</label>
         <input id="ev-website" tabIndex={-1} autoComplete="off" value={f.website} onChange={e => set('website', e.target.value)} />
       </div>
-
-      <div style={{ fontSize: 12, fontWeight: 700, color: '#475569', letterSpacing: '0.05em', margin: '8px 0 10px' }}>HOW SHOULD IT SHOW?</div>
-      <button type="button" onClick={() => setPlan('free')} style={planBox(plan === 'free')} aria-pressed={plan === 'free'}>
-        <span style={{ flex: 1 }}>
-          <span style={{ display: 'block', fontWeight: 700, fontSize: 14 }}>Standard listing</span>
-          <span style={{ display: 'block', fontSize: 12, color: '#475569', lineHeight: 1.45, marginTop: 3 }}>Shows in the calendar by date. We check it within a day or two.</span>
-        </span>
-        <span style={{ fontWeight: 800 }}>Free</span>
-      </button>
-      <button type="button" onClick={() => setPlan('featured')} style={planBox(plan === 'featured', true)} aria-pressed={plan === 'featured'}>
-        <span style={{ flex: 1 }}>
-          <span style={{ display: 'block', fontWeight: 700, fontSize: 14 }}>Featured</span>
-          <span style={{ display: 'block', fontSize: 12, color: '#475569', lineHeight: 1.45, marginTop: 3 }}>Top of the Events page with a gold badge, plus an email and WhatsApp alert to dentists in your chosen area: the day it goes live, and 2 days before it starts.</span>
-        </span>
-        <span style={{ fontWeight: 800 }}>{plan === 'featured' ? rupees(quote.total) : 'from ₹499'}</span>
-      </button>
-
-      {plan === 'featured' && (
-        <div style={{ border: '1px solid #CBD5E1', borderRadius: 12, padding: 14, marginBottom: 12 }}>
-          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>1. Where should it be featured?</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
-            <button type="button" onClick={() => { setAllIndia(!allIndia); if (!allIndia) setFeatureCities([]) }} style={chip(allIndia)} aria-pressed={allIndia}>All India</button>
-            {coverageCities.map(c => (
-              <button key={c.slug} type="button" onClick={() => toggleCity(c.slug)} style={chip(!allIndia && featureCities.includes(c.slug))} aria-pressed={!allIndia && featureCities.includes(c.slug)}>
-                {c.name}
-              </button>
-            ))}
-          </div>
-          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>2. For how many days?</div>
-          <div style={{ display: 'flex', background: '#E2E8F0', borderRadius: 10, padding: 3, marginBottom: 14 }}>
-            {FEATURE_DAYS.map(d => (
-              <button key={d} type="button" onClick={() => setDays(d)} aria-pressed={days === d}
-                style={{ flex: 1, minHeight: 40, border: 0, borderRadius: 8, cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: 14, fontWeight: days === d ? 700 : 500, background: days === d ? '#fff' : 'transparent', color: '#0F1923' }}>
-                {d} days
-              </button>
-            ))}
-          </div>
-          <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: 10, fontSize: 13, color: '#334155', display: 'grid', gap: 6 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}><span>Featured {coverageLabel}, {days} days</span><b>{rupees(quote.coverage)}</b></div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}><span>Alerts to about {quote.dentists} dentists, twice</span><b>{rupees(quote.alerts)}</b></div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 15, color: '#0F1923' }}><b>Total</b><b>{rupees(quote.total)}</b></div>
-          </div>
-          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 14, marginTop: 14 }}>
-            <input type="checkbox" checked={wantsCustom} onChange={e => setWantsCustom(e.target.checked)} style={{ width: 20, height: 20, marginTop: 1 }} />
-            <span><b>Add-on: custom notification</b><br /><span style={{ fontSize: 12, color: '#475569' }}>An extra message on a date you choose, or only to one speciality. Price to be set: we&apos;ll confirm it before you pay for it.</span></span>
-          </label>
-          {wantsCustom && (
-            <textarea rows={2} maxLength={400} value={customText} onChange={e => setCustomText(e.target.value)} placeholder="What should go out, to whom, and when?" style={{ ...input, padding: 12, minHeight: 70, marginTop: 10, resize: 'vertical' }} />
-          )}
-        </div>
-      )}
 
       {err && <div style={{ color: '#B91C1C', fontSize: 14, fontWeight: 600, marginBottom: 12 }}>{err}</div>}
       <button type="submit" disabled={state === 'saving'} style={{ width: '100%', minHeight: 50, borderRadius: 12, border: 'none', background: state === 'saving' ? '#93C5FD' : '#1D4ED8', color: '#fff', fontSize: 16, fontWeight: 700, cursor: state === 'saving' ? 'wait' : 'pointer', fontFamily: 'var(--font-body)' }}>
