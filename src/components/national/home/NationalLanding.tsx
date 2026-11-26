@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { LIVE_CITY_CONFIGS, OPENING_CITY_CONFIGS } from '@/config/cities'
+import { LIVE_CITY_CONFIGS, OPENING_CITY_CONFIGS, CITY_CONFIGS, type CityConfig } from '@/config/cities'
 import NationalShell from '../NationalShell'
 import { STATE_PATHS, LIVE_DOTS, SOON_DOTS, VB_W, VB_H } from '../indiaMapData'
 import { SPECIALTIES } from '@/lib/dentalSpecialties'
@@ -10,27 +10,26 @@ import PatientsMenu from './PatientsMenu'
 // India map + "India's first social platform for dentists" on the left, the
 // dentist login on the right, "Register your profile" under it and "For
 // patients" in the header. The strip under the fold stays public on purpose:
-// it gives Google real text and crawlable links to every live city site.
-
-interface Props {
-  dentistCount: number
-  caseCount: number
-}
+// it gives Google real text and crawlable links to every city site.
+//
+// No dentist/case counts and no "opening soon" (Ashish, 26 Nov 2026): every
+// city domain works, and "coming soon" made dentists think they had to wait.
+// Cities we don't own a domain for yet are simply not shown.
 
 const PATIENT_TREATMENTS = ['implants', 'endodontics', 'orthodontics', 'cosmetic', 'periodontics', 'pediatric']
 
-export default function NationalLanding({ dentistCount, caseCount }: Props) {
+export default function NationalLanding() {
   const treatments = PATIENT_TREATMENTS
     .map(slug => SPECIALTIES.find(s => s.slug === slug))
     .filter((s): s is NonNullable<typeof s> => !!s)
     .map(s => ({ slug: s.slug, label: s.label }))
-  const cities = LIVE_CITY_CONFIGS.slice(0, 8).map(c => ({ name: c.cityName, domain: c.domain }))
+  const cities = LIVE_CITY_CONFIGS.slice(0, 10).map(c => ({ name: c.cityName, domain: c.domain }))
 
-  const stats = [
-    { value: dentistCount, label: 'dentists' },
-    { value: LIVE_CITY_CONFIGS.length, label: 'cities live' },
-    ...(caseCount > 0 ? [{ value: caseCount, label: 'cases shared' }] : [{ value: OPENING_CITY_CONFIGS.length, label: 'opening soon' }]),
-  ]
+  const configs = CITY_CONFIGS as Record<string, CityConfig>
+  const allCities = [...LIVE_CITY_CONFIGS, ...OPENING_CITY_CONFIGS]
+  const dots = [...LIVE_DOTS, ...SOON_DOTS]
+    .filter(d => configs[d.slug]?.domain)
+    .map(d => ({ slug: d.slug, name: d.name, x: d.x, y: d.y, domain: configs[d.slug].domain }))
 
   return (
     <NationalShell hideNav right={<PatientsMenu treatments={treatments} cities={cities} />}>
@@ -40,7 +39,6 @@ export default function NationalLanding({ dentistCount, caseCount }: Props) {
         .nh-map svg{position:absolute;left:0;top:30px;height:610px;width:auto;max-width:100%}
         .nh-hero{position:absolute;left:55%;top:0;max-width:340px;display:flex;flex-direction:column;gap:12px}
         .nh-hero h1{font-size:36px}
-        .nh-foot{position:absolute;left:62%;bottom:10px;display:flex;flex-direction:column;gap:12px}
         .nh-strip{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:28px}
         .nh-ring{transform-box:fill-box;transform-origin:center;animation:nhring 2.4s ease-out infinite}
         @keyframes nhring{0%{transform:scale(1);opacity:.6}100%{transform:scale(3.2);opacity:0}}
@@ -51,7 +49,6 @@ export default function NationalLanding({ dentistCount, caseCount }: Props) {
           .nh-map svg{position:static;height:300px;align-self:center}
           .nh-hero{position:static;max-width:none;order:-1;gap:8px}
           .nh-hero h1{font-size:28px}
-          .nh-foot{position:static}
           .nh-strip{grid-template-columns:1fr;gap:16px}
         }
       `}</style>
@@ -60,11 +57,11 @@ export default function NationalLanding({ dentistCount, caseCount }: Props) {
         <div className="nh-map">
           <svg viewBox={`0 0 ${VB_W} ${VB_H}`} role="img" aria-label="Map of India showing DentistIn city sites">
             {STATE_PATHS.map(p => <path key={p.name} d={p.d} fill="#DCE5F2" stroke="#fff" strokeWidth={2} />)}
-            {SOON_DOTS.map(d => <circle key={d.slug} cx={d.x} cy={d.y} r={7} fill="#fff" stroke="#94A3B8" strokeWidth={3} />)}
-            {LIVE_DOTS.map((d, i) => (
+            {dots.map((d, i) => (
               <a key={d.slug} href={`https://${d.domain}`} aria-label={`Dentists in ${d.name}`}>
                 <title>{`Dentists in ${d.name}`}</title>
-                <circle className="nh-ring" cx={d.x} cy={d.y} r={8} fill="none" stroke="#1D4ED8" strokeWidth={3} style={{ animationDelay: `${(i % 12) * 0.17}s` }} />
+                {/* A pulse on every fourth dot keeps 60+ cities from flickering. */}
+                {i % 4 === 0 && <circle className="nh-ring" cx={d.x} cy={d.y} r={8} fill="none" stroke="#1D4ED8" strokeWidth={3} style={{ animationDelay: `${(i % 12) * 0.17}s` }} />}
                 <circle cx={d.x} cy={d.y} r={8} fill="#1D4ED8" />
               </a>
             ))}
@@ -76,20 +73,6 @@ export default function NationalLanding({ dentistCount, caseCount }: Props) {
             <p style={{ margin: 0, fontSize: 16, color: '#334155', lineHeight: 1.55 }}>
               Share cases, get second opinions from dentists across India, and build a name patients can find.
             </p>
-          </div>
-          <div className="nh-foot">
-            <div style={{ display: 'flex', gap: 22, flexWrap: 'wrap' }}>
-              {stats.map(s => (
-                <div key={s.label}>
-                  <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: 24, color: '#0F1923', fontVariantNumeric: 'tabular-nums' }}>{s.value.toLocaleString('en-IN')}</div>
-                  <div style={{ fontSize: 12.5, color: '#475569' }}>{s.label}</div>
-                </div>
-              ))}
-            </div>
-            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 13, color: '#334155' }}>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><span style={{ width: 10, height: 10, borderRadius: '50%', background: '#1D4ED8' }} />City site live</span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><span style={{ width: 10, height: 10, borderRadius: '50%', background: '#fff', border: '1.6px solid #94A3B8' }} />Opening soon</span>
-            </div>
           </div>
         </div>
 
@@ -123,15 +106,14 @@ export default function NationalLanding({ dentistCount, caseCount }: Props) {
               </div>
             ))}
           </div>
-          {/* Crawlable links to every live city domain (discovery layer). */}
+          {/* Crawlable links to every city domain (discovery layer). */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
             <span style={{ fontSize: 13, fontWeight: 700, marginRight: 6, color: '#0F1923' }}>Book a dentist:</span>
-            {LIVE_CITY_CONFIGS.map(c => (
+            {allCities.map(c => (
               <a key={c.citySlug} href={`https://${c.domain}`} style={{ display: 'inline-flex', alignItems: 'center', minHeight: 34, padding: '0 12px', borderRadius: 999, border: '1px solid #CBD5E1', background: '#fff', fontSize: 13, color: '#0F1923', textDecoration: 'none' }}>
                 {c.cityName}
               </a>
             ))}
-            <Link href="/cities" style={{ fontSize: 13, fontWeight: 700, color: '#1D4ED8', textDecoration: 'none', marginLeft: 4 }}>All cities →</Link>
           </div>
         </div>
       </section>
