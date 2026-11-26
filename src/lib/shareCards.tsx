@@ -289,3 +289,28 @@ export async function safePhoto(url: string | null | undefined): Promise<string 
     return null
   }
 }
+
+// ── Invite card ────────────────────────────────────────────────────────
+
+export function inviteCard(p: { name: string; photo: string | null; line: string | null }, format: CardFormat): Promise<ImageResponse> {
+  const story = format === 'story'
+  const k = story ? 1.5 : 1
+  return respond(
+    <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%', background: INK, color: '#fff', padding: story ? 96 : 64 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Brand size={34 * k} />
+        <div style={{ display: 'flex', fontSize: 22 * k, color: '#93C5FD', fontWeight: 800 }}>YOU&apos;RE INVITED</div>
+      </div>
+      <div style={{ display: 'flex', flexDirection: story ? 'column' : 'row', alignItems: story ? 'flex-start' : 'center', gap: 32, marginTop: story ? 220 : 56 }}>
+        <Avatar photo={p.photo} initials={initialsOf(p.name)} size={130 * k} />
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', fontSize: 54 * k, fontWeight: 800, lineHeight: 1.15 }}>{clip(`${p.name} invited you to DentistIn India`, 70)}</div>
+          {p.line && <div style={{ display: 'flex', fontSize: 26 * k, color: SOFT, marginTop: 12 }}>{clip(p.line, 60)}</div>}
+        </div>
+      </div>
+      <div style={{ display: 'flex', flexGrow: 1 }} />
+      <div style={{ display: 'flex', fontSize: 28 * k, color: SOFT }}>Real cases and second opinions from dentists across India. Free.</div>
+    </div>,
+    format,
+  )
+}

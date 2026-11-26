@@ -9,6 +9,8 @@ import { drName } from '@/lib/dentistName'
 import FollowButton from '@/components/national/FollowButton'
 import { loadExpertProfile, expertHeadline } from '@/lib/expertProfile'
 import ProfileShareButton from '@/components/national/ProfileShareButton'
+import InviteBox from '@/components/national/InviteBox'
+import { getOrCreateInviteCode, loadInviteStats, type InviteStats } from '@/lib/invites'
 import {
   adminDb, getViewerDentist, isFoundingDentist, cityNameOf, cityDomainOf, initialsOf, ui,
 } from '@/lib/national'
@@ -65,6 +67,13 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
     isFollowing = !!f
   }
   const articles = await getDentistPublishedArticles(d.id).catch(() => [])
+
+  // Invite a colleague: owner only. Hidden until the invite SQL has run.
+  let invite: { code: string; stats: InviteStats } | null = null
+  if (isOwner) {
+    const code = await getOrCreateInviteCode(d.id).catch(() => null)
+    if (code) invite = { code, stats: await loadInviteStats(d.id, code) }
+  }
 
   const cityName = cityNameOf(d.city)
   const domain = cityDomainOf(d.city)
@@ -184,6 +193,16 @@ export default async function ExpertProfilePage({ params }: { params: Promise<{ 
           </section>
         )}
 
+        {invite && (
+          <InviteBox
+            dentistId={d.id}
+            code={invite.code}
+            sent={invite.stats.sent}
+            joined={invite.stats.joined}
+            recent={invite.stats.recent.map(r => ({ name: drName(r.name), slug: r.slug, when: timeAgo(r.created_at) }))}
+          />
+        )}
+
         {viewer && (
           <section style={{ ...ui.card, background: '#0F1923', borderColor: '#0F1923', color: '#fff', display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{ fontWeight: 700 }}>You&apos;re signed in as a dentist</div>
@@ -206,4 +225,13 @@ function TextBlock({ title, value }: { title: string; value: string }) {
       <p style={{ fontSize: 14, color: '#475569', lineHeight: 1.6, whiteSpace: 'pre-wrap', margin: 0 }}>{value}</p>
     </div>
   )
+}
+
+function timeAgo(iso: string): string {
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000)
+  if (days <= 0) return 'Today'
+  if (days === 1) return 'Yesterday'
+  if (days < 7) return `${days} days ago`
+  if (days < 14) return 'Last week'
+  return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
 }
