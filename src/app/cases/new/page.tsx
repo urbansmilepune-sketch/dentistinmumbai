@@ -38,7 +38,8 @@ export default async function NewCasePage() {
   const { data: drafts } = await adminDb().from('whatsapp_case_drafts')
     .select('id, photo_urls, note, created_at').eq('dentist_id', dentist.id).is('used_at', null)
     .gte('created_at', new Date(Date.now() - 7 * 86400000).toISOString())
-    .order('created_at', { ascending: false }).limit(3)
+    // Newest WhatsApp case only: older unfinished drafts are separate cases.
+    .order('created_at', { ascending: false }).limit(1)
   const draftRows = ((drafts || []) as Array<{ id: string; photo_urls: string[] | null; note: string | null }>)
   const waPhotos = draftRows.flatMap(d => (Array.isArray(d.photo_urls) ? d.photo_urls : [])).slice(0, 8)
   const waIds = draftRows.map(d => d.id)
