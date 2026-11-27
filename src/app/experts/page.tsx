@@ -4,8 +4,9 @@ import { notFound } from 'next/navigation'
 import NationalShell from '@/components/national/NationalShell'
 import { SPECIALTIES, getSpecialty } from '@/lib/dentalSpecialties'
 import { LIVE_CITY_CONFIGS, NATIONAL_ORIGIN } from '@/config/cities'
-import { adminDb, isNationalRequest, AFTER_KINDS, cityNameOf, initialsOf, isFoundingDentist, ui } from '@/lib/national'
+import { adminDb, getViewerDentist, isNationalRequest, AFTER_KINDS, cityNameOf, initialsOf, isFoundingDentist, ui } from '@/lib/national'
 import { drName } from '@/lib/dentistName'
+import CardFollow, { CARD_FOLLOW_SPACE, followingIdsOf } from '@/components/national/CardFollow'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,7 +15,7 @@ export const dynamic = 'force-dynamic'
 // work they have shared with other dentists (approved cases in that
 // specialty, then cases with a follow-up). Nobody can pay to rank higher.
 
-type SP = { t?: string; c?: string }
+type SP = { t?: string; c?: string; follow?: string }
 
 // Words that mark a dentist's own specialty / skill text as matching.
 const KEYWORDS: Record<string, string[]> = {
@@ -73,6 +74,11 @@ export default async function ExpertsPage({ searchParams }: { searchParams: Prom
     .sort((a, b) => b.cases - a.cases || b.followups - a.followups || Number(!!b.d.is_verified) - Number(!!a.d.is_verified) || String(a.d.name).localeCompare(String(b.d.name)))
     .slice(0, 60)
 
+  // Follow buttons: who is looking, and whom they already follow.
+  const viewer = await getViewerDentist()
+  const followingIds = await followingIdsOf(db, viewer?.id ?? null, experts.map(e => e.d.id))
+  const followSlug = typeof sp.follow === 'string' ? sp.follow : ''
+
   const link = (patch: Partial<SP>) => {
     const next = { t: spec.slug, ...(citySlug ? { c: citySlug } : {}), ...patch }
     const p = new URLSearchParams()
@@ -107,8 +113,9 @@ export default async function ExpertsPage({ searchParams }: { searchParams: Prom
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
             {experts.map(({ d, cases: n, followups }) => (
-              <Link key={d.id} href={`/professional/${d.slug}`} style={{ ...ui.card, textDecoration: 'none', color: '#0F1923', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              <div key={d.id} style={{ position: 'relative', display: 'flex' }}>
+              <Link href={`/professional/${d.slug}`} style={{ ...ui.card, flex: 1, minWidth: 0, textDecoration: 'none', color: '#0F1923', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ display: 'flex', gap: 12, alignItems: 'center', paddingRight: CARD_FOLLOW_SPACE }}>
                   <div style={{ width: 52, height: 52, borderRadius: '50%', overflow: 'hidden', flexShrink: 0, background: '#DBEAFE', color: '#1D4ED8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>
                     {d.profile_photo ? <img src={d.profile_photo} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initialsOf(d.name)}
                   </div>
@@ -126,6 +133,8 @@ export default async function ExpertsPage({ searchParams }: { searchParams: Prom
                   {isFoundingDentist(d.created_at) && <span style={ui.pill('#FEF3C7', '#78350F')}>Founding Dentist</span>}
                 </div>
               </Link>
+              <CardFollow slug={d.slug} isMe={viewer?.id === d.id} signedIn={!!viewer} following={followingIds.has(d.id)} autoFollow={!!followSlug && followSlug === d.slug} />
+              </div>
             ))}
           </div>
         )}
