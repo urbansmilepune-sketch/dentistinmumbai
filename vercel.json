@@ -50,6 +50,10 @@
       "schedule": "30 13 * * *"
     },
     {
+      "path": "/api/cron/first-case-nudge",
+      "schedule": "30 4 * * *"
+    },
+    {
       "path": "/api/cron/week-recap",
       "schedule": "45 3 * * 1"
     },

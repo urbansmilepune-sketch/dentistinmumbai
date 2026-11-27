@@ -15,6 +15,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { isMissingColumnError } from '@/lib/national'
 import { alertCaseComment } from '@/lib/networkAlerts'
+import { firstReplyWhatsApp } from '@/lib/firstCase'
 
 const admin = createServiceClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -70,7 +71,10 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   // policy-violation 401 if the dentist opens an old tab.
   const { data: caseRow } = await admin
     .from('cases').select('status, discussion_enabled').eq('id', caseId).single()
-  if (!caseRow || caseRow.status !== 'approved' || !caseRow.discussion_enabled) {
+  // Pending cases (in review) are open to dentists too since 27 Nov 2026,
+  // so a new dentist's first case can get replies straight away.
+  const inReview = caseRow?.status === 'pending'
+  if (!caseRow || (caseRow.status !== 'approved' && !inReview) || !caseRow.discussion_enabled) {
     return NextResponse.json({ error: 'Discussion not available on this case' }, { status: 403 })
   }
 
@@ -83,7 +87,10 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   // Reply type (suggestion / question / comment). The kind column comes
   // from the national v1 SQL; until it runs, retry without it.
   const kind = ['suggestion', 'question', 'comment'].includes(payload.kind) ? payload.kind : 'comment'
-  const insertComment = (withKind: boolean) => supabase
+  // The comments RLS only allows replies on approved cases, so replies on a
+  // case in review are written with the service key (checks done above).
+  const writer = inReview ? admin : supabase
+  const insertComment = (withKind: boolean) => writer
     .from('case_comments')
     .insert(withKind ? { case_id: caseId, dentist_id: dentist.id, content, kind } : { case_id: caseId, dentist_id: dentist.id, content })
     .select(withKind ? 'id, content, created_at, dentist_id, kind' : 'id, content, created_at, dentist_id')
@@ -94,6 +101,9 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
 
   const newCount = await recountAndPersist(caseId)
   const commentId = (row as any).id as string
-  after(() => alertCaseComment(caseId, dentist.id, commentId, content))
+  after(async () => {
+    await alertCaseComment(caseId, dentist.id, commentId, content)
+    await firstReplyWhatsApp(caseId, dentist.id, commentId)
+  })
   return NextResponse.json({ success: true, comment: row, comment_count: newCount })
 }

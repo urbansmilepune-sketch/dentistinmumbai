@@ -66,3 +66,9 @@ export function waWeekLink(dentistId: string): string {
   const t = waLoginToken(dentistId)
   return t ? `${NATIONAL_ORIGIN}/wa/${t}?to=week` : `${NATIONAL_ORIGIN}/week`
 }
+
+/** Link for the first-case nudge: one tap signs in and opens /first-case. */
+export function waFirstCaseLink(dentistId: string): string {
+  const t = waLoginToken(dentistId)
+  return t ? `${NATIONAL_ORIGIN}/wa/${t}?to=first-case` : `${NATIONAL_ORIGIN}/first-case`
+}

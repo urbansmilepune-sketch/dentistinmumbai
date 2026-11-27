@@ -174,14 +174,17 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
   const data = await loadCase(id)
   if (!data) notFound()
 
-  // Authorization: approved cases are public; non-approved are visible
-  // only to the owning dentist. Anyone else gets a 404 — same response
-  // shape as a non-existent case so a rejected/pending case can't be
-  // enumerated by ID.
+  // Authorization: approved cases are public; pending cases (in review) are
+  // visible to the owner and, since 27 Nov 2026, to signed-in dentists, so
+  // a new dentist's first case gets seen right away. Rejected cases are
+  // owner-only. Anyone else gets a 404, the same response as a
+  // non-existent case, so a case in review can't be enumerated by ID.
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const isOwner = user?.email && data.row.dentists?.email && user.email.toLowerCase() === data.row.dentists.email.toLowerCase()
-  if (data.row.status !== 'approved' && !isOwner) notFound()
+  const inReview = data.row.status === 'pending'
+  const viewer = await getViewerDentist()
+  if (data.row.status !== 'approved' && !isOwner && !(inReview && viewer)) notFound()
 
   // Old raw-ID links (WhatsApp shares, reminders, admin) and links whose
   // title has since been edited go permanently to the current readable
@@ -192,7 +195,6 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
 
   // Dentists only: clinical photos and discussion are not shown to
   // patients or to anyone signed out.
-  const viewer = await getViewerDentist()
   if (!viewer) {
     // Signed out (patients, Google): approved cases get a public text
     // summary that can be indexed. Photos, X-rays, notes and discussion
@@ -258,7 +260,7 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
   // Bump view_count on an approved case, and save who viewed it for the
   // author's "Your week" card (once per dentist per case per day). The
   // author's own visits count for neither.
-  if (data.row.status === 'approved' && !isAuthor) {
+  if ((data.row.status === 'approved' || inReview) && !isAuthor) {
     adminClient.from('cases').update({ view_count: (data.row.view_count || 0) + 1 }).eq('id', data.row.id).then(() => {})
     const caseId = data.row.id, authorId = data.row.dentist_id as string, viewerId = viewer.id
     afterResponse(() => recordCaseView(caseId, viewerId, authorId))
@@ -291,7 +293,12 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
         {/* Status banner for owner-only views */}
         {isOwner && data.row.status !== 'approved' && (
           <div style={{ background: data.row.status === 'rejected' ? '#FEE2E2' : '#FEF3C7', border: `1px solid ${data.row.status === 'rejected' ? '#FECACA' : '#FDE68A'}`, color: data.row.status === 'rejected' ? '#991B1B' : '#92400E', borderRadius: 12, padding: '12px 16px', marginBottom: 20, fontSize: 13, fontWeight: 600 }}>
-            {data.row.status === 'rejected' ? 'This case was not approved.' : 'This case is in admin moderation — only you can see it for now.'}
+            {data.row.status === 'rejected' ? 'This case was not approved.' : 'In review. Dentists can see and reply to this case now. It goes on your public profile and Google once our team checks it, usually the same day.'}
+          </div>
+        )}
+        {!isOwner && inReview && (
+          <div style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', color: '#1E3A8A', borderRadius: 12, padding: '12px 16px', marginBottom: 20, fontSize: 13, fontWeight: 600 }}>
+            New case, in review. Only dentists can see it until our team checks it.
           </div>
         )}
 
@@ -326,18 +333,19 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
               )}
             </div>
           )}
-          {/* Like (back in v1 network, dentists only) and Share. Approved-only
-              so a pending case's owner preview doesn't offer either. */}
-          {data.row.status === 'approved' && (
+          {/* Like (back in v1 network, dentists only) and Share. Likes also on
+              cases in review; Share only once approved, because the shared
+              link is not open to patients before then. */}
+          {(data.row.status === 'approved' || inReview) && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <LikeButton caseId={data.row.id} initialLiked={!!myLike} initialCount={data.row.like_count || 0} isOwn={isAuthor} />
-              <ShareButton
+              {data.row.status === 'approved' && <ShareButton
                 caseId={data.row.id}
                 caseTitle={data.row.title}
                 dentistName={data.row.dentists?.name || ''}
                 caseCity={data.row.dentists?.city}
                 dentistId={data.row.dentist_id}
-              />
+              />}
             </div>
           )}
         </header>
@@ -432,7 +440,7 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
         {/* Peer review — only when the case is approved AND the author
             opted in. The Comments component renders its own empty /
             verify-needed / sign-in states. */}
-        {data.row.status === 'approved' && (
+        {(data.row.status === 'approved' || inReview) && (
           <Comments
             caseId={data.row.id}
             caseAuthorId={data.row.dentist_id}

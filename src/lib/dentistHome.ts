@@ -22,6 +22,7 @@ import { drName } from '@/lib/dentistName'
 import { setupPct } from '@/lib/setupSteps'
 import { GBP_ADDED_EVENT } from '@/lib/googleBooking'
 import { placeLabel } from '@/lib/eventCountries'
+import { firstCaseByAuthor, liveCaseCount, FIRST_CASE_PIN_HOURS, PENDING_FEED_DAYS } from '@/lib/firstCase'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -32,6 +33,12 @@ export type FeedItem =
       type: 'case'; id: string; href: string; title: string; summary: string
       specialty: string | null; specialtyLabel: string | null; specialtyColor: string; specialtyBg: string
       author: Author; createdAt: string; replies: number; likes: number; photos: string[]; hasFollowup: boolean
+      /** Pending admin review: shown to dentists only (27 Nov 2026). */
+      inReview: boolean
+      /** The author's first case (earliest one that is not rejected). */
+      firstCase: boolean
+      /** First case from the viewer's city or specialty, under 2 days old: top of the feed. */
+      pinned: boolean
     }
   | {
       type: 'post'; id: string; kind: 'question' | 'update'; body: string
@@ -47,6 +54,8 @@ export interface DentistHomeData {
     id: string; name: string; slug: string; photo: string | null; qualifications: string | null
     cityName: string | null; headline: string; founding: boolean; verified: boolean; skills: string[]
     cases: number; followers: number; following: number; helpful: number; setup: number
+    /** Cases live or in review. 0 = show the "post your first case" card. */
+    liveCases: number
   }
   followingIds: string[]
   feed: FeedItem[]
@@ -74,17 +83,25 @@ function monthStartIso(): string {
   return d.toISOString()
 }
 
-async function loadFeed(db: SupabaseClient): Promise<{ items: FeedItem[]; postsEnabled: boolean }> {
-  const [casesRes, postsRes] = await Promise.all([
-    db.from('cases')
-      .select('id, title, description, specialty, comment_count, like_count, created_at, dentist_id, dentists(id, name, slug, city, profile_photo)')
+interface FeedViewer { id: string; city: string | null; specialty: string | null }
+
+async function loadFeed(db: SupabaseClient, viewer: FeedViewer): Promise<{ items: FeedItem[]; postsEnabled: boolean }> {
+  const caseSelect = 'id, title, description, specialty, status, comment_count, like_count, created_at, dentist_id, dentists(id, name, slug, city, profile_photo)'
+  const [casesRes, pendingRes, postsRes] = await Promise.all([
+    db.from('cases').select(caseSelect)
       .eq('status', 'approved').order('created_at', { ascending: false }).limit(40),
+    // Cases in review from the last 2 weeks: dentists see them right away.
+    db.from('cases').select(caseSelect)
+      .eq('status', 'pending').gte('created_at', new Date(Date.now() - PENDING_FEED_DAYS * 86400000).toISOString())
+      .order('created_at', { ascending: false }).limit(20),
     db.from('network_posts')
       .select('id, kind, body, reply_count, created_at, dentist_id, dentists(id, name, slug, city, profile_photo)')
       .eq('status', 'live').order('created_at', { ascending: false }).limit(40),
   ])
   const postsEnabled = !postsRes.error
-  const cases = (casesRes.data || []) as any[]
+  const cases = [...((casesRes.data || []) as any[]), ...((pendingRes.data || []) as any[])]
+  const firstByAuthor = await firstCaseByAuthor(cases.map(c => c.dentist_id), db)
+  const pinSince = Date.now() - FIRST_CASE_PIN_HOURS * 3600000
   const posts = (postsRes.error ? [] : postsRes.data || []) as any[]
 
   const photos = new Map<string, string[]>()
@@ -118,6 +135,9 @@ async function loadFeed(db: SupabaseClient): Promise<{ items: FeedItem[]; postsE
   const items: FeedItem[] = [
     ...cases.map((c): FeedItem => {
       const spec = getSpecialty(c.specialty)
+      const firstCase = firstByAuthor.get(c.dentist_id) === c.id
+      const pinned = firstCase && c.dentist_id !== viewer.id && Date.parse(c.created_at) >= pinSince
+        && ((!!viewer.city && c.dentists?.city === viewer.city) || (!!viewer.specialty && c.specialty === viewer.specialty))
       return {
         type: 'case', id: c.id, href: casePath({ id: c.id, title: c.title, city: c.dentists?.city }),
         title: c.title, summary: summaryText(c.description, 220),
@@ -125,6 +145,7 @@ async function loadFeed(db: SupabaseClient): Promise<{ items: FeedItem[]; postsE
         specialtyColor: spec?.color ?? '#475569', specialtyBg: spec?.bg ?? '#F1F5F9',
         author: author(c.dentists), createdAt: c.created_at, replies: c.comment_count || 0, likes: c.like_count || 0,
         photos: photos.get(c.id) || [], hasFollowup: followed.has(c.id),
+        inReview: c.status === 'pending', firstCase, pinned,
       }
     }),
     ...posts.map((p): FeedItem => ({
@@ -133,7 +154,9 @@ async function loadFeed(db: SupabaseClient): Promise<{ items: FeedItem[]; postsE
       replies: replies.get(p.id) || [],
     })),
   ]
-  items.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+  // Pinned first cases on top, then newest first.
+  const pinnedOf = (it: FeedItem) => (it.type === 'case' && it.pinned ? 1 : 0)
+  items.sort((a, b) => pinnedOf(b) - pinnedOf(a) || Date.parse(b.createdAt) - Date.parse(a.createdAt))
   return { items: items.slice(0, 50), postsEnabled }
 }
 
@@ -193,13 +216,14 @@ export async function loadDentistHome(dentistId: string): Promise<DentistHomeDat
   if (!dentist) return null
 
   const following = await followedIds(db, dentist.id)
-  const [stats, followingCount, feed, event, suggestions, clinic] = await Promise.all([
-    loadExpertStats(dentist),
+  const stats = await loadExpertStats(dentist)
+  const [followingCount, feed, event, suggestions, clinic, liveCases] = await Promise.all([
     db.from('dentist_follows').select('id', { count: 'exact', head: true }).eq('follower_id', dentist.id),
-    loadFeed(db),
+    loadFeed(db, { id: dentist.id, city: dentist.city ?? null, specialty: stats.topSpecialties[0]?.slug ?? null }),
     loadEvent(db, dentist.city),
     loadSuggestions(db, dentist.id, dentist.city, following),
     loadClinic(db, dentist),
+    liveCaseCount(dentist.id, db),
   ])
 
   const cityName = cityNameOf(dentist.city)
@@ -211,7 +235,7 @@ export async function loadDentistHome(dentistId: string): Promise<DentistHomeDat
       founding: isFoundingDentist(dentist.created_at), verified: !!dentist.is_verified,
       skills: Array.isArray(dentist.top_skills) ? dentist.top_skills.slice(0, 3) : [],
       cases: stats.caseCount, followers: stats.followerCount, following: followingCount.count ?? 0,
-      helpful: stats.helpfulCount, setup: setupPct(dentist),
+      helpful: stats.helpfulCount, setup: setupPct(dentist), liveCases,
     },
     followingIds: following,
     feed: feed.items,

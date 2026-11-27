@@ -14,7 +14,8 @@ export async function POST(request: NextRequest) {
   // to=alerts: the WhatsApp activity summary link opens /alerts instead.
   // to=week: the Monday "Your week" recap opens /week.
   const toRaw = String(form?.get('to') || '')
-  const to = toRaw === 'alerts' || toRaw === 'week' ? toRaw : null
+  // to=first-case: the first-case nudge opens /first-case.
+  const to = toRaw === 'alerts' || toRaw === 'week' || toRaw === 'first-case' ? toRaw : null
   const back = (err: boolean) => NextResponse.redirect(new URL(
     err ? `/wa/${encodeURIComponent(token)}?error=1${to ? `&to=${to}` : ''}` : (to ? `/${to}` : '/cases/new'),
     request.url,
