@@ -18,7 +18,8 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
 
   const db = adminDb()
   const { data: c } = await db.from('cases').select('id, dentist_id, status').eq('id', caseId).maybeSingle()
-  if (!c || c.status !== 'approved') return NextResponse.json({ error: 'Case not found' }, { status: 404 })
+  // Cases in review can be liked by dentists too (27 Nov 2026).
+  if (!c || (c.status !== 'approved' && c.status !== 'pending')) return NextResponse.json({ error: 'Case not found' }, { status: 404 })
   if (c.dentist_id === viewer.id) return NextResponse.json({ error: "You can't like your own case" }, { status: 400 })
 
   const { data: existing } = await db

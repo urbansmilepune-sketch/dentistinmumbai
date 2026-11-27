@@ -1,5 +1,6 @@
 'use client'
 
+import type { FirstCaseAdminRow } from '@/lib/firstCase'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import AdminShell from './AdminShell'
@@ -237,6 +238,8 @@ interface AdminPageClientProps {
    *  client-side fetches. */
   pendingCases: any[]
   openReports: any[]
+  /** New dentists' first cases (27 Nov 2026). */
+  firstCases: { pendingFirstIds: string[]; waiting: FirstCaseAdminRow[] }
 }
 
 // User-requested display order for the city dropdown — All Cities first,
@@ -744,11 +747,17 @@ function DentistHealthTab({ dentists, activity, cityFilter }: { dentists: Dentis
 interface CasesModerationProps {
   initialPending: any[]
   initialReports: any[]
+  firstCases: { pendingFirstIds: string[]; waiting: FirstCaseAdminRow[] }
   onToast: (variant: 'success' | 'error' | 'info', message: string) => void
 }
 
-function CasesModerationTab({ initialPending, initialReports, onToast }: CasesModerationProps) {
-  const [pending, setPending] = useState<any[]>(initialPending)
+function CasesModerationTab({ initialPending, initialReports, firstCases, onToast }: CasesModerationProps) {
+  // First cases go to the top of the review queue: a new dentist waiting on
+  // their first case is the one most likely to give up.
+  const firstIds = new Set(firstCases.pendingFirstIds)
+  const [pending, setPending] = useState<any[]>(() =>
+    [...initialPending].sort((a, b) => Number(firstIds.has(b.id)) - Number(firstIds.has(a.id))))
+  const [welcomed, setWelcomed] = useState<FirstCaseAdminRow[]>(firstCases.waiting)
   const [reports, setReports] = useState<any[]>(initialReports)
   const [busy, setBusy] = useState<string | null>(null)
   const [rejectTarget, setRejectTarget] = useState<{ id: string; title: string } | null>(null)
@@ -759,6 +768,7 @@ function CasesModerationTab({ initialPending, initialReports, onToast }: CasesMo
     setBusy(null)
     if (!res.ok) { onToast('error', 'Could not approve case.'); return }
     setPending(p => p.filter(c => c.id !== id))
+    setWelcomed(w => w.map(c => (c.id === id ? { ...c, status: 'approved' } : c)))
     onToast('success', 'Case approved and live.')
   }
 
@@ -796,6 +806,31 @@ function CasesModerationTab({ initialPending, initialReports, onToast }: CasesMo
       <PageHeader title="Clinical Cases" subtitle="Approve, reject, and resolve reports on the clinical-case feed." />
 
       <SectionTitle>
+        First cases this week <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>· approve and reply within a few hours so new dentists come back</span>
+      </SectionTitle>
+      <div style={{ background: '#fff', border: `1px solid ${CARD_BORDER}`, borderRadius: 16, boxShadow: CARD_SHADOW, overflow: 'hidden', marginBottom: 28 }}>
+        {welcomed.length === 0 ? (
+          <div style={{ padding: '24px', textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>No first cases in the last 7 days.</div>
+        ) : welcomed.map((c, i) => {
+          const hours = Math.max(0, Math.round((Date.now() - Date.parse(c.createdAt)) / 3600000))
+          return (
+            <div key={c.id} style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', padding: '12px 18px', borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
+              <div style={{ flex: '1 1 260px', minWidth: 0 }}>
+                <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)' }}>{c.title}</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)' }}>{c.dentistName}{c.city ? ' · ' + c.city : ''} · {hours < 48 ? `${hours}h ago` : `${Math.round(hours / 24)}d ago`}</div>
+              </div>
+              <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 9px', borderRadius: 999, background: c.status === 'approved' ? '#DCFCE7' : '#FEF3C7', color: c.status === 'approved' ? '#166534' : '#92400E' }}>{c.status === 'approved' ? 'Approved' : 'In review'}</span>
+              <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 9px', borderRadius: 999, background: c.replies ? '#EFF6FF' : '#FEE2E2', color: c.replies ? '#1E3A8A' : '#991B1B' }}>{c.replies ? `${c.replies} repl${c.replies === 1 ? 'y' : 'ies'}` : 'No reply yet'}</span>
+              <a href={`https://dentistinindia.in/cases/${c.id}`} target="_blank" rel="noopener noreferrer" style={{ padding: '7px 12px', minHeight: 32, background: '#fff', border: '1px solid #E2E8F0', borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#475569', textDecoration: 'none' }}>Open and reply</a>
+              {c.status !== 'approved' && (
+                <button onClick={() => approveCase(c.id)} disabled={busy === c.id} style={{ padding: '7px 12px', minHeight: 32, background: '#DCFCE7', color: '#166534', border: '1px solid #BBF7D0', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: busy === c.id ? 'wait' : 'pointer', fontFamily: 'var(--font-body)' }}>✓ Approve</button>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      <SectionTitle>
         Pending review <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>· {pending.length} {pending.length === 1 ? 'case' : 'cases'}</span>
       </SectionTitle>
       <div style={{ background: '#fff', border: `1px solid ${CARD_BORDER}`, borderRadius: 16, boxShadow: CARD_SHADOW, overflow: 'hidden', marginBottom: 28 }}>
@@ -814,7 +849,10 @@ function CasesModerationTab({ initialPending, initialReports, onToast }: CasesMo
                 {thumb && <img src={thumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
               </div>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)' }}>{c.title}</div>
+                <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)' }}>
+                  {firstIds.has(c.id) && <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 999, background: '#FEF3C7', color: '#78350F', marginRight: 6 }}>First case</span>}
+                  {c.title}
+                </div>
                 <div style={{ fontSize: 12, color: 'var(--muted)' }}>
                   Dr. {dentistName}{c.dentists?.city ? ' · ' + c.dentists.city : ''} · {c.specialty} · {'★'.repeat(c.complexity)}
                 </div>
@@ -875,7 +913,7 @@ function CasesModerationTab({ initialPending, initialReports, onToast }: CasesMo
   )
 }
 
-export default function AdminPageClient({ stats, dentists, registrations, appointments, enquiries, reviews, areas, foundingConfig, analytics, cityFilter, commsDentists, dentistHealth, dentistActivity, pendingCases, openReports }: AdminPageClientProps) {
+export default function AdminPageClient({ stats, dentists, registrations, appointments, enquiries, reviews, areas, foundingConfig, analytics, cityFilter, commsDentists, dentistHealth, dentistActivity, pendingCases, openReports, firstCases }: AdminPageClientProps) {
   const [section, setSection] = useState('dashboard')
   const [dentistList, setDentistList] = useState(dentists)
   const [reviewList, setReviewList] = useState(reviews)
@@ -1643,6 +1681,7 @@ export default function AdminPageClient({ stats, dentists, registrations, appoin
           <CasesModerationTab
             initialPending={pendingCases}
             initialReports={openReports}
+            firstCases={firstCases}
             onToast={pushToast}
           />
         )}

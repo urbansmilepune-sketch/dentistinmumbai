@@ -4,6 +4,12 @@
 // newest first, with Following / All India / my-specialty tabs. Case cards
 // open the case page (likes, helpful marks and replies live there). Posts
 // can be answered inline; the author can delete their own.
+//
+// First cases (27 Nov 2026): a new dentist's first case carries a "First
+// case" badge and one-tap replies, and sits on top of the feed for 2 days
+// for dentists in the same city or specialty (in every tab but the
+// specialty one, where it still has to match). Cases still in admin review
+// show an "In review" label.
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
@@ -38,7 +44,7 @@ export default function Feed({ items, meId, followingIds, specialty, event, city
   const [tab, setTab] = useState<Tab>(followingIds.length ? 'following' : 'all')
 
   const shown = items.filter(it => {
-    if (tab === 'following') return following.has(it.author.id)
+    if (tab === 'following') return following.has(it.author.id) || (it.type === 'case' && it.pinned)
     if (tab === 'specialty') return it.type === 'case' && specialty && it.specialty === specialty.slug
     return true
   })
@@ -73,7 +79,7 @@ export default function Feed({ items, meId, followingIds, specialty, event, city
 
       {shown.map((it, i) => (
         <div key={`${it.type}-${it.id}`} style={{ display: 'contents' }}>
-          {it.type === 'case' ? <CaseCard it={it} /> : <PostCard it={it} meId={meId} />}
+          {it.type === 'case' ? <CaseCard it={it} meId={meId} /> : <PostCard it={it} meId={meId} />}
           {i === 1 && event && <EventCard event={event} cityName={cityName} />}
         </div>
       ))}
@@ -97,11 +103,19 @@ function Who({ a, when, pill }: { a: FeedItem['author']; when: string; pill?: Re
   )
 }
 
-function CaseCard({ it }: { it: Extract<FeedItem, { type: 'case' }> }) {
+const QUICK_REPLIES = ['Nice result 👏', 'Which material did you use?', 'How many visits did it take?']
+
+function CaseCard({ it, meId }: { it: Extract<FeedItem, { type: 'case' }>; meId: string }) {
+  const mine = it.author.id === meId
+  const firstName = it.author.name.replace(/^Dr\.?\s+/i, '').split(' ')[0] || it.author.name
   return (
-    <article style={card}>
-      <Who a={it.author} when={ago(it.createdAt)} pill={it.specialtyLabel && (
-        <span style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 9px', borderRadius: 999, background: it.specialtyBg, color: it.specialtyColor, whiteSpace: 'nowrap' }}>{it.specialtyLabel}</span>
+    <article style={it.pinned ? { ...card, borderColor: '#FDE68A', boxShadow: '0 0 0 3px #FEF3C7' } : card}>
+      <Who a={it.author} when={ago(it.createdAt)} pill={(it.specialtyLabel || it.firstCase || it.inReview) && (
+        <span style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {it.firstCase && <span style={{ fontSize: 11.5, fontWeight: 800, padding: '3px 9px', borderRadius: 999, background: '#FEF3C7', color: '#78350F', whiteSpace: 'nowrap' }}>First case</span>}
+          {it.inReview && <span title="Shown to dentists only until our team checks it" style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 9px', borderRadius: 999, background: '#F1F5F9', color: '#475569', whiteSpace: 'nowrap' }}>In review</span>}
+          {it.specialtyLabel && <span style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 9px', borderRadius: 999, background: it.specialtyBg, color: it.specialtyColor, whiteSpace: 'nowrap' }}>{it.specialtyLabel}</span>}
+        </span>
       )} />
       <Link href={it.href} style={{ textDecoration: 'none', color: '#0F1923', display: 'flex', flexDirection: 'column', gap: 8 }}>
         <h3 style={{ margin: 0, fontFamily: 'var(--font-heading)', fontSize: 16.5, lineHeight: 1.35 }}>{it.title}</h3>
@@ -122,10 +136,64 @@ function CaseCard({ it }: { it: Extract<FeedItem, { type: 'case' }> }) {
         {it.likes > 0 && <span>{it.likes} like{it.likes === 1 ? '' : 's'}</span>}
         {it.hasFollowup && <span style={{ color: '#166534', fontWeight: 700 }}>Has follow-up</span>}
       </div>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', borderTop: '1px solid #E2E8F0', paddingTop: 10 }}>
-        <Link href={it.href} style={act}>{it.replies ? 'Read and reply' : 'Answer this case'}</Link>
-      </div>
+      {it.firstCase && !mine && it.replies < 3
+        ? <QuickReplies caseId={it.id} href={it.href} firstName={firstName} />
+        : (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', borderTop: '1px solid #E2E8F0', paddingTop: 10 }}>
+            <Link href={it.href} style={act}>{it.replies ? 'Read and reply' : 'Answer this case'}</Link>
+          </div>
+        )}
     </article>
+  )
+}
+
+// One-tap replies under a new dentist's first case, so they get a reaction
+// fast. Posts a normal reply on the case (verified dentists only, same rule
+// as the case page).
+function QuickReplies({ caseId, href, firstName }: { caseId: string; href: string; firstName: string }) {
+  const router = useRouter()
+  const [busy, setBusy] = useState<string | null>(null)
+  const [sent, setSent] = useState(false)
+  const [err, setErr] = useState('')
+
+  async function send(text: string) {
+    if (busy) return
+    setBusy(text); setErr('')
+    try {
+      const res = await fetch(`/api/cases/${caseId}/comments`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: text, kind: text.endsWith('?') ? 'question' : 'comment' }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { setErr(data?.error || 'Could not send. Please try again.'); return }
+      setSent(true)
+      router.refresh()
+    } catch { setErr('Network error. Please try again.') } finally { setBusy(null) }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: '1px solid #E2E8F0', paddingTop: 10 }}>
+      {sent ? (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 13.5, color: '#166534', fontWeight: 600 }}>
+          Sent. Thanks for welcoming Dr. {firstName}.
+          <Link href={href} style={{ ...act, color: '#1D4ED8' }}>See the case</Link>
+        </div>
+      ) : (
+        <>
+          <div style={{ fontSize: 13, color: '#475569' }}>Dr. {firstName} just posted their first case. Say something:</div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {QUICK_REPLIES.map(q => (
+              <button key={q} type="button" onClick={() => send(q)} disabled={!!busy}
+                style={{ ...act, borderRadius: 999, borderColor: '#CBD5E1', opacity: busy && busy !== q ? 0.55 : 1, cursor: busy ? 'wait' : 'pointer' }}>
+                {busy === q ? 'Sending…' : q}
+              </button>
+            ))}
+            <Link href={href} style={{ ...act, borderRadius: 999, color: '#1D4ED8' }}>Write a reply</Link>
+          </div>
+        </>
+      )}
+      {err && <div role="alert" style={{ fontSize: 13, color: '#991B1B' }}>{err}</div>}
+    </div>
   )
 }
 

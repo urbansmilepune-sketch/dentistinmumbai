@@ -56,6 +56,7 @@ export type WhatsAppTemplate =
   | 'event_alert_reminder'
   | 'network_activity_summary'
   | 'network_your_week'
+  | 'network_first_case_nudge'
 
 /** Number of {{n}} values each template expects. */
 export const TEMPLATE_VALUE_COUNT: Record<WhatsAppTemplate, number> = {
@@ -71,6 +72,7 @@ export const TEMPLATE_VALUE_COUNT: Record<WhatsAppTemplate, number> = {
   event_alert_reminder: 5,
   network_activity_summary: 3,
   network_your_week: 3,
+  network_first_case_nudge: 2,
 }
 
 export type WhatsAppResult =
@@ -244,6 +246,11 @@ export function sendActivitySummaryWhatsApp(p: { dentistPhone: string; firstName
 /** network_your_week: {{1}} first name, {{2}} week summary, {{3}} link (Monday "Your week" recap). */
 export function sendWeekRecapWhatsApp(p: { dentistPhone: string; firstName: string; summary: string; link: string }) {
   return sendWhatsAppTemplate(p.dentistPhone, 'network_your_week', [p.firstName, p.summary, p.link])
+}
+
+/** network_first_case_nudge: {{1}} first name, {{2}} link (day 1 / day 5 after claiming, no case yet). */
+export function sendFirstCaseNudgeWhatsApp(p: { dentistPhone: string; firstName: string; link: string }) {
+  return sendWhatsAppTemplate(p.dentistPhone, 'network_first_case_nudge', [p.firstName, p.link])
 }
 
 /** case_followup_reminder: {{1}} first name, {{2}} months, {{3}} case title, {{4}} link. */

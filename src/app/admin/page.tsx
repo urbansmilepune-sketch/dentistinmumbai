@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import AdminPageClient from './AdminPageClient'
+import { loadFirstCaseAdmin } from '@/lib/firstCase'
 import { CITY_CONFIGS, type CitySlug } from '@/config/cities'
 import { completionPct, type CompletionFields } from '@/lib/profileCompletion'
 
@@ -790,6 +791,10 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     }
   })
 
+  // New dentists' first cases (27 Nov 2026): flagged in the review queue,
+  // plus a "First cases" list so the team can welcome them fast.
+  const firstCases = await loadFirstCaseAdmin(adminClient)
+
   return (
     <AdminPageClient
       stats={stats}
@@ -807,6 +812,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
       dentistActivity={dentistActivity}
       pendingCases={pendingCases || []}
       openReports={openReports || []}
+      firstCases={firstCases}
     />
   )
 }

@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 import { adminDb, isNationalRequest, isFoundingDentist, cityNameOf, initialsOf, SKILL_OPTIONS, ui } from '@/lib/national'
 import ClaimForm from './ClaimForm'
 import { drName } from '@/lib/dentistName'
+import { liveCaseCount } from '@/lib/firstCase'
 
 export const dynamic = 'force-dynamic'
 
@@ -61,6 +62,7 @@ export default async function ClaimPage() {
     )
   }
 
+  const caseCount = await liveCaseCount(d.id)
   const treatments: string[] = Array.isArray(d.specialties) ? d.specialties : []
   const filled = [
     { label: 'Photo, clinic and address', ok: !!(d.profile_photo || d.clinic_name) },
@@ -99,6 +101,7 @@ export default async function ClaimPage() {
           initialLine={d.patient_line || ''}
           alreadyClaimed={!!d.network_claimed_at}
           founding={isFoundingDentist(d.created_at)}
+          caseCount={caseCount}
         />
       </main>
     </NationalShell>

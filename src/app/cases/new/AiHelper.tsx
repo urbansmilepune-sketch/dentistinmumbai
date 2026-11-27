@@ -39,7 +39,7 @@ export function blurFacesUrl(url: string): string {
   return url.replace('/image/upload/', '/image/upload/e_blur_faces:1200/')
 }
 
-async function coverBox(url: string, box: { x: number; y: number; w: number; h: number }): Promise<Blob> {
+export async function coverBox(url: string, box: { x: number; y: number; w: number; h: number }): Promise<Blob> {
   const img = new Image()
   img.crossOrigin = 'anonymous'
   img.src = url
