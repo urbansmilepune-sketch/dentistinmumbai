@@ -60,3 +60,9 @@ export function checkWaLoginToken(token: string, now = Date.now()): WaTokenCheck
   if (Number(exp) * 1000 < now) return { ok: false, reason: 'expired' }
   return { ok: true, dentistId }
 }
+
+/** Link for the Monday "Your week" recap: one tap signs in and opens /week. */
+export function waWeekLink(dentistId: string): string {
+  const t = waLoginToken(dentistId)
+  return t ? `${NATIONAL_ORIGIN}/wa/${t}?to=week` : `${NATIONAL_ORIGIN}/week`
+}

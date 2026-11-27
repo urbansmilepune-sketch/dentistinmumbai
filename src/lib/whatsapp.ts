@@ -55,6 +55,7 @@ export type WhatsAppTemplate =
   | 'event_alert_live'
   | 'event_alert_reminder'
   | 'network_activity_summary'
+  | 'network_your_week'
 
 /** Number of {{n}} values each template expects. */
 export const TEMPLATE_VALUE_COUNT: Record<WhatsAppTemplate, number> = {
@@ -69,6 +70,7 @@ export const TEMPLATE_VALUE_COUNT: Record<WhatsAppTemplate, number> = {
   event_alert_live: 5,
   event_alert_reminder: 5,
   network_activity_summary: 3,
+  network_your_week: 3,
 }
 
 export type WhatsAppResult =
@@ -237,6 +239,11 @@ export function sendFollowDigestWhatsApp(p: { dentistPhone: string; firstName: s
 /** network_activity_summary: {{1}} first name, {{2}} summary, {{3}} link (DentistIn India alerts). */
 export function sendActivitySummaryWhatsApp(p: { dentistPhone: string; firstName: string; summary: string; link: string }) {
   return sendWhatsAppTemplate(p.dentistPhone, 'network_activity_summary', [p.firstName, p.summary, p.link])
+}
+
+/** network_your_week: {{1}} first name, {{2}} week summary, {{3}} link (Monday "Your week" recap). */
+export function sendWeekRecapWhatsApp(p: { dentistPhone: string; firstName: string; summary: string; link: string }) {
+  return sendWhatsAppTemplate(p.dentistPhone, 'network_your_week', [p.firstName, p.summary, p.link])
 }
 
 /** case_followup_reminder: {{1}} first name, {{2}} months, {{3}} case title, {{4}} link. */

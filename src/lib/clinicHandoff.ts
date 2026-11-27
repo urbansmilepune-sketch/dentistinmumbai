@@ -35,6 +35,7 @@ export const CLINIC_PAGES: Record<string, string> = {
 export const INDIA_PAGES: Record<string, string> = {
   home: '/',
   alerts: '/alerts',
+  week: '/week',
   post: '/cases/new',
 }
 

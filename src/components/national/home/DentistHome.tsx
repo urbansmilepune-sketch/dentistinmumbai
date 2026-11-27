@@ -7,7 +7,10 @@ import ClinicLink from './ClinicLink'
 import HomeColumns from './HomeColumns'
 import PostComposer from './PostComposer'
 import Feed from './Feed'
+import WeekCard from './WeekCard'
 import { getOrCreateInviteCode, loadInviteStats } from '@/lib/invites'
+import { inviteMessage, loadWeek, weekCardHidden } from '@/lib/weeklyActivity'
+import { NATIONAL_ORIGIN } from '@/config/cities'
 import { getSpecialty } from '@/lib/dentalSpecialties'
 import type { DentistHomeData } from '@/lib/dentistHome'
 
@@ -31,6 +34,9 @@ export default async function DentistHome({ data }: { data: DentistHomeData }) {
   const { me, clinic } = data
   const code = await getOrCreateInviteCode(me.id)
   const invite = code ? await loadInviteStats(me.id, code) : null
+  // "Your week" card (27 Nov 2026): hidden until next Monday once closed.
+  const week = (await weekCardHidden(me.id)) ? null : await loadWeek(me.id)
+  const inviteLink = code ? `${NATIONAL_ORIGIN}/invite/${code}` : null
   // The "my specialty" feed tab follows the specialty they post most in.
   const topSpec = data.feed.find(it => it.type === 'case' && it.author.id === me.id && it.specialty)
   const spec = topSpec && topSpec.type === 'case' && topSpec.specialty ? getSpecialty(topSpec.specialty) : null
@@ -124,6 +130,10 @@ export default async function DentistHome({ data }: { data: DentistHomeData }) {
 
   const mid = (
     <>
+      {week && (
+        <WeekCard week={week} dentistId={me.id} inviteLink={inviteLink}
+          inviteMessage={inviteLink ? inviteMessage(week, inviteLink) : ''} joined={invite?.joined ?? 0} />
+      )}
       <PostComposer me={{ name: me.name, photo: me.photo }} enabled={data.postsEnabled} />
       <Feed items={data.feed} meId={me.id} followingIds={data.followingIds}
         specialty={spec ? { slug: spec.slug, label: spec.label } : null} event={data.event} cityName={me.cityName} />

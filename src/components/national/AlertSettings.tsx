@@ -3,7 +3,7 @@
 // Switches on dentistinindia.in/alerts. Each change saves straight away.
 import { useState } from 'react'
 
-type Prefs = { push_replies: boolean; push_summary: boolean; whatsapp_summary: boolean; whatsapp_digest: boolean }
+type Prefs = { push_replies: boolean; push_summary: boolean; whatsapp_summary: boolean; whatsapp_digest: boolean; whatsapp_week: boolean; show_my_views: boolean }
 
 const GROUPS: { title: string; rows: { key: keyof Prefs; label: string; hint: string }[] }[] = [
   { title: 'Phone alerts', rows: [
@@ -13,6 +13,10 @@ const GROUPS: { title: string; rows: { key: keyof Prefs; label: string; hint: st
   { title: 'WhatsApp', rows: [
     { key: 'whatsapp_summary', label: 'Activity summary', hint: 'At most twice a week, only if you missed something' },
     { key: 'whatsapp_digest', label: 'Monday cases digest', hint: 'New cases from dentists you follow' },
+    { key: 'whatsapp_week', label: 'Monday "Your week" recap', hint: 'Only after a good week, instead of the cases digest' },
+  ] },
+  { title: 'Privacy', rows: [
+    { key: 'show_my_views', label: 'Show my name when I view a case', hint: 'Off: the author only sees that a dentist viewed privately' },
   ] },
 ]
 

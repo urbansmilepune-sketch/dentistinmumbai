@@ -216,7 +216,7 @@ async function handleMessage(ctx: {
     if (plainStop) {
       const { data: prefRows } = await db.from('dentists').select('id, network_alert_prefs').in('id', ids)
       for (const p of (prefRows || []) as Array<Record<string, any>>) {
-        await db.from('dentists').update({ network_alert_prefs: { ...readPrefs(p.network_alert_prefs), whatsapp_summary: false, whatsapp_digest: false } }).eq('id', p.id)
+        await db.from('dentists').update({ network_alert_prefs: { ...readPrefs(p.network_alert_prefs), whatsapp_summary: false, whatsapp_digest: false, whatsapp_week: false } }).eq('id', p.id)
       }
     }
     const r = await reply(plainStop

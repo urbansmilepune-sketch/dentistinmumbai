@@ -33,8 +33,12 @@ export interface AlertPrefs {
   push_summary: boolean
   whatsapp_summary: boolean
   whatsapp_digest: boolean
+  /** Monday "Your week" recap on WhatsApp (src/app/api/cron/week-recap). */
+  whatsapp_week: boolean
+  /** Off: authors see "viewed privately" instead of this dentist's name. */
+  show_my_views: boolean
 }
-export const PREF_KEYS: (keyof AlertPrefs)[] = ['push_replies', 'push_summary', 'whatsapp_summary', 'whatsapp_digest']
+export const PREF_KEYS: (keyof AlertPrefs)[] = ['push_replies', 'push_summary', 'whatsapp_summary', 'whatsapp_digest', 'whatsapp_week', 'show_my_views']
 
 export function readPrefs(raw: unknown): AlertPrefs {
   const p = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
@@ -43,6 +47,8 @@ export function readPrefs(raw: unknown): AlertPrefs {
     push_summary: p.push_summary !== false,
     whatsapp_summary: p.whatsapp_summary !== false,
     whatsapp_digest: p.whatsapp_digest !== false,
+    whatsapp_week: p.whatsapp_week !== false,
+    show_my_views: p.show_my_views !== false,
   }
 }
 
