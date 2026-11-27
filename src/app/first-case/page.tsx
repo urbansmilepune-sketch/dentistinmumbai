@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { nationalPreview } from '@/lib/sharePreview'
 import { notFound, redirect } from 'next/navigation'
 import NationalShell from '@/components/national/NationalShell'
 import { getViewerDentist, isNationalRequest, cityNameOf } from '@/lib/national'
@@ -15,7 +16,13 @@ import FirstCaseFlow from './FirstCaseFlow'
 export const dynamic = 'force-dynamic'
 export const metadata: Metadata = {
   title: 'Post your first case | Dentist In India',
+  description: 'Share a case with dentists across India and get second opinions. Free.',
   robots: { index: false, follow: false },
+  ...nationalPreview({
+    title: 'Post your first case on DentistIn India',
+    description: 'Share a case with dentists across India and get second opinions. Free.',
+    path: '/first-case',
+  }),
 }
 
 export default async function FirstCasePage() {

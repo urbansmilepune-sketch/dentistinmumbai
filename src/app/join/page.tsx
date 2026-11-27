@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { nationalPreview } from '@/lib/sharePreview'
 import { NATIONAL_ORIGIN } from '@/config/cities'
 import NationalShell from '@/components/national/NationalShell'
 import JoinForm from './JoinForm'
@@ -9,6 +10,11 @@ export const metadata: Metadata = {
   alternates: { canonical: `${NATIONAL_ORIGIN}/join` },
   title: 'Claim Your Verified Dentist Profile | Dentist In India',
   description: 'Create your verified profile in 5 minutes. Publish clinical cases, get peer review from verified colleagues, and get listed on your city directory.',
+  ...nationalPreview({
+    title: 'Join DentistIn India',
+    description: 'Real cases and second opinions from dentists across India, and a profile patients find when they search your name. Free.',
+    path: '/join',
+  }),
 }
 
 // /join — frictionless registration for the national parent. Server

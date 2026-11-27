@@ -37,6 +37,10 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
           '/for-dentists/register',
           '/for-dentists/login',
           '/for-dentists/forgot-password',
+          // Link preview pictures (og:image). Longer than the '/api/'
+          // disallow below, so they stay fetchable: WhatsApp, LinkedIn and X
+          // drop the picture from a preview when robots.txt blocks it.
+          '/api/og/',
         ],
         disallow: [
           // No trailing slash so it also catches the /admin index route;

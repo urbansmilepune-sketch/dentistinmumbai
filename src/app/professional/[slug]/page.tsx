@@ -47,7 +47,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     openGraph: {
       title, description, type: 'profile', siteName: 'DentistIn India',
       url: `${NATIONAL_ORIGIN}/professional/${d.slug}`,
-      images: [{ url: `${NATIONAL_ORIGIN}/api/og/profile/${d.slug}`, width: 1200, height: 630, alt: drName(d.name) }],
+      images: [{ url: `${NATIONAL_ORIGIN}/api/og/profile/${d.slug}`, width: 1200, height: 630, type: 'image/png', alt: drName(d.name) }],
     },
     twitter: { card: 'summary_large_image', title, description, images: [`${NATIONAL_ORIGIN}/api/og/profile/${d.slug}`] },
   }
