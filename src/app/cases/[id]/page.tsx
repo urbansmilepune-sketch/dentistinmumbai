@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound, permanentRedirect } from 'next/navigation'
+import { after as afterResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import NationalShell from '@/components/national/NationalShell'
@@ -18,6 +19,7 @@ import { getViewerDentist, cityNameOf, ui } from '@/lib/national'
 import { drName } from '@/lib/dentistName'
 import { caseSlug, casePath, isCaseUuid, shortIdFromSlug, uuidRangeForShortId } from '@/lib/caseSlug'
 import { summaryText } from '@/lib/caseSummary'
+import { recordCaseView } from '@/lib/weeklyActivity'
 
 export const dynamic = 'force-dynamic'
 
@@ -253,11 +255,13 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
       : adminClient.from('dentist_follows').select('id').eq('follower_id', viewer.id).eq('following_id', data.row.dentist_id).maybeSingle(),
   ])
 
-  // Bump view_count for every load on an approved case. Fire-and-forget
-  // — nothing reads view_count since the trending rail went away, but the
-  // counter is cheap and worth keeping warm for whatever replaces it.
-  if (data.row.status === 'approved') {
+  // Bump view_count on an approved case, and save who viewed it for the
+  // author's "Your week" card (once per dentist per case per day). The
+  // author's own visits count for neither.
+  if (data.row.status === 'approved' && !isAuthor) {
     adminClient.from('cases').update({ view_count: (data.row.view_count || 0) + 1 }).eq('id', data.row.id).then(() => {})
+    const caseId = data.row.id, authorId = data.row.dentist_id as string, viewerId = viewer.id
+    afterResponse(() => recordCaseView(caseId, viewerId, authorId))
   }
 
   const spec = getSpecialty(data.row.specialty)

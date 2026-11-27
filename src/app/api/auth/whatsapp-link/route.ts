@@ -12,9 +12,11 @@ export async function POST(request: NextRequest) {
   const form = await request.formData().catch(() => null)
   const token = String(form?.get('token') || '')
   // to=alerts: the WhatsApp activity summary link opens /alerts instead.
-  const alerts = String(form?.get('to') || '') === 'alerts'
+  // to=week: the Monday "Your week" recap opens /week.
+  const toRaw = String(form?.get('to') || '')
+  const to = toRaw === 'alerts' || toRaw === 'week' ? toRaw : null
   const back = (err: boolean) => NextResponse.redirect(new URL(
-    err ? `/wa/${encodeURIComponent(token)}?error=1${alerts ? '&to=alerts' : ''}` : (alerts ? '/alerts' : '/cases/new'),
+    err ? `/wa/${encodeURIComponent(token)}?error=1${to ? `&to=${to}` : ''}` : (to ? `/${to}` : '/cases/new'),
     request.url,
   ), 303)
 
