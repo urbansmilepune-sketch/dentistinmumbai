@@ -49,7 +49,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     }))
     const { data: approvedCases, error: casesErr } = await adminDb()
       .from('cases')
-      .select('id, title, created_at, dentists(city)')
+      .select('id, title, created_at, dentists!dentist_id(city)')
       .eq('status', 'approved')
       .order('created_at', { ascending: false })
       .limit(1000)

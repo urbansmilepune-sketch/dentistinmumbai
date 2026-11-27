@@ -33,7 +33,7 @@ export async function newCasesFromFollowed(db: SupabaseClient, dentistId: string
   const ids = await followedIds(db, dentistId)
   if (!ids.length) return []
   const { data } = await db
-    .from('cases').select('id, title, specialty, created_at, dentist_id, dentists(name)')
+    .from('cases').select('id, title, specialty, created_at, dentist_id, dentists!dentist_id(name)')
     .eq('status', 'approved').in('dentist_id', ids).gte('created_at', sinceIso)
     .order('created_at', { ascending: false }).limit(50)
   return (data || []).map((c: any) => ({

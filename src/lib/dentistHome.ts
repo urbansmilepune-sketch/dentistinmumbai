@@ -86,7 +86,7 @@ function monthStartIso(): string {
 interface FeedViewer { id: string; city: string | null; specialty: string | null }
 
 async function loadFeed(db: SupabaseClient, viewer: FeedViewer): Promise<{ items: FeedItem[]; postsEnabled: boolean }> {
-  const caseSelect = 'id, title, description, specialty, status, comment_count, like_count, created_at, dentist_id, dentists(id, name, slug, city, profile_photo)'
+  const caseSelect = 'id, title, description, specialty, status, comment_count, like_count, created_at, dentist_id, dentists!dentist_id(id, name, slug, city, profile_photo)'
   const [casesRes, pendingRes, postsRes] = await Promise.all([
     db.from('cases').select(caseSelect)
       .eq('status', 'approved').order('created_at', { ascending: false }).limit(40),

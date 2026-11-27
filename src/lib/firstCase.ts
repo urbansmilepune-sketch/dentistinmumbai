@@ -123,7 +123,7 @@ export interface FirstCaseAdminRow {
 export async function loadFirstCaseAdmin(db: SupabaseClient = adminDb()): Promise<{ pendingFirstIds: string[]; waiting: FirstCaseAdminRow[] }> {
   try {
     const { data, error } = await db.from('cases')
-      .select('id, title, status, created_at, comment_count, dentist_id, dentists(name, city)')
+      .select('id, title, status, created_at, comment_count, dentist_id, dentists!dentist_id(name, city)')
       .in('status', DENTIST_VISIBLE_STATUSES)
       .gte('created_at', new Date(Date.now() - 30 * 86400000).toISOString())
       .order('created_at', { ascending: false }).limit(500)

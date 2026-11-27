@@ -96,7 +96,7 @@ async function loadCase(id: string): Promise<{ row: CaseRow; photos: PhotoRow[] 
   // the slug by the page) or a readable slug ending in the first 8 hex of
   // the id. Select `*` so the query never 400s on the structured-template
   // columns before their out-of-band migration lands; embed the dentist join.
-  const select = '*, dentists(name, slug, clinic_name, city, email, is_verified)'
+  const select = '*, dentists!dentist_id(name, slug, clinic_name, city, email, is_verified)'
   let row: CaseRow | null = null
   if (isCaseUuid(id)) {
     const { data } = await admin.from('cases').select(select).eq('id', id).maybeSingle()

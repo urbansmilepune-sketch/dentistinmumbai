@@ -134,7 +134,7 @@ interface ShareCase {
 /** Loads an approved case by readable slug or old UUID. Null if not public. */
 export async function loadCaseForShare(idOrSlug: string): Promise<ShareCase | null> {
   const db = adminDb()
-  const select = 'id, title, specialty, status, comment_count, dentists(name, city, profile_photo, created_at, is_verified)'
+  const select = 'id, title, specialty, status, comment_count, dentists!dentist_id(name, city, profile_photo, created_at, is_verified)'
   type Row = {
     id: string; title: string; specialty: string; status: string; comment_count: number | null
     dentists: { name: string; city: string | null; profile_photo: string | null; created_at: string | null; is_verified: boolean | null } | null

@@ -78,7 +78,7 @@ export default async function CaseLibraryPage({ searchParams }: { searchParams: 
 
   let query = db
     .from('cases')
-    .select('id, title, specialty, complexity, comment_count, like_count, created_at, dentist_id, dentists(name, slug, city)')
+    .select('id, title, specialty, complexity, comment_count, like_count, created_at, dentist_id, dentists!dentist_id(name, slug, city)')
     .eq('status', 'approved')
     .order('created_at', { ascending: false })
     .limit(200)
@@ -208,7 +208,7 @@ async function PublicCaseLibrary({ specialty, page }: { specialty: string | null
   const db = adminDb()
   let query = db
     .from('cases')
-    .select('id, title, specialty, description, created_at, dentists(name, slug, city)', { count: 'exact' })
+    .select('id, title, specialty, description, created_at, dentists!dentist_id(name, slug, city)', { count: 'exact' })
     .eq('status', 'approved')
     .order('created_at', { ascending: false })
     .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)

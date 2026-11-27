@@ -66,7 +66,7 @@ export async function buildFeedFor(admin: SupabaseClient, dentistId: string): Pr
   if (followingIds.length > 0) {
     const { data } = await admin
       .from('cases')
-      .select('id, title, specialty, complexity, created_at, like_count, comment_count, view_count, dentists(name, slug, city, clinic_name, profile_photo, is_verified)')
+      .select('id, title, specialty, complexity, created_at, like_count, comment_count, view_count, dentists!dentist_id(name, slug, city, clinic_name, profile_photo, is_verified)')
       .eq('status', 'approved')
       .in('dentist_id', followingIds)
       .order('created_at', { ascending: false })
@@ -77,7 +77,7 @@ export async function buildFeedFor(admin: SupabaseClient, dentistId: string): Pr
     const cutoff = new Date(Date.now() - TRENDING_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString()
     const { data } = await admin
       .from('cases')
-      .select('id, title, specialty, complexity, created_at, like_count, comment_count, view_count, dentists(name, slug, city, clinic_name, profile_photo, is_verified)')
+      .select('id, title, specialty, complexity, created_at, like_count, comment_count, view_count, dentists!dentist_id(name, slug, city, clinic_name, profile_photo, is_verified)')
       .eq('status', 'approved')
       .gte('created_at', cutoff)
       .order('created_at', { ascending: false })
