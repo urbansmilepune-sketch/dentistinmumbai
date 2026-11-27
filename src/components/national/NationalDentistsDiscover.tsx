@@ -3,6 +3,8 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 import NationalShell from './NationalShell'
 import { CITY_CONFIGS, type CitySlug, LIVE_CITY_CONFIGS } from '@/config/cities'
 import { drName } from '@/lib/dentistName'
+import { getViewerDentist } from '@/lib/national'
+import CardFollow, { followingIdsOf } from './CardFollow'
 
 // /dentists on dentistinindia.in — "Discover Dentists" national grid.
 // Service-role read so the join across dentists + case counts +
@@ -59,7 +61,7 @@ interface DentistCard {
 }
 
 interface Props {
-  searchParams: { city?: string; spec?: string; exp?: string; q?: string; sort?: string }
+  searchParams: { city?: string; spec?: string; exp?: string; q?: string; sort?: string; follow?: string }
 }
 
 export default async function NationalDentistsDiscover({ searchParams }: Props) {
@@ -142,6 +144,11 @@ export default async function NationalDentistsDiscover({ searchParams }: Props) 
   } else {
     cards.sort((a, b) => a.name.localeCompare(b.name))
   }
+
+  // Follow buttons: who is looking, and whom they already follow.
+  const viewer = await getViewerDentist()
+  const followingIds = await followingIdsOf(admin, viewer?.id ?? null, cards.map(c => c.id))
+  const followSlug = typeof searchParams.follow === 'string' ? searchParams.follow : ''
 
   function buildHref(opts: { city?: string | null; spec?: string | null; exp?: string | null; q?: string | null; sort?: string | null }) {
     const u = new URLSearchParams()
@@ -227,7 +234,8 @@ export default async function NationalDentistsDiscover({ searchParams }: Props) 
               const cityCfg = d.city ? (CITY_CONFIGS as any)[d.city] : null
               const initials = d.name.split(' ').map(p => p[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
               return (
-                <Link key={d.id} href={`/professional/${d.slug}`} style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 14, padding: 18, textDecoration: 'none', color: '#0F1923', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                <div key={d.id} style={{ position: 'relative', display: 'flex' }}>
+                <Link href={`/professional/${d.slug}`} style={{ flex: 1, minWidth: 0, background: '#fff', border: '1px solid #E2E8F0', borderRadius: 14, padding: 18, paddingBottom: 18 + 32 + 12, textDecoration: 'none', color: '#0F1923', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
                   <div style={{ flexShrink: 0, width: 52, height: 52, borderRadius: '50%', background: '#EFF6FF', color: '#1D4ED8', fontWeight: 800, fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
                     {d.profile_photo ? <img src={d.profile_photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials}
                   </div>
@@ -246,6 +254,8 @@ export default async function NationalDentistsDiscover({ searchParams }: Props) 
                     </div>
                   </div>
                 </Link>
+                <CardFollow slug={d.slug} isMe={viewer?.id === d.id} signedIn={!!viewer} following={followingIds.has(d.id)} autoFollow={!!followSlug && followSlug === d.slug} pos={{ bottom: 18, left: 18 + 52 + 12 }} />
+                </div>
               )
             })}
           </div>
