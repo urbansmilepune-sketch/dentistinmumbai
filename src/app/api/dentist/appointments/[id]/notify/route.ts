@@ -1,7 +1,8 @@
 // Called by the dashboard right after a dentist (or their staff) adds an
 // appointment themselves. Sends the patient the WhatsApp
 // appointment_confirmation ("Your Appointment confirmed at {clinic} on
-// {date}, {time}"). The dentist gets nothing, since they made the booking.
+// {date}, {time}"), with an SMS backup if it fails. The dentist gets
+// nothing, since they made the booking.
 //
 // Sent at most once per appointment: a message_log row is claimed before
 // sending, and if that claim fails nothing is sent. 3-hour / 30-minute
@@ -10,7 +11,8 @@ import { NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { createClient as createUserClient } from '@/lib/supabase/server'
 import { resolveCurrentDentist } from '@/lib/currentDentist'
-import { sendConfirmationWhatsApp, whatsAppEnabled } from '@/lib/whatsapp'
+import { formatApptDate, formatApptTime, sendConfirmationWhatsApp, whatsAppEnabled } from '@/lib/whatsapp'
+import { sendAppointmentWhatsApp } from '@/lib/whatsappSendLog'
 
 const MESSAGE_TYPE = 'wa_added_by_dentist'
 
@@ -53,9 +55,25 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
 
   const loc = appt.clinic_locations as unknown as { clinic_name: string | null } | null
   const clinicName = loc?.clinic_name || current.clinic_name || current.name || 'the clinic'
-  const r = await sendConfirmationWhatsApp({
-    patientPhone: appt.patient_phone, clinicName, apptDate: appt.appt_date, timeSlot: appt.time_slot || '',
+  // Logged in whatsapp_send_log; SMS backup + admin email if it fails now or later.
+  const when = `${formatApptDate(appt.appt_date)} ${formatApptTime(appt.time_slot)}`.trim()
+  let reason: string | undefined
+  const r = await sendAppointmentWhatsApp({
+    template: 'appointment_confirmation',
+    recipient: 'patient',
+    toPhone: appt.patient_phone,
+    appointmentId: id,
+    dentistId: appt.dentist_id,
+    summary: `Patient at ${clinicName}, ${when} (added by clinic)`,
+    smsFallback: { templateEnv: 'MSG91_TEMPLATE_ID_APPOINTMENT_CONFIRMED', phone: appt.patient_phone, vars: [clinicName, when] },
+    send: async () => {
+      const w = await sendConfirmationWhatsApp({
+        patientPhone: appt.patient_phone, clinicName, apptDate: appt.appt_date, timeSlot: appt.time_slot || '',
+      })
+      if (!w.success) reason = w.error
+      return w
+    },
   })
-  await db.from('message_log').update({ status: r.success ? 'sent' : 'failed' }).eq('id', claim.id)
-  return NextResponse.json({ sent: r.success, ...(r.success ? {} : { reason: r.error }) })
+  await db.from('message_log').update({ status: r.whatsapp ? 'sent' : 'failed' }).eq('id', claim.id)
+  return NextResponse.json({ sent: r.whatsapp, sms: r.sms, ...(reason ? { reason } : {}) })
 }
