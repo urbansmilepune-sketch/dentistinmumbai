@@ -266,7 +266,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     //     it. The same `adminClient` already gates the admin login.
     adminClient
       .from('cases')
-      .select('id, title, specialty, complexity, created_at, dentists(name, slug, clinic_name, city), case_photos(url, kind, display_order)')
+      .select('id, title, specialty, complexity, created_at, dentists!dentist_id(name, slug, clinic_name, city), case_photos(url, kind, display_order)')
       .eq('status', 'pending')
       .order('created_at', { ascending: true })
       .limit(50),

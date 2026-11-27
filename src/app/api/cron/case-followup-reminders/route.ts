@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
   const oldest = new Date(now - 13 * MONTH_DAYS * DAY).toISOString()
   const newest = new Date(now - 3 * MONTH_DAYS * DAY).toISOString()
   const { data: rows, error } = await db
-    .from('cases').select('id, title, created_at, dentist_id, dentists(name, phone, whatsapp, is_active, city)')
+    .from('cases').select('id, title, created_at, dentist_id, dentists!dentist_id(name, phone, whatsapp, is_active, city)')
     .eq('status', 'approved').gte('created_at', oldest).lte('created_at', newest).limit(2000)
   if (error) return NextResponse.json({ error: 'Could not read cases' }, { status: 500 })
   const cases = (rows || []) as Array<Record<string, any>>
