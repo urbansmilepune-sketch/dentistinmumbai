@@ -26,6 +26,14 @@ const PORTFOLIO_REDIRECTS = [
 ]
 
 const nextConfig: NextConfig = {
+  // Put <title> and og: tags in the <head> of every response, for every
+  // client. By default Next 16 only does that for a list of known bots and
+  // streams metadata into <body> for everyone else. WhatsApp builds its link
+  // preview on the sender's phone or desktop app, and those requests don't
+  // always carry a user agent Next recognises: they got the tags late in
+  // <body> and showed no preview at all.
+  htmlLimitedBots: /.*/,
+
   // Share card pictures (src/lib/shareCards.tsx) read the Inter font files
   // from disk; make sure they ship with those functions.
   outputFileTracingIncludes: {
