@@ -13,7 +13,6 @@ interface UnifiedCity {
   state: string
   status: 'live' | 'soon'
   domain?: string
-  dentistCount?: number
 }
 
 interface StateBlock {
@@ -61,7 +60,7 @@ export default function CitiesGrid({ stateBlocks }: Props) {
                       <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 10, background: '#DCFCE7', color: '#166534', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Live</span>
                     </div>
                     <div style={{ fontSize: 12, color: '#1D4ED8', fontWeight: 600 }}>
-                      {c.dentistCount} dentist{c.dentistCount === 1 ? '' : 's'} →
+                      Find a dentist →
                     </div>
                   </a>
                 ) : (
