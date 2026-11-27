@@ -176,7 +176,7 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
         console.log('[appointments PATCH] no patient_email on appointment — skipping confirmation email', { ref: updated.reference_no })
       }
 
-      // WhatsApp first; SMS backup if it fails now or later (see
+      // WhatsApp and SMS both go; WhatsApp failures email admin (see
       // src/lib/whatsappSendLog.ts). DLT SMS: "Your Appointment confirmed at
       // {clinic} on {date time} ..."
       if (patientPhone) {
