@@ -1,7 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { createClient as createServiceClient } from '@supabase/supabase-js'
-import { NATIONAL_ORIGIN, LIVE_CITY_CONFIGS } from '@/config/cities'
+import { NATIONAL_ORIGIN, LIVE_CITY_CONFIGS, OPENING_CITY_CONFIGS } from '@/config/cities'
 import { COMING_SOON_CITIES } from '@/config/citiesNational'
 import CitiesGrid from './CitiesGrid'
 
@@ -10,16 +9,12 @@ export const dynamic = 'force-dynamic'
 export const metadata: Metadata = {
   alternates: { canonical: `${NATIONAL_ORIGIN}/cities` },
   title: 'All Cities | Dentist In India',
-  description: 'Find verified dentists across 13 live Indian cities, with 50 more launching soon. Browse the full network by state.',
+  description: `Find verified dentists across ${LIVE_CITY_CONFIGS.length + OPENING_CITY_CONFIGS.length} Indian cities. Browse the full network by state.`,
 }
 
 // /cities lists every city the network knows about, live or coming soon,
 // grouped by Indian state/UT. Live cities link out to their city domain.
 // Coming-soon cities open the NotifyMeModal which writes to city_waitlist.
-//
-// Server component — fetches per-city dentist counts once (service role,
-// to bypass the analytics_events RLS pattern) and hands a slim, grouped
-// payload to the client grid that owns the modal state.
 
 interface UnifiedCity {
   slug: string
@@ -27,36 +22,27 @@ interface UnifiedCity {
   state: string
   status: 'live' | 'soon'
   domain?: string
-  dentistCount?: number
 }
 
-export default async function CitiesPage() {
-  const adminClient = createServiceClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  )
-  const { data: dentSlim } = await adminClient
-    .from('dentists')
-    .select('city, is_active')
-
-  const dentistCountByCity: { [slug: string]: number } = {}
-  for (const d of (dentSlim || []) as Array<{ city: string | null; is_active: boolean | null }>) {
-    if (!d.city || !d.is_active) continue
-    dentistCountByCity[d.city] = (dentistCountByCity[d.city] || 0) + 1
-  }
+export default function CitiesPage() {
+  // Every city with its own site is live (same rule as the home page since
+  // PR #67): opening cities count too. Only cities with no site yet are
+  // "coming soon" with a Notify button.
+  const siteCities = [...LIVE_CITY_CONFIGS, ...OPENING_CITY_CONFIGS]
+  const siteSlugs = new Set(siteCities.map(c => c.citySlug as string))
+  const notYetOpen = COMING_SOON_CITIES.filter(c => !siteSlugs.has(c.slug))
 
   // Flatten both lists into one shape so the grid doesn't need to know
   // which slug bucket a city came from.
   const unified: UnifiedCity[] = [
-    ...LIVE_CITY_CONFIGS.map(c => ({
+    ...siteCities.map(c => ({
       slug: c.citySlug,
       name: c.cityName,
       state: c.state,
       status: 'live' as const,
       domain: c.domain,
-      dentistCount: dentistCountByCity[c.citySlug] ?? 0,
     })),
-    ...COMING_SOON_CITIES.map(c => ({
+    ...notYetOpen.map(c => ({
       slug: c.slug,
       name: c.name,
       state: c.state,
@@ -92,8 +78,8 @@ export default async function CitiesPage() {
     return a.state.localeCompare(b.state)
   })
 
-  const liveTotal = LIVE_CITY_CONFIGS.length
-  const soonTotal = COMING_SOON_CITIES.length
+  const liveTotal = siteCities.length
+  const soonTotal = notYetOpen.length
 
   return (
     <div style={{ background: '#fff', color: '#0F1923', fontFamily: 'var(--font-body)', minHeight: '100vh' }}>
