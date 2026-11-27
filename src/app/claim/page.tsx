@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { nationalPreview } from '@/lib/sharePreview'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import NationalShell from '@/components/national/NationalShell'
@@ -14,6 +15,11 @@ export const metadata: Metadata = {
   title: 'Claim your free national profile | DentistIn India',
   description: 'Every dentist on a DentistIn city site already has a national profile. Claim it in a minute, free forever.',
   robots: { index: false, follow: true },
+  ...nationalPreview({
+    title: 'Claim your free national profile on DentistIn India',
+    description: 'Every dentist on a DentistIn city site already has a national profile. Claim it in a minute, free forever.',
+    path: '/claim',
+  }),
 }
 
 // /claim — the 288 existing dentists (and anyone new) claim the national

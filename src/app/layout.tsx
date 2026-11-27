@@ -64,8 +64,11 @@ export async function generateMetadata(): Promise<Metadata> {
         type: 'website', locale: 'en_IN',
         url: NATIONAL_ORIGIN, siteName: NATIONAL_HOST,
         title: nationalTitle, description: nationalDesc,
+        // Default link preview picture, so a shared page with no card of its
+        // own still shows one on WhatsApp.
+        images: [{ url: `${NATIONAL_ORIGIN}/api/og/brand`, width: 1200, height: 630, type: 'image/png', alt: 'DentistIn India' }],
       },
-      twitter: { card: 'summary_large_image' },
+      twitter: { card: 'summary_large_image', images: [`${NATIONAL_ORIGIN}/api/og/brand`] },
       robots: { index: true, follow: true },
     }
   }

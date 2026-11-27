@@ -27,7 +27,7 @@ export async function generateMetadata({ params }: { params: Promise<{ code: str
     title: { absolute: title },
     description,
     robots: { index: false, follow: false },
-    openGraph: { title, description, url: `${NATIONAL_ORIGIN}/invite/${norm || ''}`, siteName: 'DentistIn India', type: 'website', images: [{ url: image, width: 1200, height: 630, alt: title }] },
+    openGraph: { title, description, url: `${NATIONAL_ORIGIN}/invite/${norm || ''}`, siteName: 'DentistIn India', type: 'website', images: [{ url: image, width: 1200, height: 630, type: 'image/png', alt: title }] },
     twitter: { card: 'summary_large_image', title, description, images: [image] },
   }
 }

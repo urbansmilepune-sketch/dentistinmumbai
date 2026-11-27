@@ -158,7 +158,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
       url: ogUrl,
       siteName: 'Dentist In India',
       type: 'article',
-      images: [{ url: ogImage, width: 1200, height: 630, alt: ogTitle }],
+      images: [{ url: ogImage, width: 1200, height: 630, type: 'image/png', alt: ogTitle }],
     },
     twitter: {
       card: 'summary_large_image',
