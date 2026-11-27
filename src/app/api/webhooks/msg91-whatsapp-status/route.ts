@@ -6,7 +6,8 @@
 // When WhatsApp reports that an appointment message failed AFTER MSG91
 // accepted it (e.g. Meta 131048 "spam rate limit hit"), this:
 //   - marks the whatsapp_send_log row failed, with the reason
-//   - sends the SMS backup saved on that row (once)
+//   - sends the SMS saved on that row, only if it did not already go
+//     out with the WhatsApp (it normally does)
 //   - emails admin
 // Delivered / read reports just update the row's status.
 // Failures that match no row (invites, digests, ...) are kept in
@@ -101,10 +102,11 @@ interface LogRow {
   summary: string | null
   status: string
   sms_fallback: SmsFallback | null
+  sms_result: string | null
 }
 
 async function findRow(db: SupabaseClient, r: ParsedReport): Promise<LogRow | null> {
-  const cols = 'id, template, recipient, to_phone, summary, status, sms_fallback'
+  const cols = 'id, template, recipient, to_phone, summary, status, sms_fallback, sms_result'
   if (r.requestId) {
     let q = db.from(SEND_LOG_TABLE).select(cols).eq('request_id', r.requestId)
     if (r.phone10) q = q.eq('to_phone', `91${r.phone10}`)
@@ -151,14 +153,18 @@ async function handle(db: SupabaseClient, payload: unknown): Promise<void> {
 
     // Claim the failure once (MSG91 retries, or sends several reports).
     const { data: claimed } = await db.from(SEND_LOG_TABLE)
-      .update({ status: 'failed', error: (r.reason || 'failed').slice(0, 1000), sms_result: 'pending', admin_alerted: true, updated_at: new Date().toISOString() })
+      .update({ status: 'failed', error: (r.reason || 'failed').slice(0, 1000), admin_alerted: true, updated_at: new Date().toISOString() })
       .eq('id', row.id).in('status', ['accepted', 'delivered'])
       .select('id')
     if (!claimed?.length) continue
 
-    const sms = await sendFallbackSms(row.sms_fallback)
-    await db.from(SEND_LOG_TABLE).update({ sms_result: sms, sms_fallback: null, updated_at: new Date().toISOString() })
-      .eq('id', row.id).then(() => {}, () => {})
+    // The SMS normally went out with the WhatsApp: never send it twice.
+    let sms = row.sms_result
+    if (sms !== 'sent' && row.sms_fallback) {
+      sms = await sendFallbackSms(row.sms_fallback)
+      await db.from(SEND_LOG_TABLE).update({ sms_result: sms, sms_fallback: null, updated_at: new Date().toISOString() })
+        .eq('id', row.id).then(() => {}, () => {})
+    }
     await alertAdmin({
       template: row.template, recipient: row.recipient, to_phone: row.to_phone,
       summary: row.summary, error: r.reason, sms_result: sms, late: true,

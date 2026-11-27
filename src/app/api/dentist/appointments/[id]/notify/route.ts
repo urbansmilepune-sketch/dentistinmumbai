@@ -1,7 +1,7 @@
 // Called by the dashboard right after a dentist (or their staff) adds an
 // appointment themselves. Sends the patient the WhatsApp
 // appointment_confirmation ("Your Appointment confirmed at {clinic} on
-// {date}, {time}"), with an SMS backup if it fails. The dentist gets
+// {date}, {time}"), plus the same message by SMS. The dentist gets
 // nothing, since they made the booking.
 //
 // Sent at most once per appointment: a message_log row is claimed before
@@ -55,7 +55,7 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
 
   const loc = appt.clinic_locations as unknown as { clinic_name: string | null } | null
   const clinicName = loc?.clinic_name || current.clinic_name || current.name || 'the clinic'
-  // Logged in whatsapp_send_log; SMS backup + admin email if it fails now or later.
+  // Logged in whatsapp_send_log; SMS goes too; admin email if the WhatsApp fails.
   const when = `${formatApptDate(appt.appt_date)} ${formatApptTime(appt.time_slot)}`.trim()
   let reason: string | undefined
   const r = await sendAppointmentWhatsApp({

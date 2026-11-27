@@ -7,9 +7,10 @@
 // sendAppointmentWhatsApp():
 //   1. sends the WhatsApp
 //   2. saves a row in whatsapp_send_log (accepted or failed)
-//   3. if it failed right away: sends the SMS backup and emails admin
-//   4. stores the SMS backup on the row, so a LATE failure reported by
-//      MSG91 (/api/webhooks/msg91-whatsapp-status) can send it then.
+//   3. always sends the SMS too (Ashish, 27 Nov 2026: WhatsApp AND SMS)
+//   4. if the WhatsApp failed right away: emails admin
+//   5. if the SMS didn't go now, keeps it on the row so a LATE WhatsApp
+//      failure (/api/webhooks/msg91-whatsapp-status) can retry it once.
 //
 // Best-effort: never throws. If the SQL (20261127220000_whatsapp_send_log.sql)
 // has not been run, it still sends WhatsApp + SMS exactly as before.
@@ -76,10 +77,10 @@ export async function sendFallbackSms(f: SmsFallback | null | undefined): Promis
 }
 
 function smsLabel(s: string | null | undefined): string {
-  if (s === 'sent') return 'SMS backup sent'
-  if (s === 'failed') return 'SMS backup FAILED'
-  if (s === 'no_template') return 'no SMS backup (template id not set in Vercel)'
-  return 'no SMS backup'
+  if (s === 'sent') return 'SMS sent'
+  if (s === 'failed') return 'SMS FAILED too'
+  if (s === 'no_template') return 'no SMS (template id not set in Vercel)'
+  return 'no SMS'
 }
 
 export async function alertAdmin(row: {
@@ -109,8 +110,11 @@ export async function sendAppointmentWhatsApp(input: AppointmentWhatsAppInput): 
     w = { success: false, error: err instanceof Error ? err.message : 'send threw' }
   }
 
+  // Ashish, 27 Nov 2026: the SMS goes out WITH the WhatsApp every time (not
+  // only as a backup), so nobody misses a booking. One SMS per message: a
+  // late WhatsApp failure never sends a second one if this one went.
   let sms: AppointmentWhatsAppResult['sms'] = 'not_needed'
-  if (!w.success) sms = await sendFallbackSms(input.smsFallback)
+  if (input.smsFallback) sms = await sendFallbackSms(input.smsFallback)
 
   // With WhatsApp switched off, a "failure" is expected: SMS only, no log, no alert.
   if (!whatsAppEnabled()) return { whatsapp: w.success, sms }
@@ -128,9 +132,9 @@ export async function sendAppointmentWhatsApp(input: AppointmentWhatsAppInput): 
       appointment_id: input.appointmentId || null,
       dentist_id: input.dentistId || null,
       summary: input.summary.slice(0, 300),
-      // Kept only while a late failure could still need it.
-      sms_fallback: w.success ? (input.smsFallback ?? null) : null,
-      sms_result: w.success ? null : sms,
+      // Kept only if the SMS did not go now, so a late failure can retry it once.
+      sms_fallback: w.success && sms !== 'sent' ? (input.smsFallback ?? null) : null,
+      sms_result: sms,
       admin_alerted: !w.success,
     })
     if (insErr) console.error('[wa-log] insert failed (run whatsapp_send_log SQL?)', insErr.message)

@@ -346,13 +346,10 @@ export async function POST(request: NextRequest) {
       // "{date time}" string, so the date and slot are concatenated.
       const dateTime = `${formattedDate} ${time_slot}`
 
-      // WhatsApp first (booking_received to the patient, new_appointment to
-      // the dentist). The SMS backup goes out when the WhatsApp fails, either
-      // straight away or later if WhatsApp reports a late failure (e.g. Meta
-      // 131048 spam limit) to /api/webhooks/msg91-whatsapp-status. Every send
-      // is saved in whatsapp_send_log and failures email admin
-      // (src/lib/whatsappSendLog.ts). With WHATSAPP_ENABLED off only the SMS
-      // goes, exactly as before.
+      // WhatsApp AND SMS to both patient (booking_received) and dentist
+      // (new_appointment), plus the emails above (Ashish, 27 Nov 2026). Every
+      // WhatsApp is saved in whatsapp_send_log and a failure emails admin
+      // (src/lib/whatsappSendLog.ts). With WHATSAPP_ENABLED off only the SMS goes.
       const summary = `${patient_name} → ${dentistName} (${clinicName}), ${dateTime}`
       if (patient_phone) {
         await sendAppointmentWhatsApp({
