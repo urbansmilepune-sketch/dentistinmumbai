@@ -37,6 +37,7 @@ import { adminDb } from '@/lib/national'
 import { cleanName } from '@/lib/dentistName'
 import { waCaseLink } from '@/lib/waLoginLink'
 import { sendWhatsAppText } from '@/lib/whatsapp'
+import { readPrefs } from '@/lib/networkAlerts'
 
 export const dynamic = 'force-dynamic'
 // 300: the handler that answers an album may wait LINK_FALLBACK_MS for the
@@ -209,7 +210,18 @@ async function handleMessage(ctx: {
     if (!ids.length) return done(`stop: no dentist with number ending ${last10}`)
     const { error } = await db.from('dentists').update({ event_alerts_off: true }).in('id', ids)
     if (error) return done(`stop FAILED: ${error.message}`)
-    const r = await reply('Done. You will not get event alerts from DentistIn India any more.')
+    // A plain STOP also turns off the activity summary and Monday digest
+    // (Alert settings on dentistinindia.in/alerts can turn them back on).
+    const plainStop = /^\s*stop\s*[.!]?\s*$/i.test(text)
+    if (plainStop) {
+      const { data: prefRows } = await db.from('dentists').select('id, network_alert_prefs').in('id', ids)
+      for (const p of (prefRows || []) as Array<Record<string, any>>) {
+        await db.from('dentists').update({ network_alert_prefs: { ...readPrefs(p.network_alert_prefs), whatsapp_summary: false, whatsapp_digest: false } }).eq('id', p.id)
+      }
+    }
+    const r = await reply(plainStop
+      ? 'Done. You will not get event alerts or activity summaries from DentistIn India any more. You can turn them back on at dentistinindia.in/alerts.'
+      : 'Done. You will not get event alerts from DentistIn India any more.')
     return done(`event alerts off for ${ids.length} dentist row(s); ${r}`)
   }
 

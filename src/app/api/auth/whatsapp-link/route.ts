@@ -11,7 +11,12 @@ import { REMEMBER_COOKIE, rememberCookieOptions, issueRememberToken } from '@/li
 export async function POST(request: NextRequest) {
   const form = await request.formData().catch(() => null)
   const token = String(form?.get('token') || '')
-  const back = (err: boolean) => NextResponse.redirect(new URL(err ? `/wa/${encodeURIComponent(token)}?error=1` : '/cases/new', request.url), 303)
+  // to=alerts: the WhatsApp activity summary link opens /alerts instead.
+  const alerts = String(form?.get('to') || '') === 'alerts'
+  const back = (err: boolean) => NextResponse.redirect(new URL(
+    err ? `/wa/${encodeURIComponent(token)}?error=1${alerts ? '&to=alerts' : ''}` : (alerts ? '/alerts' : '/cases/new'),
+    request.url,
+  ), 303)
 
   const check = checkWaLoginToken(token)
   if (!check.ok) return back(true)

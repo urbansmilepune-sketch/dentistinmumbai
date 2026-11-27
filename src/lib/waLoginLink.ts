@@ -38,6 +38,12 @@ export function waCaseLink(dentistId: string): string {
   return t ? `${NATIONAL_ORIGIN}/wa/${t}` : `${NATIONAL_ORIGIN}/cases/new`
 }
 
+/** Link for the WhatsApp activity summary: one tap signs in and opens /alerts. */
+export function waAlertsLink(dentistId: string): string {
+  const t = waLoginToken(dentistId)
+  return t ? `${NATIONAL_ORIGIN}/wa/${t}?to=alerts` : `${NATIONAL_ORIGIN}/alerts`
+}
+
 export type WaTokenCheck = { ok: true; dentistId: string } | { ok: false; reason: 'invalid' | 'expired' }
 
 export function checkWaLoginToken(token: string, now = Date.now()): WaTokenCheck {

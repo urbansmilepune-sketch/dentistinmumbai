@@ -8,6 +8,7 @@ import { getCityByDomain, getCityBySlug, type CityConfig } from '@/config/cities
 import { ADMIN_WHATSAPP } from '@/components/SupportButton'
 import { NAVY, TEAL, TEAL_DARK, TEAL_SOFT } from '@/app/dentist/[slug]/profileTheme'
 import BugReportButton from './BugReportButton'
+import { useIndiaAlerts, indiaHref } from './useIndiaAlerts'
 import { HomeIcon, CalendarIcon, PatientsIcon, RupeeIcon, MenuIcon, PlusIcon, ChevronIcon, CloseIcon } from './dashIcons'
 export type StaffRole = 'owner' | 'associate_dentist' | 'reception'
 
@@ -101,6 +102,17 @@ export default function DashboardShell({ dentist, completionPct, staffRole = nul
     .map(g => ({ ...g, items: visible(g.items, staffRole) }))
     .filter(g => g.items.length > 0)
   const pathname = usePathname()
+  // "My India profile" (27 Nov 2026): the dentist's own dentistinindia.in
+  // home, signed in with a one-time link. Clinic staff don't have one.
+  const isDentist = staffRole === null
+  const india = useIndiaAlerts(isDentist)
+  const indiaLink = indiaHref(india.unseen > 0 ? 'alerts' : 'home')
+  const indiaPill = (n: number) => n > 0 && (
+    <span style={{ minWidth: 20, height: 20, padding: '0 6px', borderRadius: 99, background: '#DC2626', color: '#fff', fontSize: 11, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{n > 99 ? '99+' : n}</span>
+  )
+  const globe = (size = 16) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18" /></svg>
+  )
   const [moreOpen, setMoreOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
   const addRef = useRef<HTMLDivElement>(null)
@@ -187,6 +199,14 @@ export default function DashboardShell({ dentist, completionPct, staffRole = nul
       </div>
       <nav aria-label="Dashboard" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '4px 12px 12px', display: 'flex', flexDirection: 'column', gap: 16, scrollbarWidth: 'none' as any }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>{primary.map(sidebarLink)}</div>
+        {isDentist && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {groupLabel('DentistIn India')}
+            <a href={indiaLink} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', borderRadius: 8, textDecoration: 'none', fontSize: 14, fontWeight: 700, color: '#1D4ED8' }}>
+              {globe()}<span style={{ flex: 1 }}>My India profile</span>{indiaPill(india.unseen)}
+            </a>
+          </div>
+        )}
         {groups.map(g => (
           <div key={g.label} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             {g.label && groupLabel(g.label)}
@@ -242,6 +262,20 @@ export default function DashboardShell({ dentist, completionPct, staffRole = nul
         </button>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px 32px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {isDentist && (
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--muted)', padding: '0 4px 6px' }}>DentistIn India</div>
+            {card(<>
+              {moreRow('india', <a href={indiaLink} style={rowStyle}>
+                <span style={{ color: '#1D4ED8', display: 'flex' }}>{globe(20)}</span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, color: '#1D4ED8' }}>My India profile {india.unseen > 0 && <span style={{ background: '#DC2626', color: '#fff', fontSize: 11, fontWeight: 800, padding: '1px 8px', borderRadius: 99 }}>{india.unseen} new</span>}</span>
+                  <span style={{ display: 'block', fontSize: 12, color: 'var(--muted)' }}>Cases, followers, alerts</span>
+                </span>{chev}</a>, true)}
+              {moreRow('india-post', <a href={indiaHref('post')} style={rowStyle}>{rowText('Post a case', 'Share with dentists across India')}{chev}</a>, false)}
+            </>)}
+          </div>
+        )}
         {groups.map(g => (
           <div key={g.label}>
             {g.label && <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--muted)', padding: '0 4px 6px' }}>{g.label}</div>}
@@ -317,6 +351,12 @@ export default function DashboardShell({ dentist, completionPct, staffRole = nul
               </div>
             )}
           </div>
+          {isDentist && (
+            <a href={indiaLink} aria-label={india.unseen ? `My India profile, ${india.unseen} new alerts` : 'My India profile'}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 38, padding: '0 12px', borderRadius: 10, background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', fontWeight: 700, fontSize: 13.5, textDecoration: 'none', whiteSpace: 'nowrap' }}>
+              {globe()} My India profile {indiaPill(india.unseen)}
+            </a>
+          )}
           <a href={`/dentist/${dentist.slug}`} target="_blank" rel="noopener noreferrer"
             style={{ fontSize: 13, color: TEAL_DARK, fontWeight: 700, textDecoration: 'none' }}>View profile</a>
           {avatar(32)}

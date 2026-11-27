@@ -13,6 +13,7 @@ import { getCityBySlug } from '@/config/cities'
 import { setupSteps, setupPct, isSetupLive } from '@/lib/setupSteps'
 import { NAVY, TEAL, TEAL_DARK, TEAL_SOFT, BRAND_GRADIENT } from '@/app/dentist/[slug]/profileTheme'
 import GrowthTools from './GrowthTools'
+import IndiaProfileCard from './IndiaProfileCard'
 import { GBP_ADDED_EVENT, GOOGLE_VISIT_EVENT } from '@/lib/googleBooking'
 import { PlusIcon, CalendarIcon, QrIcon, StarIcon, BadgeIcon, ChevronIcon, SearchIcon, CheckIcon } from './dashIcons'
 
@@ -673,6 +674,7 @@ export default async function DashboardPage() {
   return (
     <div style={{ maxWidth: 1160, margin: '0 auto', display: 'grid', gap: 16 }}>
       {header}
+      {!dentist.__staffRole && <IndiaProfileCard />}
       <div className="dh-mobile-actions" style={{ display: 'none', gridTemplateColumns: '1fr 1fr', gap: 10 }}>{primaryActions(false)}</div>
       <div className="dh-cols" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.55fr) minmax(0, 1fr)', gap: 18, alignItems: 'start' }}>
         <div style={{ display: 'grid', gap: 16 }}>

@@ -1,6 +1,7 @@
 // POST /api/network-posts/<id>/replies — reply to a Question or Update post.
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { adminDb, getViewerDentist } from '@/lib/national'
+import { addAlert } from '@/lib/networkAlerts'
 
 export async function POST(request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params
@@ -13,7 +14,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   if (body.length > 1000) return NextResponse.json({ error: 'Keep replies under 1,000 characters.' }, { status: 400 })
 
   const db = adminDb()
-  const { data: post } = await db.from('network_posts').select('id, reply_count, status').eq('id', id).maybeSingle()
+  const { data: post } = await db.from('network_posts').select('id, dentist_id, reply_count, status').eq('id', id).maybeSingle()
   if (!post || post.status !== 'live') return NextResponse.json({ error: 'Post not found.' }, { status: 404 })
 
   const { data, error } = await db.from('network_post_replies').insert({ post_id: id, dentist_id: viewer.id, body }).select('id, created_at').single()
@@ -21,5 +22,6 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   // Recount instead of +1 so two replies at once can't drift the number.
   const { count } = await db.from('network_post_replies').select('id', { count: 'exact', head: true }).eq('post_id', id)
   await db.from('network_posts').update({ reply_count: count ?? (post.reply_count || 0) + 1 }).eq('id', id)
+  after(() => addAlert({ recipientId: post.dentist_id, actorId: viewer.id, kind: 'post_reply', postId: id, commentId: data.id, snippet: body }))
   return NextResponse.json({ ok: true, id: data.id, created_at: data.created_at })
 }

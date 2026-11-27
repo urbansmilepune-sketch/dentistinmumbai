@@ -7,8 +7,9 @@
 // Auth is checked here; reads and writes use the service role.
 // Follower counts are derived with count(*), never stored.
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { adminDb, getViewerDentist } from '@/lib/national'
+import { addAlert, removeAlert } from '@/lib/networkAlerts'
 
 export async function POST(_req: NextRequest, ctx: { params: Promise<{ slug: string }> }) {
   const { slug } = await ctx.params
@@ -31,10 +32,12 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ slug: str
     const del = await db.from('dentist_follows').delete().eq('id', existing.id)
     if (del.error) return NextResponse.json({ error: 'Could not save' }, { status: 500 })
     following = false
+    after(() => removeAlert({ recipientId: target.id, actorId: viewer.id, kind: 'follow' }))
   } else {
     const ins = await db.from('dentist_follows').insert({ follower_id: viewer.id, following_id: target.id })
     if (ins.error && ins.error.code !== '23505') return NextResponse.json({ error: 'Could not save' }, { status: 500 })
     following = true
+    after(() => addAlert({ recipientId: target.id, actorId: viewer.id, kind: 'follow' }))
   }
 
   const { count } = await db

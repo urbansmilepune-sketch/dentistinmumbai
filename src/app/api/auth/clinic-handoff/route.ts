@@ -3,7 +3,8 @@
 // POST (on dentistinindia.in): the signed-in dentist taps a clinic link. We
 //   create a one-time token (2 minutes, single use) and send the browser to
 //   the GET below on their city domain.
-// GET (on the city domain): uses up the token, signs the dentist in on this
+// GET (on the city domain, or on dentistinindia.in for the reverse trip
+//   from ../india-handoff): uses up the token, signs the dentist in on this
 //   domain (same generateLink → verifyOtp pattern as remember-me) and opens
 //   the dashboard page they picked. Any failure lands on the normal login
 //   page with the same page as ?next=, so they can still get in.
@@ -13,7 +14,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { getViewerDentist } from '@/lib/national'
-import { CLINIC_PAGES, clinicCity, clinicPath, createHandoff, consumeHandoff } from '@/lib/clinicHandoff'
+import { CLINIC_PAGES, INDIA_PAGES, clinicCity, clinicPath, createHandoff, consumeHandoff } from '@/lib/clinicHandoff'
+import { isNationalHost } from '@/config/cities'
 import { REMEMBER_COOKIE, rememberCookieOptions, issueRememberToken } from '@/lib/auth/rememberMe'
 
 function admin() {
@@ -58,7 +60,11 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   const nextParam = request.nextUrl.searchParams.get('next') || ''
-  const path = Object.values(CLINIC_PAGES).includes(nextParam) ? nextParam : clinicPath(null)
+  // On dentistinindia.in this is the end of "My India profile" from a city
+  // dashboard (see ../india-handoff), so the India pages are allowed there.
+  const national = isNationalHost(requestHost(request))
+  const allowed = Object.values(national ? INDIA_PAGES : CLINIC_PAGES)
+  const path = allowed.includes(nextParam) ? nextParam : (national ? INDIA_PAGES.home : clinicPath(null))
   const toLogin = () => NextResponse.redirect(new URL(`/for-dentists/login?next=${encodeURIComponent(path)}`, request.url))
 
   const db = admin()

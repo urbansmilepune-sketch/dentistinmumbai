@@ -30,6 +30,18 @@ export const CLINIC_PAGES: Record<string, string> = {
   profile: '/for-dentists/dashboard/profile',
 }
 
+// The other way round (27 Nov 2026): "My India profile" in the city
+// dashboard signs the dentist in on dentistinindia.in and opens one of these.
+export const INDIA_PAGES: Record<string, string> = {
+  home: '/',
+  alerts: '/alerts',
+  post: '/cases/new',
+}
+
+export function indiaPath(key: string | null | undefined): string {
+  return (key && INDIA_PAGES[key]) || INDIA_PAGES.home
+}
+
 export function clinicPath(key: string | null | undefined): string {
   return (key && CLINIC_PAGES[key]) || CLINIC_PAGES.home
 }

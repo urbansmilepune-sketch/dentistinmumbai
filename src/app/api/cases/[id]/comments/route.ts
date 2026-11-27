@@ -10,10 +10,11 @@
 // On both POST and DELETE we recompute cases.comment_count via count(*)
 // so the trending algorithm + comment-count badge stay accurate.
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { isMissingColumnError } from '@/lib/national'
+import { alertCaseComment } from '@/lib/networkAlerts'
 
 const admin = createServiceClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -92,5 +93,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   if (error || !row) return NextResponse.json({ error: error?.message || 'Could not post' }, { status: 500 })
 
   const newCount = await recountAndPersist(caseId)
+  const commentId = (row as any).id as string
+  after(() => alertCaseComment(caseId, dentist.id, commentId, content))
   return NextResponse.json({ success: true, comment: row, comment_count: newCount })
 }

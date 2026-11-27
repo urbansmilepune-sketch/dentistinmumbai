@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import BrandLogo from './BrandLogo'
+import AlertBell from './AlertBell'
 
 // Shared header + footer for the dentistinindia.in dentist network.
 //
@@ -49,6 +50,7 @@ export default function NationalShell({ badge, right, hideNav, children }: Props
                 {n.label}
               </Link>
             ))}
+            <AlertBell />
             {right ?? (
               <Link href="/claim" style={{ display: 'inline-flex', alignItems: 'center', minHeight: 40, padding: '0 14px', marginLeft: 4, borderRadius: 8, background: '#1D4ED8', color: '#fff', fontSize: 14, fontWeight: 700, textDecoration: 'none' }}>
                 For dentists

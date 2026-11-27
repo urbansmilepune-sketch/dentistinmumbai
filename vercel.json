@@ -46,6 +46,10 @@
       "schedule": "0 5 * * *"
     },
     {
+      "path": "/api/cron/activity-summary",
+      "schedule": "30 13 * * *"
+    },
+    {
       "path": "/api/cron/follow-digest",
       "schedule": "0 4 * * 1"
     },
