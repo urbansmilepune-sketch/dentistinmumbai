@@ -12,7 +12,7 @@ import {
   sendBookingRequestToDentist,
   sendAdminAppointmentAlert,
 } from '@/lib/email'
-import { sendSMS } from '@/lib/sms'
+import { sendAppointmentWhatsApp } from '@/lib/whatsappSendLog'
 import { sendBookingReceivedWhatsApp, sendNewAppointmentWhatsApp } from '@/lib/whatsapp'
 import { isDemoEmail } from '@/lib/demo'
 import { guardRequest } from '@/lib/apiGuards'
@@ -347,56 +347,40 @@ export async function POST(request: NextRequest) {
       const dateTime = `${formattedDate} ${time_slot}`
 
       // WhatsApp first (booking_received to the patient, new_appointment to
-      // the dentist). SMS only goes out when the WhatsApp send didn't, so
-      // nobody gets the same message twice. When WHATSAPP_ENABLED is off the
-      // WhatsApp helpers return a failure and SMS behaves exactly as before.
-      let patientWhatsAppSent = false
-      try {
-        const w = await sendBookingReceivedWhatsApp({ patientPhone: patient_phone, clinicName, apptDate: appt_date, timeSlot: time_slot })
-        patientWhatsAppSent = w.success
-      } catch (err: any) {
-        console.error('[bookings] patient WhatsApp threw', { message: err?.message })
+      // the dentist). The SMS backup goes out when the WhatsApp fails, either
+      // straight away or later if WhatsApp reports a late failure (e.g. Meta
+      // 131048 spam limit) to /api/webhooks/msg91-whatsapp-status. Every send
+      // is saved in whatsapp_send_log and failures email admin
+      // (src/lib/whatsappSendLog.ts). With WHATSAPP_ENABLED off only the SMS
+      // goes, exactly as before.
+      const summary = `${patient_name} → ${dentistName} (${clinicName}), ${dateTime}`
+      if (patient_phone) {
+        await sendAppointmentWhatsApp({
+          template: 'booking_received',
+          recipient: 'patient',
+          toPhone: patient_phone,
+          appointmentId: data?.id ?? null,
+          dentistId: dentist_id,
+          summary,
+          smsFallback: { templateEnv: 'MSG91_TEMPLATE_ID_BOOKING_PATIENT', phone: patient_phone, vars: [clinicName, dateTime] },
+          send: () => sendBookingReceivedWhatsApp({ patientPhone: patient_phone, clinicName, apptDate: appt_date, timeSlot: time_slot }),
+        })
       }
-      let dentistWhatsAppSent = false
       const dentistWaPhone = dentist.whatsapp || dentist.phone
-      if (dentistWaPhone) {
-        try {
-          const w = await sendNewAppointmentWhatsApp({ dentistPhone: dentistWaPhone, patientName: patient_name, apptDate: appt_date, timeSlot: time_slot })
-          dentistWhatsAppSent = w.success
-        } catch (err: any) {
-          console.error('[bookings] dentist WhatsApp threw', { message: err?.message })
-        }
-      }
-
-      const patientTpl = process.env.MSG91_TEMPLATE_ID_BOOKING_PATIENT
-      if (!patientWhatsAppSent && patientTpl && patient_phone) {
-        console.log('[bookings] patient SMS attempt', {
-          phone: patient_phone,
-          templateId: patientTpl,
-          patient: patient_name,
-        })
-        try {
-          const r = await sendSMS(patient_phone, patientTpl, [clinicName, dateTime])
-          if (!r.success) console.error('[bookings] patient SMS failed', r)
-        } catch (err: any) {
-          console.error('[bookings] patient SMS threw', { message: err?.message })
-        }
-      }
-
-      const dentistTpl = process.env.MSG91_TEMPLATE_ID_BOOKING_DENTIST
       const dentistSmsPhone = dentist.phone || dentist.whatsapp
-      if (!dentistWhatsAppSent && dentistTpl && dentistSmsPhone) {
-        console.log('[bookings] dentist SMS attempt', {
-          phone: dentistSmsPhone,
-          templateId: process.env.MSG91_TEMPLATE_ID_BOOKING_DENTIST,
-          patient: patient_name,
+      if (dentistWaPhone) {
+        await sendAppointmentWhatsApp({
+          template: 'new_appointment',
+          recipient: 'dentist',
+          toPhone: dentistWaPhone,
+          appointmentId: data?.id ?? null,
+          dentistId: dentist_id,
+          summary,
+          smsFallback: dentistSmsPhone
+            ? { templateEnv: 'MSG91_TEMPLATE_ID_BOOKING_DENTIST', phone: dentistSmsPhone, vars: [patient_name, dateTime] }
+            : null,
+          send: () => sendNewAppointmentWhatsApp({ dentistPhone: dentistWaPhone, patientName: patient_name, apptDate: appt_date, timeSlot: time_slot }),
         })
-        try {
-          const r = await sendSMS(dentistSmsPhone, dentistTpl, [patient_name, dateTime])
-          if (!r.success) console.error('[bookings] dentist SMS failed', r)
-        } catch (err: any) {
-          console.error('[bookings] dentist SMS threw', { message: err?.message })
-        }
       }
     }
 

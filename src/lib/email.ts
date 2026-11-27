@@ -382,6 +382,42 @@ export async function sendAdminAppointmentAlert(data: {
   }
 }
 
+/** An appointment WhatsApp (booking / confirm / cancel) failed. */
+export async function sendAdminWhatsAppFailedAlert(data: {
+  template: string
+  recipient: string
+  phone: string
+  summary: string
+  reason: string
+  backup: string
+  when: string
+}) {
+  try {
+    return await resend.emails.send({
+      from: getCityFrom('mumbai'),
+      to: ADMIN_EMAIL,
+      subject: `⚠️ WhatsApp failed — ${data.template} to ${data.recipient}`,
+      html: adminAlertHtml({
+        heading: 'WhatsApp message failed',
+        intro: 'An appointment WhatsApp did not reach the person.',
+        rows: [
+          ['Message', data.template],
+          ['To', `${data.recipient} (${data.phone})`],
+          ['Appointment', data.summary || '—'],
+          ['What happened', data.when],
+          ['Reason', data.reason],
+          ['Backup', data.backup],
+        ],
+        ctaLabel: 'Open Admin Panel',
+        ctaHref: ADMIN_PANEL_URL,
+      }),
+    })
+  } catch (err) {
+    console.error('[email] sendAdminWhatsAppFailedAlert failed', err)
+    return null
+  }
+}
+
 /** Dentist submitted an article — needs admin approval (status='pending'). */
 export async function sendAdminNewArticleAlert(data: {
   dentistName: string

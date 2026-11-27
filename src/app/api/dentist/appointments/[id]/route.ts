@@ -17,7 +17,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { getDentistOwner } from '@/lib/dentistSession'
 import { sendAppointmentConfirmedToPatient, sendAppointmentCancelledToPatient } from '@/lib/email'
-import { sendSMS } from '@/lib/sms'
+import { sendAppointmentWhatsApp } from '@/lib/whatsappSendLog'
 import { sendConfirmationWhatsApp, sendCancellationWhatsApp } from '@/lib/whatsapp'
 import { autoCreateRecallForCompletedVisit } from '@/lib/recall'
 import { queueReviewRequestForCompletedVisit } from '@/lib/reviewRequests'
@@ -176,28 +176,20 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
         console.log('[appointments PATCH] no patient_email on appointment — skipping confirmation email', { ref: updated.reference_no })
       }
 
-      // WhatsApp first; SMS only if WhatsApp didn't go out.
-      let confirmWhatsAppSent = false
+      // WhatsApp first; SMS backup if it fails now or later (see
+      // src/lib/whatsappSendLog.ts). DLT SMS: "Your Appointment confirmed at
+      // {clinic} on {date time} ..."
       if (patientPhone) {
-        try {
-          const w = await sendConfirmationWhatsApp({ patientPhone, clinicName, apptDate: updated.appt_date, timeSlot: updated.time_slot })
-          confirmWhatsAppSent = w.success
-        } catch (err) {
-          console.error('[appointments PATCH] confirmation WhatsApp threw', err)
-        }
-      }
-
-      const confirmTpl = process.env.MSG91_TEMPLATE_ID_APPOINTMENT_CONFIRMED
-      if (!confirmWhatsAppSent && confirmTpl && patientPhone) {
-        try {
-          // DLT template: "Your Appointment confirmed at {clinic} on {date time} ..."
-          const r = await sendSMS(patientPhone, confirmTpl, [
-            clinicName, `${formattedDate} ${updated.time_slot}`,
-          ])
-          if (!r.success) console.error('[appointments PATCH] confirmation SMS failed', r)
-        } catch (err) {
-          console.error('[appointments PATCH] confirmation SMS threw', err)
-        }
+        await sendAppointmentWhatsApp({
+          template: 'appointment_confirmation',
+          recipient: 'patient',
+          toPhone: patientPhone,
+          appointmentId: updated.id,
+          dentistId: owner.id,
+          summary: `${updated.patient_name || 'Patient'} at ${clinicName}, ${formattedDate} ${updated.time_slot || ''} (confirmed)`,
+          smsFallback: { templateEnv: 'MSG91_TEMPLATE_ID_APPOINTMENT_CONFIRMED', phone: patientPhone, vars: [clinicName, `${formattedDate} ${updated.time_slot}`] },
+          send: () => sendConfirmationWhatsApp({ patientPhone, clinicName, apptDate: updated.appt_date, timeSlot: updated.time_slot }),
+        })
       }
     } else {
       if (patientEmail) {
@@ -223,28 +215,18 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
         }
       }
 
-      let cancelWhatsAppSent = false
+      // DLT cancel SMS only renders the clinic name (no date placeholder).
       if (patientPhone) {
-        try {
-          const w = await sendCancellationWhatsApp({ patientPhone, clinicName, apptDate: updated.appt_date })
-          cancelWhatsAppSent = w.success
-        } catch (err) {
-          console.error('[appointments PATCH] cancellation WhatsApp threw', err)
-        }
-      }
-
-      const cancelTpl = process.env.MSG91_TEMPLATE_ID_APPOINTMENT_CANCELLED
-      if (!cancelWhatsAppSent && cancelTpl && patientPhone) {
-        try {
-          // DLT template body has a typo ("on cancelled") and only renders the
-          // clinic name — there is no {date time} placeholder, so we send a
-          // single variable. Re-registering a fixed template body would unblock
-          // a second var; until then, only clinicName is passed.
-          const r = await sendSMS(patientPhone, cancelTpl, [clinicName])
-          if (!r.success) console.error('[appointments PATCH] cancellation SMS failed', r)
-        } catch (err) {
-          console.error('[appointments PATCH] cancellation SMS threw', err)
-        }
+        await sendAppointmentWhatsApp({
+          template: 'appointment_cancellation',
+          recipient: 'patient',
+          toPhone: patientPhone,
+          appointmentId: updated.id,
+          dentistId: owner.id,
+          summary: `${updated.patient_name || 'Patient'} at ${clinicName}, ${formattedDate} ${updated.time_slot || ''} (cancelled)`,
+          smsFallback: { templateEnv: 'MSG91_TEMPLATE_ID_APPOINTMENT_CANCELLED', phone: patientPhone, vars: [clinicName] },
+          send: () => sendCancellationWhatsApp({ patientPhone, clinicName, apptDate: updated.appt_date }),
+        })
       }
     }
   }
